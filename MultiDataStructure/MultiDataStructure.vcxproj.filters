@@ -1,0 +1,168 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="headers">
+      <UniqueIdentifier>{3943fb01-c25a-4b9a-bb9d-2caf36fdf66c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="source">
+      <UniqueIdentifier>{7c951db4-3853-4b67-a8ef-7f3f0cd9a8d5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cuda">
+      <UniqueIdentifier>{65d73b47-273b-4616-a684-a80a64861831}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="tinybvh">
+      <UniqueIdentifier>{69378f8f-87c1-4663-8eaf-c46bb5929887}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AABB.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="GeometricUtilities.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="GPUStructs.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Material.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Model3D.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="MultiDataStructure.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Ray.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="SceneContent.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="ApplicationState.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Bvh.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="TriangleMesh.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="bvh_kernels.cuh">
+      <Filter>cuda</Filter>
+    </ClInclude>
+    <ClInclude Include="morton_encoding_kernels.cuh">
+      <Filter>cuda</Filter>
+    </ClInclude>
+    <ClInclude Include="cuda_globals.cuh">
+      <Filter>cuda</Filter>
+    </ClInclude>
+    <ClInclude Include="CameraProjection.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="CudaHelper.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="QuadTree.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Image.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="ExternalBvh.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="KdTree.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Octree.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="progressbar\include\progressbar.hpp">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="ChronoUtilities.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="AABB.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="Camera.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="GeometricUtilities.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="GPUStructs.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="Material.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="Model3D.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="MultiDataStructure.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="Ray.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="SceneContent.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="TriangleMesh.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraProjection.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="CudaHelper.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="QuadTree.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="Image.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="ExternalBvh.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="Octree.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="KdTree.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="tinybvh\tiny_bvh.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="Bvh.cu">
+      <Filter>source</Filter>
+    </CudaCompile>
+    <CudaCompile Include="bvh_kernels.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="morton_encoding_kernels.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="cuda_globals.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+  </ItemGroup>
+</Project>
