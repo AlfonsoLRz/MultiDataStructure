@@ -11,6 +11,7 @@
 #include "Octree.h"
 #include "QuadTree.h"
 #include "SceneContent.h"
+#include "timeit.hpp"
 #include "TriangleMesh.h"
 
 int main(int argc, char* argv)
@@ -22,9 +23,16 @@ int main(int argc, char* argv)
 	NodeFactory::registerType<BvhNode>(MultiDataStructure::DataStructureLevel::BvhNode);
 	NodeFactory::registerType<KdTreeNode>(MultiDataStructure::DataStructureLevel::KDTreeNode);
 
-	glm::uvec2 windowSize(800, 600);
+	glm::uvec2 windowSize(200, 200);
 	Camera camera (windowSize.x, windowSize.y);
-	camera.setFovX(60.0f);
+	camera.setFovX(glm::radians(60.0f));
+
+	std::vector<Ray> rays;
+	camera.setPosition(glm::vec3(0.1f, 0.0f, -15.0f));
+	camera.setRaspect(windowSize.x, windowSize.y);
+	camera.buildRays(rays, windowSize, 1);
+
+	std::vector<float> depth(rays.size());
 
     TriangleMesh* mesh = new TriangleMesh();
     mesh->load("C:/Datasets/models/CornellBox/CornellKnightDragon.obj");
@@ -33,61 +41,71 @@ int main(int argc, char* argv)
 	SceneContent* scene = new SceneContent();
 	scene->addNewModel(mesh);
 	scene->buildScenario();
-
 	Node* bvhNodes = scene->getBvhNodesExplicitly();
+
+	std::cout << scene->getNumTriangles() << '\n';
 
 	ChronoUtilities::initChrono();
 	MultiDataStructure multiDS({
-		{._levelType = MultiDataStructure::DataStructureLevel::QuadTreeNode, ._numLevels = 4 },
-		{._levelType = MultiDataStructure::DataStructureLevel::OctreeNode, ._numLevels = 4 },
-		{._levelType = MultiDataStructure::DataStructureLevel::BvhNode, ._numLevels = 8 } }
-		);
-	multiDS.build({
-		, 
-		bvhNodes, scene->getNumTriangles(), mesh->getAABB(), true);
+		{ ._levelType = MultiDataStructure::DataStructureLevel::QuadTreeNode, ._numLevels = 1 },
+		{ ._levelType = MultiDataStructure::DataStructureLevel::OctreeNode, ._numLevels = 4 },
+		{ ._levelType = MultiDataStructure::DataStructureLevel::BvhNode, ._numLevels = 8 },
+	});
+	multiDS.build(bvhNodes, scene->getNumTriangles(), mesh->getAABB());
 
+	glm::uint deletedNodes;
+	do
+	{
+		multiDS.removeEmptyNodes(deletedNodes);
+	}
+	while (deletedNodes > 0);
+	multiDS.collapseNodes();
+	multiDS.checkSanity();
 
-	multiDS.build(MultiDataStructure::QuadTreeNode, 4, bvhNodes, scene->getNumTriangles(), mesh->getAABB());
-	multiDS.check(MultiDataStructure::OctreeNode, 4);
-	multiDS.check(MultiDataStructure::BvhNode, 8);
-	std::cout << "MultiDS build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << std::endl;
-    multiDS.exportNodes("output/nodes.csv");
+	std::cout << "MultiDS build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << '\n';
+    //multiDS.exportNodes("output/nodes.csv");
 
 	ChronoUtilities::initChrono();
 	ExternalBvh tinyBvh(scene->getVertices(), scene->getIndices(), scene->getNumVertices(), scene->getNumTriangles());
-	std::cout << "BVH build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << std::endl;
-
-	std::vector<Ray> rays;
-	std::vector<float> depth;
-	camera.setRaspect(windowSize.x, windowSize.y);
-	camera.buildRays(rays, windowSize, 1);
+	std::cout << "BVH build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << '\n';
 
 	// Test 1
-	ChronoUtilities::initChrono();
-	multiDS.resolveRayQueries(rays, depth, scene->getVertices(), scene->getIndices());
-	std::cout << "MultiDS resolve time: " << ChronoUtilities::getDuration(ChronoUtilities::NANOSECONDS) << " nanoseconds" << std::endl;
+	std::cout << "\n-----------------------------------";
+	{
+		std::cout << "MultiDS tests..." << '\n';
+		multiDS.printStats();
+		timeit([&] {
+			multiDS.resolveRayQueries(rays, depth, scene->getVertices(), scene->getIndices());
+		});
 
-	//multiDS.resolveRayQueriesBruteForce(rays, depth, scene->getVertices(), scene->getIndices(), bvhNodes, scene->getNumTriangles() * 2 - 1);
+		{
+			Image image;
+			image.fill(depth.data(), windowSize.x, windowSize.y, 1);
+			image.normalize();
+			image.save("output/depth_mds.png");
+		}
+	}
+	std::cout << "-----------------------------------\n";
 
 	// Test 2
-	ChronoUtilities::initChrono();
-	tinyBvh.resolveRayQueries(rays, depth);
-	std::cout << "TinyBVH resolve time: " << ChronoUtilities::getDuration(ChronoUtilities::NANOSECONDS) << " nanoseconds" << std::endl;
+	std::cout << "\n-----------------------------------";
+	{
+		std::cout << "TinyBVH tests..." << '\n';
+		tinyBvh.printStats();
+		timeit([&] {
+			tinyBvh.resolveRayQueries(rays, depth);
+		});
+
+		{
+			Image image;
+			image.fill(depth.data(), windowSize.x, windowSize.y, 1);
+			image.normalize();
+			image.save("output/depth_ebvh.png");
+		}
+	}
+	std::cout << "-----------------------------------\n";
 
 	delete[] bvhNodes;
-
-	std::vector<glm::vec3> directions;
-	for (const auto& ray : rays)
-	{
-		glm::vec3 direction = ray._direction;
-		directions.push_back(glm::normalize(direction));
-	}
-
-	// Save depth map
-	Image image;
-	image.fill(depth.data(), windowSize.x, windowSize.y, 1);
-	image.normalize();
-	image.save("output/depth.png");
 
     // - Esta llamada es para impedir que la consola se cierre inmediatamente tras la
     // ejecución y poder leer los mensajes. Se puede usar también getChar();

@@ -16,6 +16,8 @@ KdTreeNode* KdTreeNode::copy(const AABB& aabb) const
 
 void KdTreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 {
+	static AABB aabbs[2];
+
 	// Reorder primitives according to the split axis
 	std::ranges::sort(_primitives,
 	                  [this](const Node* a, const Node* b)
@@ -24,11 +26,11 @@ void KdTreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 	                  });
 
 	float splitValue = (_primitives[_primitives.size() / 2]->_minPoint[_splitAxis] + _primitives[_primitives.size() / 2]->_maxPoint[_splitAxis]) / 2.0f;
-	std::vector<AABB> subAABBs = _aabb.split2D(_splitAxis, splitValue);
+	_aabb.split2D(_splitAxis, splitValue, aabbs);
 
-	for (const auto& subAABB : subAABBs)
+	for (const auto& aabb: aabbs)
 	{
-		MultiDataStructure::SpatialDSNode* newNode = NodeFactory::create(nodeType, subAABB);
+		MultiDataStructure::SpatialDSNode* newNode = NodeFactory::create(nodeType, aabb);
 		_children.push_back(newNode);
 	}
 }

@@ -24,6 +24,7 @@ public:
 	void update(const glm::vec3& point);
 
 	void split2D(glm::uint axis, AABB* aabb) const;
+	std::vector<AABB> split2D(glm::uint axis) const;
 	void split2D(glm::uint axis, float value, AABB* aabb) const;
 	void split3D(glm::uvec3 numSubdivisions, AABB* aabb) const;
 

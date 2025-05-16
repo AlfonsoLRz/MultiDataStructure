@@ -4,7 +4,7 @@
 
 // Static properties
 
-const std::string Model3D::BINARY_EXTENSION = ".bin";
+const std::string Model3D::BINARY_EXTENSION = ".bin_mds";
 std::unordered_set<std::string> Model3D::USED_NAMES;
 
 // Public methods

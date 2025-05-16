@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "AABB.h"
 
+#include <algorithm>
+
 // Public methods
 
 AABB::AABB(const glm::vec3& min, const glm::vec3& max) : _max(max), _min(min)
@@ -59,6 +61,30 @@ void AABB::split2D(glm::uint axis, AABB* aabb) const
 	}
 }
 
+std::vector<AABB> AABB::split2D(glm::uint axis) const
+{
+	glm::vec3 center = this->center();
+	std::vector<AABB> aabbs(2);
+
+	if (axis == 0)
+	{
+		aabbs[0] = AABB(_min, glm::vec3(center.x, _max.y, _max.z));
+		aabbs[1] = AABB(glm::vec3(center.x, _min.y, _min.z), _max);
+	}
+	else if (axis == 1)
+	{
+		aabbs[0] = AABB(_min, glm::vec3(_max.x, center.y, _max.z));
+		aabbs[1] = AABB(glm::vec3(_min.x, center.y, _min.z), _max);
+	}
+	else
+	{
+		aabbs[0] = AABB(_min, glm::vec3(_max.x, _max.y, center.z));
+		aabbs[1] = AABB(glm::vec3(_min.x, _min.y, center.z), _max);
+	}
+
+	return aabbs;
+}
+
 void AABB::split2D(glm::uint axis, float value, AABB* aabb) const
 {
 	if (axis == 0)
@@ -101,27 +127,27 @@ void AABB::split3D(glm::uvec3 numSubdivisions, AABB* aabb) const
 bool AABB::collides(const AABB& aabb) const
 {
 	return !(_max.x < aabb.min().x || _min.x > aabb.max().x ||
-		_max.y < aabb.min().y || _min.y > aabb.max().y ||
-		_max.z < aabb.min().z || _min.z > aabb.max().z);
+			 _max.y < aabb.min().y || _min.y > aabb.max().y ||
+			 _max.z < aabb.min().z || _min.z > aabb.max().z);
 }
 
 bool AABB::collides(const glm::vec3& minPoint, const glm::vec3& maxPoint) const
 {
 	return !(_max.x < minPoint.x || _min.x > maxPoint.x ||
-		_max.y < minPoint.y || _min.y > maxPoint.y ||
-		_max.z < minPoint.z || _min.z > maxPoint.z);
+			 _max.y < minPoint.y || _min.y > maxPoint.y ||
+			 _max.z < minPoint.z || _min.z > maxPoint.z);
 }
 
 bool AABB::intersects(const Ray& ray, float& tFar) const
 {
-	glm::vec3 invDir = 1.0f / ray._direction;
+	glm::vec3 invDir = 1.0f / (ray._direction);
 	glm::vec3 t0 = (_min - ray._origin) * invDir;
 	glm::vec3 t1 = (_max - ray._origin) * invDir;
 	glm::vec3 tMin = glm::min(t0, t1);
 	glm::vec3 tMax = glm::max(t0, t1);
 	float tNear = std::max({tMin.x, tMin.y, tMin.z});
 	tFar = std::min({tMax.x, tMax.y, tMax.z});
-	return (tNear < tFar && tFar > 0.0f);
+	return tNear < tFar && tFar > 0.0f;
 }
 
 bool AABB::intersects(const Ray& ray) const

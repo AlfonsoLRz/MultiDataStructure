@@ -13,6 +13,7 @@ public:
 	ExternalBvh(const VertexGPU* vertices, const glm::u32* indices, glm::uint numVertices, glm::uint numTriangle);
 	virtual ~ExternalBvh();
 
+	void printStats();
 	void resolveRayQueries(const std::vector<Ray>& rays, std::vector<float>& depth) const;
 };
 

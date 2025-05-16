@@ -64,7 +64,7 @@ Node* Bvh::buildClusterBuffer(glm::u32* sortedFacesBufferGPU)
 	return tempClusterBufferGPU;
 }
 
-inline void Bvh::buildTree(Node* tempClusterBufferGPU)
+inline void Bvh::buildTree(Node* tempClusterBufferGPU) const
 {
 	// Compute shader execution data: groups and iteration control
 	glm::u32 arraySize = _numIndices / 3;

@@ -24,7 +24,7 @@ Camera::Camera(uint16_t width, uint16_t height, bool is2D) : _backupCamera(nullp
 	this->_properties._aspect = this->_properties.computeAspect();
 
 	this->_properties._bottomLeftCorner = glm::vec2(-2.0f * this->_properties._aspect, -2.0f);
-	this->_properties._fovX = 80.0f * glm::pi<float>() / 180.0f;
+	this->_properties._fovX = glm::radians(20.0f);
 	this->_properties._fovY = this->_properties.computeFovY();
 
 	this->_properties.computeAxes(this->_properties._n, this->_properties._u, this->_properties._v);

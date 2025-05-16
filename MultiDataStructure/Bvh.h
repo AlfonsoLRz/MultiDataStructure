@@ -19,7 +19,7 @@ protected:
 
 protected:
 	Node* buildClusterBuffer(glm::u32* sortedFacesBufferGPU);
-	void buildTree(Node* tempClusterBufferGP);
+	void buildTree(Node* tempClusterBufferGP) const;
 	glm::u32* computeMortonCodes() const;
 	glm::u32* sortMortonCodes(glm::u32* mortonCodesBufferGPU) const;
 

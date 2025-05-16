@@ -21,13 +21,15 @@ QuadTreeNode* QuadTreeNode::copy(const AABB& aabb) const
 
 void QuadTreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 {
+	static AABB aabbs[4];
+
 	glm::uvec3 subdivisions{ 2, 2, 2 };
 	subdivisions[_planarAxis] = 1;
+	_aabb.split3D(subdivisions, aabbs);
 
-	std::vector<AABB> subAABBs = _aabb.split3D(subdivisions);
-	for (const auto& subAABB : subAABBs)
+	for (const auto& aabb : aabbs)
 	{
-		MultiDataStructure::SpatialDSNode* newNode = NodeFactory::create(nodeType, subAABB);
+		MultiDataStructure::SpatialDSNode* newNode = NodeFactory::create(nodeType, aabb);
 		_children.push_back(newNode);
 	}
 }

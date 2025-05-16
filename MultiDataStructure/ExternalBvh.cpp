@@ -21,6 +21,15 @@ ExternalBvh::ExternalBvh(const VertexGPU* vertices, const glm::u32* indices, glm
 
 ExternalBvh::~ExternalBvh() = default;
 
+void ExternalBvh::printStats()
+{
+	std::cout << "BVH stats:" << std::endl;
+	std::cout << "  - Number of leaves: " << _bvh.LeafCount() << std::endl;
+	std::cout << "  - Number of triangles: " << _bvh.PrimCount() << std::endl;
+	std::cout << "  - Number of nodes: " << _bvh.NodeCount() << std::endl;
+	std::cout << "  - SAH: " << _bvh.SAHCost(0) << std::endl;
+}
+
 void ExternalBvh::resolveRayQueries(const std::vector<Ray>& rays, std::vector<float>& depth) const
 {
 	depth.resize(rays.size());

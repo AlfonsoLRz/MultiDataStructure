@@ -35,11 +35,14 @@ public:
 		virtual bool in(const Node* node) const;
 		virtual bool intersects(const Ray& ray);
 		virtual void split(DataStructureLevel nodeType) = 0;
+
+		virtual bool isLeaf() const { return _children.empty(); }
 	};
 
 private:
 	glm::uint					_maxLevels;
 	SpatialDSNode*				_rootNode;
+	glm::uint					_numPrimitives;
 
 	//
 	std::vector<LevelConfig>	_levels;
@@ -49,9 +52,18 @@ private:
 	void check(SpatialDSNode* dsNode, glm::uint level);
 	void insert(SpatialDSNode* dsNode, const Node* node, glm::uint level);
 
-	void collectNodes(SpatialDSNode* node, std::vector<AABB>& nodes);
+	void collectNodes(const SpatialDSNode* node, std::vector<AABB>& nodes);
+
+	void checkSanity(const SpatialDSNode* dsNode, glm::uint level);
+
+	void collapseNodes(SpatialDSNode*& dsNode, glm::uint level);
+	void removeEmptyNodes(SpatialDSNode* dsNode, glm::uint level, glm::uint& deletedNodes);
 
 	DataStructureLevel getNodeType(const glm::uint level) const;
+	void getAverageLeafPrimitives(const SpatialDSNode* dsNode, float& sum, glm::uint& count) const;
+	void getNumLeaves(const SpatialDSNode* dsNode, glm::uint& numLeaves) const;
+	void getNumNodes(const SpatialDSNode* dsNode, glm::uint& numNodes) const;
+	void getNumPrimitives(const SpatialDSNode* dsNode, glm::uint& numPrimitives) const;
 
 	static void resolveNodeCollisions(
 		const Ray& ray, HitInfo& hitInfo, const Node* node, 
@@ -66,10 +78,11 @@ public:
 	MultiDataStructure(const std::vector<LevelConfig>& levels);
 	virtual ~MultiDataStructure();
 
-	void build(DataStructureLevel nodeType, glm::uint maxLevels, const Node* nodes, size_t numNodes, const AABB& aabb);
-	void check(DataStructureLevel nodeType, glm::uint maxLevels);
+	void build(const Node* nodes, size_t numNodes, const AABB& aabb);
 
-	void build(const std::vector<LevelConfig>& levels, const Node* nodes, size_t numNodes, const AABB& aabb, bool reverse=true);
+	void checkSanity() { this->checkSanity(_rootNode, 0); }
+	void collapseNodes() { this->collapseNodes(_rootNode, 0); }
+	void removeEmptyNodes(glm::uint& deletedNodes);
 
 	void resolveRayQueries(
 		const std::vector<Ray>& rays, std::vector<float>& depth, 
@@ -80,7 +93,9 @@ public:
 		const std::vector<Ray>& rays, std::vector<float>& depth,
 		const VertexGPU* vertices, const glm::u32* indices, const Node* nodes, size_t numNodes
 	);
+
 	bool exportNodes(const std::string &filename);
+	void printStats() const;
 };
 
 //

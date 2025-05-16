@@ -54,7 +54,7 @@ Node* SceneContent::getBvhNodesExplicitly() const
 {
 	if (_bvh.getClusterBuffer() == nullptr)
 	{
-		std::cout << "BVH not built yet!" << std::endl;
+		std::cout << "BVH not built yet!" << '\n';
 		return nullptr;
 	}
 
