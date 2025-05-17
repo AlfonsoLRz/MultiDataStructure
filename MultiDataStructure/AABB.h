@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Ray.h"
+#include "GPUStructs.h"
 
 class AABB
 {
@@ -30,8 +30,9 @@ public:
 
 	bool collides(const AABB& aabb) const;
 	bool collides(const glm::vec3& minPoint, const glm::vec3& maxPoint) const;
-	bool intersects(const Ray& ray, float& tFar) const;
-	bool intersects(const Ray& ray) const;
+	bool collides(const Node* node) const;
+	bool intersects(const RayGPU& ray, float& tFar) const;
+	float intersects(const RayGPU& ray) const;
 
 	friend std::ostream& operator<<(std::ostream& os, const AABB& aabb);
 };

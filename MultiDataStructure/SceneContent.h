@@ -14,7 +14,6 @@ class Texture;
 class SceneContent
 {
 public:
-	Bvh										_bvh;
 	std::vector<std::unique_ptr<Camera>>	_camera;
 	std::vector<std::unique_ptr<Model3D>>	_model;
 	AABB									_sceneAABB;
@@ -51,9 +50,8 @@ public:
 	void addNewModel(Model3D* model);
 	void buildScenario();
 
-	void gatherModelGPUData(bool moveData);
+	void gatherModelGPUData(bool clearData);
 
-	Node* getBvhNodesExplicitly() const;
 	VertexGPU* getVertices() { return _vertices.data(); }
 	glm::u32* getIndices() { return _indices.data(); }
 

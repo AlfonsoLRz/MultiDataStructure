@@ -65,5 +65,5 @@ public:
 	glm::vec3 getForward() const { return -_properties._n; }
 
 	// Ray-tracing
-	void buildRays(std::vector<Ray>& rays, const glm::uvec2& windowSize, const glm::uint numSamples) const;
+	void buildRays(std::vector<RayGPU>& rays, const glm::uvec2& windowSize, const glm::uint numSamples) const;
 };

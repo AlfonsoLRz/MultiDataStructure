@@ -21,9 +21,6 @@
     <ClInclude Include="Camera.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="GeometricUtilities.h">
-      <Filter>headers</Filter>
-    </ClInclude>
     <ClInclude Include="GPUStructs.h">
       <Filter>headers</Filter>
     </ClInclude>
@@ -34,9 +31,6 @@
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="MultiDataStructure.h">
-      <Filter>headers</Filter>
-    </ClInclude>
-    <ClInclude Include="Ray.h">
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="SceneContent.h">
@@ -90,15 +84,15 @@
     <ClInclude Include="ChronoUtilities.h">
       <Filter>headers</Filter>
     </ClInclude>
+    <ClInclude Include="GeometryUtils.h">
+      <Filter>headers</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AABB.cpp">
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="Camera.cpp">
-      <Filter>source</Filter>
-    </ClCompile>
-    <ClCompile Include="GeometricUtilities.cpp">
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="GPUStructs.cpp">
@@ -114,9 +108,6 @@
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="MultiDataStructure.cpp">
-      <Filter>source</Filter>
-    </ClCompile>
-    <ClCompile Include="Ray.cpp">
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="SceneContent.cpp">
@@ -149,7 +140,12 @@
     <ClCompile Include="KdTree.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="tinybvh\tiny_bvh.h" />
+    <ClCompile Include="tinybvh\tiny_bvh.h">
+      <Filter>tinybvh</Filter>
+    </ClCompile>
+    <ClCompile Include="GeometryUtils.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Bvh.cu">

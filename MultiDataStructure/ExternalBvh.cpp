@@ -14,7 +14,7 @@ ExternalBvh::ExternalBvh(const VertexGPU* vertices, const glm::u32* indices, glm
 		bvhVertices[i].w = 1.0f;
 	}
 
-	_bvh.BuildHQ(bvhVertices, indices, numTriangles);
+	_bvh.Build(bvhVertices, indices, numTriangles);
 
 	//delete[] bvhVertices;
 }
@@ -23,24 +23,22 @@ ExternalBvh::~ExternalBvh() = default;
 
 void ExternalBvh::printStats()
 {
-	std::cout << "BVH stats:" << std::endl;
-	std::cout << "  - Number of leaves: " << _bvh.LeafCount() << std::endl;
-	std::cout << "  - Number of triangles: " << _bvh.PrimCount() << std::endl;
-	std::cout << "  - Number of nodes: " << _bvh.NodeCount() << std::endl;
-	std::cout << "  - SAH: " << _bvh.SAHCost(0) << std::endl;
+	std::cout << "BVH stats:" << '\n';
+	std::cout << "  - Number of leaves: " << _bvh.LeafCount() << '\n';
+	std::cout << "  - Number of triangles: " << _bvh.PrimCount() << '\n';
+	std::cout << "  - Number of nodes: " << _bvh.NodeCount() << '\n';
+	std::cout << "  - SAH: " << _bvh.SAHCost(0) << '\n';
 }
 
-void ExternalBvh::resolveRayQueries(const std::vector<Ray>& rays, std::vector<float>& depth) const
+void ExternalBvh::resolveRayQueries(const std::vector<RayGPU>& rays, std::vector<float>& depth) const
 {
-	depth.resize(rays.size());
-
 	#pragma omp parallel for
 	for (int rayIdx = 0; rayIdx < static_cast<int>(rays.size()); ++rayIdx)
 	{
 		tinybvh::bvhvec3 O(rays[rayIdx]._origin.x, rays[rayIdx]._origin.y, rays[rayIdx]._origin.z);
 		tinybvh::bvhvec3 D(rays[rayIdx]._direction.x, rays[rayIdx]._direction.y, rays[rayIdx]._direction.z);
 		tinybvh::Ray bvhRay(O, D);
-		int steps = _bvh.Intersect(bvhRay);
+		_bvh.Intersect(bvhRay);
 
 		if (bvhRay.hit.t < BVH_FAR)
 			depth[rayIdx] = bvhRay.hit.t;

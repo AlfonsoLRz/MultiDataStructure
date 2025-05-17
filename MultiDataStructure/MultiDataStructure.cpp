@@ -33,7 +33,7 @@ MultiDataStructure::~MultiDataStructure()
 //
 //	for (size_t i = 0; i < numNodes; ++i)
 //	{
-//		if (_rootNode->in(&nodes[i]))
+//		if (_rootNode->intersectsBoundingBox(&nodes[i]))
 //			this->insert(nodeType, _rootNode, &nodes[i], 0);
 //	}
 //}
@@ -69,7 +69,7 @@ void MultiDataStructure::removeEmptyNodes(glm::uint& deletedNodes)
 }
 
 void MultiDataStructure::resolveRayQueries(
-	const std::vector<Ray>& rays, std::vector<float>& depth,
+	const std::vector<RayGPU>& rays, std::vector<float>& depth,
 	const VertexGPU* vertices, const glm::u32* indices
 )
 {
@@ -89,7 +89,7 @@ void MultiDataStructure::resolveRayQueries(
 }
 
 void MultiDataStructure::resolveRayQueriesBruteForce(
-	const std::vector<Ray>& rays, std::vector<float>& depth,
+	const std::vector<RayGPU>& rays, std::vector<float>& depth,
 	const VertexGPU* vertices, const glm::u32* indices, const Node* nodes, size_t numNodes)
 {
 	depth.resize(rays.size());
@@ -157,9 +157,9 @@ bool MultiDataStructure::SpatialDSNode::in(const Node* node) const
 	return _aabb.collides(node->_minPoint, node->_maxPoint);
 }
 
-bool MultiDataStructure::SpatialDSNode::intersects(const Ray& ray)
+bool MultiDataStructure::SpatialDSNode::intersects(const RayGPU& ray)
 {
-	return _aabb.intersects(ray);
+	return _aabb.intersects(ray) < FLT_MAX;
 }
 
 void MultiDataStructure::check(SpatialDSNode* dsNode, glm::uint level)
@@ -235,7 +235,7 @@ void MultiDataStructure::insert(SpatialDSNode* dsNode, const Node* node, glm::ui
 
 	//	#pragma omp parallel for
 	//	for (int childrenIdx = 0; childrenIdx < dsNode->_children.size(); ++childrenIdx)
-	//		if (dsNode->_children[childrenIdx]->in(node))
+	//		if (dsNode->_children[childrenIdx]->intersectsBoundingBox(node))
 	//			this->insert(dsNode->_children[childrenIdx], node, level + 1);
 	//}
 	//else
@@ -312,7 +312,7 @@ void MultiDataStructure::removeEmptyNodes(SpatialDSNode* dsNode, glm::uint level
 	//		for (auto& child : dsNode->_children)
 	//		{
 	//			for (auto& primitive : dsNode->_primitives)
-	//				if (child->in(primitive))
+	//				if (child->intersectsBoundingBox(primitive))
 	//					this->insert(child, primitive, level + 1);
 	//		}
 
@@ -386,7 +386,7 @@ void MultiDataStructure::getNumPrimitives(const SpatialDSNode* dsNode, glm::uint
 }
 
 void MultiDataStructure::resolveNodeCollisions(
-	const Ray& ray, HitInfo& hitInfo, const Node* node,
+	const RayGPU& ray, HitInfo& hitInfo, const Node* node,
 	const VertexGPU* vertices, const glm::u32* indices
 )
 {
@@ -425,7 +425,7 @@ void MultiDataStructure::resolveNodeCollisions(
 }
 
 void MultiDataStructure::resolveRayQuery(
-	const SpatialDSNode* node, const Ray& ray, HitInfo& hitInfo, 
+	const SpatialDSNode* node, const RayGPU& ray, HitInfo& hitInfo,
 	const VertexGPU* vertices, const glm::u32* indices
 )
 {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "GPUStructs.h"
-#include "Ray.h"
 #include "tiny_bvh.h"
 
 class ExternalBvh
@@ -14,6 +13,6 @@ public:
 	virtual ~ExternalBvh();
 
 	void printStats();
-	void resolveRayQueries(const std::vector<Ray>& rays, std::vector<float>& depth) const;
+	void resolveRayQueries(const std::vector<RayGPU>& rays, std::vector<float>& depth) const;
 };
 

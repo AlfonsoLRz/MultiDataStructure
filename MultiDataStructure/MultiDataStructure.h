@@ -24,8 +24,8 @@ public:
 	class SpatialDSNode
 	{
 	public:
-		AABB _aabb;
-		std::vector<const Node*> _primitives;
+		AABB						_aabb;
+		std::vector<const Node*>	_primitives;
 		std::vector<SpatialDSNode*> _children;
 
 		SpatialDSNode(const AABB& aabb = AABB()) : _aabb(aabb) {}
@@ -33,10 +33,9 @@ public:
 
 		virtual SpatialDSNode* copy(const AABB& aabb) const = 0;
 		virtual bool in(const Node* node) const;
-		virtual bool intersects(const Ray& ray);
-		virtual void split(DataStructureLevel nodeType) = 0;
-
 		virtual bool isLeaf() const { return _children.empty(); }
+		virtual bool intersects(const RayGPU& ray);
+		virtual void split(DataStructureLevel nodeType) = 0;
 	};
 
 private:
@@ -66,11 +65,11 @@ private:
 	void getNumPrimitives(const SpatialDSNode* dsNode, glm::uint& numPrimitives) const;
 
 	static void resolveNodeCollisions(
-		const Ray& ray, HitInfo& hitInfo, const Node* node, 
+		const RayGPU& ray, HitInfo& hitInfo, const Node* node,
 		const VertexGPU* vertices, const glm::u32* indices
 	);
 	void resolveRayQuery(
-		const SpatialDSNode* node, const Ray& ray, HitInfo& hitInfo, 
+		const SpatialDSNode* node, const RayGPU& ray, HitInfo& hitInfo,
 		const VertexGPU* vertices, const glm::u32* indices
 	);
 
@@ -85,12 +84,12 @@ public:
 	void removeEmptyNodes(glm::uint& deletedNodes);
 
 	void resolveRayQueries(
-		const std::vector<Ray>& rays, std::vector<float>& depth, 
+		const std::vector<RayGPU>& rays, std::vector<float>& depth,
 		const VertexGPU* vertices, const glm::u32* indices
 	);
 
 	static void resolveRayQueriesBruteForce(
-		const std::vector<Ray>& rays, std::vector<float>& depth,
+		const std::vector<RayGPU>& rays, std::vector<float>& depth,
 		const VertexGPU* vertices, const glm::u32* indices, const Node* nodes, size_t numNodes
 	);
 

@@ -142,7 +142,7 @@ void Camera::updateMatrices()
 
 void Camera::boom(float speed)
 {
-	const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), this->_properties._v * speed);			// Translation in y axis
+	const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), this->_properties._v * speed);			// Translation intersectsBoundingBox y axis
 
 	this->_properties._eye = glm::vec3(translationMatrix * glm::vec4(this->_properties._eye, 1.0f));
 	this->_properties._lookAt = glm::vec3(translationMatrix * glm::vec4(this->_properties._lookAt, 1.0f));
@@ -159,7 +159,7 @@ void Camera::dolly(float speed)
 {
 	if (this->_properties._2d) return;
 
-	const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), -this->_properties._n * speed);			// Translation in z axis
+	const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), -this->_properties._n * speed);			// Translation intersectsBoundingBox z axis
 	this->_properties._eye = glm::vec3(translationMatrix * glm::vec4(this->_properties._eye, 1.0f));
 	this->_properties._lookAt = glm::vec3(translationMatrix * glm::vec4(this->_properties._lookAt, 1.0f));
 
@@ -202,7 +202,7 @@ void Camera::pan(float speed)
 
 	const glm::mat4 rotationMatrix = glm::rotate(glm::mat4(1.0f), speed, glm::vec3(0.0f, 1.0f, 0.0f));
 
-	// Up vector can change, not in the original position tho. Example: orbit XZ (rotated camera) + pan
+	// Up vector can change, not intersectsBoundingBox the original position tho. Example: orbit XZ (rotated camera) + pan
 	this->_properties._u = glm::vec3(rotationMatrix * glm::vec4(this->_properties._u, 0.0f));
 	this->_properties._v = glm::vec3(rotationMatrix * glm::vec4(this->_properties._v, 0.0f));
 	this->_properties._n = glm::vec3(rotationMatrix * glm::vec4(this->_properties._n, 0.0f));
@@ -236,7 +236,7 @@ void Camera::tilt(float speed)
 
 void Camera::truck(float speed)
 {
-	const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), this->_properties._u * speed);				// Translation in x axis
+	const glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), this->_properties._u * speed);				// Translation intersectsBoundingBox x axis
 
 	this->_properties._eye = glm::vec3(translationMatrix * glm::vec4(this->_properties._eye, 1.0f));
 	this->_properties._lookAt = glm::vec3(translationMatrix * glm::vec4(this->_properties._lookAt, 1.0f));
@@ -249,7 +249,7 @@ void Camera::zoom(float speed)
 	this->_properties.zoom(speed);
 }
 
-void Camera::buildRays(std::vector<Ray>& rays, const glm::uvec2& windowSize, const glm::uint numSamples) const
+void Camera::buildRays(std::vector<RayGPU>& rays, const glm::uvec2& windowSize, const glm::uint numSamples) const
 {
 	float planeHeight = 2.0f * getFarClipPlane() * glm::tan(getFOV_Y() / 2.0f);
 	float planeWidth = planeHeight * getAspect();
@@ -267,14 +267,14 @@ void Camera::buildRays(std::vector<Ray>& rays, const glm::uvec2& windowSize, con
 				const glm::uint sampleX = sample % sqrtSamples, sampleY = sample / sqrtSamples;
 				const float jitterX = static_cast<float>(sampleX) / static_cast<float>(sqrtSamples), jitterY = static_cast<float>(sampleY) / static_cast<float>(sqrtSamples);
 
-				const float tx = static_cast<float>(x + jitterX) / static_cast<float>(windowSize.x);
-				const float ty = static_cast<float>(y + jitterY) / static_cast<float>(windowSize.y);
+				const float tx = (static_cast<float>(x) + jitterX) / static_cast<float>(windowSize.x);
+				const float ty = (static_cast<float>(y) + jitterY) / static_cast<float>(windowSize.y);
 
 				const glm::vec3 pointLocal = bottomLeft + glm::vec3(tx * planeWidth, ty * planeHeight, .0f);
 				const glm::vec3 focusPoint = getPosition() + getRight() * pointLocal.x + getUp() * pointLocal.y + getForward() * getFarClipPlane();
 				const glm::vec3 direction = glm::normalize(focusPoint - getPosition());
 
-				rays[x + y * windowSize.x + sample * windowSize.x * windowSize.y] = Ray(getPosition(), direction);
+				rays[x + y * windowSize.x + sample * windowSize.x * windowSize.y] = RayGPU{ getPosition(), direction };
 			}
 		}
 	}

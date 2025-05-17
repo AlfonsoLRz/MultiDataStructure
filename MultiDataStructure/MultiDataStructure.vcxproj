@@ -63,6 +63,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
       <AdditionalOptions>--maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
+      <FastMath>true</FastMath>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -90,6 +91,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
       <AdditionalOptions>--maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
+      <FastMath>true</FastMath>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -102,7 +104,7 @@
     <ClInclude Include="ChronoUtilities.h" />
     <ClInclude Include="CudaHelper.h" />
     <ClInclude Include="cuda_globals.cuh" />
-    <ClInclude Include="GeometricUtilities.h" />
+    <ClInclude Include="GeometryUtils.h" />
     <ClInclude Include="GPUStructs.h" />
     <ClInclude Include="Image.h" />
     <ClInclude Include="KdTree.h" />
@@ -113,10 +115,10 @@
     <ClInclude Include="Octree.h" />
     <ClInclude Include="progressbar\include\progressbar.hpp" />
     <ClInclude Include="QuadTree.h" />
-    <ClInclude Include="Ray.h" />
     <ClInclude Include="SceneContent.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="ExternalBvh.h" />
+    <ClCompile Include="GeometryUtils.cpp" />
     <ClCompile Include="tinybvh\tiny_bvh.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
@@ -128,7 +130,6 @@
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="CameraProjection.cpp" />
     <ClCompile Include="CudaHelper.cpp" />
-    <ClCompile Include="GeometricUtilities.cpp" />
     <ClCompile Include="GPUStructs.cpp" />
     <ClCompile Include="Image.cpp" />
     <ClCompile Include="KdTree.cpp" />
@@ -138,7 +139,6 @@
     <ClCompile Include="MultiDataStructure.cpp" />
     <ClCompile Include="Octree.cpp" />
     <ClCompile Include="QuadTree.cpp" />
-    <ClCompile Include="Ray.cpp" />
     <ClCompile Include="SceneContent.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="ExternalBvh.cpp" />

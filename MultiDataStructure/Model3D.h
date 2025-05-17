@@ -7,7 +7,6 @@
 #include "AABB.h"
 #include "GPUStructs.h"
 #include "Material.h"
-#include "Ray.h"
 
 class Model3D
 {
@@ -60,7 +59,6 @@ public:
 	Model3D();
 	virtual ~Model3D();
 
-	virtual HitInformation hit(const Ray& ray);
 	virtual AABB getAABB() const { return _aabb.dot(_modelMatrix); }
 	std::vector<Component>& getComponents() { return _components; }
 	std::vector<Material*> getMaterials();

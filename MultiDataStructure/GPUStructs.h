@@ -60,28 +60,6 @@ struct MeshGPU
 	glm::uint	_padding2;
 };
 
-struct Node
-{
-	glm::vec4  _maxPoint;      
-	glm::vec4  _minPoint;     
-
-	glm::uint  _triangleIndex; 
-	glm::uint  _numTriangles;  
-	glm::uint  _meshIndex;     
-	glm::uint  _prevIndex1;   
-
-	glm::uint  _prevIndex2;   
-	glm::uint  _padding1;     
-	glm::uint  _padding2;     
-	glm::uint  _padding3;      
-};
-
-struct RayGPU
-{
-	glm::vec3	_origin;
-	glm::vec3	_direction;
-};
-
 struct HitInfo
 {
 	glm::vec3	_position;
@@ -94,6 +72,84 @@ struct HitInfo
 	glm::uint	_triangleIndex;
 	glm::uint	_padding1;
 	glm::uint	_padding2;
+};
+
+struct RayGPU
+{
+	glm::vec3	_origin;
+	glm::vec3	_direction;
+
+	glm::vec3 getDirection() const { return _direction; }
+	glm::vec3 getOrigin() const { return _origin; }
+
+	void intersectsTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, HitInfo& hitInfo, float maxDistance) const
+	{
+		const glm::vec3 normal = glm::normalize(cross(b - a, c - a));
+		const float t = -(dot(normal, _origin) + -glm::dot(normal, a)) / dot(normal, _direction);
+
+		hitInfo._hit = 0;
+
+		if (t > glm::epsilon<float>() && t < maxDistance)
+		{
+			const glm::vec3 p = _origin + t * _direction;
+			const glm::vec3 v0 = c - a;
+			const glm::vec3 v1 = b - a;
+			const glm::vec3 v2 = p - a;
+			const float dot00 = glm::dot(v0, v0);
+			const float dot01 = glm::dot(v0, v1);
+			const float dot02 = glm::dot(v0, v2);
+			const float dot11 = glm::dot(v1, v1);
+			const float dot12 = glm::dot(v1, v2);
+			const float inverseDenominator = 1.0f / (dot00 * dot11 - dot01 * dot01);
+			const float u = (dot11 * dot02 - dot01 * dot12) * inverseDenominator;
+			const float v = (dot00 * dot12 - dot01 * dot02) * inverseDenominator;
+
+			if (u >= 0.0f && v >= 0.0f && u + v <= 1.0f)
+			{
+				hitInfo._hit = 1;
+				hitInfo._t = t;
+				hitInfo._position = p;
+				hitInfo._normal = normal;
+			}
+		}
+	}
+};
+
+struct Node
+{
+	glm::vec3  _maxPoint;
+	glm::uint  _prevIndex1;
+
+	glm::vec3  _minPoint;
+	glm::uint  _prevIndex2;
+
+	glm::uint  _triangleIndex;
+	glm::uint  _numTriangles;
+	glm::uint  _meshIndex;
+
+	float centroid(glm::uint axis) const
+	{
+		return (_minPoint[axis] + _maxPoint[axis]) * 0.5f;
+	}
+
+	glm::vec3 centroid() const
+	{
+		return (_minPoint + _maxPoint) * 0.5f;
+	}
+
+	float intersectsRay(const RayGPU& ray) const
+	{
+		glm::vec3 invDir = 1.0f / ray._direction;
+		glm::vec3 t0 = (_minPoint - ray._origin) * invDir;
+		glm::vec3 t1 = (_maxPoint - ray._origin) * invDir;
+		glm::vec3 tMin = min(t0, t1);
+		glm::vec3 tMax = max(t0, t1);
+
+		float tNear = glm::max(glm::max(tMin.x, tMin.y), tMin.z);
+		float tFar = glm::min(glm::min(tMax.x, tMax.y), tMax.z);
+
+		return tFar >= tNear && tFar >= 0.0f ? tNear : FLT_MAX;
+	}
 };
 
 struct FrameInfoGPU

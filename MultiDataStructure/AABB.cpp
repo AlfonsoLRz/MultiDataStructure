@@ -138,7 +138,12 @@ bool AABB::collides(const glm::vec3& minPoint, const glm::vec3& maxPoint) const
 			 _max.z < minPoint.z || _min.z > maxPoint.z);
 }
 
-bool AABB::intersects(const Ray& ray, float& tFar) const
+bool AABB::collides(const Node* node) const
+{
+	return collides(node->_minPoint, node->_maxPoint);
+}
+
+bool AABB::intersects(const RayGPU& ray, float& tFar) const
 {
 	glm::vec3 invDir = 1.0f / (ray._direction);
 	glm::vec3 t0 = (_min - ray._origin) * invDir;
@@ -147,13 +152,19 @@ bool AABB::intersects(const Ray& ray, float& tFar) const
 	glm::vec3 tMax = glm::max(t0, t1);
 	float tNear = std::max({tMin.x, tMin.y, tMin.z});
 	tFar = std::min({tMax.x, tMax.y, tMax.z});
-	return tNear < tFar && tFar > 0.0f;
+	return tFar >= tNear && tFar >= 0.0f;
 }
 
-bool AABB::intersects(const Ray& ray) const
+float AABB::intersects(const RayGPU& ray) const
 {
-	float tFar;
-	return this->intersects(ray, tFar);
+	glm::vec3 invDir = 1.0f / (ray._direction);
+	glm::vec3 t0 = (_min - ray._origin) * invDir;
+	glm::vec3 t1 = (_max - ray._origin) * invDir;
+	glm::vec3 tMin = glm::min(t0, t1);
+	glm::vec3 tMax = glm::max(t0, t1);
+	float tNear = std::max({ tMin.x, tMin.y, tMin.z });
+	float tFar = std::min({ tMax.x, tMax.y, tMax.z });
+	return tFar >= tNear && tFar >= 0.0f ? tNear : FLT_MAX;
 }
 
 std::ostream& operator<<(std::ostream& os, const AABB& aabb)

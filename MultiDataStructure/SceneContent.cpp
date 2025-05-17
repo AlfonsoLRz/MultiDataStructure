@@ -3,7 +3,7 @@
 
 #include "Bvh.h"
 #include "CudaHelper.h"
-#include "GeometricUtilities.h"
+#include "GeometryUtils.h"
 #include "GPUStructs.h"
 #include "TriangleMesh.h"
 
@@ -15,7 +15,7 @@ void SceneContent::buildScenario()
 	this->gatherModelGPUData(true);
 }
 
-void SceneContent::gatherModelGPUData(bool moveData)
+void SceneContent::gatherModelGPUData(bool clearData)
 {
 	std::vector<MeshGPU> materials;
 	std::vector<std::string> diffuseTexturePaths;
@@ -28,47 +28,29 @@ void SceneContent::gatherModelGPUData(bool moveData)
 	_numTextures = static_cast<GLuint>(diffuseTexturePaths.size());
 	_numTriangles = static_cast<GLuint>(_indices.size()) / 3;
 
-	if (moveData)
+	if (clearData)
 		for (auto& model : _model)
 			model->clearData();
 
 	// Build CDFs
-	std::vector<float> triangleArea;
+	//std::vector<float> triangleArea;
 
 	//buildCDFIndices(vertices, indices, materials, triangleArea);
 	//CudaHelper::initializeBufferGPU(_cdfIndicesBuffer, triangleArea.size(), triangleArea.data());
 
 	// To GPU
-	CudaHelper::initializeBufferGPU(_vertexBufferGPU, _vertices.size(), _vertices.data());
-	CudaHelper::initializeBufferGPU(_indexBufferGPU, _indices.size(), _indices.data());
-	CudaHelper::initializeBufferGPU(_meshBufferGPU, materials.size(), materials.data());
+	//CudaHelper::initializeBufferGPU(_vertexBufferGPU, _vertices.size(), _vertices.data());
+	//CudaHelper::initializeBufferGPU(_indexBufferGPU, _indices.size(), _indices.data());
+	//CudaHelper::initializeBufferGPU(_meshBufferGPU, materials.size(), materials.data());
 
-	// Build BVH
-	_bvh.initialize(
-		_vertexBufferGPU, _indexBufferGPU, _meshBufferGPU,
-		_sceneAABB, _numTriangles * 3, _numMeshes);
-	_bvh.build();
+	//// Build BVH
+	//_bvh.initialize(
+	//	_vertexBufferGPU, _indexBufferGPU, _meshBufferGPU,
+	//	_sceneAABB, _numTriangles * 3, _numMeshes);
+	//_bvh.build();
 }
-
-Node* SceneContent::getBvhNodesExplicitly() const
-{
-	if (_bvh.getClusterBuffer() == nullptr)
-	{
-		std::cout << "BVH not built yet!" << '\n';
-		return nullptr;
-	}
-
-	size_t size = _bvh.getNumNodes();
-	Node* bvhNodes = new Node[size];
-	Node* bvhNodesPointer = _bvh.getClusterBuffer();
-	CudaHelper::downloadBufferGPU(bvhNodesPointer, bvhNodes, size);
-
-	return bvhNodes;
-}
-
 
 // ------------------------------------------------------------------------------------------
-
 
 void SceneContent::buildCDFIndices(
 	const std::vector<VertexGPU>& vertices, const std::vector<uint32_t>& indices, const std::vector<MeshGPU>& meshes, std::vector<float>& triangleArea
@@ -80,7 +62,7 @@ void SceneContent::buildCDFIndices(
 	#pragma omp parallel for reduction(+:sumArea)
 	for (int idx = 0; idx < static_cast<int>(indices.size()); idx += 3)
 	{
-		float area = GeometricUtilities::triangleArea(
+		float area = GeometryUtils::triangleArea(
 			vertices[indices[idx + 0]]._position,
 			vertices[indices[idx + 1]]._position,
 			vertices[indices[idx + 2]]._position);

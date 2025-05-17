@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Model3D.h"
-#include "GeometricUtilities.h"
+
+#include "GeometryUtils.h"
 
 // Static properties
 
@@ -16,11 +17,6 @@ Model3D::Model3D() : _modelMatrix(1.0f)
 
 Model3D::~Model3D()
 = default;
-
-Model3D::HitInformation Model3D::hit(const Ray& ray)
-{
-    return {};
-}
 
 std::vector<Material*> Model3D::getMaterials()
 {
@@ -88,7 +84,7 @@ float Model3D::Component::area() const
 	float area = 0.0f;
     for (int idx = 0; idx < static_cast<int>(_indices.size()); idx += 3)
     {
-        area += GeometricUtilities::triangleArea(
+        area += GeometryUtils::triangleArea(
             _vertices[_indices[idx + 0]]._position,
             _vertices[_indices[idx + 1]]._position,
             _vertices[_indices[idx + 2]]._position);
