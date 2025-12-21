@@ -14,6 +14,44 @@
 #include "timeit.hpp"
 #include "TriangleMesh.h"
 
+void testMultiDS(const std::vector<MultiDataStructure::LevelConfig>& config, SceneContent* scene, const std::vector<Ray>& rays, const glm::uvec2& windowSize)
+{
+	std::vector<float> depth(rays.size());
+
+	ChronoUtilities::initChrono();
+	MultiDataStructure multiDS(config);
+	multiDS.build(scene->getBvhNodesExplicitly(), scene->getNumTriangles(), scene->_sceneAABB);
+
+	glm::uint deletedNodes;
+	do
+	{
+		multiDS.removeEmptyNodes(deletedNodes);
+	} while (deletedNodes > 0);
+	multiDS.collapseNodes();
+	multiDS.checkSanity();
+
+	std::cout << "MultiDS build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << '\n';
+	//multiDS.exportNodes("output/nodes.csv");
+
+	// Test 1
+	std::cout << "\n-----------------------------------";
+	{
+		std::cout << "MultiDS tests..." << '\n';
+		multiDS.printStats();
+		timeit([&] {
+			multiDS.resolveRayQueries(rays, depth, scene->getVertices(), scene->getIndices());
+			});
+
+		{
+			Image image;
+			image.fill(depth.data(), windowSize.x, windowSize.y, 1);
+			image.normalize();
+			image.save("output/depth_mds.png");
+		}
+	}
+	std::cout << "-----------------------------------\n";
+}
+
 int main(int argc, char* argv)
 {
     CudaHelper::setDevice();
@@ -45,49 +83,22 @@ int main(int argc, char* argv)
 
 	std::cout << scene->getNumTriangles() << '\n';
 
-	ChronoUtilities::initChrono();
-	MultiDataStructure multiDS({
-		{ ._levelType = MultiDataStructure::DataStructureLevel::QuadTreeNode, ._numLevels = 1 },
-		{ ._levelType = MultiDataStructure::DataStructureLevel::OctreeNode, ._numLevels = 4 },
-		{ ._levelType = MultiDataStructure::DataStructureLevel::BvhNode, ._numLevels = 8 },
-	});
-	multiDS.build(bvhNodes, scene->getNumTriangles(), mesh->getAABB());
+	testMultiDS({
+		{ ._levelType = MultiDataStructure::DataStructureLevel::OctreeNode, ._numLevels = 1 },
+		{ ._levelType = MultiDataStructure::DataStructureLevel::BvhNode, ._numLevels = 3 },
+		{._levelType = MultiDataStructure::DataStructureLevel::OctreeNode, ._numLevels = 2 },
+		{._levelType = MultiDataStructure::DataStructureLevel::BvhNode, ._numLevels = 10 },
+	}, scene, rays, windowSize);
 
-	glm::uint deletedNodes;
-	do
-	{
-		multiDS.removeEmptyNodes(deletedNodes);
-	}
-	while (deletedNodes > 0);
-	multiDS.collapseNodes();
-	multiDS.checkSanity();
+	testMultiDS({
+	{._levelType = MultiDataStructure::DataStructureLevel::BvhNode, ._numLevels = 20 },
+		}, scene, rays, windowSize);
 
-	std::cout << "MultiDS build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << '\n';
-    //multiDS.exportNodes("output/nodes.csv");
-
+	// Test 2
 	ChronoUtilities::initChrono();
 	ExternalBvh tinyBvh(scene->getVertices(), scene->getIndices(), scene->getNumVertices(), scene->getNumTriangles());
 	std::cout << "BVH build time: " << ChronoUtilities::getDuration(ChronoUtilities::SECONDS) << " seconds" << '\n';
 
-	// Test 1
-	std::cout << "\n-----------------------------------";
-	{
-		std::cout << "MultiDS tests..." << '\n';
-		multiDS.printStats();
-		timeit([&] {
-			multiDS.resolveRayQueries(rays, depth, scene->getVertices(), scene->getIndices());
-		});
-
-		{
-			Image image;
-			image.fill(depth.data(), windowSize.x, windowSize.y, 1);
-			image.normalize();
-			image.save("output/depth_mds.png");
-		}
-	}
-	std::cout << "-----------------------------------\n";
-
-	// Test 2
 	std::cout << "\n-----------------------------------";
 	{
 		std::cout << "TinyBVH tests..." << '\n';
