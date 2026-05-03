@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "AppConfig.h"
+#include "experiments/SchemaSearch.h"
 #include "workloads/points/PointBenchmark.h"
 #include "../tests/BaselineTests.h"
 
@@ -21,7 +22,10 @@ int main(int argc, char* argv[])
 		if (config.mode == "points")
 			return PointBenchmark::run(config.pointOptions);
 
-		throw std::invalid_argument("Unsupported mode: " + config.mode + ". This executable is point-cloud focused; use --mode points or --run-tests");
+		if (config.mode == "schema-search")
+			return Experiments::runSchemaSearch(config.schemaSearchOptions);
+
+		throw std::invalid_argument("Unsupported mode: " + config.mode + ". Use --mode points, --mode schema-search, or --run-tests");
 	}
 	catch (const std::exception& exception)
 	{

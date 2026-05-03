@@ -1,0 +1,10 @@
+{
+  "name": "mixed",
+  "queries": {
+    "aabb_range": 0.4,
+    "radius": 0.3,
+    "knn": 0.3
+  },
+  "knnK": 16,
+  "numQueries": 1000
+}

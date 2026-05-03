@@ -26,9 +26,33 @@ public:
 		size_t maxDepth = 0;
 	};
 
+	struct QueryStats
+	{
+		size_t visitedNodes = 0;
+		size_t testedPoints = 0;
+		size_t returnedPoints = 0;
+		double elapsedMs = 0.0;
+	};
+
+	struct QueryResult
+	{
+		std::vector<size_t> pointIndices;
+		QueryStats stats;
+	};
+
+	struct CountResult
+	{
+		size_t count = 0;
+		QueryStats stats;
+	};
+
 	void build(const PointCloud& cloud, const SchemaConfig& schema);
 	const Node* root() const { return _root.get(); }
 	Stats stats() const;
+	QueryResult rangeQuery(const AABB& bounds) const;
+	CountResult countRange(const AABB& bounds) const;
+	QueryResult radiusQuery(const glm::vec3& center, float radius) const;
+	QueryResult knnQuery(const glm::vec3& center, size_t k) const;
 
 private:
 	const PointCloud* _cloud = nullptr;
@@ -40,5 +64,8 @@ private:
 	std::vector<AABB> childBounds(const Node& node, const SchemaLevelConfig& levelConfig, float& splitValue, glm::uint& splitAxis) const;
 	size_t locateChild(const glm::vec3& point, const SchemaLevelConfig& levelConfig, const Node& node, float splitValue, glm::uint splitAxis, size_t numChildren) const;
 	void collectStats(const Node* node, Stats& stats) const;
+	void rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const;
+	void countRangeNode(const Node* node, const AABB& bounds, CountResult& result) const;
+	void radiusQueryNode(const Node* node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	void knnQueryNode(const Node* node, const glm::vec3& center, size_t k, std::priority_queue<std::pair<float, size_t>>& best, QueryStats& stats) const;
 };
-

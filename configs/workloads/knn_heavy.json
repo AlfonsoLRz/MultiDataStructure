@@ -1,0 +1,10 @@
+{
+  "name": "knn_heavy",
+  "queries": {
+    "aabb_range": 0.1,
+    "radius": 0.2,
+    "knn": 0.7
+  },
+  "knnK": 16,
+  "numQueries": 1000
+}

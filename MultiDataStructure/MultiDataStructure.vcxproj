@@ -104,6 +104,10 @@
     <ClInclude Include="ChronoUtilities.h" />
     <ClInclude Include="core\BuildPolicy.h" />
     <ClInclude Include="core\Config.h" />
+    <ClInclude Include="experiments\FeatureExtraction.h" />
+    <ClInclude Include="experiments\Metrics.h" />
+    <ClInclude Include="experiments\SchemaSearch.h" />
+    <ClInclude Include="experiments\SchemaSelector.h" />
     <ClInclude Include="CudaHelper.h" />
     <ClInclude Include="cuda_globals.cuh" />
     <ClInclude Include="GeometricUtilities.h" />
@@ -134,8 +138,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\tests\test_config_parsing.cpp" />
+    <ClCompile Include="..\tests\test_feature_extraction.cpp" />
     <ClCompile Include="..\tests\test_level_schedule.cpp" />
+    <ClCompile Include="..\tests\test_metrics.cpp" />
     <ClCompile Include="..\tests\test_pointcloud_io.cpp" />
+    <ClCompile Include="..\tests\test_point_queries.cpp" />
+    <ClCompile Include="..\tests\test_schema_search.cpp" />
+    <ClCompile Include="..\tests\test_schema_selector.cpp" />
     <ClCompile Include="..\tests\test_tree_cleanup.cpp" />
     <ClCompile Include="AABB.cpp" />
     <ClCompile Include="AppConfig.cpp" />
@@ -143,6 +152,10 @@
     <ClCompile Include="CameraProjection.cpp" />
     <ClCompile Include="core\BuildPolicy.cpp" />
     <ClCompile Include="core\Config.cpp" />
+    <ClCompile Include="experiments\FeatureExtraction.cpp" />
+    <ClCompile Include="experiments\Metrics.cpp" />
+    <ClCompile Include="experiments\SchemaSearch.cpp" />
+    <ClCompile Include="experiments\SchemaSelector.cpp" />
     <ClCompile Include="CudaHelper.cpp" />
     <ClCompile Include="GeometricUtilities.cpp" />
     <ClCompile Include="GPUStructs.cpp" />

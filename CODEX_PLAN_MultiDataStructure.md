@@ -856,6 +856,15 @@ tests/test_point_queries.cpp
 - Query stats are collected.
 - Query workload can be run on at least one synthetic cloud.
 
+### Implementation status
+
+Implemented in this workspace:
+
+- `PointSpatialIndex` exact AABB range, count-range, radius, and KNN queries.
+- Generated query profiles in `PointBenchmark` for random boxes, random spheres, and random KNN centers.
+- Query aggregates for elapsed time, visited nodes, tested points, and returned points.
+- Brute-force correctness coverage in `tests/test_point_queries.cpp`.
+
 ### Definition of done
 
 The framework can measure meaningful point-cloud query performance.
@@ -955,6 +964,18 @@ results/README.md
 - Running a point benchmark produces JSON.
 - Running multiple schemas produces a CSV summary.
 - Results include enough data for schema comparison.
+
+### Implementation status
+
+Implemented in this workspace:
+
+- `Experiments::BuildMetrics` and `Experiments::QueryMetrics`.
+- Build metrics for time, node/leaf/depth counts, average/max leaf occupancy, indexed points, and memory estimate.
+- Query metrics for total queries, average/median/p95 latency, throughput, visited nodes, tested points, and returned points.
+- Per-run JSON records from point benchmarks.
+- Appendable CSV summary rows for single-schema and multi-schema runs.
+- `--schemas`, `--csv`, and `--no-csv` CLI options.
+- `scripts/run_experiments.py` and `results/README.md`.
 
 ### Definition of done
 
@@ -1092,6 +1113,17 @@ scripts/summarize_results.py
 - CSV contains raw metrics and computed score.
 - Best schema per dataset/workload can be extracted.
 
+### Implementation status
+
+Implemented in this workspace:
+
+- `Experiments::SchemaSearch` runner with deterministic synthetic datasets, workload-profile parsing, candidate-schema sweeps, score computation, raw CSV rows, and best-schema CSV rows.
+- Supported finite candidate schema set for `quadtree_default`, `octree_default`, `kdtree_default`, `quadtree_octree`, `octree_kdtree`, and `urban_hybrid_quadtree_octree_kdtree`.
+- Workload profiles in `configs/workloads/` for `range_heavy`, `knn_heavy`, and `mixed`.
+- `--mode schema-search`, `--workloads`, `--best-csv`, `--synthetic-scale`, and `--no-synthetic` CLI options.
+- `scripts/run_experiments.py --schema-search` and `scripts/summarize_results.py`.
+- Smoke coverage for workload parsing, score calculation, and best-schema selection.
+
 ### Definition of done
 
 There is a dataset for training a schema selector.
@@ -1180,6 +1212,18 @@ scripts/summarize_results.py
 - Every schema-search row includes feature columns.
 - Feature extraction is deterministic.
 - Features are documented in `docs/learner_plan.md` or `docs/experiment_protocol.md`.
+
+### Implementation status
+
+Implemented in this workspace:
+
+- `Experiments::PointCloudFeatures` and `Experiments::WorkloadFeatures`.
+- Deterministic point-cloud sampling, bbox/aspect/density/height features, covariance eigenvalues, shape ratios, 8x8x8 occupancy summaries, and flatness/verticality heuristics.
+- Workload query-mix, KNN K, deterministic query-scale, build-weight, and memory-weight features.
+- Feature columns exported in raw schema-search CSV rows and retained in best-schema CSV rows.
+- `scripts/summarize_results.py` preserves feature columns when extracting best-schema rows.
+- Determinism and known-plane feature coverage in `tests/test_feature_extraction.cpp`.
+- Feature documentation in `docs/experiment_protocol.md`.
 
 ### Definition of done
 
@@ -1314,6 +1358,19 @@ results/*.json
 - Report includes oracle, fixed baselines, heuristic baseline, and learned selector.
 - Learned selector beats at least one meaningful fixed baseline on held-out data.
 
+### Implementation status
+
+Implemented in this workspace:
+
+- `scripts/train_schema_selector.py` loads raw schema-search CSV rows and augments them with schema-composition features from schema JSON.
+- Dataset-level train/test split to avoid row leakage.
+- Score-prediction/ranking models: ridge, random forest, and gradient-boosted trees.
+- Direct best-schema logistic classifier when there are enough labels.
+- Oracle, fixed-schema, majority, and heuristic baselines.
+- Metrics for best-schema accuracy, top-2 accuracy, regret, relative regret, score speedup, selected build time, and selected memory.
+- Model artifact output via `joblib` and metadata/report JSON outputs.
+- Documentation in `docs/learner_plan.md`.
+
 ### Definition of done
 
 There is a first ML result suitable for iteration and ablation.
@@ -1392,6 +1449,20 @@ tests/test_schema_selector.cpp
 - Selected schema is printed and logged.
 - Manual fixed-schema mode still works.
 - Triangle benchmark still works.
+
+### Implementation status
+
+Implemented in this workspace:
+
+- `scripts/export_model.py` exports a trained Ridge score ranker to lightweight JSON with feature names, coefficients, intercept, and candidate schema paths.
+- `scripts/tune_schema_for_cloud.py` tunes one target point cloud by measured schema-search results and exports a local `measured_best_schema` selector.
+- `scripts/train_schema_selector.py --model-name ridge_score_predictor` can intentionally save an exportable runtime model while still reporting other learned selectors.
+- `Experiments::SchemaSelector` loads exported JSON models, supports local measured-best selection, recomputes point/workload/schema features for linear score rankers, predicts one score per candidate schema combination, and returns the selected schema.
+- `--schema auto`, `--model`, and `--workload-profile` are wired into point mode.
+- Auto-selected schema, model path, workload profile, predicted score, and full candidate ranking are printed and written to point benchmark JSON under `schema_selection`.
+- Deterministic C++ selector coverage in `tests/test_schema_selector.cpp`.
+
+Note: the maintained executable is now point-cloud focused; the legacy triangle benchmark is not part of the current Visual Studio target.
 
 ### Definition of done
 
@@ -1898,12 +1969,12 @@ At that point, the repository becomes a credible platform for research on learna
 [ ] M2  Add point-cloud data model and simple I/O
 [ ] M3  Add point-cloud build path
 [ ] M4  Add configurable build policies and JSON schemas
-[ ] M5  Add point-cloud query workloads
-[ ] M6  Add benchmark metrics and experiment logging
-[ ] M7  Add schema grammar and search harness
-[ ] M8  Add feature extraction
-[ ] M9  Train Python global schema selector
-[ ] M10 Integrate auto-selector into C++
+[x] M5  Add point-cloud query workloads
+[x] M6  Add benchmark metrics and experiment logging
+[x] M7  Add schema grammar and search harness
+[x] M8  Add feature extraction
+[x] M9  Train Python global schema selector
+[x] M10 Integrate auto-selector into C++
 [ ] M11 Add real point-cloud dataset support
 [ ] M12 Add paper-ready evaluation package
 [ ] M13 Optional node-wise adaptive learner

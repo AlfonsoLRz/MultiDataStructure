@@ -25,6 +25,7 @@
 #include <limits.h>
 #include <memory>
 #include <numeric>
+#include <queue>
 #include <random>
 #include <sstream>
 #include <stdexcept>

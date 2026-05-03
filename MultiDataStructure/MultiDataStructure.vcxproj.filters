@@ -25,6 +25,9 @@
     <Filter Include="core">
       <UniqueIdentifier>{f5a82966-b3c9-4734-81fb-5dd8402e6f65}</UniqueIdentifier>
     </Filter>
+    <Filter Include="experiments">
+      <UniqueIdentifier>{93b11466-75e2-493c-b60c-a9657993b080}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\tests\BaselineTests.h">
@@ -114,6 +117,18 @@
     <ClInclude Include="core\Config.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="experiments\Metrics.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
+    <ClInclude Include="experiments\FeatureExtraction.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
+    <ClInclude Include="experiments\SchemaSearch.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
+    <ClInclude Include="experiments\SchemaSelector.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
     <ClInclude Include="workloads\points\PointBenchmark.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
@@ -134,10 +149,25 @@
     <ClCompile Include="..\tests\test_config_parsing.cpp">
       <Filter>tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\tests\test_feature_extraction.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\tests\test_level_schedule.cpp">
       <Filter>tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\tests\test_metrics.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\tests\test_pointcloud_io.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_point_queries.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_schema_search.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_schema_selector.cpp">
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_tree_cleanup.cpp">
@@ -209,6 +239,18 @@
     </ClCompile>
     <ClCompile Include="core\Config.cpp">
       <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\Metrics.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\FeatureExtraction.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\SchemaSearch.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\SchemaSelector.cpp">
+      <Filter>experiments</Filter>
     </ClCompile>
     <ClCompile Include="workloads\points\PointBenchmark.cpp">
       <Filter>workloads\points</Filter>

@@ -12,6 +12,31 @@ namespace
 			return 1;
 		return 2;
 	}
+
+	bool containsPoint(const AABB& bounds, const glm::vec3& point)
+	{
+		const glm::vec3 min = bounds.min();
+		const glm::vec3 max = bounds.max();
+		return point.x >= min.x && point.x <= max.x &&
+			   point.y >= min.y && point.y <= max.y &&
+			   point.z >= min.z && point.z <= max.z;
+	}
+
+	float distanceSquaredToAABB(const AABB& bounds, const glm::vec3& point)
+	{
+		const glm::vec3 min = bounds.min();
+		const glm::vec3 max = bounds.max();
+		const glm::vec3 clamped(
+			std::clamp(point.x, min.x, max.x),
+			std::clamp(point.y, min.y, max.y),
+			std::clamp(point.z, min.z, max.z));
+		return glm::length2(point - clamped);
+	}
+
+	double elapsedMilliseconds(const std::chrono::steady_clock::time_point& start)
+	{
+		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	}
 }
 
 void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schema)
@@ -33,6 +58,77 @@ PointSpatialIndex::Stats PointSpatialIndex::stats() const
 {
 	Stats result;
 	collectStats(_root.get(), result);
+	return result;
+}
+
+PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds) const
+{
+	const auto start = std::chrono::steady_clock::now();
+	QueryResult result;
+
+	rangeQueryNode(_root.get(), bounds, result);
+
+	result.stats.returnedPoints = result.pointIndices.size();
+	result.stats.elapsedMs = elapsedMilliseconds(start);
+	return result;
+}
+
+PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds) const
+{
+	const auto start = std::chrono::steady_clock::now();
+	CountResult result;
+
+	countRangeNode(_root.get(), bounds, result);
+
+	result.stats.returnedPoints = result.count;
+	result.stats.elapsedMs = elapsedMilliseconds(start);
+	return result;
+}
+
+PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& center, float radius) const
+{
+	const auto start = std::chrono::steady_clock::now();
+	QueryResult result;
+
+	if (radius >= 0.0f)
+		radiusQueryNode(_root.get(), center, radius * radius, result);
+
+	result.stats.returnedPoints = result.pointIndices.size();
+	result.stats.elapsedMs = elapsedMilliseconds(start);
+	return result;
+}
+
+PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& center, size_t k) const
+{
+	const auto start = std::chrono::steady_clock::now();
+	QueryResult result;
+
+	if (_root && k > 0)
+	{
+		std::priority_queue<std::pair<float, size_t>> best;
+		knnQueryNode(_root.get(), center, k, best, result.stats);
+
+		std::vector<std::pair<float, size_t>> ordered;
+		ordered.reserve(best.size());
+		while (!best.empty())
+		{
+			ordered.push_back(best.top());
+			best.pop();
+		}
+
+		std::sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+			if (left.first == right.first)
+				return left.second < right.second;
+			return left.first < right.first;
+		});
+
+		result.pointIndices.reserve(ordered.size());
+		for (const auto& entry : ordered)
+			result.pointIndices.push_back(entry.second);
+	}
+
+	result.stats.returnedPoints = result.pointIndices.size();
+	result.stats.elapsedMs = elapsedMilliseconds(start);
 	return result;
 }
 
@@ -204,4 +300,131 @@ void PointSpatialIndex::collectStats(const Node* node, Stats& stats) const
 
 	for (const std::unique_ptr<Node>& child : node->children)
 		collectStats(child.get(), stats);
+}
+
+void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const
+{
+	if (!node || !_cloud)
+		return;
+
+	++result.stats.visitedNodes;
+	if (!node->bounds.collides(bounds))
+		return;
+
+	if (node->isLeaf())
+	{
+		for (const size_t pointIndex : node->pointIndices)
+		{
+			++result.stats.testedPoints;
+			if (containsPoint(bounds, _cloud->points()[pointIndex].position))
+				result.pointIndices.push_back(pointIndex);
+		}
+		return;
+	}
+
+	for (const std::unique_ptr<Node>& child : node->children)
+		rangeQueryNode(child.get(), bounds, result);
+}
+
+void PointSpatialIndex::countRangeNode(const Node* node, const AABB& bounds, CountResult& result) const
+{
+	if (!node || !_cloud)
+		return;
+
+	++result.stats.visitedNodes;
+	if (!node->bounds.collides(bounds))
+		return;
+
+	if (node->isLeaf())
+	{
+		for (const size_t pointIndex : node->pointIndices)
+		{
+			++result.stats.testedPoints;
+			if (containsPoint(bounds, _cloud->points()[pointIndex].position))
+				++result.count;
+		}
+		return;
+	}
+
+	for (const std::unique_ptr<Node>& child : node->children)
+		countRangeNode(child.get(), bounds, result);
+}
+
+void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& center, float radiusSquared, QueryResult& result) const
+{
+	if (!node || !_cloud)
+		return;
+
+	++result.stats.visitedNodes;
+	if (distanceSquaredToAABB(node->bounds, center) > radiusSquared)
+		return;
+
+	if (node->isLeaf())
+	{
+		for (const size_t pointIndex : node->pointIndices)
+		{
+			++result.stats.testedPoints;
+			const glm::vec3& position = _cloud->points()[pointIndex].position;
+			if (glm::length2(position - center) <= radiusSquared)
+				result.pointIndices.push_back(pointIndex);
+		}
+		return;
+	}
+
+	for (const std::unique_ptr<Node>& child : node->children)
+		radiusQueryNode(child.get(), center, radiusSquared, result);
+}
+
+void PointSpatialIndex::knnQueryNode(const Node* node, const glm::vec3& center, size_t k, std::priority_queue<std::pair<float, size_t>>& best, QueryStats& stats) const
+{
+	if (!node || !_cloud || k == 0)
+		return;
+
+	++stats.visitedNodes;
+	const float nodeDistance = distanceSquaredToAABB(node->bounds, center);
+	if (best.size() == k && nodeDistance > best.top().first)
+		return;
+
+	if (node->isLeaf())
+	{
+		for (const size_t pointIndex : node->pointIndices)
+		{
+			++stats.testedPoints;
+			const glm::vec3& position = _cloud->points()[pointIndex].position;
+			const float distance = glm::length2(position - center);
+			if (best.size() < k)
+			{
+				best.push({ distance, pointIndex });
+				continue;
+			}
+
+			const std::pair<float, size_t>& worst = best.top();
+			if (distance < worst.first || (distance == worst.first && pointIndex < worst.second))
+			{
+				best.pop();
+				best.push({ distance, pointIndex });
+			}
+		}
+		return;
+	}
+
+	std::vector<std::pair<float, const Node*>> children;
+	children.reserve(node->children.size());
+	for (const std::unique_ptr<Node>& child : node->children)
+	{
+		if (child)
+			children.push_back({ distanceSquaredToAABB(child->bounds, center), child.get() });
+	}
+
+	std::sort(children.begin(), children.end(), [](const auto& left, const auto& right) {
+		return left.first < right.first;
+	});
+
+	for (const auto& child : children)
+	{
+		if (best.size() == k && child.first > best.top().first)
+			break;
+
+		knnQueryNode(child.second, center, k, best, stats);
+	}
 }
