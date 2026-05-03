@@ -76,6 +76,16 @@ python scripts/export_model.py --model models/schema_selector.joblib --metadata 
 
 The ONNX wrapper contains `model_type: "onnx_score_ranker"`, the ONNX input/output names, execution provider, feature order, and candidate schemas. C++ uses the same feature vector and ranks candidates by the ONNX model output. This path is optional because the project still needs to build without ONNX Runtime installed.
 
+## Generated Schema Search
+
+The selector can now be used as a surrogate for generated candidates instead of only choosing from static schemas:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --rank-model models/schema_selector_onnx.json --benchmark-top 16 --workloads configs/workloads/mixed.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
+```
+
+This samples schema genomes from bounded intervals, writes generated schema JSON files, scores them cheaply with ONNX, benchmarks the top candidates, and writes the measured winner. ONNX is only the pruning heuristic; the final result is still based on measured query/build/memory score.
+
 Learning modes:
 
 - `--learning-mode regression`: train score predictors and rank candidates by predicted score.

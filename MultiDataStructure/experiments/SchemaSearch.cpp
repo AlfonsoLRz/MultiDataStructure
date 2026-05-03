@@ -1,7 +1,7 @@
 #include "../stdafx.h"
 #include "SchemaSearch.h"
 
-#include "../core/Config.h"
+#include "SchemaSelector.h"
 #include "../workloads/points/PointCloud.h"
 #include "../workloads/points/PointSpatialIndex.h"
 #include "../workloads/points/SyntheticPointClouds.h"
@@ -33,12 +33,6 @@ namespace
 		};
 		return paths;
 	}
-
-	struct LoadedSchema
-	{
-		std::string path;
-		SchemaConfig config;
-	};
 
 	struct SearchDataset
 	{
@@ -175,6 +169,118 @@ namespace
 		return stem.empty() ? "points" : stem;
 	}
 
+	std::string schemaTypeShortName(MultiDataStructure::DataStructureLevel type)
+	{
+		switch (type)
+		{
+		case MultiDataStructure::QuadTreeNode:
+			return "qt";
+		case MultiDataStructure::OctreeNode:
+			return "ot";
+		case MultiDataStructure::KDTreeNode:
+			return "kd";
+		case MultiDataStructure::BvhNode:
+			return "bvh";
+		default:
+			return "x";
+		}
+	}
+
+	size_t clampPowerOfTwo(size_t value, size_t minValue, size_t maxValue)
+	{
+		value = std::max<size_t>(1, value);
+		size_t power = 1;
+		while (power < value && power < (std::numeric_limits<size_t>::max() / 2))
+			power *= 2;
+		return std::clamp(power, minValue, maxValue);
+	}
+
+	size_t randomPowerOfTwo(std::mt19937& rng, size_t minValue, size_t maxValue)
+	{
+		minValue = std::max<size_t>(1, minValue);
+		maxValue = std::max(minValue, maxValue);
+
+		std::vector<size_t> values;
+		for (size_t value = clampPowerOfTwo(minValue, minValue, maxValue); value <= maxValue; value *= 2)
+		{
+			values.push_back(value);
+			if (value > maxValue / 2)
+				break;
+		}
+
+		std::uniform_int_distribution<size_t> distribution(0, values.size() - 1);
+		return values[distribution(rng)];
+	}
+
+	MultiDataStructure::DataStructureLevel randomStructureType(
+		std::mt19937& rng,
+		std::optional<MultiDataStructure::DataStructureLevel> previous)
+	{
+		static const std::array<MultiDataStructure::DataStructureLevel, 3> types = {
+			MultiDataStructure::QuadTreeNode,
+			MultiDataStructure::OctreeNode,
+			MultiDataStructure::KDTreeNode,
+		};
+
+		for (;;)
+		{
+			std::uniform_int_distribution<size_t> distribution(0, types.size() - 1);
+			const MultiDataStructure::DataStructureLevel type = types[distribution(rng)];
+			if (!previous.has_value() || type != previous.value())
+				return type;
+		}
+	}
+
+	std::string schemaSignature(const SchemaConfig& schema)
+	{
+		std::ostringstream output;
+		for (size_t i = 0; i < schema.levels.size(); ++i)
+		{
+			const SchemaLevelConfig& level = schema.levels[i];
+			if (i > 0)
+				output << '_';
+			output
+				<< schemaTypeShortName(level.type)
+				<< level.numLevels
+				<< "l"
+				<< level.leafCapacity;
+		}
+		return output.str();
+	}
+
+	std::string schemaConfigToJson(const SchemaConfig& schema)
+	{
+		std::ostringstream output;
+		output << "{\n";
+		output << "  \"name\": \"" << schema.name << "\",\n";
+		output << "  \"levels\": [\n";
+		for (size_t i = 0; i < schema.levels.size(); ++i)
+		{
+			const SchemaLevelConfig& level = schema.levels[i];
+			output << "    {\n";
+			output << "      \"type\": \"" << Config::dataStructureLevelName(level.type) << "\",\n";
+			output << "      \"numLevels\": " << level.numLevels << ",\n";
+			output << "      \"leafCapacity\": " << level.leafCapacity << ",\n";
+			output << "      \"minPointsToSplit\": " << level.minPrimitivesToSplit;
+			if (!level.axisPolicy.empty())
+				output << ",\n      \"axisPolicy\": \"" << level.axisPolicy << "\"\n";
+			else
+				output << '\n';
+			output << "    }" << (i + 1 < schema.levels.size() ? "," : "") << "\n";
+		}
+		output << "  ],\n";
+		output << "  \"buildPolicy\": {\n";
+		output << "    \"maxDepth\": " << schema.buildPolicy.maxDepth << ",\n";
+		output << "    \"leafCapacity\": " << schema.buildPolicy.leafCapacity << ",\n";
+		output << "    \"minPointsToSplit\": " << schema.buildPolicy.minPrimitivesToSplit << ",\n";
+		output << "    \"collapseSingleChild\": " << (schema.buildPolicy.collapseSingleChild ? "true" : "false") << ",\n";
+		output << "    \"removeEmptyNodes\": " << (schema.buildPolicy.removeEmptyNodes ? "true" : "false") << ",\n";
+		output << "    \"allowOverlapDuplication\": " << (schema.buildPolicy.allowOverlapDuplication ? "true" : "false") << "\n";
+		output << "  }\n";
+		output << "}\n";
+		return output.str();
+	}
+
 	std::vector<SearchDataset> makeSyntheticDatasets(size_t scale)
 	{
 		const size_t n = std::max<size_t>(64, scale);
@@ -229,21 +335,82 @@ namespace
 		return datasets;
 	}
 
-	std::vector<LoadedSchema> loadSchemas(const std::vector<std::string>& configuredPaths)
+	std::vector<Experiments::SchemaCandidate> loadSchemas(const std::vector<std::string>& configuredPaths, bool includeConfiguredSchemas)
 	{
+		if (!includeConfiguredSchemas)
+			return {};
+
 		const std::vector<std::string>& paths = configuredPaths.empty() ? defaultSchemaPaths() : configuredPaths;
-		std::vector<LoadedSchema> schemas;
+		std::vector<Experiments::SchemaCandidate> schemas;
 		schemas.reserve(paths.size());
 
 		for (const std::string& schemaPath : paths)
 		{
-			LoadedSchema loaded;
+			Experiments::SchemaCandidate loaded;
 			loaded.path = schemaPath;
 			loaded.config = Config::loadSchemaConfig(schemaPath);
+			loaded.name = loaded.config.name;
 			schemas.push_back(std::move(loaded));
 		}
 
 		return schemas;
+	}
+
+	void appendGeneratedSchemas(std::vector<Experiments::SchemaCandidate>& schemas, const Experiments::SchemaGenerationOptions& options)
+	{
+		if (options.count == 0)
+			return;
+
+		std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(options);
+		schemas.insert(schemas.end(), std::make_move_iterator(generated.begin()), std::make_move_iterator(generated.end()));
+	}
+
+	std::string candidateKey(const std::string& name, const std::string& path)
+	{
+		return name + "\n" + path;
+	}
+
+	std::vector<Experiments::SchemaCandidate> selectBenchmarkSchemas(
+		const Experiments::SchemaSearchOptions& options,
+		const SearchDataset& dataset,
+		const Experiments::WorkloadProfile& workload,
+		const std::vector<Experiments::SchemaCandidate>& schemas,
+		const std::optional<Experiments::SchemaSelectorModel>& rankModel)
+	{
+		if (schemas.empty())
+			return {};
+
+		if (options.benchmarkTopK == 0 || options.benchmarkTopK >= schemas.size())
+			return schemas;
+
+		if (!rankModel.has_value())
+			return std::vector<Experiments::SchemaCandidate>(schemas.begin(), schemas.begin() + options.benchmarkTopK);
+
+		const std::vector<Experiments::CandidatePrediction> predictions = Experiments::scoreSchemaCandidates(
+			rankModel.value(),
+			workload,
+			dataset.cloud,
+			schemas);
+
+		std::unordered_map<std::string, const Experiments::SchemaCandidate*> byKey;
+		byKey.reserve(schemas.size());
+		for (const Experiments::SchemaCandidate& schema : schemas)
+			byKey[candidateKey(schema.config.name, schema.path)] = &schema;
+
+		std::vector<Experiments::SchemaCandidate> selected;
+		selected.reserve(std::min(options.benchmarkTopK, predictions.size()));
+		for (const Experiments::CandidatePrediction& prediction : predictions)
+		{
+			const auto found = byKey.find(candidateKey(prediction.schemaName, prediction.schemaPath));
+			if (found == byKey.end())
+				continue;
+
+			selected.push_back(*found->second);
+			if (selected.size() >= options.benchmarkTopK)
+				break;
+		}
+
+		return selected;
 	}
 
 	std::vector<Experiments::WorkloadProfile> loadWorkloads(const Experiments::SchemaSearchOptions& options)
@@ -517,6 +684,97 @@ namespace
 	}
 }
 
+std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(const SchemaGenerationOptions& options)
+{
+	if (options.count == 0)
+		return {};
+
+	const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
+	const size_t maxBlocks = std::min(std::max<size_t>(1, options.maxBlocks), maxDepth);
+	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+
+	std::mt19937 rng(options.seed);
+	std::unordered_set<std::string> seen;
+	std::vector<SchemaCandidate> candidates;
+	candidates.reserve(options.count);
+
+	size_t attempts = 0;
+	const size_t maxAttempts = std::max<size_t>(options.count * 50, 1024);
+	while (candidates.size() < options.count && attempts++ < maxAttempts)
+	{
+		std::uniform_int_distribution<size_t> blockDistribution(1, maxBlocks);
+		const size_t numBlocks = blockDistribution(rng);
+
+		SchemaConfig schema;
+		schema.buildPolicy.maxDepth = maxDepth;
+		schema.buildPolicy.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+		schema.buildPolicy.minPrimitivesToSplit = std::max<size_t>(2, schema.buildPolicy.leafCapacity / 4);
+		schema.buildPolicy.collapseSingleChild = true;
+		schema.buildPolicy.removeEmptyNodes = true;
+		schema.buildPolicy.allowOverlapDuplication = false;
+
+		size_t remainingDepth = maxDepth;
+		std::optional<MultiDataStructure::DataStructureLevel> previousType;
+		for (size_t block = 0; block < numBlocks; ++block)
+		{
+			const size_t remainingBlocks = numBlocks - block - 1;
+			const size_t maxLevelForBlock = remainingDepth - remainingBlocks;
+			std::uniform_int_distribution<size_t> levelDistribution(1, maxLevelForBlock);
+
+			SchemaLevelConfig level;
+			level.type = randomStructureType(rng, previousType);
+			level.typeName = Config::dataStructureLevelName(level.type);
+			level.numLevels = levelDistribution(rng);
+			level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+			if (level.type == MultiDataStructure::KDTreeNode)
+				level.axisPolicy = "median_longest_axis";
+
+			schema.levels.push_back(level);
+			previousType = level.type;
+			remainingDepth -= level.numLevels;
+		}
+
+		if (schema.levels.empty())
+			continue;
+
+		schema.buildPolicy.maxDepth = std::min(maxDepth, schema.totalLevels());
+		const std::string signature = schemaSignature(schema);
+		if (!seen.insert(signature).second)
+			continue;
+
+		schema.name = "generated_" + signature;
+
+		SchemaCandidate candidate;
+		candidate.name = schema.name;
+		if (!options.outputDirectory.empty())
+		{
+			const std::filesystem::path schemaPath = std::filesystem::path(options.outputDirectory) / (schema.name + ".json");
+			if (schemaPath.has_parent_path())
+				std::filesystem::create_directories(schemaPath.parent_path());
+
+			std::ofstream output(schemaPath);
+			if (!output.is_open())
+				throw std::runtime_error("Unable to write generated schema: " + schemaPath.string());
+			output << schemaConfigToJson(schema);
+			candidate.path = schemaPath.string();
+		}
+		else
+		{
+			candidate.path = "generated:" + signature;
+		}
+		candidate.config = schema;
+		candidate.generated = true;
+		candidates.push_back(std::move(candidate));
+	}
+
+	if (candidates.size() < options.count)
+		std::cerr << "Warning: generated " << candidates.size() << " unique schemas from requested " << options.count << '\n';
+
+	return candidates;
+}
+
 Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName)
 {
 	boost::system::error_code error;
@@ -607,8 +865,14 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 {
 	const std::vector<SearchDataset> datasets = loadDatasets(options);
-	const std::vector<LoadedSchema> schemas = loadSchemas(options.schemaPaths);
+	std::vector<SchemaCandidate> schemas = loadSchemas(options.schemaPaths, options.includeConfiguredSchemas);
+	appendGeneratedSchemas(schemas, options.generation);
+	if (schemas.empty())
+		throw std::runtime_error("Schema search has no schemas. Provide --schemas, omit --generated-only, or use --generate-schemas.");
 	const std::vector<WorkloadProfile> workloads = loadWorkloads(options);
+	const std::optional<SchemaSelectorModel> rankModel = options.rankModelPath.empty()
+		? std::optional<SchemaSelectorModel>()
+		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(options.rankModelPath));
 
 	std::vector<SchemaSearchRecord> records;
 	records.reserve(datasets.size() * workloads.size() * schemas.size());
@@ -617,6 +881,14 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	std::cout << "Schema search\n";
 	std::cout << "  datasets: " << datasets.size() << '\n';
 	std::cout << "  schemas: " << schemas.size() << '\n';
+	if (options.generation.count > 0)
+		std::cout << "  generated schemas: " << options.generation.count << " requested\n";
+	if (rankModel.has_value())
+	{
+		std::cout << "  surrogate rank model: " << options.rankModelPath << '\n';
+		if (options.benchmarkTopK > 0)
+			std::cout << "  benchmark top-k: " << options.benchmarkTopK << '\n';
+	}
 	std::cout << "  workloads: " << workloads.size() << '\n';
 
 	for (const SearchDataset& dataset : datasets)
@@ -627,9 +899,18 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		for (const WorkloadProfile& workload : workloads)
 		{
 			const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, options.weights);
-			std::cout << "    workload: " << workload.name << " (" << workload.numQueries << " queries)\n";
+			const std::vector<SchemaCandidate> benchmarkSchemas = selectBenchmarkSchemas(
+				options,
+				dataset,
+				workload,
+				schemas,
+				rankModel);
 
-			for (const LoadedSchema& schema : schemas)
+			std::cout << "    workload: " << workload.name << " (" << workload.numQueries << " queries)\n";
+			if (benchmarkSchemas.size() != schemas.size())
+				std::cout << "      benchmarking " << benchmarkSchemas.size() << " / " << schemas.size() << " schemas after surrogate pruning\n";
+
+			for (const SchemaCandidate& schema : benchmarkSchemas)
 			{
 				PointSpatialIndex index;
 				const auto buildBegin = std::chrono::steady_clock::now();

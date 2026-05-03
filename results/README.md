@@ -6,6 +6,7 @@ Point-cloud benchmark runs write machine-readable outputs here by default:
 - `points_summary.csv`: append-only CSV summary, one row per dataset/schema/workload run.
 - `schema_search.csv`: raw schema-search rows, one row per dataset/workload/schema candidate, including feature columns.
 - `schema_search_best.csv`: best schema per dataset/workload by the current score, retaining feature columns for training.
+- `generated_schemas/`: replayable generated schema JSON files written by generated hyperspace search.
 
 For multi-schema experiments, use:
 
@@ -51,6 +52,10 @@ The C++ executable also supports the same flow directly:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --queries 128 --csv results\schema_search.csv --best-csv results\schema_search_best.csv --no-pause
+```
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --rank-model models\schema_selector_onnx.json --benchmark-top 16 --workloads configs\workloads\mixed.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
 ```
 
 ```powershell

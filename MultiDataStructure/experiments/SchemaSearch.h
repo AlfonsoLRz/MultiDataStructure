@@ -1,11 +1,31 @@
 #pragma once
 
 #include "../stdafx.h"
+#include "../core/Config.h"
 #include "FeatureExtraction.h"
 #include "Metrics.h"
 
 namespace Experiments
 {
+	struct SchemaCandidate
+	{
+		std::string name;
+		std::string path;
+		SchemaConfig config;
+		bool generated = false;
+	};
+
+	struct SchemaGenerationOptions
+	{
+		size_t count = 0;
+		size_t maxBlocks = 3;
+		size_t maxDepth = 12;
+		size_t minLeafCapacity = 32;
+		size_t maxLeafCapacity = 32768;
+		uint32_t seed = 1337;
+		std::string outputDirectory = "results/generated_schemas";
+	};
+
 	struct WorkloadProfile
 	{
 		std::string name = "mixed";
@@ -29,17 +49,21 @@ namespace Experiments
 		std::vector<std::string> inputPaths;
 		std::vector<std::string> schemaPaths;
 		std::vector<std::string> workloadPaths;
+		std::string rankModelPath;
 		std::string csvPath = "results/schema_search.csv";
 		std::string bestCsvPath = "results/schema_search_best.csv";
 		bool includeSyntheticDatasets = true;
+		bool includeConfiguredSchemas = true;
 		bool useBinaryCache = true;
 		bool rebuildBinaryCache = false;
 		bool pauseAtEnd = false;
 		size_t syntheticScale = 512;
 		size_t queryCountOverride = 0;
 		size_t knnKOverride = 0;
+		size_t benchmarkTopK = 0;
 		uint32_t querySeed = 1337;
 		bool querySeedOverride = false;
+		SchemaGenerationOptions generation;
 		ScoreWeights weights;
 	};
 
@@ -72,6 +96,7 @@ namespace Experiments
 
 	WorkloadProfile parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName = {});
 	WorkloadProfile loadWorkloadProfile(const std::string& filename);
+	std::vector<SchemaCandidate> generateSchemaCandidates(const SchemaGenerationOptions& options);
 	double computeSchemaSearchScore(
 		const BuildMetrics& buildMetrics,
 		const QueryMetrics& queryMetrics,

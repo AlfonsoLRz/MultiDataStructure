@@ -1459,6 +1459,7 @@ Implemented in this workspace:
 - `scripts/tune_schema_for_cloud.py` tunes one target point cloud by measured schema-search results and exports a local `measured_best_schema` selector.
 - `scripts/train_schema_selector.py --model-name ridge_score_predictor` can intentionally save an exportable runtime model while still reporting other learned selectors.
 - `Experiments::SchemaSelector` loads exported JSON models, supports local measured-best selection, recomputes point/workload/schema features for linear and optional ONNX score rankers, predicts one score per candidate schema combination, and returns the selected schema.
+- `Experiments::SchemaSearch` can now generate nested schema candidates from bounded intervals, optionally use a selector/ONNX model as a surrogate ranker, benchmark the top-k generated candidates, and write replayable generated schema JSON files.
 - ONNX Runtime is guarded behind `MDSPC_ENABLE_ONNX` and optional MSBuild properties (`OnnxRuntimeDir`, or explicit include/library directories), so the dependency-free build remains valid.
 - `--schema auto`, `--model`, and `--workload-profile` are wired into point mode.
 - Auto-selected schema, model path, workload profile, predicted score, and full candidate ranking are printed and written to point benchmark JSON under `schema_selection`.

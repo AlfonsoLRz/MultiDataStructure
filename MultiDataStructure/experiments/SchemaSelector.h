@@ -8,13 +8,6 @@
 
 namespace Experiments
 {
-	struct SchemaCandidate
-	{
-		std::string name;
-		std::string path;
-		SchemaConfig config;
-	};
-
 	struct CandidatePrediction
 	{
 		std::string schemaName;
@@ -69,6 +62,11 @@ namespace Experiments
 		const PointCloudFeatures& pointFeatures,
 		const WorkloadFeatures& workloadFeatures,
 		const SchemaConfig& schema);
+	std::vector<CandidatePrediction> scoreSchemaCandidates(
+		const SchemaSelectorModel& model,
+		const WorkloadProfile& workload,
+		const PointCloud& cloud,
+		const std::vector<SchemaCandidate>& candidates);
 	SchemaSelection selectSchemaForCloud(
 		const std::string& modelPath,
 		const std::string& workloadProfilePath,

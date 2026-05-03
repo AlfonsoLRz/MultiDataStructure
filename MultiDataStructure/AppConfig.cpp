@@ -176,6 +176,11 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--model" && i + 1 < argc)
 		{
 			config.pointOptions.modelPath = argv[++i];
+			config.schemaSearchOptions.rankModelPath = config.pointOptions.modelPath;
+		}
+		else if (arg == "--rank-model" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.rankModelPath = argv[++i];
 		}
 		else if (arg == "--workload-profile" && i + 1 < argc)
 		{
@@ -188,6 +193,42 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--synthetic-scale" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.syntheticScale = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generate-schemas" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.count = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-only")
+		{
+			config.schemaSearchOptions.includeConfiguredSchemas = false;
+		}
+		else if (arg == "--benchmark-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.benchmarkTopK = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-max-blocks" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.maxBlocks = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-max-depth" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.maxDepth = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-min-leaf" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.minLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-max-leaf" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.maxLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-seed" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+		}
+		else if (arg == "--generated-schema-dir" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.outputDirectory = argv[++i];
 		}
 		else if (arg == "--output" && i + 1 < argc)
 		{
@@ -233,6 +274,7 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 	const std::string executablePath = argc > 0 ? argv[0] : std::string();
 	config.pointOptions.schemaPath = resolveExistingPath(config.pointOptions.schemaPath, executablePath);
 	config.pointOptions.modelPath = resolveExistingPath(config.pointOptions.modelPath, executablePath);
+	config.schemaSearchOptions.rankModelPath = resolveExistingPath(config.schemaSearchOptions.rankModelPath, executablePath);
 	config.pointOptions.workloadProfilePath = resolveExistingPath(config.pointOptions.workloadProfilePath, executablePath);
 	for (std::string& schemaPath : config.pointOptions.schemaPaths)
 		schemaPath = resolveExistingPath(schemaPath, executablePath);
@@ -255,8 +297,18 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --schema auto               Select a schema with a measured, JSON, or ONNX score ranker\n"
 		<< "  --schemas <a;b;c>           Run the same point benchmark across schemas\n"
 		<< "  --model <path>              Runtime selector JSON for --schema auto\n"
+		<< "  --rank-model <path>         Surrogate selector JSON/ONNX model wrapper for generated schema search\n"
 		<< "  --workload-profile <path>   Workload profile JSON for --schema auto\n"
 		<< "  --workloads <a;b;c>         Workload profile JSONs for schema-search mode\n"
+		<< "  --generate-schemas <count>  Generate nested schema candidates from bounded intervals\n"
+		<< "  --generated-only            Search generated candidates without the configured static schema list\n"
+		<< "  --benchmark-top <count>     Benchmark only top-k generated/static schemas after surrogate ranking\n"
+		<< "  --generated-max-blocks <n>  Max nested blocks for generated schemas\n"
+		<< "  --generated-max-depth <n>   Max total generated schema depth\n"
+		<< "  --generated-min-leaf <n>    Min generated leaf capacity\n"
+		<< "  --generated-max-leaf <n>    Max generated leaf capacity\n"
+		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
+		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"

@@ -117,6 +117,23 @@ Example:
 .\x64\Release\MultiDataStructure.exe --mode schema-search --queries 128 --csv results\schema_search.csv --best-csv results\schema_search_best.csv --no-pause
 ```
 
+Generated hyperspace search is available in the same mode. The generator samples valid nested schemas from bounded intervals over the currently implemented node types (`QuadTree`, `Octree`, `KDTree`), writes replayable schema JSON files under `results/generated_schemas/`, optionally ranks all candidates with a selector model, and benchmarks only the top-k:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --rank-model models/schema_selector_onnx.json --benchmark-top 16 --workloads configs/workloads/mixed.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
+```
+
+Useful generator controls:
+
+```text
+--generated-max-blocks <n>
+--generated-max-depth <n>
+--generated-min-leaf <n>
+--generated-max-leaf <n>
+--generated-seed <seed>
+--generated-schema-dir <path>
+```
+
 The score is:
 
 ```text

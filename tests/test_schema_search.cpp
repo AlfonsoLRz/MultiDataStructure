@@ -78,5 +78,24 @@ namespace BaselineTests
 		expect(best.size() == 2, "schema search picks one best record per dataset/workload");
 		expect(best[0].schemaName == "fast", "schema search keeps lowest score as best schema");
 		expect(best[1].schemaName == "only", "schema search keeps independent dataset/workload groups");
+
+		Experiments::SchemaGenerationOptions generation;
+		generation.count = 12;
+		generation.maxBlocks = 3;
+		generation.maxDepth = 8;
+		generation.minLeafCapacity = 32;
+		generation.maxLeafCapacity = 512;
+		generation.seed = 11;
+		generation.outputDirectory.clear();
+
+		const std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(generation);
+		expect(generated.size() == generation.count, "schema generator creates requested candidate count");
+		for (const Experiments::SchemaCandidate& candidate : generated)
+		{
+			expect(candidate.generated, "schema generator marks generated candidates");
+			expect(candidate.config.totalLevels() <= generation.maxDepth, "schema generator respects max depth");
+			expect(!candidate.config.levels.empty(), "schema generator creates non-empty level schedules");
+			expect(candidate.path.rfind("generated:", 0) == 0, "schema generator uses generated pseudo path");
+		}
 	}
 }

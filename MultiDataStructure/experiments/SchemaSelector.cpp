@@ -511,6 +511,59 @@ double Experiments::predictScore(
 	return score;
 }
 
+std::vector<Experiments::CandidatePrediction> Experiments::scoreSchemaCandidates(
+	const SchemaSelectorModel& model,
+	const WorkloadProfile& workload,
+	const PointCloud& cloud,
+	const std::vector<SchemaCandidate>& candidates)
+{
+	if (model.measuredBestSelector)
+		throw std::runtime_error("measured_best_schema cannot score arbitrary generated schema candidates");
+
+	const PointCloudFeatures pointFeatures = extractPointCloudFeatures(cloud);
+	const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, ScoreWeights{});
+
+#if MDSPC_ONNX_AVAILABLE
+	std::unique_ptr<OnnxScoreRanker> onnxRanker;
+	if (model.onnxScoreRanker)
+		onnxRanker = std::make_unique<OnnxScoreRanker>(model);
+#else
+	if (model.onnxScoreRanker)
+		throw std::runtime_error("ONNX schema selector requested, but this build was not compiled with MDSPC_ENABLE_ONNX. Set OnnxRuntimeDir in the Visual Studio project or use the dependency-free linear/measured selector.");
+#endif
+
+	std::vector<CandidatePrediction> predictions;
+	predictions.reserve(candidates.size());
+	for (const SchemaCandidate& candidate : candidates)
+	{
+		CandidatePrediction prediction;
+		prediction.schemaName = candidate.config.name.empty() ? candidate.name : candidate.config.name;
+		prediction.schemaPath = candidate.path;
+#if MDSPC_ONNX_AVAILABLE
+		if (model.onnxScoreRanker)
+		{
+			const std::vector<double> features = selectorFeatureVector(
+				model.featureNames,
+				pointFeatures,
+				workloadFeatures,
+				candidate.config);
+			prediction.predictedScore = onnxRanker->predict(features);
+		}
+		else
+#endif
+		prediction.predictedScore = predictScore(model, pointFeatures, workloadFeatures, candidate.config);
+		predictions.push_back(prediction);
+	}
+
+	std::sort(predictions.begin(), predictions.end(), [](const CandidatePrediction& left, const CandidatePrediction& right) {
+		if (left.predictedScore == right.predictedScore)
+			return left.schemaName < right.schemaName;
+		return left.predictedScore < right.predictedScore;
+	});
+
+	return predictions;
+}
+
 Experiments::SchemaSelection Experiments::selectSchemaForCloud(
 	const std::string& modelPath,
 	const std::string& workloadProfilePath,
@@ -532,44 +585,7 @@ Experiments::SchemaSelection Experiments::selectSchemaForCloud(
 	}
 
 	const WorkloadProfile workload = loadWorkloadProfile(workloadProfilePath);
-	const PointCloudFeatures pointFeatures = extractPointCloudFeatures(cloud);
-	const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, ScoreWeights{});
-
-#if MDSPC_ONNX_AVAILABLE
-	std::unique_ptr<OnnxScoreRanker> onnxRanker;
-	if (model.onnxScoreRanker)
-		onnxRanker = std::make_unique<OnnxScoreRanker>(model);
-#else
-	if (model.onnxScoreRanker)
-		throw std::runtime_error("ONNX schema selector requested, but this build was not compiled with MDSPC_ENABLE_ONNX. Set OnnxRuntimeDir in the Visual Studio project or use the dependency-free linear/measured selector.");
-#endif
-
-	for (const SchemaCandidate& candidate : model.candidates)
-	{
-		CandidatePrediction prediction;
-		prediction.schemaName = candidate.config.name;
-		prediction.schemaPath = candidate.path;
-#if MDSPC_ONNX_AVAILABLE
-		if (model.onnxScoreRanker)
-		{
-			const std::vector<double> features = selectorFeatureVector(
-				model.featureNames,
-				pointFeatures,
-				workloadFeatures,
-				candidate.config);
-			prediction.predictedScore = onnxRanker->predict(features);
-		}
-		else
-#endif
-		prediction.predictedScore = predictScore(model, pointFeatures, workloadFeatures, candidate.config);
-		selection.candidates.push_back(prediction);
-	}
-
-	std::sort(selection.candidates.begin(), selection.candidates.end(), [](const CandidatePrediction& left, const CandidatePrediction& right) {
-		if (left.predictedScore == right.predictedScore)
-			return left.schemaName < right.schemaName;
-		return left.predictedScore < right.predictedScore;
-	});
+	selection.candidates = scoreSchemaCandidates(model, workload, cloud, model.candidates);
 
 	const CandidatePrediction& best = selection.candidates.front();
 	selection.schemaName = best.schemaName;
