@@ -87,5 +87,32 @@ namespace BaselineTests
 		expect(measuredSelection.predictedScore == 0.25, "measured local selector exposes measured score as selection score");
 
 		std::filesystem::remove(measuredModelPath);
+
+		const std::filesystem::path onnxModelPath = tempFile("multids_onnx_schema_selector_test.json");
+		{
+			std::ofstream file(onnxModelPath);
+			file << R"json(
+			{
+			  "model_type": "onnx_score_ranker",
+			  "source_model": "models/schema_selector.onnx",
+			  "input_name": "features",
+			  "output_name": "score",
+			  "execution_provider": "cpu",
+			  "feature_names": ["num_points", "w_range", "schema_has_quadtree"],
+			  "candidate_schemas": [
+			    { "name": "quadtree_default", "path": "configs/schemas/quadtree.json" },
+			    { "name": "kdtree_default", "path": "configs/schemas/kdtree.json" }
+			  ]
+			}
+			)json";
+		}
+
+		const Experiments::SchemaSelectorModel onnxModel = Experiments::loadSchemaSelectorModel(onnxModelPath.string());
+		expect(onnxModel.onnxScoreRanker, "schema selector parses ONNX ranker model type");
+		expect(onnxModel.onnxInputName == "features", "schema selector parses ONNX input name");
+		expect(onnxModel.onnxOutputName == "score", "schema selector parses ONNX output name");
+		expect(onnxModel.candidates.size() == 2, "schema selector parses ONNX candidate schemas");
+
+		std::filesystem::remove(onnxModelPath);
 	}
 }

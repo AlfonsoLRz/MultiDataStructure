@@ -252,7 +252,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --mode points|schema-search|tests\n"
 		<< "  --input <path>              Point cloud path (.las, .ply, .xyz, .csv)\n"
 		<< "  --schema <path>             Spatial schema JSON\n"
-		<< "  --schema auto               Select a schema with the exported score ranker\n"
+		<< "  --schema auto               Select a schema with a measured, JSON, or ONNX score ranker\n"
 		<< "  --schemas <a;b;c>           Run the same point benchmark across schemas\n"
 		<< "  --model <path>              Runtime selector JSON for --schema auto\n"
 		<< "  --workload-profile <path>   Workload profile JSON for --schema auto\n"

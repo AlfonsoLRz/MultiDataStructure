@@ -132,6 +132,7 @@ python scripts\run_experiments.py --schema-search --queries 128
 python scripts\summarize_results.py --input results\schema_search.csv --output results\schema_search_best.csv
 python scripts\train_schema_selector.py --input results\schema_search.csv
 python scripts\export_model.py --model models\schema_selector.joblib --metadata models\schema_selector_meta.json --output models\schema_selector.json
+python scripts\export_model.py --model models\schema_selector.joblib --metadata models\schema_selector_meta.json --skip-linear-json --onnx-output models\schema_selector.onnx --onnx-json-output models\schema_selector_onnx.json
 ```
 
 The training script learns a score-ranking model over point-cloud, workload, and schema-composition features. Static schema JSON files are the initial measured candidate pool; the model is structured so later milestones can rank generated combinations too.
@@ -150,11 +151,20 @@ Runtime flow:
 - extract point-cloud features,
 - load the workload profile and extract workload features,
 - parse each candidate schema listed in the exported model,
-- predict a score for each candidate combination,
+- predict a score for each candidate combination using `linear_score_ranker` JSON or optional `onnx_score_ranker` ONNX Runtime inference,
 - choose the lowest predicted score,
 - run the normal point benchmark with the selected schema.
 
 The JSON result includes a `schema_selection` block with the model path, workload profile, selected schema, predicted score, and full candidate ranking.
+
+ONNX Runtime is optional at build time. Set either `OnnxRuntimeDir` to a SDK root containing `include\` and `lib\`, or set `OnnxRuntimeIncludeDir` and `OnnxRuntimeLibraryDir` explicitly. When those MSBuild properties are set, the project defines `MDSPC_ENABLE_ONNX`, includes `onnxruntime_cxx_api.h`, and links `onnxruntime.lib`. The selector wrapper JSON can request `"execution_provider": "cpu"` or `"cuda"`; CUDA requires an ONNX Runtime GPU build and matching CUDA/cuDNN runtime DLLs.
+
+The helper scripts use the official ONNX Runtime GPU Windows NuGet package locally under `.deps`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_onnx_runtime.ps1
+powershell -ExecutionPolicy Bypass -File scripts\build_with_onnx.ps1
+```
 
 For per-cloud overfitting, use the local tuner:
 

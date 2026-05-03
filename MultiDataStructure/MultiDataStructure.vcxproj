@@ -38,7 +38,17 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <OnnxRuntimeDir></OnnxRuntimeDir>
+    <OnnxRuntimeIncludeDir></OnnxRuntimeIncludeDir>
+    <OnnxRuntimeLibraryDir></OnnxRuntimeLibraryDir>
+    <OnnxRuntimeBinDir></OnnxRuntimeBinDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OnnxRuntimeDir)'!=''">
+    <OnnxRuntimeIncludeDir Condition="'$(OnnxRuntimeIncludeDir)'==''">$(OnnxRuntimeDir)\include</OnnxRuntimeIncludeDir>
+    <OnnxRuntimeLibraryDir Condition="'$(OnnxRuntimeLibraryDir)'==''">$(OnnxRuntimeDir)\lib</OnnxRuntimeLibraryDir>
+    <OnnxRuntimeBinDir Condition="'$(OnnxRuntimeBinDir)'==''">$(OnnxRuntimeDir)\bin</OnnxRuntimeBinDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
@@ -92,6 +102,22 @@
       <AdditionalOptions>--maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(OnnxRuntimeIncludeDir)'!='' And '$(OnnxRuntimeLibraryDir)'!=''">
+    <ClCompile>
+      <PreprocessorDefinitions>MDSPC_ENABLE_ONNX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(OnnxRuntimeIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(OnnxRuntimeLibraryDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>onnxruntime.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <Target Name="CopyOnnxRuntimeBinaries" AfterTargets="Build" Condition="'$(OnnxRuntimeBinDir)'!='' And Exists('$(OnnxRuntimeBinDir)')">
+    <ItemGroup>
+      <OnnxRuntimeBinaries Include="$(OnnxRuntimeBinDir)\onnxruntime*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(OnnxRuntimeBinaries)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
   <ItemGroup>
     <ClInclude Include="..\tests\BaselineTests.h" />
     <ClInclude Include="AABB.h" />

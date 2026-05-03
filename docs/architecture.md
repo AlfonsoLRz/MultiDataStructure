@@ -21,6 +21,7 @@ MultiDataStructure/
     FeatureExtraction.*
     Metrics.*
     SchemaSearch.*
+    SchemaSelector.*
   workloads/
     points/
       PointBenchmark.*
@@ -109,9 +110,9 @@ Some root-level core APIs still carry triangle/ray concepts from the original pr
 
 `experiments/FeatureExtraction.*` computes deterministic point-cloud and workload features for selector training. It uses a fixed-seed sample for large point clouds, covariance eigenvalues, 8x8x8 occupancy summaries, height statistics, shape heuristics, and workload query-mix features.
 
-`scripts/tune_schema_for_cloud.py` is the local optimizer path: it runs schema-search on one target cloud with `--no-synthetic`, chooses the lowest measured score for the requested workload, and exports a `measured_best_schema` JSON. `scripts/train_schema_selector.py` is the optional global learner. It augments schema-search rows with schema-composition features, splits by dataset, trains score-ranking models and a direct classifier when possible, evaluates oracle/fixed/heuristic/learned selectors, and saves a report plus model artifact. `scripts/export_model.py` exports an explicit linear score ranker to JSON for the C++ runtime.
+`scripts/tune_schema_for_cloud.py` is the local optimizer path: it runs schema-search on one target cloud with `--no-synthetic`, chooses the lowest measured score for the requested workload, and exports a `measured_best_schema` JSON. `scripts/train_schema_selector.py` is the optional global learner. It augments schema-search rows with schema-composition features, splits by dataset, trains score-ranking models and a direct classifier when possible, evaluates oracle/fixed/heuristic/learned selectors, and saves a report plus model artifact. `scripts/export_model.py` exports an explicit linear score ranker to JSON for the dependency-free C++ runtime and can optionally export an ONNX model plus `onnx_score_ranker` wrapper JSON.
 
-`experiments/SchemaSelector.*` is the C++ selection path for `--schema auto`. It supports both local measured-best artifacts and exported linear score rankers. For measured-best artifacts it reuses the tuned winner. For linear rankers it recomputes point/workload/schema features, predicts a score for each candidate combination, and hands the selected schema to the normal point benchmark.
+`experiments/SchemaSelector.*` is the C++ selection path for `--schema auto`. It supports local measured-best artifacts, exported linear score rankers, and optional ONNX Runtime score rankers. For measured-best artifacts it reuses the tuned winner. For learned rankers it recomputes point/workload/schema features, predicts a score for each candidate combination, and hands the selected schema to the normal point benchmark. ONNX support is compiled only when the Visual Studio project receives `OnnxRuntimeDir` or explicit ONNX include/library directories.
 
 The point path is intentionally small. It validates schema configs, point subdivision policies, and exact query correctness before later optimization work changes node layout or traversal strategy. Point insertion is single-child: points are assigned by position and are not duplicated across overlapping children.
 

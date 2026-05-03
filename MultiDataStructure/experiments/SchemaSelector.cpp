@@ -4,6 +4,13 @@
 #include <boost/json.hpp>
 #include <boost/system/error_code.hpp>
 
+#if defined(MDSPC_ENABLE_ONNX)
+#include <onnxruntime_cxx_api.h>
+#define MDSPC_ONNX_AVAILABLE 1
+#else
+#define MDSPC_ONNX_AVAILABLE 0
+#endif
+
 namespace
 {
 	bool pathExists(const std::filesystem::path& path)
@@ -58,6 +65,18 @@ namespace
 		if (value.is_uint64())
 			return static_cast<double>(value.as_uint64());
 		throw std::runtime_error("Expected numeric model coefficient");
+	}
+
+	int asInt(const boost::json::object& object, const char* key, int fallback = 0)
+	{
+		if (const boost::json::value* value = object.if_contains(key))
+		{
+			if (value->is_int64())
+				return static_cast<int>(value->as_int64());
+			if (value->is_uint64())
+				return static_cast<int>(value->as_uint64());
+		}
+		return fallback;
 	}
 
 	std::vector<std::string> parseStringArray(const boost::json::value& value, const char* fieldName)
@@ -187,6 +206,140 @@ namespace
 		}
 		return candidates;
 	}
+
+#if MDSPC_ONNX_AVAILABLE
+	std::string onnxStatusMessage(const OrtApi& api, OrtStatus* status)
+	{
+		if (status == nullptr)
+			return {};
+		const std::string message = api.GetErrorMessage(status);
+		api.ReleaseStatus(status);
+		return message;
+	}
+
+	void throwOnOnnxStatus(const OrtApi& api, OrtStatus* status, const char* operation)
+	{
+		if (status == nullptr)
+			return;
+		throw std::runtime_error(std::string("ONNX Runtime ") + operation + " failed: " + onnxStatusMessage(api, status));
+	}
+
+	std::filesystem::path resolveOnnxModelPath(const Experiments::SchemaSelectorModel& model)
+	{
+		const std::string path = model.onnxModelPath.empty() ? model.sourceModel : model.onnxModelPath;
+		if (path.empty())
+			throw std::runtime_error("onnx_score_ranker requires source_model or onnx_model");
+		return resolveExistingPath(path);
+	}
+
+	const ORTCHAR_T* onnxPathChars(const std::filesystem::path& path, std::wstring& widePath, std::string& narrowPath)
+	{
+#if defined(_WIN32)
+		(void)narrowPath;
+		widePath = path.wstring();
+		return widePath.c_str();
+#else
+		(void)widePath;
+		narrowPath = path.string();
+		return narrowPath.c_str();
+#endif
+	}
+
+	class OnnxScoreRanker
+	{
+	public:
+		explicit OnnxScoreRanker(const Experiments::SchemaSelectorModel& model)
+			: model_(model),
+			  env_(ORT_LOGGING_LEVEL_WARNING, "mdspc_schema_selector"),
+			  sessionOptions_(),
+			  session_(nullptr)
+		{
+			sessionOptions_.SetIntraOpNumThreads(1);
+			sessionOptions_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+			if (model_.onnxExecutionProvider == "cuda")
+				appendCudaProvider();
+			else if (model_.onnxExecutionProvider != "cpu")
+				throw std::runtime_error("Unsupported ONNX execution_provider: " + model_.onnxExecutionProvider);
+
+			const std::filesystem::path modelPath = resolveOnnxModelPath(model_);
+			std::wstring widePath;
+			std::string narrowPath;
+			session_ = Ort::Session(env_, onnxPathChars(modelPath, widePath, narrowPath), sessionOptions_);
+		}
+
+		double predict(const std::vector<double>& features)
+		{
+			if (model_.onnxInputName.empty() || model_.onnxOutputName.empty())
+				throw std::runtime_error("onnx_score_ranker requires input_name and output_name");
+
+			std::vector<float> input;
+			input.reserve(features.size());
+			for (const double value : features)
+				input.push_back(static_cast<float>(value));
+
+			std::array<int64_t, 2> shape = { 1, static_cast<int64_t>(input.size()) };
+			Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+			Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+				memoryInfo,
+				input.data(),
+				input.size(),
+				shape.data(),
+				shape.size());
+
+			const char* inputNames[] = { model_.onnxInputName.c_str() };
+			const char* outputNames[] = { model_.onnxOutputName.c_str() };
+			std::vector<Ort::Value> outputs = session_.Run(
+				Ort::RunOptions{ nullptr },
+				inputNames,
+				&inputTensor,
+				1,
+				outputNames,
+				1);
+
+			if (outputs.empty() || !outputs[0].IsTensor())
+				throw std::runtime_error("ONNX score ranker did not return a tensor output");
+
+			const Ort::TensorTypeAndShapeInfo shapeInfo = outputs[0].GetTensorTypeAndShapeInfo();
+			if (shapeInfo.GetElementCount() < 1)
+				throw std::runtime_error("ONNX score ranker returned an empty tensor");
+
+			const ONNXTensorElementDataType elementType = shapeInfo.GetElementType();
+			if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+				return static_cast<double>(outputs[0].GetTensorData<float>()[0]);
+			if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE)
+				return outputs[0].GetTensorData<double>()[0];
+
+			throw std::runtime_error("ONNX score ranker output must be float or double");
+		}
+
+	private:
+		void appendCudaProvider()
+		{
+			const OrtApi& api = Ort::GetApi();
+			OrtCUDAProviderOptionsV2* cudaOptions = nullptr;
+			throwOnOnnxStatus(api, api.CreateCUDAProviderOptions(&cudaOptions), "CreateCUDAProviderOptions");
+
+			std::unique_ptr<OrtCUDAProviderOptionsV2, decltype(api.ReleaseCUDAProviderOptions)> optionsGuard(
+				cudaOptions,
+				api.ReleaseCUDAProviderOptions);
+
+			const std::string deviceId = std::to_string(model_.onnxDeviceId);
+			const char* keys[] = { "device_id" };
+			const char* values[] = { deviceId.c_str() };
+			throwOnOnnxStatus(api, api.UpdateCUDAProviderOptions(cudaOptions, keys, values, 1), "UpdateCUDAProviderOptions");
+			throwOnOnnxStatus(
+				api,
+				api.SessionOptionsAppendExecutionProvider_CUDA_V2(static_cast<OrtSessionOptions*>(sessionOptions_), cudaOptions),
+				"SessionOptionsAppendExecutionProvider_CUDA_V2");
+		}
+
+		const Experiments::SchemaSelectorModel& model_;
+		Ort::Env env_;
+		Ort::SessionOptions sessionOptions_;
+		Ort::Session session_;
+	};
+#endif
 }
 
 Experiments::SchemaSelectorModel Experiments::loadSchemaSelectorModel(const std::string& filename)
@@ -240,6 +393,29 @@ Experiments::SchemaSelectorModel Experiments::loadSchemaSelectorModel(const std:
 			return left.predictedScore < right.predictedScore;
 		});
 
+		return model;
+	}
+
+	if (model.modelType == "onnx_score_ranker")
+	{
+		model.onnxScoreRanker = true;
+		model.onnxModelPath = asString(root, "onnx_model", model.sourceModel);
+		model.onnxInputName = asString(root, "input_name", "features");
+		model.onnxOutputName = asString(root, "output_name", "score");
+		model.onnxExecutionProvider = asString(root, "execution_provider", "cpu");
+		model.onnxDeviceId = asInt(root, "device_id", 0);
+
+		const boost::json::value* featureNames = root.if_contains("feature_names");
+		const boost::json::value* candidates = root.if_contains("candidate_schemas");
+		if (!featureNames || !candidates)
+			throw std::runtime_error("ONNX schema selector JSON requires feature_names and candidate_schemas");
+		if (model.onnxModelPath.empty())
+			throw std::runtime_error("ONNX schema selector JSON requires source_model or onnx_model");
+
+		model.featureNames = parseStringArray(*featureNames, "feature_names");
+		model.candidates = parseCandidates(*candidates);
+		if (model.candidates.empty())
+			throw std::runtime_error("ONNX schema selector model has no candidate schemas");
 		return model;
 	}
 
@@ -297,21 +473,40 @@ std::vector<double> Experiments::schemaFeatureVector(const SchemaConfig& schema)
 	return features;
 }
 
+std::vector<double> Experiments::selectorFeatureVector(
+	const std::vector<std::string>& featureNames,
+	const PointCloudFeatures& pointFeatures,
+	const WorkloadFeatures& workloadFeatures,
+	const SchemaConfig& schema)
+{
+	const std::vector<double> schemaFeatures = schemaFeatureVector(schema);
+	std::vector<double> features;
+	features.reserve(featureNames.size());
+	for (const std::string& name : featureNames)
+	{
+		features.push_back(featureValue(
+			name,
+			pointFeatures,
+			workloadFeatures,
+			schemaFeatures));
+	}
+	return features;
+}
+
 double Experiments::predictScore(
 	const SchemaSelectorModel& model,
 	const PointCloudFeatures& pointFeatures,
 	const WorkloadFeatures& workloadFeatures,
 	const SchemaConfig& schema)
 {
-	const std::vector<double> schemaFeatures = schemaFeatureVector(schema);
+	if (model.onnxScoreRanker)
+		throw std::runtime_error("ONNX score rankers are evaluated through selectSchemaForCloud");
+
 	double score = model.intercept;
-	for (size_t i = 0; i < model.featureNames.size(); ++i)
+	const std::vector<double> features = selectorFeatureVector(model.featureNames, pointFeatures, workloadFeatures, schema);
+	for (size_t i = 0; i < features.size(); ++i)
 	{
-		score += model.coefficients[i] * featureValue(
-			model.featureNames[i],
-			pointFeatures,
-			workloadFeatures,
-			schemaFeatures);
+		score += model.coefficients[i] * features[i];
 	}
 	return score;
 }
@@ -340,11 +535,32 @@ Experiments::SchemaSelection Experiments::selectSchemaForCloud(
 	const PointCloudFeatures pointFeatures = extractPointCloudFeatures(cloud);
 	const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, ScoreWeights{});
 
+#if MDSPC_ONNX_AVAILABLE
+	std::unique_ptr<OnnxScoreRanker> onnxRanker;
+	if (model.onnxScoreRanker)
+		onnxRanker = std::make_unique<OnnxScoreRanker>(model);
+#else
+	if (model.onnxScoreRanker)
+		throw std::runtime_error("ONNX schema selector requested, but this build was not compiled with MDSPC_ENABLE_ONNX. Set OnnxRuntimeDir in the Visual Studio project or use the dependency-free linear/measured selector.");
+#endif
+
 	for (const SchemaCandidate& candidate : model.candidates)
 	{
 		CandidatePrediction prediction;
 		prediction.schemaName = candidate.config.name;
 		prediction.schemaPath = candidate.path;
+#if MDSPC_ONNX_AVAILABLE
+		if (model.onnxScoreRanker)
+		{
+			const std::vector<double> features = selectorFeatureVector(
+				model.featureNames,
+				pointFeatures,
+				workloadFeatures,
+				candidate.config);
+			prediction.predictedScore = onnxRanker->predict(features);
+		}
+		else
+#endif
 		prediction.predictedScore = predictScore(model, pointFeatures, workloadFeatures, candidate.config);
 		selection.candidates.push_back(prediction);
 	}

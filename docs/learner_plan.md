@@ -48,6 +48,13 @@ In this mode, `--schema auto` is not predicting. It is replaying the measured be
 
 ## Training Command
 
+Use a project-local virtual environment for Python training/export dependencies:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-ml.txt
+```
+
 ```powershell
 python scripts/train_schema_selector.py --input results/schema_search.csv --report results/schema_selector_report.json --model-output models/schema_selector.joblib --model-meta-output models/schema_selector_meta.json
 ```
@@ -60,6 +67,14 @@ python scripts/export_model.py --model models/schema_selector.joblib --metadata 
 ```
 
 The exported JSON contains `feature_names`, linear `coefficients`, `intercept`, and candidate schema paths. C++ recomputes the same feature vector for each candidate and picks the lowest predicted score.
+
+For optional ONNX Runtime use, export an ONNX model plus a selector wrapper:
+
+```powershell
+python scripts/export_model.py --model models/schema_selector.joblib --metadata models/schema_selector_meta.json --skip-linear-json --onnx-output models/schema_selector.onnx --onnx-json-output models/schema_selector_onnx.json --onnx-execution-provider cuda
+```
+
+The ONNX wrapper contains `model_type: "onnx_score_ranker"`, the ONNX input/output names, execution provider, feature order, and candidate schemas. C++ uses the same feature vector and ranks candidates by the ONNX model output. This path is optional because the project still needs to build without ONNX Runtime installed.
 
 Learning modes:
 

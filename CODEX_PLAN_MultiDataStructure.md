@@ -1455,9 +1455,11 @@ tests/test_schema_selector.cpp
 Implemented in this workspace:
 
 - `scripts/export_model.py` exports a trained Ridge score ranker to lightweight JSON with feature names, coefficients, intercept, and candidate schema paths.
+- `scripts/export_model.py` can also export optional ONNX Runtime artifacts: a `.onnx` score model plus an `onnx_score_ranker` wrapper JSON.
 - `scripts/tune_schema_for_cloud.py` tunes one target point cloud by measured schema-search results and exports a local `measured_best_schema` selector.
 - `scripts/train_schema_selector.py --model-name ridge_score_predictor` can intentionally save an exportable runtime model while still reporting other learned selectors.
-- `Experiments::SchemaSelector` loads exported JSON models, supports local measured-best selection, recomputes point/workload/schema features for linear score rankers, predicts one score per candidate schema combination, and returns the selected schema.
+- `Experiments::SchemaSelector` loads exported JSON models, supports local measured-best selection, recomputes point/workload/schema features for linear and optional ONNX score rankers, predicts one score per candidate schema combination, and returns the selected schema.
+- ONNX Runtime is guarded behind `MDSPC_ENABLE_ONNX` and optional MSBuild properties (`OnnxRuntimeDir`, or explicit include/library directories), so the dependency-free build remains valid.
 - `--schema auto`, `--model`, and `--workload-profile` are wired into point mode.
 - Auto-selected schema, model path, workload profile, predicted score, and full candidate ranking are printed and written to point benchmark JSON under `schema_selection`.
 - Deterministic C++ selector coverage in `tests/test_schema_selector.cpp`.

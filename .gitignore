@@ -33,16 +33,20 @@
 
 # VS
 .vs/
+.deps/
 x64/
 x86/
 *.log
 *.tlog
 *.json
 !configs/**/*.json
+!models/*.example.json
+*.onnx
 *.mdspc
 
 # PyCharm
 .idea/
+.venv/
 
 # Outputs
 output/
