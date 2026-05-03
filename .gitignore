@@ -38,9 +38,12 @@ x86/
 *.log
 *.tlog
 *.json
+!configs/**/*.json
+*.mdspc
 
 # PyCharm
 .idea/
 
 # Outputs
+output/
 MultiDataStructure/output/

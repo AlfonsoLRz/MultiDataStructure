@@ -93,13 +93,17 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\tests\BaselineTests.h" />
     <ClInclude Include="AABB.h" />
+    <ClInclude Include="AppConfig.h" />
     <ClInclude Include="ApplicationState.h" />
     <ClInclude Include="Bvh.h" />
     <ClInclude Include="bvh_kernels.cuh" />
     <ClInclude Include="Camera.h" />
     <ClInclude Include="CameraProjection.h" />
     <ClInclude Include="ChronoUtilities.h" />
+    <ClInclude Include="core\BuildPolicy.h" />
+    <ClInclude Include="core\Config.h" />
     <ClInclude Include="CudaHelper.h" />
     <ClInclude Include="cuda_globals.cuh" />
     <ClInclude Include="GeometricUtilities.h" />
@@ -122,11 +126,23 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClInclude Include="TriangleMesh.h" />
+    <ClInclude Include="workloads\points\PointBenchmark.h" />
+    <ClInclude Include="workloads\points\PointCloud.h" />
+    <ClInclude Include="workloads\points\PointPrimitive.h" />
+    <ClInclude Include="workloads\points\PointSpatialIndex.h" />
+    <ClInclude Include="workloads\points\SyntheticPointClouds.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\tests\test_config_parsing.cpp" />
+    <ClCompile Include="..\tests\test_level_schedule.cpp" />
+    <ClCompile Include="..\tests\test_pointcloud_io.cpp" />
+    <ClCompile Include="..\tests\test_tree_cleanup.cpp" />
     <ClCompile Include="AABB.cpp" />
+    <ClCompile Include="AppConfig.cpp" />
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="CameraProjection.cpp" />
+    <ClCompile Include="core\BuildPolicy.cpp" />
+    <ClCompile Include="core\Config.cpp" />
     <ClCompile Include="CudaHelper.cpp" />
     <ClCompile Include="GeometricUtilities.cpp" />
     <ClCompile Include="GPUStructs.cpp" />
@@ -143,6 +159,11 @@
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="ExternalBvh.cpp" />
     <ClCompile Include="TriangleMesh.cpp" />
+    <ClCompile Include="workloads\points\PointBenchmark.cpp" />
+    <ClCompile Include="workloads\points\PointCloud.cpp" />
+    <ClCompile Include="workloads\points\PointPrimitive.cpp" />
+    <ClCompile Include="workloads\points\PointSpatialIndex.cpp" />
+    <ClCompile Include="workloads\points\SyntheticPointClouds.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Bvh.cu" />

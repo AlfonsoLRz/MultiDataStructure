@@ -1,0 +1,33 @@
+{
+  "name": "urban_hybrid_quadtree_octree_kdtree",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 3,
+      "leafCapacity": 96,
+      "minPointsToSplit": 24
+    },
+    {
+      "type": "Octree",
+      "numLevels": 3,
+      "leafCapacity": 48,
+      "minPointsToSplit": 12
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 4,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}
+

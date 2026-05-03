@@ -1,0 +1,245 @@
+#include "../stdafx.h"
+#include "Config.h"
+
+#include <boost/json.hpp>
+#include <boost/system/error_code.hpp>
+
+namespace
+{
+	size_t asSize(const boost::json::object& object, const char* key, size_t fallback)
+	{
+		if (const boost::json::value* value = object.if_contains(key))
+		{
+			if (value->is_int64())
+				return static_cast<size_t>(value->as_int64());
+			if (value->is_uint64())
+				return static_cast<size_t>(value->as_uint64());
+			if (value->is_double())
+				return static_cast<size_t>(value->as_double());
+		}
+
+		return fallback;
+	}
+
+	bool asBool(const boost::json::object& object, const char* key, bool fallback)
+	{
+		if (const boost::json::value* value = object.if_contains(key))
+		{
+			if (value->is_bool())
+				return value->as_bool();
+		}
+
+		return fallback;
+	}
+
+	std::string asString(const boost::json::object& object, const char* key, const std::string& fallback = {})
+	{
+		if (const boost::json::value* value = object.if_contains(key))
+		{
+			if (value->is_string())
+				return std::string(value->as_string().c_str());
+		}
+
+		return fallback;
+	}
+
+	std::string normalizeTypeName(std::string value)
+	{
+		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+			return std::isspace(c) || c == '_' || c == '-';
+			}), value.end());
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		return value;
+	}
+
+	bool pathExists(const std::filesystem::path& path)
+	{
+		std::error_code error;
+		return std::filesystem::exists(path, error);
+	}
+
+	std::filesystem::path resolveConfigPath(const std::string& filename)
+	{
+		const std::filesystem::path configuredPath(filename);
+		if (pathExists(configuredPath) || configuredPath.is_absolute())
+			return configuredPath;
+
+		std::error_code error;
+		std::filesystem::path current = std::filesystem::absolute(std::filesystem::current_path(), error);
+		if (error)
+			return configuredPath;
+
+		for (;;)
+		{
+			const std::filesystem::path candidate = (current / configuredPath).lexically_normal();
+			if (pathExists(candidate))
+				return candidate;
+
+			if (!current.has_parent_path() || current == current.parent_path())
+				break;
+
+			current = current.parent_path();
+		}
+
+		return configuredPath;
+	}
+
+	SchemaLevelConfig parseLevel(const boost::json::object& object)
+	{
+		SchemaLevelConfig level;
+		level.typeName = asString(object, "type", level.typeName);
+		level.type = Config::parseDataStructureLevel(level.typeName);
+		level.numLevels = asSize(object, "numLevels", level.numLevels);
+		level.leafCapacity = asSize(object, "leafCapacity", level.leafCapacity);
+		level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
+		level.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level.minPrimitivesToSplit);
+		level.axisPolicy = asString(object, "axisPolicy", level.axisPolicy);
+
+		if (level.numLevels == 0)
+			throw std::runtime_error("Schema level numLevels must be greater than zero");
+
+		return level;
+	}
+
+	BuildPolicy parseBuildPolicy(const boost::json::object& object)
+	{
+		BuildPolicy policy;
+		policy.maxDepth = asSize(object, "maxDepth", policy.maxDepth);
+		policy.leafCapacity = asSize(object, "leafCapacity", policy.leafCapacity);
+		policy.minPrimitivesToSplit = asSize(object, "minPointsToSplit", policy.minPrimitivesToSplit);
+		policy.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", policy.minPrimitivesToSplit);
+		policy.collapseSingleChild = asBool(object, "collapseSingleChild", policy.collapseSingleChild);
+		policy.removeEmptyNodes = asBool(object, "removeEmptyNodes", policy.removeEmptyNodes);
+		policy.allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy.allowOverlapDuplication);
+		return policy;
+	}
+}
+
+size_t SchemaConfig::totalLevels() const
+{
+	size_t total = 0;
+	for (const SchemaLevelConfig& level : levels)
+		total += level.numLevels;
+
+	return total;
+}
+
+std::vector<MultiDataStructure::LevelConfig> SchemaConfig::toLevelConfigs() const
+{
+	std::vector<MultiDataStructure::LevelConfig> result;
+	result.reserve(levels.size());
+
+	for (const SchemaLevelConfig& level : levels)
+	{
+		MultiDataStructure::LevelConfig converted;
+		converted._levelType = level.type;
+		converted._numLevels = static_cast<glm::uint>(level.numLevels);
+		converted._leafCapacity = level.leafCapacity;
+		converted._minPrimitivesToSplit = level.minPrimitivesToSplit;
+		result.push_back(converted);
+	}
+
+	return result;
+}
+
+const SchemaLevelConfig& SchemaConfig::levelForDepth(size_t depth) const
+{
+	if (levels.empty())
+		throw std::runtime_error("Schema has no levels");
+
+	size_t cumulative = 0;
+	for (const SchemaLevelConfig& level : levels)
+	{
+		cumulative += level.numLevels;
+		if (depth < cumulative)
+			return level;
+	}
+
+	return levels.back();
+}
+
+SchemaConfig Config::loadSchemaConfig(const std::string& filename)
+{
+	const std::filesystem::path resolvedPath = resolveConfigPath(filename);
+	std::ifstream file(resolvedPath);
+	if (!file.is_open())
+		throw std::runtime_error("Unable to open schema config: " + filename);
+
+	std::stringstream buffer;
+	buffer << file.rdbuf();
+	return parseSchemaConfig(buffer.str(), resolvedPath.string());
+}
+
+SchemaConfig Config::parseSchemaConfig(const std::string& jsonText, const std::string& sourceName)
+{
+	boost::system::error_code error;
+	boost::json::value rootValue = boost::json::parse(jsonText, error);
+	if (error)
+		throw std::runtime_error("Invalid schema JSON" + (sourceName.empty() ? std::string() : " in " + sourceName) + ": " + error.message());
+
+	if (!rootValue.is_object())
+		throw std::runtime_error("Schema JSON root must be an object");
+
+	const boost::json::object& root = rootValue.as_object();
+
+	SchemaConfig schema;
+	schema.name = asString(root, "name", sourceName);
+
+	if (const boost::json::value* policyValue = root.if_contains("buildPolicy"))
+	{
+		if (!policyValue->is_object())
+			throw std::runtime_error("buildPolicy must be an object");
+		schema.buildPolicy = parseBuildPolicy(policyValue->as_object());
+	}
+
+	const boost::json::value* levelsValue = root.if_contains("levels");
+	if (!levelsValue || !levelsValue->is_array())
+		throw std::runtime_error("Schema config requires a levels array");
+
+	for (const boost::json::value& levelValue : levelsValue->as_array())
+	{
+		if (!levelValue.is_object())
+			throw std::runtime_error("Each schema level must be an object");
+		schema.levels.push_back(parseLevel(levelValue.as_object()));
+	}
+
+	if (schema.levels.empty())
+		throw std::runtime_error("Schema config requires at least one level");
+
+	if (schema.buildPolicy.maxDepth == 0)
+		schema.buildPolicy.maxDepth = schema.totalLevels();
+
+	return schema;
+}
+
+MultiDataStructure::DataStructureLevel Config::parseDataStructureLevel(const std::string& value)
+{
+	const std::string normalized = normalizeTypeName(value);
+	if (normalized == "quadtree" || normalized == "quadtreenode")
+		return MultiDataStructure::DataStructureLevel::QuadTreeNode;
+	if (normalized == "kdtree" || normalized == "kdtreenode")
+		return MultiDataStructure::DataStructureLevel::KDTreeNode;
+	if (normalized == "octree" || normalized == "octreenode")
+		return MultiDataStructure::DataStructureLevel::OctreeNode;
+	if (normalized == "bvh" || normalized == "bvhnode")
+		return MultiDataStructure::DataStructureLevel::BvhNode;
+
+	throw std::runtime_error("Unsupported spatial structure type: " + value);
+}
+
+std::string Config::dataStructureLevelName(MultiDataStructure::DataStructureLevel level)
+{
+	switch (level)
+	{
+	case MultiDataStructure::DataStructureLevel::QuadTreeNode:
+		return "QuadTree";
+	case MultiDataStructure::DataStructureLevel::KDTreeNode:
+		return "KDTree";
+	case MultiDataStructure::DataStructureLevel::OctreeNode:
+		return "Octree";
+	case MultiDataStructure::DataStructureLevel::BvhNode:
+		return "BVH";
+	default:
+		return "Unknown";
+	}
+}

@@ -6,9 +6,13 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define GLM_ENABLE_EXPERIMENTAL
 
+#include <algorithm>
 #include <any>
+#include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstring>
+#include <ctime>
 #include <cstdint>
 #include <cstdlib>
 #include <execution>
@@ -16,11 +20,15 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iomanip>
+#include <limits>
 #include <limits.h>
 #include <memory>
 #include <numeric>
 #include <random>
 #include <sstream>
+#include <stdexcept>
+#include <system_error>
 #include <stdio.h>
 #include <time.h>
 #include <thread>

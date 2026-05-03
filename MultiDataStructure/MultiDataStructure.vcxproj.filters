@@ -13,9 +13,27 @@
     <Filter Include="tinybvh">
       <UniqueIdentifier>{69378f8f-87c1-4663-8eaf-c46bb5929887}</UniqueIdentifier>
     </Filter>
+    <Filter Include="tests">
+      <UniqueIdentifier>{4e3cd670-cfe7-4d57-8176-e992d62c5077}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="workloads">
+      <UniqueIdentifier>{a3a7f5e6-f9dc-48d8-8d13-7e9d66c22f3c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="workloads\points">
+      <UniqueIdentifier>{d0de39c2-0af8-42fb-8a3a-d670687b93a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="core">
+      <UniqueIdentifier>{f5a82966-b3c9-4734-81fb-5dd8402e6f65}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\tests\BaselineTests.h">
+      <Filter>tests</Filter>
+    </ClInclude>
     <ClInclude Include="AABB.h">
+      <Filter>headers</Filter>
+    </ClInclude>
+    <ClInclude Include="AppConfig.h">
       <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="Camera.h">
@@ -90,9 +108,45 @@
     <ClInclude Include="ChronoUtilities.h">
       <Filter>headers</Filter>
     </ClInclude>
+    <ClInclude Include="core\BuildPolicy.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="core\Config.h">
+      <Filter>core</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointBenchmark.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointCloud.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointPrimitive.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointSpatialIndex.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\SyntheticPointClouds.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\tests\test_config_parsing.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_level_schedule.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_pointcloud_io.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_tree_cleanup.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
     <ClCompile Include="AABB.cpp">
+      <Filter>source</Filter>
+    </ClCompile>
+    <ClCompile Include="AppConfig.cpp">
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="Camera.cpp">
@@ -150,6 +204,27 @@
       <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="tinybvh\tiny_bvh.h" />
+    <ClCompile Include="core\BuildPolicy.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="core\Config.cpp">
+      <Filter>core</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\PointBenchmark.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\PointCloud.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\PointPrimitive.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\PointSpatialIndex.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\SyntheticPointClouds.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Bvh.cu">

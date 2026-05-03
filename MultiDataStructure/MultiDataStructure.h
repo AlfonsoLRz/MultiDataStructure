@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AABB.h"
+#include "core/BuildPolicy.h"
 #include "GPUStructs.h"
 
 class MultiDataStructure
@@ -18,6 +19,17 @@ public:
 	{
 		DataStructureLevel	_levelType;
 		glm::uint			_numLevels;
+		size_t				_leafCapacity = 1;
+		size_t				_minPrimitivesToSplit = 2;
+	};
+
+	struct Stats
+	{
+		glm::uint numLevels = 0;
+		glm::uint numNodes = 0;
+		glm::uint numLeaves = 0;
+		glm::uint numPrimitives = 0;
+		float averageLeafPrimitives = 0.0f;
 	};
 
 public:
@@ -43,6 +55,7 @@ private:
 	glm::uint					_maxLevels;
 	SpatialDSNode*				_rootNode;
 	glm::uint					_numPrimitives;
+	BuildPolicy					_buildPolicy;
 
 	//
 	std::vector<LevelConfig>	_levels;
@@ -60,6 +73,8 @@ private:
 	void removeEmptyNodes(SpatialDSNode* dsNode, glm::uint level, glm::uint& deletedNodes);
 
 	DataStructureLevel getNodeType(const glm::uint level) const;
+	const LevelConfig& getLevelConfig(const glm::uint level) const;
+	bool shouldSplit(const LevelConfig& levelConfig, size_t primitiveCount, glm::uint level) const;
 	void getAverageLeafPrimitives(const SpatialDSNode* dsNode, float& sum, glm::uint& count) const;
 	void getNumLeaves(const SpatialDSNode* dsNode, glm::uint& numLeaves) const;
 	void getNumNodes(const SpatialDSNode* dsNode, glm::uint& numNodes) const;
@@ -76,6 +91,7 @@ private:
 
 public:
 	MultiDataStructure(const std::vector<LevelConfig>& levels);
+	MultiDataStructure(const std::vector<LevelConfig>& levels, const BuildPolicy& buildPolicy);
 	virtual ~MultiDataStructure();
 
 	void build(const Node* nodes, size_t numNodes, const AABB& aabb);
@@ -83,6 +99,7 @@ public:
 	void checkSanity() { this->checkSanity(_rootNode, 0); }
 	void collapseNodes() { this->collapseNodes(_rootNode, 0); }
 	void removeEmptyNodes(glm::uint& deletedNodes);
+	void applyConfiguredCleanup();
 
 	void resolveRayQueries(
 		const std::vector<Ray>& rays, std::vector<float>& depth, 
@@ -95,6 +112,9 @@ public:
 	);
 
 	bool exportNodes(const std::string &filename);
+	DataStructureLevel getConfiguredNodeType(glm::uint level) const { return getNodeType(level); }
+	const BuildPolicy& getBuildPolicy() const { return _buildPolicy; }
+	Stats getStats() const;
 	void printStats() const;
 };
 

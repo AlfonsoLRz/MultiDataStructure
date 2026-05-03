@@ -1,4 +1,6 @@
 #include "stdafx.h"
+
+#define TINYBVH_IMPLEMENTATION
 #include "ExternalBvh.h"
 
 //
@@ -21,13 +23,33 @@ ExternalBvh::ExternalBvh(const VertexGPU* vertices, const glm::u32* indices, glm
 
 ExternalBvh::~ExternalBvh() = default;
 
+glm::uint ExternalBvh::getNumLeaves() const
+{
+	return static_cast<glm::uint>(_bvh.LeafCount());
+}
+
+glm::uint ExternalBvh::getNumNodes() const
+{
+	return static_cast<glm::uint>(_bvh.NodeCount());
+}
+
+glm::uint ExternalBvh::getNumPrimitives() const
+{
+	return static_cast<glm::uint>(_bvh.PrimCount());
+}
+
+float ExternalBvh::getSAHCost() const
+{
+	return _bvh.SAHCost(0);
+}
+
 void ExternalBvh::printStats()
 {
 	std::cout << "BVH stats:" << std::endl;
-	std::cout << "  - Number of leaves: " << _bvh.LeafCount() << std::endl;
-	std::cout << "  - Number of triangles: " << _bvh.PrimCount() << std::endl;
-	std::cout << "  - Number of nodes: " << _bvh.NodeCount() << std::endl;
-	std::cout << "  - SAH: " << _bvh.SAHCost(0) << std::endl;
+	std::cout << "  - Number of leaves: " << getNumLeaves() << std::endl;
+	std::cout << "  - Number of triangles: " << getNumPrimitives() << std::endl;
+	std::cout << "  - Number of nodes: " << getNumNodes() << std::endl;
+	std::cout << "  - SAH: " << getSAHCost() << std::endl;
 }
 
 void ExternalBvh::resolveRayQueries(const std::vector<Ray>& rays, std::vector<float>& depth) const
