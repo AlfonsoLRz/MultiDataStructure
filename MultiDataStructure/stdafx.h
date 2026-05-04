@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <cuda.h>
 #define GLM_FORCE_CUDA
 
@@ -8,6 +12,8 @@
 
 #include <algorithm>
 #include <any>
+#include <array>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -25,6 +31,7 @@
 #include <limits>
 #include <limits.h>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <optional>
 #include <queue>

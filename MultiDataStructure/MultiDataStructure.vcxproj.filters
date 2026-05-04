@@ -28,6 +28,9 @@
     <Filter Include="experiments">
       <UniqueIdentifier>{93b11466-75e2-493c-b60c-a9657993b080}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ui">
+      <UniqueIdentifier>{d511d92e-1f86-4e79-bac4-146c36e88571}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\tests\BaselineTests.h">
@@ -143,6 +146,9 @@
     </ClInclude>
     <ClInclude Include="workloads\points\SyntheticPointClouds.h">
       <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\OptimizerGui.h">
+      <Filter>ui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -266,6 +272,9 @@
     </ClCompile>
     <ClCompile Include="workloads\points\SyntheticPointClouds.cpp">
       <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\OptimizerGui.cpp">
+      <Filter>ui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

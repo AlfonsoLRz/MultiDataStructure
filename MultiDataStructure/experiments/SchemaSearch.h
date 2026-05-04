@@ -50,6 +50,17 @@ namespace Experiments
 		double lambdaImbalance = 0.01;
 	};
 
+	struct EvolutionOptions
+	{
+		bool enabled = false;
+		size_t generations = 3;
+		size_t populationSize = 64;
+		size_t eliteCount = 6;
+		double mutationRate = 0.65;
+		double randomImmigrationRate = 0.20;
+		uint32_t seed = 1337;
+	};
+
 	struct SchemaSearchOptions
 	{
 		std::vector<std::string> inputPaths;
@@ -71,6 +82,7 @@ namespace Experiments
 		bool querySeedOverride = false;
 		SchemaGenerationOptions generation;
 		ScoreWeights weights;
+		EvolutionOptions evolution;
 	};
 
 	struct SchemaSearchRecord

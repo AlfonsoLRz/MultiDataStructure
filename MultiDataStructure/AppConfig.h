@@ -6,8 +6,8 @@
 
 namespace AppDefaults
 {
-	// Supported values: "points", "schema-search", or "tests".
-	inline constexpr const char* DEFAULT_MODE = "points";
+	// Supported values: "gui", "points", "schema-search", or "tests".
+	inline constexpr const char* DEFAULT_MODE = "gui";
 	inline constexpr const char* POINT_INPUT_PATH = "C:/Datasets/points/Alhambra_100M.las";
 	//inline constexpr const char* POINT_SCHEMA_PATH = "configs/schemas/octree.json";
 	inline constexpr const char* POINT_SCHEMA_PATH = "auto";

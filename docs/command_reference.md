@@ -44,6 +44,14 @@ Run tests:
 .\x64\Release\MultiDataStructure.exe --run-tests --no-pause
 ```
 
+Open the ImGui optimizer interface:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode gui
+```
+
+With no arguments, the executable now opens the same GUI by default.
+
 ## Fixed-Schema Point Benchmark
 
 Run one explicit schema:
@@ -148,6 +156,12 @@ Generated conditional schema search. Later generated blocks may include local no
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --generated-conditional --generated-condition-probability 0.5 --workloads configs/workloads/volume_small_medium.json --queries 128 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_conditional.csv --best-csv results/alhambra_volume_conditional_best.csv --no-pause
 ```
 
+Evolutionary schema optimization. This evaluates an initial population, keeps the best measured schemas as parents, mutates them, adds random immigrants, and repeats:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generate-schemas 128 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --optimizer-mutation-rate 0.65 --optimizer-random-fraction 0.20 --workloads configs/workloads/volume_small_medium.json --queries 128 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_evolution.csv --best-csv results/alhambra_evolution_best.csv --no-pause
+```
+
 Replay the hand-authored conditional quadtree-to-octree schema:
 
 ```powershell
@@ -191,7 +205,8 @@ $best = (Import-Csv results/alhambra_generated_best.csv | Select-Object -First 1
 Mode and basic IO:
 
 ```text
---mode points|schema-search|tests
+--mode gui|points|schema-search|tests
+--gui
 --input <path>
 --output <path>
 --csv <path>
@@ -249,6 +264,18 @@ Generated schema search:
 --generated-condition-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
+```
+
+Evolutionary schema optimizer:
+
+```text
+--optimize-schemas
+--optimizer-generations <n>
+--optimizer-population <n>
+--optimizer-elites <n>
+--optimizer-mutation-rate <value>
+--optimizer-random-fraction <value>
+--optimizer-seed <seed>
 ```
 
 Schema-search score weights:

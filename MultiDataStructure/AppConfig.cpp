@@ -127,6 +127,11 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 			config.pointOptions.pauseAtEnd = false;
 			config.schemaSearchOptions.pauseAtEnd = false;
 		}
+		else if (arg == "--gui")
+		{
+			config.mode = "gui";
+			modeWasSpecified = true;
+		}
 		else if (arg == "--no-pause")
 		{
 			config.pointOptions.pauseAtEnd = false;
@@ -238,6 +243,34 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.generation.outputDirectory = argv[++i];
 		}
+		else if (arg == "--optimize-schemas")
+		{
+			config.schemaSearchOptions.evolution.enabled = true;
+		}
+		else if (arg == "--optimizer-generations" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.generations = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--optimizer-population" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.populationSize = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--optimizer-elites" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.eliteCount = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--optimizer-mutation-rate" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.mutationRate = std::stod(argv[++i]);
+		}
+		else if (arg == "--optimizer-random-fraction" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.randomImmigrationRate = std::stod(argv[++i]);
+		}
+		else if (arg == "--optimizer-seed" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+		}
 		else if (arg == "--score-build-weight" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.lambdaBuild = std::stod(argv[++i]);
@@ -311,7 +344,8 @@ void AppConfig::printHelp(std::ostream& output)
 	output
 		<< "MultiDataStructure point-cloud benchmark\n"
 		<< "  Editable defaults live in MultiDataStructure/AppConfig.h\n"
-		<< "  --mode points|schema-search|tests\n"
+		<< "  --mode gui|points|schema-search|tests\n"
+		<< "  --gui                       Open the ImGui optimizer interface\n"
 		<< "  --input <path>              Point cloud path (.las, .ply, .xyz, .csv)\n"
 		<< "  --schema <path>             Spatial schema JSON\n"
 		<< "  --schema auto               Select a schema with a measured, JSON, or ONNX score ranker\n"
@@ -331,6 +365,13 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-condition-probability <v> Probability for generated conditional blocks\n"
 		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
 		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
+		<< "  --optimize-schemas          Run evolutionary mutation search after the initial candidate set\n"
+		<< "  --optimizer-generations <n> Evolution generations, default 3\n"
+		<< "  --optimizer-population <n>  Mutated/random candidates per generation, default 64\n"
+		<< "  --optimizer-elites <n>      Best measured candidates kept as parents, default 6\n"
+		<< "  --optimizer-mutation-rate <v> Extra mutation probability per child, default 0.65\n"
+		<< "  --optimizer-random-fraction <v> Fraction of each generation sampled randomly, default 0.20\n"
+		<< "  --optimizer-seed <seed>     Seed for optimizer parent choice and mutation\n"
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
 		<< "  --score-memory-weight <v>   Memory score weight, default 0.01\n"
 		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0.01\n"

@@ -49,6 +49,19 @@ namespace
 		size_t knnQueries = 0;
 	};
 
+	struct DatasetContext
+	{
+		const SearchDataset* dataset = nullptr;
+		Experiments::PointCloudFeatures features;
+	};
+
+	struct EvaluatedCandidate
+	{
+		Experiments::SchemaCandidate candidate;
+		std::vector<Experiments::SchemaSearchRecord> records;
+		double aggregateScore = std::numeric_limits<double>::infinity();
+	};
+
 	bool pathExists(const std::filesystem::path& path)
 	{
 		std::error_code error;
@@ -394,6 +407,250 @@ namespace
 		return output.str();
 	}
 
+	Experiments::SchemaCandidate materializeGeneratedSchema(
+		SchemaConfig schema,
+		const std::string& namePrefix,
+		const std::string& outputDirectory)
+	{
+		const std::string signature = schemaSignature(schema);
+		schema.name = namePrefix + "_" + signature;
+
+		Experiments::SchemaCandidate candidate;
+		candidate.name = schema.name;
+		candidate.config = schema;
+		candidate.generated = true;
+
+		if (!outputDirectory.empty())
+		{
+			const std::filesystem::path schemaPath = std::filesystem::path(outputDirectory) / (schema.name + ".json");
+			if (schemaPath.has_parent_path())
+				std::filesystem::create_directories(schemaPath.parent_path());
+
+			std::ofstream output(schemaPath);
+			if (!output.is_open())
+				throw std::runtime_error("Unable to write generated schema: " + schemaPath.string());
+			output << schemaConfigToJson(schema);
+			candidate.path = schemaPath.string();
+		}
+		else
+		{
+			candidate.path = "generated:" + schema.name;
+		}
+
+		return candidate;
+	}
+
+	SchemaLevelConfig randomLevelConfig(
+		std::mt19937& rng,
+		const Experiments::SchemaGenerationOptions& options,
+		std::optional<MultiDataStructure::DataStructureLevel> previousType = std::nullopt)
+	{
+		const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+		const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+
+		SchemaLevelConfig level;
+		level.type = randomStructureType(rng, previousType);
+		level.typeName = Config::dataStructureLevelName(level.type);
+		level.numLevels = 1;
+		level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
+		return level;
+	}
+
+	void refreshLevelTypeName(SchemaLevelConfig& level)
+	{
+		level.typeName = Config::dataStructureLevelName(level.type);
+		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
+	}
+
+	void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments::SchemaGenerationOptions& options)
+	{
+		const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
+		const size_t maxBlocks = std::max<size_t>(1, std::min(options.maxBlocks, maxDepth));
+		const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+		const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+
+		if (schema.levels.empty())
+		{
+			std::mt19937 fallbackRng(options.seed);
+			schema.levels.push_back(randomLevelConfig(fallbackRng, options));
+		}
+
+		while (schema.levels.size() > maxBlocks)
+			schema.levels.pop_back();
+
+		for (size_t i = 0; i < schema.levels.size(); ++i)
+		{
+			SchemaLevelConfig& level = schema.levels[i];
+			level.numLevels = std::max<size_t>(1, level.numLevels);
+			level.leafCapacity = clampPowerOfTwo(level.leafCapacity, minLeaf, maxLeaf);
+			level.minPrimitivesToSplit = std::clamp(level.minPrimitivesToSplit, static_cast<size_t>(2), std::max<size_t>(2, level.leafCapacity));
+			refreshLevelTypeName(level);
+			if (i == 0)
+				level.condition = {};
+		}
+
+		while (schema.totalLevels() > maxDepth && !schema.levels.empty())
+		{
+			auto reducible = std::find_if(schema.levels.rbegin(), schema.levels.rend(), [](const SchemaLevelConfig& level) {
+				return level.numLevels > 1;
+			});
+			if (reducible != schema.levels.rend())
+			{
+				--reducible->numLevels;
+				continue;
+			}
+
+			if (schema.levels.size() > 1)
+				schema.levels.pop_back();
+			else
+				break;
+		}
+
+		if (schema.levels.empty())
+		{
+			std::mt19937 fallbackRng(options.seed);
+			schema.levels.push_back(randomLevelConfig(fallbackRng, options));
+		}
+
+		schema.buildPolicy.maxDepth = std::min(maxDepth, schema.totalLevels());
+		schema.buildPolicy.leafCapacity = schema.levels.front().leafCapacity;
+		schema.buildPolicy.minPrimitivesToSplit = std::max<size_t>(2, schema.buildPolicy.leafCapacity / 4);
+		schema.buildPolicy.collapseSingleChild = true;
+		schema.buildPolicy.removeEmptyNodes = true;
+		schema.buildPolicy.allowOverlapDuplication = false;
+	}
+
+	void mutateLevelCondition(
+		SchemaLevelConfig& level,
+		std::mt19937& rng,
+		const Experiments::SchemaGenerationOptions& options)
+	{
+		const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+		const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+		if (level.condition.empty())
+		{
+			level.condition = randomLevelCondition(rng, level.type, minLeaf, maxLeaf);
+			return;
+		}
+
+		std::uniform_int_distribution<int> editDistribution(0, 3);
+		switch (editDistribution(rng))
+		{
+		case 0:
+			level.condition = randomLevelCondition(rng, level.type, minLeaf, maxLeaf);
+			break;
+		case 1:
+			level.condition.minPoints = randomPowerOfTwo(rng, minLeaf, std::max<size_t>(minLeaf * 2, std::min<size_t>(maxLeaf * 8, 1 << 20)));
+			break;
+		case 2:
+		{
+			static const std::array<double, 7> values = { 0.05, 0.10, 0.20, 0.35, 0.50, 0.75, 1.00 };
+			std::uniform_int_distribution<size_t> valueDistribution(0, values.size() - 1);
+			if (level.type == MultiDataStructure::QuadTreeNode)
+				level.condition.maxHeightRatio = values[valueDistribution(rng)];
+			else
+				level.condition.minHeightRatio = values[valueDistribution(rng)];
+			break;
+		}
+		default:
+			level.condition = {};
+			break;
+		}
+	}
+
+	SchemaConfig mutateSchemaConfig(
+		const SchemaConfig& parent,
+		std::mt19937& rng,
+		const Experiments::SchemaGenerationOptions& options,
+		const Experiments::EvolutionOptions& evolution)
+	{
+		SchemaConfig schema = parent;
+		const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
+		const size_t maxBlocks = std::max<size_t>(1, std::min(options.maxBlocks, maxDepth));
+		const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+		const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+
+		std::bernoulli_distribution extraEdit(std::clamp(evolution.mutationRate, 0.0, 1.0));
+		size_t edits = 1;
+		while (edits < 5 && extraEdit(rng))
+			++edits;
+
+		for (size_t edit = 0; edit < edits; ++edit)
+		{
+			if (schema.levels.empty())
+				schema.levels.push_back(randomLevelConfig(rng, options));
+
+			std::uniform_int_distribution<size_t> levelDistribution(0, schema.levels.size() - 1);
+			const size_t levelIndex = levelDistribution(rng);
+			SchemaLevelConfig& level = schema.levels[levelIndex];
+
+			std::uniform_int_distribution<int> mutationDistribution(0, 7);
+			switch (mutationDistribution(rng))
+			{
+			case 0:
+				level.type = randomStructureType(rng, std::nullopt);
+				refreshLevelTypeName(level);
+				if (levelIndex == 0)
+					level.condition = {};
+				break;
+			case 1:
+			{
+				std::bernoulli_distribution grow(0.5);
+				if (grow(rng) && schema.totalLevels() < maxDepth)
+					++level.numLevels;
+				else if (level.numLevels > 1)
+					--level.numLevels;
+				break;
+			}
+			case 2:
+			{
+				std::bernoulli_distribution grow(0.5);
+				level.leafCapacity = grow(rng)
+					? clampPowerOfTwo(level.leafCapacity * 2, minLeaf, maxLeaf)
+					: clampPowerOfTwo(std::max<size_t>(1, level.leafCapacity / 2), minLeaf, maxLeaf);
+				level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+				break;
+			}
+			case 3:
+			{
+				static const std::array<size_t, 4> divisors = { 2, 4, 8, 16 };
+				std::uniform_int_distribution<size_t> divisorDistribution(0, divisors.size() - 1);
+				level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / divisors[divisorDistribution(rng)]);
+				break;
+			}
+			case 4:
+				if (options.conditionalLevels && levelIndex > 0)
+					mutateLevelCondition(level, rng, options);
+				break;
+			case 5:
+				if (schema.levels.size() < maxBlocks && schema.totalLevels() < maxDepth)
+				{
+					const auto insertAt = schema.levels.begin() + static_cast<std::ptrdiff_t>(levelIndex + 1);
+					schema.levels.insert(insertAt, randomLevelConfig(rng, options, level.type));
+				}
+				break;
+			case 6:
+				if (schema.levels.size() > 1)
+					schema.levels.erase(schema.levels.begin() + static_cast<std::ptrdiff_t>(levelIndex));
+				break;
+			case 7:
+				if (schema.levels.size() > 1)
+				{
+					std::uniform_int_distribution<size_t> swapDistribution(0, schema.levels.size() - 1);
+					const size_t other = swapDistribution(rng);
+					if (other != levelIndex)
+						std::swap(schema.levels[levelIndex], schema.levels[other]);
+				}
+				break;
+			}
+		}
+
+		normalizeSchemaForGeneration(schema, options);
+		return schema;
+	}
+
 	std::vector<SearchDataset> makeSyntheticDatasets(size_t scale)
 	{
 		const size_t n = std::max<size_t>(64, scale);
@@ -601,6 +858,88 @@ namespace
 		return result;
 	}
 
+	Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
+		const SearchDataset& dataset,
+		const Experiments::PointCloudFeatures& pointFeatures,
+		const Experiments::WorkloadProfile& workload,
+		const Experiments::WorkloadFeatures& workloadFeatures,
+		const Experiments::SchemaCandidate& schema,
+		const Experiments::ScoreWeights& weights)
+	{
+		PointSpatialIndex index;
+		const auto buildBegin = std::chrono::steady_clock::now();
+		index.build(dataset.cloud, schema.config);
+		const auto buildEnd = std::chrono::steady_clock::now();
+
+		const Experiments::BuildMetrics buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd));
+		const WorkloadRun workloadRun = runWorkloadProfile(workload, dataset.cloud, index);
+
+		Experiments::SchemaSearchRecord record;
+		record.datasetName = dataset.name;
+		record.datasetSource = dataset.source;
+		record.numPoints = dataset.cloud.size();
+		record.workloadName = workload.name;
+		record.rangeWeight = workload.rangeWeight;
+		record.radiusWeight = workload.radiusWeight;
+		record.knnWeight = workload.knnWeight;
+		record.numQueries = workload.numQueries;
+		record.knnK = workload.knnK;
+		record.querySeed = workload.querySeed;
+		record.schemaName = schema.config.name;
+		record.schemaPath = schema.path;
+		record.buildMetrics = buildMetrics;
+		record.queryMetrics = workloadRun.metrics;
+		record.rangeQueries = workloadRun.rangeQueries;
+		record.radiusQueries = workloadRun.radiusQueries;
+		record.knnQueries = workloadRun.knnQueries;
+		record.weights = weights;
+		record.score = Experiments::computeSchemaSearchScore(
+			record.buildMetrics,
+			record.queryMetrics,
+			record.weights,
+			record.scoreMemoryMb,
+			record.scoreImbalancePenalty);
+		record.pointFeatures = pointFeatures;
+		record.workloadFeatures = workloadFeatures;
+		return record;
+	}
+
+	EvaluatedCandidate evaluateCandidate(
+		const Experiments::SchemaCandidate& candidate,
+		const std::vector<DatasetContext>& datasets,
+		const std::vector<Experiments::WorkloadProfile>& workloads,
+		const Experiments::ScoreWeights& weights)
+	{
+		EvaluatedCandidate evaluation;
+		evaluation.candidate = candidate;
+		evaluation.records.reserve(datasets.size() * workloads.size());
+
+		double scoreSum = 0.0;
+		size_t scoreCount = 0;
+		for (const DatasetContext& datasetContext : datasets)
+		{
+			for (const Experiments::WorkloadProfile& workload : workloads)
+			{
+				const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
+				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidate(
+					*datasetContext.dataset,
+					datasetContext.features,
+					workload,
+					workloadFeatures,
+					candidate,
+					weights);
+				scoreSum += record.score;
+				++scoreCount;
+				evaluation.records.push_back(std::move(record));
+			}
+		}
+
+		evaluation.aggregateScore = scoreCount > 0
+			? scoreSum / static_cast<double>(scoreCount)
+			: std::numeric_limits<double>::infinity();
+		return evaluation;
+	}
+
 	std::string csvEscape(const std::string& value)
 	{
 		if (value.find_first_of(",\"\n\r") == std::string::npos)
@@ -804,6 +1143,140 @@ namespace
 				<< countCandidatesForBest(records, record) << '\n';
 		}
 	}
+
+	std::vector<Experiments::SchemaCandidate> uniqueCandidates(
+		const std::vector<Experiments::SchemaCandidate>& candidates,
+		std::unordered_set<std::string>& seenSignatures)
+	{
+		std::vector<Experiments::SchemaCandidate> unique;
+		unique.reserve(candidates.size());
+		for (const Experiments::SchemaCandidate& candidate : candidates)
+		{
+			const std::string signature = schemaSignature(candidate.config);
+			if (!seenSignatures.insert(signature).second)
+				continue;
+
+			unique.push_back(candidate);
+		}
+		return unique;
+	}
+
+	void appendRecords(
+		std::vector<Experiments::SchemaSearchRecord>& records,
+		const EvaluatedCandidate& evaluation)
+	{
+		records.insert(records.end(), evaluation.records.begin(), evaluation.records.end());
+	}
+
+	void sortEvaluations(std::vector<EvaluatedCandidate>& evaluations)
+	{
+		std::sort(evaluations.begin(), evaluations.end(), [](const EvaluatedCandidate& left, const EvaluatedCandidate& right) {
+			return left.aggregateScore < right.aggregateScore;
+		});
+	}
+
+	std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
+		const Experiments::SchemaSearchOptions& options,
+		const std::vector<DatasetContext>& datasets,
+		const std::vector<Experiments::WorkloadProfile>& workloads,
+		const std::vector<Experiments::SchemaCandidate>& initialCandidates)
+	{
+		const Experiments::EvolutionOptions& evolution = options.evolution;
+		const size_t populationSize = std::max<size_t>(1, evolution.populationSize);
+		const size_t eliteCount = std::max<size_t>(1, evolution.eliteCount);
+		const double randomFraction = std::clamp(evolution.randomImmigrationRate, 0.0, 1.0);
+
+		std::mt19937 rng(evolution.seed);
+		std::unordered_set<std::string> seenSignatures;
+		std::vector<EvaluatedCandidate> archive;
+		std::vector<Experiments::SchemaSearchRecord> records;
+
+		std::vector<Experiments::SchemaCandidate> batch = uniqueCandidates(initialCandidates, seenSignatures);
+		if (batch.empty())
+			throw std::runtime_error("Evolutionary schema optimizer has no initial population.");
+
+		std::cout << "  optimizer: evolutionary mutation search\n";
+		std::cout << "    generations: " << evolution.generations << '\n';
+		std::cout << "    population per generation: " << populationSize << '\n';
+		std::cout << "    elites: " << eliteCount << '\n';
+		std::cout << "    mutation rate: " << evolution.mutationRate << '\n';
+		std::cout << "    random immigration: " << randomFraction << '\n';
+
+		auto evaluateBatch = [&](const std::vector<Experiments::SchemaCandidate>& candidates, const std::string& label) {
+			for (size_t i = 0; i < candidates.size(); ++i)
+			{
+				const Experiments::SchemaCandidate& candidate = candidates[i];
+				std::cout << "      " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate.config.name << '\n';
+				EvaluatedCandidate evaluation = evaluateCandidate(candidate, datasets, workloads, options.weights);
+				std::cout << "        aggregate score " << evaluation.aggregateScore << '\n';
+				appendRecords(records, evaluation);
+				archive.push_back(std::move(evaluation));
+			}
+			sortEvaluations(archive);
+			if (!archive.empty())
+				std::cout << "      best so far: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
+		};
+
+		evaluateBatch(batch, "initial");
+
+		for (size_t generation = 1; generation <= evolution.generations; ++generation)
+		{
+			sortEvaluations(archive);
+			const size_t currentEliteCount = std::min(eliteCount, archive.size());
+			if (currentEliteCount == 0)
+				break;
+
+			std::vector<Experiments::SchemaCandidate> children;
+			children.reserve(populationSize);
+
+			const size_t randomCount = std::min(populationSize, static_cast<size_t>(std::round(static_cast<double>(populationSize) * randomFraction)));
+			if (randomCount > 0)
+			{
+				Experiments::SchemaGenerationOptions randomOptions = options.generation;
+				randomOptions.count = randomCount;
+				randomOptions.seed = rng();
+				std::vector<Experiments::SchemaCandidate> immigrants = Experiments::generateSchemaCandidates(randomOptions);
+				for (const Experiments::SchemaCandidate& immigrant : immigrants)
+				{
+					const std::string signature = schemaSignature(immigrant.config);
+					if (!seenSignatures.insert(signature).second)
+						continue;
+					children.push_back(immigrant);
+					if (children.size() >= populationSize)
+						break;
+				}
+			}
+
+			size_t attempts = 0;
+			const size_t maxAttempts = std::max<size_t>(populationSize * 80, 512);
+			while (children.size() < populationSize && attempts++ < maxAttempts)
+			{
+				std::uniform_int_distribution<size_t> eliteDistribution(0, currentEliteCount - 1);
+				const EvaluatedCandidate& parent = archive[eliteDistribution(rng)];
+				SchemaConfig childSchema = mutateSchemaConfig(parent.candidate.config, rng, options.generation, evolution);
+				const std::string signature = schemaSignature(childSchema);
+				if (!seenSignatures.insert(signature).second)
+					continue;
+
+				const std::string prefix = "evolved_g" + std::to_string(generation) + "_i" + std::to_string(children.size());
+				children.push_back(materializeGeneratedSchema(childSchema, prefix, options.generation.outputDirectory));
+			}
+
+			if (children.empty())
+			{
+				std::cerr << "Warning: optimizer generation " << generation << " produced no unique children\n";
+				break;
+			}
+
+			evaluateBatch(children, "generation " + std::to_string(generation));
+		}
+
+		sortEvaluations(archive);
+		if (!archive.empty())
+			std::cout << "  optimizer best aggregate: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
+
+		return records;
+	}
 }
 
 std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(const SchemaGenerationOptions& options)
@@ -870,28 +1343,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 		if (!seen.insert(signature).second)
 			continue;
 
-		schema.name = "generated_" + signature;
-
-		SchemaCandidate candidate;
-		candidate.name = schema.name;
-		if (!options.outputDirectory.empty())
-		{
-			const std::filesystem::path schemaPath = std::filesystem::path(options.outputDirectory) / (schema.name + ".json");
-			if (schemaPath.has_parent_path())
-				std::filesystem::create_directories(schemaPath.parent_path());
-
-			std::ofstream output(schemaPath);
-			if (!output.is_open())
-				throw std::runtime_error("Unable to write generated schema: " + schemaPath.string());
-			output << schemaConfigToJson(schema);
-			candidate.path = schemaPath.string();
-		}
-		else
-		{
-			candidate.path = "generated:" + signature;
-		}
-		candidate.config = schema;
-		candidate.generated = true;
+		SchemaCandidate candidate = materializeGeneratedSchema(schema, "generated", options.outputDirectory);
 		candidates.push_back(std::move(candidate));
 	}
 
@@ -1015,7 +1467,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	if (schemas.empty())
 		throw std::runtime_error("Schema search has no schemas. Provide --schemas, omit --generated-only, or use --generate-schemas.");
 	const std::vector<WorkloadProfile> workloads = loadWorkloads(options);
-	const std::optional<SchemaSelectorModel> rankModel = options.rankModelPath.empty()
+	const std::optional<SchemaSelectorModel> rankModel = (options.rankModelPath.empty() || options.evolution.enabled)
 		? std::optional<SchemaSelectorModel>()
 		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(options.rankModelPath));
 
@@ -1032,17 +1484,32 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		if (options.generation.conditionalLevels)
 			std::cout << "  generated conditions: probability " << options.generation.conditionalProbability << '\n';
 	}
-	if (rankModel.has_value())
+	if (!options.evolution.enabled && rankModel.has_value())
 	{
 		std::cout << "  surrogate rank model: " << options.rankModelPath << '\n';
 		if (options.benchmarkTopK > 0)
 			std::cout << "  benchmark top-k: " << options.benchmarkTopK << '\n';
 	}
+	else if (options.evolution.enabled && !options.rankModelPath.empty())
+	{
+		std::cout << "  surrogate rank model: not used inside evolutionary loop; measured scores drive selection\n";
+	}
 	std::cout << "  workloads: " << workloads.size() << '\n';
 
+	std::vector<DatasetContext> datasetContexts;
+	datasetContexts.reserve(datasets.size());
 	for (const SearchDataset& dataset : datasets)
+		datasetContexts.push_back(DatasetContext{ &dataset, extractPointCloudFeatures(dataset.cloud) });
+
+	if (options.evolution.enabled)
 	{
-		const PointCloudFeatures pointFeatures = extractPointCloudFeatures(dataset.cloud);
+		records = runEvolutionarySchemaSearch(options, datasetContexts, workloads, schemas);
+	}
+	else
+	{
+		for (const DatasetContext& datasetContext : datasetContexts)
+		{
+			const SearchDataset& dataset = *datasetContext.dataset;
 		std::cout << "  dataset: " << dataset.name << " (" << dataset.cloud.size() << " points)\n";
 
 		for (const WorkloadProfile& workload : workloads)
@@ -1061,41 +1528,13 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 
 			for (const SchemaCandidate& schema : benchmarkSchemas)
 			{
-				PointSpatialIndex index;
-				const auto buildBegin = std::chrono::steady_clock::now();
-				index.build(dataset.cloud, schema.config);
-				const auto buildEnd = std::chrono::steady_clock::now();
-
-				const BuildMetrics buildMetrics = collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd));
-				const WorkloadRun workloadRun = runWorkloadProfile(workload, dataset.cloud, index);
-
-				SchemaSearchRecord record;
-				record.datasetName = dataset.name;
-				record.datasetSource = dataset.source;
-				record.numPoints = dataset.cloud.size();
-				record.workloadName = workload.name;
-				record.rangeWeight = workload.rangeWeight;
-				record.radiusWeight = workload.radiusWeight;
-				record.knnWeight = workload.knnWeight;
-				record.numQueries = workload.numQueries;
-				record.knnK = workload.knnK;
-				record.querySeed = workload.querySeed;
-				record.schemaName = schema.config.name;
-				record.schemaPath = schema.path;
-				record.buildMetrics = buildMetrics;
-				record.queryMetrics = workloadRun.metrics;
-				record.rangeQueries = workloadRun.rangeQueries;
-				record.radiusQueries = workloadRun.radiusQueries;
-				record.knnQueries = workloadRun.knnQueries;
-				record.weights = options.weights;
-				record.score = computeSchemaSearchScore(
-					record.buildMetrics,
-					record.queryMetrics,
-					record.weights,
-					record.scoreMemoryMb,
-					record.scoreImbalancePenalty);
-				record.pointFeatures = pointFeatures;
-				record.workloadFeatures = workloadFeatures;
+				SchemaSearchRecord record = benchmarkSchemaCandidate(
+					dataset,
+					datasetContext.features,
+					workload,
+					workloadFeatures,
+					schema,
+					options.weights);
 				records.push_back(record);
 
 				std::cout << "      " << record.schemaName
@@ -1104,6 +1543,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 					<< " ms, build " << record.buildMetrics.buildTimeMs
 					<< " ms\n";
 			}
+		}
 		}
 	}
 
