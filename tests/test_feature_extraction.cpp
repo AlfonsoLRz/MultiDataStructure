@@ -67,6 +67,10 @@ namespace BaselineTests
 		profile.knnK = 12;
 		profile.numQueries = 20;
 		profile.querySeed = 99;
+		profile.rangeScaleMin = 0.02;
+		profile.rangeScaleMax = 0.25;
+		profile.radiusScaleMin = 0.03;
+		profile.radiusScaleMax = 0.12;
 
 		Experiments::ScoreWeights weights;
 		weights.lambdaBuild = 0.002;
@@ -79,6 +83,10 @@ namespace BaselineTests
 		expect(nearlyEqual(workloadA.wKnn, 0.7), "workload features normalize knn weight");
 		expect(workloadA.knnK == 12, "workload features record knn k");
 		expect(workloadA.numQueries == 20, "workload features record query count");
+		expect(nearlyEqual(workloadA.rangeScaleMin, 0.02), "workload features record range scale min");
+		expect(nearlyEqual(workloadA.rangeScaleMax, 0.25), "workload features record range scale max");
+		expect(nearlyEqual(workloadA.radiusScaleMin, 0.03), "workload features record radius scale min");
+		expect(nearlyEqual(workloadA.radiusScaleMax, 0.12), "workload features record radius scale max");
 		expect(nearlyEqual(workloadA.buildWeight, 0.002), "workload features record build score weight");
 		expect(nearlyEqual(workloadA.memoryWeight, 0.03), "workload features record memory score weight");
 		expect(nearlyEqual(workloadA.queryScaleMean, workloadB.queryScaleMean), "workload features deterministic scale mean");

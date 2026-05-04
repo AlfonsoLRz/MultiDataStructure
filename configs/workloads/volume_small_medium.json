@@ -1,0 +1,16 @@
+{
+  "name": "volume_small_medium",
+  "queries": {
+    "aabb_range": 1.0,
+    "radius": 0.0,
+    "knn": 0.0
+  },
+  "queryScales": {
+    "aabb_range": {
+      "min": 0.01,
+      "max": 0.25
+    }
+  },
+  "knnK": 16,
+  "numQueries": 1000
+}

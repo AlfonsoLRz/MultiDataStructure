@@ -230,6 +230,18 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.generation.outputDirectory = argv[++i];
 		}
+		else if (arg == "--score-build-weight" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.weights.lambdaBuild = std::stod(argv[++i]);
+		}
+		else if (arg == "--score-memory-weight" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.weights.lambdaMemory = std::stod(argv[++i]);
+		}
+		else if (arg == "--score-imbalance-weight" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.weights.lambdaImbalance = std::stod(argv[++i]);
+		}
 		else if (arg == "--output" && i + 1 < argc)
 		{
 			config.pointOptions.outputPath = argv[++i];
@@ -309,6 +321,9 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-max-leaf <n>    Max generated leaf capacity\n"
 		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
 		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
+		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
+		<< "  --score-memory-weight <v>   Memory score weight, default 0.01\n"
+		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0.01\n"
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"

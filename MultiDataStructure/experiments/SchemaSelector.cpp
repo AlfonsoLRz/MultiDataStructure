@@ -139,6 +139,10 @@ namespace
 		if (name == "w_knn") return workload.wKnn;
 		if (name == "knn_k") return static_cast<double>(workload.knnK);
 		if (name == "num_queries") return static_cast<double>(workload.numQueries);
+		if (name == "range_scale_min") return workload.rangeScaleMin;
+		if (name == "range_scale_max") return workload.rangeScaleMax;
+		if (name == "radius_scale_min") return workload.radiusScaleMin;
+		if (name == "radius_scale_max") return workload.radiusScaleMax;
 		if (name == "query_scale_mean") return workload.queryScaleMean;
 		if (name == "query_scale_std") return workload.queryScaleStd;
 		if (name == "build_weight") return workload.buildWeight;

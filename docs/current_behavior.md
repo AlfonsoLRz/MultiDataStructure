@@ -111,6 +111,19 @@ Schema-search mode creates the first selector-training table. It loads candidate
 Each run logs one raw CSV row per `(dataset, workload, schema)` and writes a second CSV containing the lowest-score schema for each `(dataset, workload)`.
 Rows include deterministic point-cloud features, workload features, raw metrics, score components, and final score. The feature protocol is documented in `docs/experiment_protocol.md`.
 
+Workload JSON files configure the query mix, query count, seed, KNN `k`, and optional generated query scale intervals:
+
+```json
+{
+  "queryScales": {
+    "aabb_range": { "min": 0.01, "max": 0.25 },
+    "radius": { "min": 0.01, "max": 0.08 }
+  }
+}
+```
+
+For AABB range queries the scale is a linear fraction of each dataset bounding-box extent. `configs/workloads/volume_small_medium.json` uses only 3D volume queries and samples continuously from 1% to 25% of each dimension.
+
 Example:
 
 ```powershell
@@ -137,10 +150,10 @@ Useful generator controls:
 The score is:
 
 ```text
-avg_query_latency_ms + 0.001 * build_time_ms + 0.01 * memory_mb + 0.01 * imbalance_penalty
+avg_query_latency_ms + 0.0 * build_time_ms + 0.01 * memory_mb + 0.01 * imbalance_penalty
 ```
 
-where `imbalance_penalty = max_leaf_occupancy / max(1, avg_leaf_occupancy)`. Raw metrics and score components are also stored so later milestones can recompute labels.
+where `imbalance_penalty = max_leaf_occupancy / max(1, avg_leaf_occupancy)`. Build time is logged but ignored by default because schemas can be built offline and reused. Raw metrics and score components are also stored so later milestones can recompute labels.
 
 The Python helpers support both point benchmark sweeps and schema search:
 

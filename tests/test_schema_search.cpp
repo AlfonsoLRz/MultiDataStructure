@@ -25,7 +25,17 @@ namespace BaselineTests
 		  },
 		  "knnK": 12,
 		  "numQueries": 42,
-		  "querySeed": 99
+		  "querySeed": 99,
+		  "queryScales": {
+		    "aabb_range": {
+		      "min": 0.02,
+		      "max": 0.25
+		    },
+		    "radius": {
+		      "min": 0.03,
+		      "max": 0.12
+		    }
+		  }
 		}
 		)json";
 
@@ -37,6 +47,10 @@ namespace BaselineTests
 		expect(profile.knnK == 12, "schema search parses workload knn k");
 		expect(profile.numQueries == 42, "schema search parses workload query count");
 		expect(profile.querySeed == 99, "schema search parses workload query seed");
+		expect(nearlyEqual(profile.rangeScaleMin, 0.02), "schema search parses range scale min");
+		expect(nearlyEqual(profile.rangeScaleMax, 0.25), "schema search parses range scale max");
+		expect(nearlyEqual(profile.radiusScaleMin, 0.03), "schema search parses radius scale min");
+		expect(nearlyEqual(profile.radiusScaleMax, 0.12), "schema search parses radius scale max");
 
 		Experiments::BuildMetrics buildMetrics;
 		buildMetrics.buildTimeMs = 10.0;
@@ -49,16 +63,28 @@ namespace BaselineTests
 
 		double memoryMb = 0.0;
 		double imbalancePenalty = 0.0;
+		Experiments::ScoreWeights scoreWeights;
+		scoreWeights.lambdaBuild = 0.001;
 		const double score = Experiments::computeSchemaSearchScore(
 			buildMetrics,
 			queryMetrics,
-			Experiments::ScoreWeights{},
+			scoreWeights,
 			memoryMb,
 			imbalancePenalty);
 
 		expect(nearlyEqual(memoryMb, 2.0), "schema search score computes memory MB");
 		expect(nearlyEqual(imbalancePenalty, 3.0), "schema search score computes imbalance penalty");
 		expect(nearlyEqual(score, 2.06), "schema search score combines latency, build, memory, and imbalance");
+
+		double defaultMemoryMb = 0.0;
+		double defaultImbalancePenalty = 0.0;
+		const double defaultScore = Experiments::computeSchemaSearchScore(
+			buildMetrics,
+			queryMetrics,
+			Experiments::ScoreWeights{},
+			defaultMemoryMb,
+			defaultImbalancePenalty);
+		expect(nearlyEqual(defaultScore, 2.05), "schema search default score ignores build time");
 
 		std::vector<Experiments::SchemaSearchRecord> records(3);
 		records[0].datasetName = "flat";

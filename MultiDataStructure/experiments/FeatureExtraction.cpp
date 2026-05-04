@@ -296,6 +296,10 @@ Experiments::WorkloadFeatures Experiments::extractWorkloadFeatures(const Workloa
 	features.wKnn = normalized[2];
 	features.knnK = profile.knnK;
 	features.numQueries = profile.numQueries;
+	features.rangeScaleMin = std::min(profile.rangeScaleMin, profile.rangeScaleMax);
+	features.rangeScaleMax = std::max(profile.rangeScaleMin, profile.rangeScaleMax);
+	features.radiusScaleMin = std::min(profile.radiusScaleMin, profile.radiusScaleMax);
+	features.radiusScaleMax = std::max(profile.radiusScaleMin, profile.radiusScaleMax);
 	features.buildWeight = weights.lambdaBuild;
 	features.memoryWeight = weights.lambdaMemory;
 
@@ -312,12 +316,12 @@ Experiments::WorkloadFeatures Experiments::extractWorkloadFeatures(const Workloa
 		const size_t type = queryType(rng);
 		if (type == 0)
 		{
-			std::uniform_real_distribution<double> distribution(0.01, 0.05);
+			std::uniform_real_distribution<double> distribution(features.rangeScaleMin, features.rangeScaleMax);
 			scales.push_back(distribution(rng));
 		}
 		else if (type == 1)
 		{
-			std::uniform_real_distribution<double> distribution(0.01, 0.04);
+			std::uniform_real_distribution<double> distribution(features.radiusScaleMin, features.radiusScaleMax);
 			scales.push_back(distribution(rng));
 		}
 		else

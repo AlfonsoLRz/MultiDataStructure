@@ -32,6 +32,10 @@ namespace Experiments
 		double rangeWeight = 0.4;
 		double radiusWeight = 0.3;
 		double knnWeight = 0.3;
+		double rangeScaleMin = 0.01;
+		double rangeScaleMax = 0.05;
+		double radiusScaleMin = 0.01;
+		double radiusScaleMax = 0.04;
 		size_t numQueries = 1000;
 		size_t knnK = 16;
 		uint32_t querySeed = 1337;
@@ -39,7 +43,7 @@ namespace Experiments
 
 	struct ScoreWeights
 	{
-		double lambdaBuild = 0.001;
+		double lambdaBuild = 0.0;
 		double lambdaMemory = 0.01;
 		double lambdaImbalance = 0.01;
 	};

@@ -146,20 +146,51 @@ namespace
 			randomFloat(rng, min.z, max.z));
 	}
 
-	AABB randomQueryBox(std::mt19937& rng, const PointCloud& cloud)
+	void normalizeScaleRange(double& minScale, double& maxScale)
 	{
-		const glm::vec3 center = randomPointInBounds(rng, cloud.bounds());
+		minScale = std::max(0.0, minScale);
+		maxScale = std::max(0.0, maxScale);
+		if (maxScale < minScale)
+			std::swap(minScale, maxScale);
+	}
+
+	void parseScaleRange(const boost::json::object& object, const char* key, double& minScale, double& maxScale)
+	{
+		const boost::json::value* value = object.if_contains(key);
+		if (!value)
+			return;
+		if (!value->is_object())
+			throw std::runtime_error(std::string("Workload query scale '") + key + "' must be an object");
+
+		const boost::json::object& range = value->as_object();
+		minScale = asDouble(range, "min", minScale);
+		maxScale = asDouble(range, "max", maxScale);
+	}
+
+	AABB randomQueryBox(std::mt19937& rng, const PointCloud& cloud, const Experiments::WorkloadProfile& profile)
+	{
 		const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
-		const float scale = randomFloat(rng, 0.01f, 0.05f);
+		const float scale = randomFloat(rng, static_cast<float>(profile.rangeScaleMin), static_cast<float>(profile.rangeScaleMax));
 		const glm::vec3 halfExtent = glm::max(range * scale * 0.5f, glm::vec3(0.0005f));
+		const glm::vec3 boundsMin = cloud.bounds().min();
+		const glm::vec3 boundsMax = cloud.bounds().max();
+		glm::vec3 center(0.0f);
+		for (glm::uint axis = 0; axis < 3; ++axis)
+		{
+			const float minCenter = boundsMin[axis] + halfExtent[axis];
+			const float maxCenter = boundsMax[axis] - halfExtent[axis];
+			center[axis] = minCenter <= maxCenter
+				? randomFloat(rng, minCenter, maxCenter)
+				: (boundsMin[axis] + boundsMax[axis]) * 0.5f;
+		}
 		return AABB(center - halfExtent, center + halfExtent);
 	}
 
-	float randomQueryRadius(std::mt19937& rng, const PointCloud& cloud)
+	float randomQueryRadius(std::mt19937& rng, const PointCloud& cloud, const Experiments::WorkloadProfile& profile)
 	{
 		const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
 		const float largestRange = std::max({ range.x, range.y, range.z, 1.0f });
-		return largestRange * randomFloat(rng, 0.01f, 0.04f);
+		return largestRange * randomFloat(rng, static_cast<float>(profile.radiusScaleMin), static_cast<float>(profile.radiusScaleMax));
 	}
 
 	std::string datasetNameFromPath(const std::string& inputPath)
@@ -466,7 +497,7 @@ namespace
 			const size_t type = queryType(rng);
 			if (type == 0)
 			{
-				samples.push_back(index.rangeQuery(randomQueryBox(rng, cloud)).stats);
+				samples.push_back(index.rangeQuery(randomQueryBox(rng, cloud, profile)).stats);
 				++result.rangeQueries;
 				continue;
 			}
@@ -474,7 +505,7 @@ namespace
 			if (type == 1)
 			{
 				const glm::vec3 center = randomPointInBounds(rng, cloud.bounds());
-				samples.push_back(index.radiusQuery(center, randomQueryRadius(rng, cloud)).stats);
+				samples.push_back(index.radiusQuery(center, randomQueryRadius(rng, cloud, profile)).stats);
 				++result.radiusQueries;
 				continue;
 			}
@@ -516,6 +547,7 @@ namespace
 	{
 		output
 			<< "dataset_name,dataset_source,num_points,workload_name,range_weight,radius_weight,knn_weight,num_queries,knn_k,query_seed,"
+			<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,"
 			<< "feature_sample_size,bbox_x,bbox_y,bbox_z,aspect_xy,aspect_xz,aspect_yz,density_bbox,height_mean,height_std,height_range,"
 			<< "cov_eig_0,cov_eig_1,cov_eig_2,linearity,planarity,scattering,occupancy_ratio_8,occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,"
 			<< "w_range,w_radius,w_knn,query_scale_mean,query_scale_std,build_weight,memory_weight,"
@@ -549,6 +581,10 @@ namespace
 				<< record.numQueries << ','
 				<< record.knnK << ','
 				<< record.querySeed << ','
+				<< record.workloadFeatures.rangeScaleMin << ','
+				<< record.workloadFeatures.rangeScaleMax << ','
+				<< record.workloadFeatures.radiusScaleMin << ','
+				<< record.workloadFeatures.radiusScaleMax << ','
 				<< record.pointFeatures.sampleSize << ','
 				<< record.pointFeatures.bboxX << ','
 				<< record.pointFeatures.bboxY << ','
@@ -633,7 +669,7 @@ namespace
 			<< "dataset_name,workload_name,num_points,feature_sample_size,bbox_x,bbox_y,bbox_z,aspect_xy,aspect_xz,aspect_yz,density_bbox,"
 			<< "height_mean,height_std,height_range,cov_eig_0,cov_eig_1,cov_eig_2,linearity,planarity,scattering,occupancy_ratio_8,"
 			<< "occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,w_range,w_radius,w_knn,knn_k,num_queries,"
-			<< "query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
+			<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
 			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
@@ -669,6 +705,10 @@ namespace
 				<< record.workloadFeatures.wKnn << ','
 				<< record.workloadFeatures.knnK << ','
 				<< record.workloadFeatures.numQueries << ','
+				<< record.workloadFeatures.rangeScaleMin << ','
+				<< record.workloadFeatures.rangeScaleMax << ','
+				<< record.workloadFeatures.radiusScaleMin << ','
+				<< record.workloadFeatures.radiusScaleMax << ','
 				<< record.workloadFeatures.queryScaleMean << ','
 				<< record.workloadFeatures.queryScaleStd << ','
 				<< record.workloadFeatures.buildWeight << ','
@@ -792,6 +832,10 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 	profile.numQueries = asSize(root, "numQueries", profile.numQueries);
 	profile.knnK = asSize(root, "knnK", profile.knnK);
 	profile.querySeed = static_cast<uint32_t>(asSize(root, "querySeed", profile.querySeed));
+	profile.rangeScaleMin = asDouble(root, "rangeScaleMin", profile.rangeScaleMin);
+	profile.rangeScaleMax = asDouble(root, "rangeScaleMax", profile.rangeScaleMax);
+	profile.radiusScaleMin = asDouble(root, "radiusScaleMin", profile.radiusScaleMin);
+	profile.radiusScaleMax = asDouble(root, "radiusScaleMax", profile.radiusScaleMax);
 
 	if (const boost::json::value* queries = root.if_contains("queries"))
 	{
@@ -803,6 +847,21 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 		profile.radiusWeight = asDouble(queryWeights, "radius", profile.radiusWeight);
 		profile.knnWeight = asDouble(queryWeights, "knn", profile.knnWeight);
 	}
+
+	if (const boost::json::value* queryScales = root.if_contains("queryScales"))
+	{
+		if (!queryScales->is_object())
+			throw std::runtime_error("Workload queryScales must be an object");
+
+		const boost::json::object& scales = queryScales->as_object();
+		parseScaleRange(scales, "aabb_range", profile.rangeScaleMin, profile.rangeScaleMax);
+		parseScaleRange(scales, "range", profile.rangeScaleMin, profile.rangeScaleMax);
+		parseScaleRange(scales, "volume", profile.rangeScaleMin, profile.rangeScaleMax);
+		parseScaleRange(scales, "radius", profile.radiusScaleMin, profile.radiusScaleMax);
+	}
+
+	normalizeScaleRange(profile.rangeScaleMin, profile.rangeScaleMax);
+	normalizeScaleRange(profile.radiusScaleMin, profile.radiusScaleMax);
 
 	if (profile.name.empty())
 		throw std::runtime_error("Workload profile requires a non-empty name");

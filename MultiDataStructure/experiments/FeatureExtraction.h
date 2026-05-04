@@ -42,6 +42,10 @@ namespace Experiments
 		double wKnn = 0.0;
 		size_t knnK = 0;
 		size_t numQueries = 0;
+		double rangeScaleMin = 0.0;
+		double rangeScaleMax = 0.0;
+		double radiusScaleMin = 0.0;
+		double radiusScaleMax = 0.0;
 		double queryScaleMean = 0.0;
 		double queryScaleStd = 0.0;
 		double buildWeight = 0.0;

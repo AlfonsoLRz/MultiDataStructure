@@ -44,6 +44,8 @@ Workload features are computed from the workload profile and score weights:
 | `w_range`, `w_radius`, `w_knn` | Normalized query mix weights. |
 | `knn_k` | K for KNN queries. |
 | `num_queries` | Total generated queries in the profile. |
+| `range_scale_min`, `range_scale_max` | AABB range-query linear scale interval as a fraction of dataset extent. |
+| `radius_scale_min`, `radius_scale_max` | Radius-query scale interval as a fraction of the largest dataset extent. |
 | `query_scale_mean`, `query_scale_std` | Deterministic generated range/radius scale summary. |
 | `build_weight`, `memory_weight` | Score weights used for build time and memory. |
 
