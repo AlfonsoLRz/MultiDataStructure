@@ -1,6 +1,7 @@
 #include "OptimizerGui.h"
 
 #include "../experiments/SchemaSearch.h"
+#include "../workloads/points/LBVH.h"
 
 namespace
 {
@@ -28,8 +29,31 @@ namespace
 		double score = 0.0;
 		double averageLatencyMs = 0.0;
 		double buildTimeMs = 0.0;
+		double gpuBuildMs = 0.0;
+		double gpuQueryMs = 0.0;
 		uint64_t memoryBytes = 0;
 		size_t candidates = 0;
+		std::string backend;
+	};
+
+	struct LiveRankingEntry
+	{
+		size_t order = 0;
+		std::string dataset;
+		std::string workload;
+		std::string schemaName;
+		std::string schemaPath;
+		std::string backend;
+		std::string cudaBuilder;
+		double score = 0.0;
+		double averageLatencyMs = 0.0;
+		double p95LatencyMs = 0.0;
+		double buildTimeMs = 0.0;
+		double gpuBuildMs = 0.0;
+		double gpuQueryMs = 0.0;
+		double averageVisitedNodes = 0.0;
+		double averageTestedPoints = 0.0;
+		uint64_t memoryBytes = 0;
 	};
 
 	struct GuiState
@@ -52,6 +76,12 @@ namespace
 		bool generatedConditional = true;
 		bool useRankModel = false;
 		bool optimizeSchemas = false;
+		int evaluator = 0;
+		int cudaDevice = 0;
+		int cudaBuilder = 0;
+		int cudaQueryBatch = 0;
+		int cudaMemoryBudgetMb = 0;
+		int liveRankingTopN = 10;
 
 		int queryCount = 128;
 		int knnK = 16;
@@ -86,6 +116,8 @@ namespace
 		std::string log;
 		std::string error;
 		std::vector<BestResult> bestResults;
+		std::vector<LiveRankingEntry> liveRanking;
+		size_t evaluatedCandidates = 0;
 		int exitCode = 0;
 	};
 
@@ -319,6 +351,9 @@ namespace
 		const size_t buildIndex = columnIndex(header, "best_build_time_ms");
 		const size_t memoryIndex = columnIndex(header, "best_memory_estimate_bytes");
 		const size_t candidateIndex = columnIndex(header, "num_candidates");
+		const size_t backendIndex = columnIndex(header, "backend");
+		const size_t gpuBuildIndex = columnIndex(header, "gpu_build_ms");
+		const size_t gpuQueryIndex = columnIndex(header, "gpu_query_ms");
 
 		std::string rowLine;
 		while (std::getline(input, rowLine))
@@ -335,12 +370,78 @@ namespace
 			result.score = parseDouble(csvValue(row, scoreIndex));
 			result.averageLatencyMs = parseDouble(csvValue(row, latencyIndex));
 			result.buildTimeMs = parseDouble(csvValue(row, buildIndex));
+			result.gpuBuildMs = parseDouble(csvValue(row, gpuBuildIndex));
+			result.gpuQueryMs = parseDouble(csvValue(row, gpuQueryIndex));
 			result.memoryBytes = parseUint64(csvValue(row, memoryIndex));
 			result.candidates = static_cast<size_t>(parseUint64(csvValue(row, candidateIndex)));
+			result.backend = csvValue(row, backendIndex);
 			results.push_back(std::move(result));
 		}
 
 		return results;
+	}
+
+	LiveRankingEntry makeLiveRankingEntry(const Experiments::SchemaSearchRecord& record, size_t order)
+	{
+		LiveRankingEntry entry;
+		entry.order = order;
+		entry.dataset = record.datasetName;
+		entry.workload = record.workloadName;
+		entry.schemaName = record.schemaName;
+		entry.schemaPath = record.schemaPath;
+		entry.backend = record.backend;
+		entry.cudaBuilder = record.cudaBuilder;
+		entry.score = record.score;
+		entry.averageLatencyMs = record.queryMetrics.averageLatencyMs;
+		entry.p95LatencyMs = record.queryMetrics.p95LatencyMs;
+		entry.buildTimeMs = record.buildMetrics.buildTimeMs;
+		entry.gpuBuildMs = record.gpuBuildMs;
+		entry.gpuQueryMs = record.gpuQueryMs;
+		entry.averageVisitedNodes = record.queryMetrics.averageVisitedNodes;
+		entry.averageTestedPoints = record.queryMetrics.averageTestedPoints;
+		entry.memoryBytes = static_cast<uint64_t>(record.buildMetrics.memoryEstimateBytes);
+		return entry;
+	}
+
+	bool sameLiveCandidate(const LiveRankingEntry& entry, const Experiments::SchemaSearchRecord& record)
+	{
+		return entry.dataset == record.datasetName &&
+			entry.workload == record.workloadName &&
+			entry.schemaName == record.schemaName &&
+			entry.schemaPath == record.schemaPath;
+	}
+
+	void sortAndTrimLiveRanking(std::vector<LiveRankingEntry>& ranking)
+	{
+		std::sort(ranking.begin(), ranking.end(), [](const LiveRankingEntry& left, const LiveRankingEntry& right) {
+			if (left.score != right.score)
+				return left.score < right.score;
+			return left.order < right.order;
+		});
+
+		constexpr size_t MaxLiveRankingRows = 128;
+		if (ranking.size() > MaxLiveRankingRows)
+			ranking.resize(MaxLiveRankingRows);
+	}
+
+	void updateLiveRanking(RunSession& session, const Experiments::SchemaSearchRecord& record)
+	{
+		std::lock_guard<std::mutex> lock(session.mutex);
+		const size_t order = ++session.evaluatedCandidates;
+		const auto existing = std::find_if(session.liveRanking.begin(), session.liveRanking.end(), [&record](const LiveRankingEntry& entry) {
+			return sameLiveCandidate(entry, record);
+		});
+
+		if (existing == session.liveRanking.end())
+		{
+			session.liveRanking.push_back(makeLiveRankingEntry(record, order));
+		}
+		else if (record.score < existing->score)
+		{
+			*existing = makeLiveRankingEntry(record, order);
+		}
+
+		sortAndTrimLiveRanking(session.liveRanking);
 	}
 
 	class SessionStreamBuffer : public std::streambuf
@@ -571,6 +672,12 @@ namespace
 		state.optimizerGenerations = std::max(0, state.optimizerGenerations);
 		state.optimizerPopulation = std::max(1, state.optimizerPopulation);
 		state.optimizerElites = std::max(1, state.optimizerElites);
+		state.evaluator = std::clamp(state.evaluator, 0, 1);
+		state.cudaDevice = std::max(0, state.cudaDevice);
+		state.cudaBuilder = std::clamp(state.cudaBuilder, 0, 8);
+		state.cudaQueryBatch = std::max(0, state.cudaQueryBatch);
+		state.cudaMemoryBudgetMb = std::max(0, state.cudaMemoryBudgetMb);
+		state.liveRankingTopN = std::clamp(state.liveRankingTopN, 1, 100);
 		state.generatedConditionProbability = std::clamp(state.generatedConditionProbability, 0.0f, 1.0f);
 		state.optimizerMutationRate = std::clamp(state.optimizerMutationRate, 0.0f, 1.0f);
 		state.optimizerRandomFraction = std::clamp(state.optimizerRandomFraction, 0.0f, 1.0f);
@@ -651,6 +758,28 @@ namespace
 		options.evolution.seed = static_cast<uint32_t>(state.optimizerSeed);
 		options.evolution.mutationRate = static_cast<double>(state.optimizerMutationRate);
 		options.evolution.randomImmigrationRate = static_cast<double>(state.optimizerRandomFraction);
+		options.evaluator = state.evaluator == 1 ? "cuda" : "cpu";
+		options.cuda.device = state.cudaDevice;
+		if (state.cudaBuilder == 1)
+			options.cuda.builder = "kdtree";
+		else if (state.cudaBuilder == 2)
+			options.cuda.builder = "bih";
+		else if (state.cudaBuilder == 3)
+			options.cuda.builder = "octree";
+		else if (state.cudaBuilder == 4)
+			options.cuda.builder = "karras_octree";
+		else if (state.cudaBuilder == 5)
+			options.cuda.builder = "quadtree";
+		else if (state.cudaBuilder == 6)
+			options.cuda.builder = "regular_grid";
+		else if (state.cudaBuilder == 7)
+			options.cuda.builder = "hgrid";
+		else if (state.cudaBuilder == 8)
+			options.cuda.builder = "mixed";
+		else
+			options.cuda.builder = "lbvh";
+		options.cuda.queryBatchSize = static_cast<size_t>(state.cudaQueryBatch);
+		options.cuda.memoryBudgetMb = static_cast<size_t>(state.cudaMemoryBudgetMb);
 		return std::nullopt;
 	}
 
@@ -670,6 +799,8 @@ namespace
 			session.error.clear();
 			session.log = "Starting optimization...\n";
 			session.bestResults.clear();
+			session.liveRanking.clear();
+			session.evaluatedCandidates = 0;
 			session.exitCode = 0;
 			if (validation.has_value())
 			{
@@ -679,6 +810,10 @@ namespace
 			}
 			session.status = "Running";
 		}
+
+		options.progressCallback = [&session](const Experiments::SchemaSearchRecord& record) {
+			updateLiveRanking(session, record);
+		};
 
 		const std::string bestCsvPath = options.bestCsvPath;
 		session.running = true;
@@ -844,6 +979,36 @@ namespace
 
 	void drawScoringPanel(GuiState& state)
 	{
+		drawSectionTitle("Evaluator");
+		const char* evaluators[] = { "CPU", "CUDA" };
+		ImGui::Combo("Backend", &state.evaluator, evaluators, IM_ARRAYSIZE(evaluators));
+		drawHelpMarker("Chooses where measured schema fitness runs. CUDA builds the selected GPU structure and measures range/count/radius queries there.");
+		if (state.evaluator == 1)
+		{
+			std::string cudaError;
+			const bool cudaAvailable = PointGpu::LBVH::isAvailable(&cudaError);
+			if (cudaAvailable)
+			{
+				ImGui::Text("CUDA devices: %d", PointGpu::LBVH::deviceCount());
+			}
+			else
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
+				ImGui::TextWrapped("CUDA unavailable: %s", cudaError.c_str());
+				ImGui::PopStyleColor();
+			}
+
+			ImGui::InputInt("CUDA device", &state.cudaDevice);
+			drawHelpMarker("GPU id passed to cudaSetDevice. Use 0 unless you have several CUDA GPUs.");
+			const char* builders[] = { "LBVH", "KDTree", "BIH", "Octree", "KarrasOctree", "QuadTree", "RegularGrid", "HGrid", "Mixed" };
+			ImGui::Combo("Structure", &state.cudaBuilder, builders, IM_ARRAYSIZE(builders));
+			drawHelpMarker("LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented. KarrasOctree uses Morton sorting and prefix child ranges; BIH is a binary interval hierarchy with tight child bounds; standalone HGrid builds several RegularGrid levels and chooses one per query; Mixed follows the schema's per-depth structure schedule, including RegularGrid and HGrid grid split levels.");
+			ImGui::InputInt("Query batch", &state.cudaQueryBatch);
+			drawHelpMarker("Number of CUDA queries uploaded/launched per batch. 0 runs the whole generated workload as one batch.");
+			ImGui::InputInt("Memory budget MB", &state.cudaMemoryBudgetMb);
+			drawHelpMarker("Optional guardrail that rejects CUDA builds whose point buffers, sorted arrays, nodes, and sort scratch exceed this budget.");
+		}
+
 		drawSectionTitle("Surrogate");
 		ImGui::Checkbox("Use rank model", &state.useRankModel);
 		drawHelpMarker("Uses the exported JSON/ONNX selector only to rank/prune candidates before benchmarking. The final best schema still comes from measured C++ timings.");
@@ -862,6 +1027,11 @@ namespace
 		drawPathInput("Best CSV", state.bestCsvPath, "Compact winner table. This is what the GUI reads back to populate Best Results.");
 	}
 
+	bool isCudaResult(const std::string& backend)
+	{
+		return backend == "cuda" || backend == "gpu";
+	}
+
 	void drawResultsTable(const std::vector<BestResult>& results)
 	{
 		if (results.empty())
@@ -870,14 +1040,17 @@ namespace
 			return;
 		}
 
-		if (ImGui::BeginTable("best-results", 8, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		if (ImGui::BeginTable("best-results", 11, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("Dataset");
 			ImGui::TableSetupColumn("Workload");
 			ImGui::TableSetupColumn("Best schema");
+			ImGui::TableSetupColumn("Backend", ImGuiTableColumnFlags_WidthFixed, 76.0f);
 			ImGui::TableSetupColumn("Score", ImGuiTableColumnFlags_WidthFixed, 78.0f);
 			ImGui::TableSetupColumn("Avg ms", ImGuiTableColumnFlags_WidthFixed, 78.0f);
 			ImGui::TableSetupColumn("Build ms", ImGuiTableColumnFlags_WidthFixed, 84.0f);
+			ImGui::TableSetupColumn("GPU build", ImGuiTableColumnFlags_WidthFixed, 84.0f);
+			ImGui::TableSetupColumn("GPU query", ImGuiTableColumnFlags_WidthFixed, 84.0f);
 			ImGui::TableSetupColumn("Memory MB", ImGuiTableColumnFlags_WidthFixed, 92.0f);
 			ImGui::TableSetupColumn("Candidates", ImGuiTableColumnFlags_WidthFixed, 92.0f);
 			ImGui::TableHeadersRow();
@@ -894,15 +1067,113 @@ namespace
 				if (ImGui::IsItemHovered())
 					ImGui::SetTooltip("%s", result.schemaPath.c_str());
 				ImGui::TableSetColumnIndex(3);
-				ImGui::Text("%.3f", result.score);
+				ImGui::TextUnformatted(result.backend.empty() ? "cpu" : result.backend.c_str());
 				ImGui::TableSetColumnIndex(4);
-				ImGui::Text("%.3f", result.averageLatencyMs);
+				ImGui::Text("%.3f", result.score);
 				ImGui::TableSetColumnIndex(5);
-				ImGui::Text("%.1f", result.buildTimeMs);
+				ImGui::Text("%.3f", result.averageLatencyMs);
 				ImGui::TableSetColumnIndex(6);
-				ImGui::Text("%.1f", static_cast<double>(result.memoryBytes) / (1024.0 * 1024.0));
+				ImGui::Text("%.1f", result.buildTimeMs);
 				ImGui::TableSetColumnIndex(7);
+				if (isCudaResult(result.backend))
+					ImGui::Text("%.1f", result.gpuBuildMs);
+				else
+					ImGui::TextUnformatted("-");
+				ImGui::TableSetColumnIndex(8);
+				if (isCudaResult(result.backend))
+					ImGui::Text("%.1f", result.gpuQueryMs);
+				else
+					ImGui::TextUnformatted("-");
+				ImGui::TableSetColumnIndex(9);
+				ImGui::Text("%.1f", static_cast<double>(result.memoryBytes) / (1024.0 * 1024.0));
+				ImGui::TableSetColumnIndex(10);
 				ImGui::Text("%zu", result.candidates);
+			}
+
+			ImGui::EndTable();
+		}
+	}
+
+	void drawLiveRankingTable(const std::vector<LiveRankingEntry>& ranking, size_t evaluatedCandidates, int topN)
+	{
+		ImGui::Text("Measured candidates: %zu", evaluatedCandidates);
+		if (ranking.empty())
+		{
+			ImGui::TextUnformatted("Live ranking will appear after the first candidate finishes.");
+			return;
+		}
+
+		if (ImGui::BeginTable("live-ranking", 11, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 34.0f);
+			ImGui::TableSetupColumn("Schema");
+			ImGui::TableSetupColumn("Score", ImGuiTableColumnFlags_WidthFixed, 78.0f);
+			ImGui::TableSetupColumn("Avg", ImGuiTableColumnFlags_WidthFixed, 66.0f);
+			ImGui::TableSetupColumn("P95", ImGuiTableColumnFlags_WidthFixed, 66.0f);
+			ImGui::TableSetupColumn("Tested", ImGuiTableColumnFlags_WidthFixed, 78.0f);
+			ImGui::TableSetupColumn("Visited", ImGuiTableColumnFlags_WidthFixed, 76.0f);
+			ImGui::TableSetupColumn("Build", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+			ImGui::TableSetupColumn("GPU build", ImGuiTableColumnFlags_WidthFixed, 84.0f);
+			ImGui::TableSetupColumn("GPU query", ImGuiTableColumnFlags_WidthFixed, 84.0f);
+			ImGui::TableSetupColumn("Backend", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+			ImGui::TableHeadersRow();
+
+			const size_t rowCount = std::min<size_t>(ranking.size(), static_cast<size_t>(std::max(1, topN)));
+			for (size_t i = 0; i < rowCount; ++i)
+			{
+				const LiveRankingEntry& entry = ranking[i];
+				ImGui::TableNextRow();
+				const bool highlight = i < 3;
+				if (highlight)
+				{
+					const ImU32 color = i == 0
+						? IM_COL32(68, 122, 105, 72)
+						: i == 1
+							? IM_COL32(84, 96, 122, 54)
+							: IM_COL32(122, 104, 72, 44);
+					ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, color);
+				}
+
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Text("%zu", i + 1);
+				ImGui::TableSetColumnIndex(1);
+				ImGui::TextUnformatted(entry.schemaName.c_str());
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip(
+						"%s\n%s / %s\norder #%zu",
+						entry.schemaPath.c_str(),
+						entry.dataset.c_str(),
+						entry.workload.c_str(),
+						entry.order);
+				}
+				ImGui::TableSetColumnIndex(2);
+				ImGui::Text("%.4f", entry.score);
+				ImGui::TableSetColumnIndex(3);
+				ImGui::Text("%.3f", entry.averageLatencyMs);
+				ImGui::TableSetColumnIndex(4);
+				ImGui::Text("%.3f", entry.p95LatencyMs);
+				ImGui::TableSetColumnIndex(5);
+				ImGui::Text("%.0f", entry.averageTestedPoints);
+				ImGui::TableSetColumnIndex(6);
+				ImGui::Text("%.1f", entry.averageVisitedNodes);
+				ImGui::TableSetColumnIndex(7);
+				ImGui::Text("%.1f", entry.buildTimeMs);
+				ImGui::TableSetColumnIndex(8);
+				if (isCudaResult(entry.backend))
+					ImGui::Text("%.1f", entry.gpuBuildMs);
+				else
+					ImGui::TextUnformatted("-");
+				ImGui::TableSetColumnIndex(9);
+				if (isCudaResult(entry.backend))
+					ImGui::Text("%.1f", entry.gpuQueryMs);
+				else
+					ImGui::TextUnformatted("-");
+				ImGui::TableSetColumnIndex(10);
+				if (!entry.cudaBuilder.empty())
+					ImGui::Text("%s/%s", entry.backend.c_str(), entry.cudaBuilder.c_str());
+				else
+					ImGui::TextUnformatted(entry.backend.empty() ? "cpu" : entry.backend.c_str());
 			}
 
 			ImGui::EndTable();
@@ -915,12 +1186,16 @@ namespace
 		std::string error;
 		std::string log;
 		std::vector<BestResult> results;
+		std::vector<LiveRankingEntry> liveRanking;
+		size_t evaluatedCandidates = 0;
 		{
 			std::lock_guard<std::mutex> lock(session.mutex);
 			status = session.status;
 			error = session.error;
 			log = session.log;
 			results = session.bestResults;
+			liveRanking = session.liveRanking;
+			evaluatedCandidates = session.evaluatedCandidates;
 		}
 
 		drawSectionTitle("Run");
@@ -940,6 +1215,12 @@ namespace
 			ImGui::TextWrapped("%s", error.c_str());
 			ImGui::PopStyleColor();
 		}
+
+		drawSectionTitle("Live Ranking");
+		ImGui::SetNextItemWidth(96.0f);
+		ImGui::InputInt("Top N", &state.liveRankingTopN);
+		drawHelpMarker("Number of live leaderboard rows to display. The run still measures every candidate and writes every row to CSV.");
+		drawLiveRankingTable(liveRanking, evaluatedCandidates, state.liveRankingTopN);
 
 		drawSectionTitle("Best Results");
 		drawResultsTable(results);

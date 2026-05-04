@@ -1,0 +1,19 @@
+{
+  "name": "hgrid_default",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 4,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 4,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

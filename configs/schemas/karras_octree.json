@@ -1,0 +1,19 @@
+{
+  "name": "karras_octree_default",
+  "levels": [
+    {
+      "type": "KarrasOctree",
+      "numLevels": 8,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

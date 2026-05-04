@@ -18,6 +18,14 @@ namespace BaselineTests
 	void runSchemaSearchTests();
 	void runFeatureExtractionTests();
 	void runSchemaSelectorTests();
+	void runBIHTests();
+	void runHGridTests();
+	void runKDTreeTests();
+	void runLBVHTests();
+	void runMixedTreeTests();
+	void runOctreeTests();
+	void runQuadTreeTests();
+	void runRegularGridTests();
 
 	class TestBinaryNode final : public MultiDataStructure::SpatialDSNode
 	{
@@ -99,6 +107,14 @@ int runBaselineTests()
 		BaselineTests::runSchemaSearchTests();
 		BaselineTests::runFeatureExtractionTests();
 		BaselineTests::runSchemaSelectorTests();
+		BaselineTests::runBIHTests();
+		BaselineTests::runHGridTests();
+		BaselineTests::runKDTreeTests();
+		BaselineTests::runLBVHTests();
+		BaselineTests::runMixedTreeTests();
+		BaselineTests::runOctreeTests();
+		BaselineTests::runQuadTreeTests();
+		BaselineTests::runRegularGridTests();
 		std::cout << "Baseline tests passed" << '\n';
 		return 0;
 	}

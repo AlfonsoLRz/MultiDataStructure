@@ -2,8 +2,16 @@
 #include "SchemaSearch.h"
 
 #include "SchemaSelector.h"
+#include "../workloads/points/BIH.h"
+#include "../workloads/points/HGrid.h"
+#include "../workloads/points/KDTree.h"
+#include "../workloads/points/LBVH.h"
+#include "../workloads/points/MixedTree.h"
+#include "../workloads/points/Octree.h"
 #include "../workloads/points/PointCloud.h"
 #include "../workloads/points/PointSpatialIndex.h"
+#include "../workloads/points/QuadTree.h"
+#include "../workloads/points/RegularGrid.h"
 #include "../workloads/points/SyntheticPointClouds.h"
 
 #include <boost/json.hpp>
@@ -17,6 +25,7 @@ namespace
 			"configs/schemas/quadtree.json",
 			"configs/schemas/octree.json",
 			"configs/schemas/kdtree.json",
+			"configs/schemas/bvh.json",
 			"configs/schemas/quadtree_octree.json",
 			"configs/schemas/octree_kdtree.json",
 			"configs/schemas/urban_hybrid.json",
@@ -45,8 +54,10 @@ namespace
 	{
 		Experiments::QueryMetrics metrics;
 		size_t rangeQueries = 0;
+		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
 		size_t knnQueries = 0;
+		double gpuQueryMs = 0.0;
 	};
 
 	struct DatasetContext
@@ -61,6 +72,20 @@ namespace
 		std::vector<Experiments::SchemaSearchRecord> records;
 		double aggregateScore = std::numeric_limits<double>::infinity();
 	};
+
+	struct CudaIndexCacheEntry
+	{
+		std::unique_ptr<PointGpu::BIH> bih;
+		std::unique_ptr<PointGpu::HGrid> hgrid;
+		std::unique_ptr<PointGpu::KDTree> kdTree;
+		std::unique_ptr<PointGpu::LBVH> lbvh;
+		std::unique_ptr<PointGpu::MixedTree> mixedTree;
+		std::unique_ptr<PointGpu::Octree> octree;
+		std::unique_ptr<PointGpu::QuadTree> quadTree;
+		std::unique_ptr<PointGpu::RegularGrid> regularGrid;
+	};
+
+	using CudaIndexCache = std::unordered_map<const SearchDataset*, CudaIndexCacheEntry>;
 
 	bool pathExists(const std::filesystem::path& path)
 	{
@@ -206,6 +231,195 @@ namespace
 		return largestRange * randomFloat(rng, static_cast<float>(profile.radiusScaleMin), static_cast<float>(profile.radiusScaleMax));
 	}
 
+	std::string lowerCopy(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+			return static_cast<char>(std::tolower(c));
+		});
+		return value;
+	}
+
+	bool useCudaEvaluator(const Experiments::SchemaSearchOptions& options)
+	{
+		const std::string evaluator = lowerCopy(options.evaluator);
+		return evaluator == "cuda" || evaluator == "gpu";
+	}
+
+	bool isRegularGridBuilder(const std::string& builder)
+	{
+		return builder == "regular_grid" || builder == "regulargrid" || builder == "grid" || builder == "uniform_grid";
+	}
+
+	bool isHGridBuilder(const std::string& builder)
+	{
+		return builder == "hgrid" || builder == "hierarchical_grid" || builder == "hierarchicalgrid";
+	}
+
+	bool isBIHBuilder(const std::string& builder)
+	{
+		return builder == "bih" || builder == "interval_hierarchy" || builder == "binary_interval_hierarchy";
+	}
+
+	bool isKDTreeBuilder(const std::string& builder)
+	{
+		return builder == "kdtree" || builder == "kd_tree" || builder == "kd";
+	}
+
+	bool isOctreeBuilder(const std::string& builder)
+	{
+		return builder == "octree" || builder == "ot" ||
+			builder == "karras_octree" || builder == "morton_octree" ||
+			builder == "octree_karras" || builder == "octree_morton";
+	}
+
+	bool isKarrasOctreeBuilder(const std::string& builder)
+	{
+		return builder == "karras_octree" || builder == "morton_octree" ||
+			builder == "octree_karras" || builder == "octree_morton";
+	}
+
+	bool isQuadTreeBuilder(const std::string& builder)
+	{
+		return builder == "quadtree" || builder == "quad_tree" || builder == "qt";
+	}
+
+	bool isMixedBuilder(const std::string& builder)
+	{
+		return builder == "mixed" || builder == "hybrid";
+	}
+
+	std::string canonicalCudaBuilder(std::string builder)
+	{
+		builder = lowerCopy(builder);
+		if (builder.empty())
+			return "lbvh";
+		if (isBIHBuilder(builder))
+			return "bih";
+		if (isHGridBuilder(builder))
+			return "hgrid";
+		if (isKDTreeBuilder(builder))
+			return "kdtree";
+		if (isOctreeBuilder(builder))
+			return isKarrasOctreeBuilder(builder) ? "karras_octree" : "octree";
+		if (isQuadTreeBuilder(builder))
+			return "quadtree";
+		if (isRegularGridBuilder(builder))
+			return "regular_grid";
+		if (isMixedBuilder(builder))
+			return "mixed";
+		return builder;
+	}
+
+	std::string cudaBuilderDisplayName(const std::string& builder)
+	{
+		const std::string canonical = canonicalCudaBuilder(builder);
+		if (canonical == "bih")
+			return "BIH";
+		if (canonical == "hgrid")
+			return "HGrid";
+		if (canonical == "kdtree")
+			return "KDTree";
+		if (canonical == "lbvh")
+			return "LBVH";
+		if (canonical == "octree")
+			return "Octree";
+		if (canonical == "karras_octree")
+			return "KarrasOctree";
+		if (canonical == "quadtree")
+			return "QuadTree";
+		if (canonical == "regular_grid")
+			return "RegularGrid";
+		if (canonical == "mixed")
+			return "Mixed";
+		return builder;
+	}
+
+	std::string cudaDeviceDescription(const PointGpu::Options& cudaOptions)
+	{
+		int count = 0;
+		const cudaError_t countResult = cudaGetDeviceCount(&count);
+		if (countResult != cudaSuccess)
+			return std::string("unavailable (") + cudaGetErrorString(countResult) + ")";
+		if (count <= 0)
+			return "unavailable (no CUDA devices)";
+
+		int device = 0;
+		if (cudaOptions.device >= 0)
+		{
+			device = std::min(cudaOptions.device, count - 1);
+		}
+		else
+		{
+			const cudaError_t currentResult = cudaGetDevice(&device);
+			if (currentResult != cudaSuccess || device < 0 || device >= count)
+				device = 0;
+		}
+
+		cudaDeviceProp properties{};
+		const cudaError_t propertyResult = cudaGetDeviceProperties(&properties, device);
+		if (propertyResult != cudaSuccess)
+			return std::string("unavailable (") + cudaGetErrorString(propertyResult) + ")";
+
+		std::ostringstream out;
+		if (cudaOptions.device >= 0)
+		{
+			if (cudaOptions.device != device)
+				out << cudaOptions.device << " -> ";
+			out << device;
+		}
+		else
+		{
+			out << "default -> " << device;
+		}
+		out << " (" << properties.name
+			<< ", cc " << properties.major << '.' << properties.minor
+			<< ", " << static_cast<size_t>(properties.totalGlobalMem / (1024 * 1024)) << " MB)";
+		return out.str();
+	}
+
+	int resolvedCudaDevice(const PointGpu::Options& cudaOptions)
+	{
+		int count = 0;
+		const cudaError_t countResult = cudaGetDeviceCount(&count);
+		if (countResult != cudaSuccess)
+			throw std::runtime_error(std::string("CUDA device query failed: ") + cudaGetErrorString(countResult));
+		if (count <= 0)
+			throw std::runtime_error("CUDA evaluator requested, but no CUDA devices are available.");
+
+		if (cudaOptions.device >= 0)
+			return std::min(cudaOptions.device, count - 1);
+
+		int device = 0;
+		const cudaError_t currentResult = cudaGetDevice(&device);
+		if (currentResult != cudaSuccess || device < 0 || device >= count)
+			return 0;
+		return device;
+	}
+
+	double warmUpCudaDevice(const PointGpu::Options& cudaOptions)
+	{
+		const int device = resolvedCudaDevice(cudaOptions);
+		const auto begin = std::chrono::steady_clock::now();
+		const cudaError_t setResult = cudaSetDevice(device);
+		if (setResult != cudaSuccess)
+			throw std::runtime_error(std::string("CUDA device selection failed: ") + cudaGetErrorString(setResult));
+		const cudaError_t warmupResult = cudaFree(nullptr);
+		if (warmupResult != cudaSuccess)
+			throw std::runtime_error(std::string("CUDA warm-up failed: ") + cudaGetErrorString(warmupResult));
+		const auto end = std::chrono::steady_clock::now();
+		return elapsedMilliseconds(begin, end);
+	}
+
+	PointGpu::Options cudaOptionsFrom(const Experiments::SchemaSearchOptions& options)
+	{
+		PointGpu::Options cudaOptions;
+		cudaOptions.device = options.cuda.device;
+		cudaOptions.builder = canonicalCudaBuilder(options.cuda.builder);
+		cudaOptions.queryBatchSize = options.cuda.queryBatchSize;
+		cudaOptions.memoryBudgetMb = options.cuda.memoryBudgetMb;
+		return cudaOptions;
+	}
+
 	std::string datasetNameFromPath(const std::string& inputPath)
 	{
 		const std::filesystem::path path(inputPath);
@@ -213,9 +427,61 @@ namespace
 		return stem.empty() ? "points" : stem;
 	}
 
-	std::string schemaTypeShortName(MultiDataStructure::DataStructureLevel type)
+	std::string normalizedLevelTypeName(std::string value)
 	{
-		switch (type)
+		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+			return std::isspace(c) || c == '_' || c == '-';
+		}), value.end());
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+			return static_cast<char>(std::tolower(c));
+		});
+		return value;
+	}
+
+	bool isBIHLevelName(const std::string& typeName)
+	{
+		const std::string normalized = normalizedLevelTypeName(typeName);
+		return normalized == "bih" || normalized == "binaryintervalhierarchy" || normalized == "intervalhierarchy";
+	}
+
+	bool isKarrasOctreeLevelName(const std::string& typeName)
+	{
+		const std::string normalized = normalizedLevelTypeName(typeName);
+		return normalized == "karrasoctree" || normalized == "mortonoctree" || normalized == "octreekarras" || normalized == "octreemorton";
+	}
+
+	bool isLBVHLevelName(const std::string& typeName)
+	{
+		const std::string normalized = normalizedLevelTypeName(typeName);
+		return normalized == "lbvh" || normalized == "linearbvh";
+	}
+
+	bool isRegularGridLevelName(const std::string& typeName)
+	{
+		const std::string normalized = normalizedLevelTypeName(typeName);
+		return normalized == "regulargrid" || normalized == "uniformgrid" || normalized == "grid" || normalized == "grid3d";
+	}
+
+	bool isHGridLevelName(const std::string& typeName)
+	{
+		const std::string normalized = normalizedLevelTypeName(typeName);
+		return normalized == "hgrid" || normalized == "hierarchicalgrid" || normalized == "hierarchicalgrid3d";
+	}
+
+	std::string schemaTypeShortName(const SchemaLevelConfig& level)
+	{
+		if (isBIHLevelName(level.typeName))
+			return "bih";
+		if (isKarrasOctreeLevelName(level.typeName))
+			return "kot";
+		if (isLBVHLevelName(level.typeName))
+			return "lbvh";
+		if (isRegularGridLevelName(level.typeName))
+			return "rg";
+		if (isHGridLevelName(level.typeName))
+			return "hg";
+
+		switch (level.type)
 		{
 		case MultiDataStructure::QuadTreeNode:
 			return "qt";
@@ -228,6 +494,34 @@ namespace
 		default:
 			return "x";
 		}
+	}
+
+	std::string levelJsonTypeName(const SchemaLevelConfig& level)
+	{
+		return level.typeName.empty() ? Config::dataStructureLevelName(level.type) : level.typeName;
+	}
+
+	std::string randomTypeNameForBase(MultiDataStructure::DataStructureLevel type, std::mt19937& rng)
+	{
+		if (type == MultiDataStructure::KDTreeNode)
+		{
+			static const std::array<const char*, 2> names = { "KDTree", "BIH" };
+			std::uniform_int_distribution<size_t> distribution(0, names.size() - 1);
+			return names[distribution(rng)];
+		}
+		if (type == MultiDataStructure::OctreeNode)
+		{
+			static const std::array<const char*, 4> names = { "Octree", "KarrasOctree", "RegularGrid", "HGrid" };
+			std::uniform_int_distribution<size_t> distribution(0, names.size() - 1);
+			return names[distribution(rng)];
+		}
+		if (type == MultiDataStructure::BvhNode)
+		{
+			static const std::array<const char*, 2> names = { "BVH", "LBVH" };
+			std::uniform_int_distribution<size_t> distribution(0, names.size() - 1);
+			return names[distribution(rng)];
+		}
+		return Config::dataStructureLevelName(type);
 	}
 
 	size_t clampPowerOfTwo(size_t value, size_t minValue, size_t maxValue)
@@ -260,10 +554,11 @@ namespace
 		std::mt19937& rng,
 		std::optional<MultiDataStructure::DataStructureLevel> previous)
 	{
-		static const std::array<MultiDataStructure::DataStructureLevel, 3> types = {
+		static const std::array<MultiDataStructure::DataStructureLevel, 4> types = {
 			MultiDataStructure::QuadTreeNode,
 			MultiDataStructure::OctreeNode,
 			MultiDataStructure::KDTreeNode,
+			MultiDataStructure::BvhNode,
 		};
 
 		for (;;)
@@ -348,7 +643,7 @@ namespace
 			if (i > 0)
 				output << '_';
 			output
-				<< schemaTypeShortName(level.type)
+				<< schemaTypeShortName(level)
 				<< level.numLevels
 				<< "l"
 				<< level.leafCapacity;
@@ -367,7 +662,7 @@ namespace
 		{
 			const SchemaLevelConfig& level = schema.levels[i];
 			output << "    {\n";
-			output << "      \"type\": \"" << Config::dataStructureLevelName(level.type) << "\",\n";
+			output << "      \"type\": \"" << levelJsonTypeName(level) << "\",\n";
 			output << "      \"numLevels\": " << level.numLevels << ",\n";
 			output << "      \"leafCapacity\": " << level.leafCapacity << ",\n";
 			output << "      \"minPointsToSplit\": " << level.minPrimitivesToSplit;
@@ -450,7 +745,7 @@ namespace
 
 		SchemaLevelConfig level;
 		level.type = randomStructureType(rng, previousType);
-		level.typeName = Config::dataStructureLevelName(level.type);
+		level.typeName = randomTypeNameForBase(level.type, rng);
 		level.numLevels = 1;
 		level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
@@ -460,7 +755,13 @@ namespace
 
 	void refreshLevelTypeName(SchemaLevelConfig& level)
 	{
-		level.typeName = Config::dataStructureLevelName(level.type);
+		const bool compatibleBIH = level.type == MultiDataStructure::KDTreeNode && isBIHLevelName(level.typeName);
+		const bool compatibleKarras = level.type == MultiDataStructure::OctreeNode && isKarrasOctreeLevelName(level.typeName);
+		const bool compatibleLBVH = level.type == MultiDataStructure::BvhNode && isLBVHLevelName(level.typeName);
+		const bool compatibleRegularGrid = level.type == MultiDataStructure::OctreeNode && isRegularGridLevelName(level.typeName);
+		const bool compatibleHGrid = level.type == MultiDataStructure::OctreeNode && isHGridLevelName(level.typeName);
+		if (!compatibleBIH && !compatibleKarras && !compatibleLBVH && !compatibleRegularGrid && !compatibleHGrid)
+			level.typeName = Config::dataStructureLevelName(level.type);
 		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
 	}
 
@@ -591,7 +892,8 @@ namespace
 			{
 			case 0:
 				level.type = randomStructureType(rng, std::nullopt);
-				refreshLevelTypeName(level);
+				level.typeName = randomTypeNameForBase(level.type, rng);
+				level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
 				if (levelIndex == 0)
 					level.condition = {};
 				break;
@@ -858,21 +1160,253 @@ namespace
 		return result;
 	}
 
+	template <typename IndexType>
+	WorkloadRun runCudaWorkloadProfile(
+		const Experiments::WorkloadProfile& profile,
+		const PointCloud& cloud,
+		const IndexType& index,
+		const PointGpu::Options& cudaOptions)
+	{
+		WorkloadRun result;
+		if (profile.numQueries == 0)
+			return result;
+
+		const double rangeWeight = std::max(0.0, profile.rangeWeight);
+		const double radiusWeight = std::max(0.0, profile.radiusWeight);
+		std::vector<double> weights = { rangeWeight, radiusWeight };
+		if (weights[0] == 0.0 && weights[1] == 0.0)
+			weights = { 1.0, 1.0 };
+
+		std::vector<PointGpu::Query> queries;
+		queries.reserve(profile.numQueries);
+
+		std::mt19937 rng(profile.querySeed);
+		std::discrete_distribution<size_t> queryType(weights.begin(), weights.end());
+		bool nextRangeIsCount = false;
+
+		for (size_t i = 0; i < profile.numQueries; ++i)
+		{
+			const size_t type = queryType(rng);
+			PointGpu::Query query;
+			if (type == 0)
+			{
+				query.type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
+				query.bounds = randomQueryBox(rng, cloud, profile);
+				if (nextRangeIsCount)
+					++result.countRangeQueries;
+				else
+					++result.rangeQueries;
+				nextRangeIsCount = !nextRangeIsCount;
+			}
+			else
+			{
+				query.type = PointGpu::QueryType::Radius;
+				query.center = randomPointInBounds(rng, cloud.bounds());
+				query.radius = randomQueryRadius(rng, cloud, profile);
+				++result.radiusQueries;
+			}
+			queries.push_back(query);
+		}
+
+		const PointGpu::QueryResult queryResult = index.query(queries, cudaOptions);
+		result.metrics = queryResult.metrics;
+		result.gpuQueryMs = queryResult.gpuQueryTimeMs;
+		return result;
+	}
+
 	Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 		const SearchDataset& dataset,
 		const Experiments::PointCloudFeatures& pointFeatures,
 		const Experiments::WorkloadProfile& workload,
 		const Experiments::WorkloadFeatures& workloadFeatures,
 		const Experiments::SchemaCandidate& schema,
-		const Experiments::ScoreWeights& weights)
+		const Experiments::SchemaSearchOptions& options,
+		CudaIndexCacheEntry* cudaCacheEntry = nullptr)
 	{
-		PointSpatialIndex index;
-		const auto buildBegin = std::chrono::steady_clock::now();
-		index.build(dataset.cloud, schema.config);
-		const auto buildEnd = std::chrono::steady_clock::now();
+		Experiments::BuildMetrics buildMetrics;
+		WorkloadRun workloadRun;
+		std::string backend = "cpu";
+		int cudaDevice = -1;
+		std::string cudaBuilder;
+		double gpuUploadMs = 0.0;
+		double gpuBuildMs = 0.0;
+		size_t gpuMemoryBytes = 0;
 
-		const Experiments::BuildMetrics buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd));
-		const WorkloadRun workloadRun = runWorkloadProfile(workload, dataset.cloud, index);
+		if (useCudaEvaluator(options))
+		{
+			backend = "cuda";
+			const PointGpu::Options cudaOptions = cudaOptionsFrom(options);
+			if (isBIHBuilder(cudaOptions.builder))
+			{
+				PointGpu::BIH localIndex;
+				PointGpu::BIH* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->bih)
+						cudaCacheEntry->bih = std::make_unique<PointGpu::BIH>();
+					cachedIndex = cudaCacheEntry->bih.get();
+				}
+				PointGpu::BIH& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else if (isHGridBuilder(cudaOptions.builder))
+			{
+				PointGpu::HGrid localIndex;
+				PointGpu::HGrid* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->hgrid)
+						cudaCacheEntry->hgrid = std::make_unique<PointGpu::HGrid>();
+					cachedIndex = cudaCacheEntry->hgrid.get();
+				}
+				PointGpu::HGrid& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else if (isKDTreeBuilder(cudaOptions.builder))
+			{
+				PointGpu::KDTree localIndex;
+				PointGpu::KDTree* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->kdTree)
+						cudaCacheEntry->kdTree = std::make_unique<PointGpu::KDTree>();
+					cachedIndex = cudaCacheEntry->kdTree.get();
+				}
+				PointGpu::KDTree& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else if (isOctreeBuilder(cudaOptions.builder))
+			{
+				PointGpu::Octree localIndex;
+				PointGpu::Octree* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->octree)
+						cudaCacheEntry->octree = std::make_unique<PointGpu::Octree>();
+					cachedIndex = cudaCacheEntry->octree.get();
+				}
+				PointGpu::Octree& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else if (isQuadTreeBuilder(cudaOptions.builder))
+			{
+				PointGpu::QuadTree localIndex;
+				PointGpu::QuadTree* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->quadTree)
+						cudaCacheEntry->quadTree = std::make_unique<PointGpu::QuadTree>();
+					cachedIndex = cudaCacheEntry->quadTree.get();
+				}
+				PointGpu::QuadTree& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else if (isRegularGridBuilder(cudaOptions.builder))
+			{
+				PointGpu::RegularGrid localIndex;
+				PointGpu::RegularGrid* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->regularGrid)
+						cudaCacheEntry->regularGrid = std::make_unique<PointGpu::RegularGrid>();
+					cachedIndex = cudaCacheEntry->regularGrid.get();
+				}
+				PointGpu::RegularGrid& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else if (isMixedBuilder(cudaOptions.builder))
+			{
+				PointGpu::MixedTree localIndex;
+				PointGpu::MixedTree* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->mixedTree)
+						cudaCacheEntry->mixedTree = std::make_unique<PointGpu::MixedTree>();
+					cachedIndex = cudaCacheEntry->mixedTree.get();
+				}
+				PointGpu::MixedTree& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+			else
+			{
+				PointGpu::LBVH localIndex;
+				PointGpu::LBVH* cachedIndex = nullptr;
+				if (cudaCacheEntry)
+				{
+					if (!cudaCacheEntry->lbvh)
+						cudaCacheEntry->lbvh = std::make_unique<PointGpu::LBVH>();
+					cachedIndex = cudaCacheEntry->lbvh.get();
+				}
+				PointGpu::LBVH& index = cachedIndex ? *cachedIndex : localIndex;
+				const PointGpu::BuildResult build = index.build(dataset.cloud, schema.config, cudaOptions);
+				buildMetrics = build.metrics;
+				cudaDevice = build.device;
+				cudaBuilder = build.builder;
+				gpuUploadMs = build.uploadTimeMs;
+				gpuBuildMs = build.gpuBuildTimeMs;
+				gpuMemoryBytes = build.gpuMemoryBytes;
+				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+			}
+		}
+		else
+		{
+			PointSpatialIndex index;
+			const auto buildBegin = std::chrono::steady_clock::now();
+			index.build(dataset.cloud, schema.config);
+			const auto buildEnd = std::chrono::steady_clock::now();
+
+			buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd));
+			workloadRun = runWorkloadProfile(workload, dataset.cloud, index);
+		}
 
 		Experiments::SchemaSearchRecord record;
 		record.datasetName = dataset.name;
@@ -890,9 +1424,10 @@ namespace
 		record.buildMetrics = buildMetrics;
 		record.queryMetrics = workloadRun.metrics;
 		record.rangeQueries = workloadRun.rangeQueries;
+		record.countRangeQueries = workloadRun.countRangeQueries;
 		record.radiusQueries = workloadRun.radiusQueries;
 		record.knnQueries = workloadRun.knnQueries;
-		record.weights = weights;
+		record.weights = options.weights;
 		record.score = Experiments::computeSchemaSearchScore(
 			record.buildMetrics,
 			record.queryMetrics,
@@ -901,6 +1436,13 @@ namespace
 			record.scoreImbalancePenalty);
 		record.pointFeatures = pointFeatures;
 		record.workloadFeatures = workloadFeatures;
+		record.backend = backend;
+		record.cudaDevice = cudaDevice;
+		record.cudaBuilder = cudaBuilder;
+		record.gpuUploadMs = gpuUploadMs;
+		record.gpuBuildMs = gpuBuildMs;
+		record.gpuQueryMs = workloadRun.gpuQueryMs;
+		record.gpuMemoryBytes = gpuMemoryBytes;
 		return record;
 	}
 
@@ -908,7 +1450,8 @@ namespace
 		const Experiments::SchemaCandidate& candidate,
 		const std::vector<DatasetContext>& datasets,
 		const std::vector<Experiments::WorkloadProfile>& workloads,
-		const Experiments::ScoreWeights& weights)
+		const Experiments::SchemaSearchOptions& options,
+		CudaIndexCache* cudaCache = nullptr)
 	{
 		EvaluatedCandidate evaluation;
 		evaluation.candidate = candidate;
@@ -920,14 +1463,18 @@ namespace
 		{
 			for (const Experiments::WorkloadProfile& workload : workloads)
 			{
-				const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
+				const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, options.weights);
+				CudaIndexCacheEntry* cudaEntry = cudaCache && useCudaEvaluator(options)
+					? &(*cudaCache)[datasetContext.dataset]
+					: nullptr;
 				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidate(
 					*datasetContext.dataset,
 					datasetContext.features,
 					workload,
 					workloadFeatures,
 					candidate,
-					weights);
+					options,
+					cudaEntry);
 				scoreSum += record.score;
 				++scoreCount;
 				evaluation.records.push_back(std::move(record));
@@ -974,7 +1521,8 @@ namespace
 			<< "w_range,w_radius,w_knn,query_scale_mean,query_scale_std,build_weight,memory_weight,"
 			<< "schema_name,schema_path,build_time_ms,num_nodes,num_leaves,max_depth,avg_leaf_occupancy,max_leaf_occupancy,memory_estimate_bytes,"
 			<< "total_queries,avg_latency_ms,median_latency_ms,p95_latency_ms,throughput_qps,avg_visited_nodes,avg_tested_points,avg_returned_points,"
-			<< "range_queries,radius_queries,knn_queries,score,score_memory_mb,score_imbalance_penalty,lambda_build,lambda_memory,lambda_imbalance\n";
+			<< "range_queries,radius_queries,knn_queries,score,score_memory_mb,score_imbalance_penalty,lambda_build,lambda_memory,lambda_imbalance,"
+			<< "backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries\n";
 	}
 
 	void writeSearchRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
@@ -1060,7 +1608,15 @@ namespace
 				<< record.scoreImbalancePenalty << ','
 				<< record.weights.lambdaBuild << ','
 				<< record.weights.lambdaMemory << ','
-				<< record.weights.lambdaImbalance << '\n';
+				<< record.weights.lambdaImbalance << ','
+				<< csvEscape(record.backend) << ','
+				<< record.cudaDevice << ','
+				<< csvEscape(record.cudaBuilder) << ','
+				<< record.gpuUploadMs << ','
+				<< record.gpuBuildMs << ','
+				<< record.gpuQueryMs << ','
+				<< record.gpuMemoryBytes << ','
+				<< record.countRangeQueries << '\n';
 		}
 	}
 
@@ -1091,7 +1647,7 @@ namespace
 			<< "height_mean,height_std,height_range,cov_eig_0,cov_eig_1,cov_eig_2,linearity,planarity,scattering,occupancy_ratio_8,"
 			<< "occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,w_range,w_radius,w_knn,knn_k,num_queries,"
 			<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
-			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates\n";
+			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates,backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
 		{
@@ -1140,7 +1696,14 @@ namespace
 				<< record.queryMetrics.averageLatencyMs << ','
 				<< record.buildMetrics.buildTimeMs << ','
 				<< record.buildMetrics.memoryEstimateBytes << ','
-				<< countCandidatesForBest(records, record) << '\n';
+				<< countCandidatesForBest(records, record) << ','
+				<< csvEscape(record.backend) << ','
+				<< record.cudaDevice << ','
+				<< csvEscape(record.cudaBuilder) << ','
+				<< record.gpuUploadMs << ','
+				<< record.gpuBuildMs << ','
+				<< record.gpuQueryMs << ','
+				<< record.gpuMemoryBytes << '\n';
 		}
 	}
 
@@ -1168,6 +1731,14 @@ namespace
 		records.insert(records.end(), evaluation.records.begin(), evaluation.records.end());
 	}
 
+	void emitProgress(
+		const Experiments::SchemaSearchOptions& options,
+		const Experiments::SchemaSearchRecord& record)
+	{
+		if (options.progressCallback)
+			options.progressCallback(record);
+	}
+
 	void sortEvaluations(std::vector<EvaluatedCandidate>& evaluations)
 	{
 		std::sort(evaluations.begin(), evaluations.end(), [](const EvaluatedCandidate& left, const EvaluatedCandidate& right) {
@@ -1190,6 +1761,7 @@ namespace
 		std::unordered_set<std::string> seenSignatures;
 		std::vector<EvaluatedCandidate> archive;
 		std::vector<Experiments::SchemaSearchRecord> records;
+		CudaIndexCache cudaCache;
 
 		std::vector<Experiments::SchemaCandidate> batch = uniqueCandidates(initialCandidates, seenSignatures);
 		if (batch.empty())
@@ -1207,9 +1779,14 @@ namespace
 			{
 				const Experiments::SchemaCandidate& candidate = candidates[i];
 				std::cout << "      " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate.config.name << '\n';
-				EvaluatedCandidate evaluation = evaluateCandidate(candidate, datasets, workloads, options.weights);
-				std::cout << "        aggregate score " << evaluation.aggregateScore << '\n';
+				EvaluatedCandidate evaluation = evaluateCandidate(candidate, datasets, workloads, options, &cudaCache);
+				std::cout << "        aggregate score " << evaluation.aggregateScore;
+				if (!evaluation.records.empty() && evaluation.records.front().backend == "cuda")
+					std::cout << " (" << cudaBuilderDisplayName(evaluation.records.front().cudaBuilder) << ")";
+				std::cout << '\n';
 				appendRecords(records, evaluation);
+				for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+					emitProgress(options, record);
 				archive.push_back(std::move(evaluation));
 			}
 			sortEvaluations(archive);
@@ -1321,7 +1898,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 
 			SchemaLevelConfig level;
 			level.type = randomStructureType(rng, previousType);
-			level.typeName = Config::dataStructureLevelName(level.type);
+			level.typeName = randomTypeNameForBase(level.type, rng);
 			level.numLevels = levelDistribution(rng);
 			level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
@@ -1476,6 +2053,18 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 
 	std::cout << std::fixed << std::setprecision(3);
 	std::cout << "Schema search\n";
+	std::cout << "  evaluator: " << (useCudaEvaluator(options) ? "cuda" : "cpu") << '\n';
+	if (useCudaEvaluator(options))
+	{
+		const PointGpu::Options cudaOptions = cudaOptionsFrom(options);
+		std::cout << "  cuda builder: " << cudaBuilderDisplayName(cudaOptions.builder) << '\n';
+		std::cout << "  cuda device: " << cudaDeviceDescription(cudaOptions) << '\n';
+		std::cout << "  cuda warmup: " << warmUpCudaDevice(cudaOptions) << " ms\n";
+		if (cudaOptions.queryBatchSize > 0)
+			std::cout << "  cuda query batch: " << cudaOptions.queryBatchSize << '\n';
+		if (cudaOptions.memoryBudgetMb > 0)
+			std::cout << "  cuda memory budget: " << cudaOptions.memoryBudgetMb << " MB\n";
+	}
 	std::cout << "  datasets: " << datasets.size() << '\n';
 	std::cout << "  schemas: " << schemas.size() << '\n';
 	if (options.generation.count > 0)
@@ -1495,6 +2084,17 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		std::cout << "  surrogate rank model: not used inside evolutionary loop; measured scores drive selection\n";
 	}
 	std::cout << "  workloads: " << workloads.size() << '\n';
+	if (useCudaEvaluator(options))
+	{
+		for (const WorkloadProfile& workload : workloads)
+		{
+			if (workload.knnWeight > 0.0)
+			{
+				std::cout << "  note: CUDA evaluator v1 ignores KNN weight for workload '" << workload.name
+					<< "' and redistributes generated GPU queries over range/count/radius\n";
+			}
+		}
+	}
 
 	std::vector<DatasetContext> datasetContexts;
 	datasetContexts.reserve(datasets.size());
@@ -1507,6 +2107,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	}
 	else
 	{
+		CudaIndexCache cudaCache;
 		for (const DatasetContext& datasetContext : datasetContexts)
 		{
 			const SearchDataset& dataset = *datasetContext.dataset;
@@ -1528,20 +2129,30 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 
 			for (const SchemaCandidate& schema : benchmarkSchemas)
 			{
+				CudaIndexCacheEntry* cudaEntry = useCudaEvaluator(options)
+					? &cudaCache[datasetContext.dataset]
+					: nullptr;
 				SchemaSearchRecord record = benchmarkSchemaCandidate(
 					dataset,
 					datasetContext.features,
 					workload,
 					workloadFeatures,
 					schema,
-					options.weights);
+					options,
+					cudaEntry);
 				records.push_back(record);
+				emitProgress(options, record);
 
 				std::cout << "      " << record.schemaName
 					<< ": score " << record.score
 					<< ", avg " << record.queryMetrics.averageLatencyMs
 					<< " ms, build " << record.buildMetrics.buildTimeMs
-					<< " ms\n";
+					<< " ms";
+				if (record.backend == "cuda")
+					std::cout << ", gpu build " << record.gpuBuildMs
+						<< " ms, upload " << record.gpuUploadMs
+						<< " ms, gpu query " << record.gpuQueryMs << " ms";
+				std::cout << '\n';
 			}
 		}
 		}

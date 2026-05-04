@@ -65,6 +65,8 @@ namespace BaselineTests
 		double imbalancePenalty = 0.0;
 		Experiments::ScoreWeights scoreWeights;
 		scoreWeights.lambdaBuild = 0.001;
+		scoreWeights.lambdaMemory = 0.01;
+		scoreWeights.lambdaImbalance = 0.01;
 		const double score = Experiments::computeSchemaSearchScore(
 			buildMetrics,
 			queryMetrics,
@@ -84,7 +86,7 @@ namespace BaselineTests
 			Experiments::ScoreWeights{},
 			defaultMemoryMb,
 			defaultImbalancePenalty);
-		expect(nearlyEqual(defaultScore, 2.05), "schema search default score ignores build time");
+		expect(nearlyEqual(defaultScore, 2.0), "schema search default score is query-only");
 
 		std::vector<Experiments::SchemaSearchRecord> records(3);
 		records[0].datasetName = "flat";

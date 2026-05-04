@@ -56,6 +56,37 @@ namespace BaselineTests
 		expectPointBuildPreservesCounts(quadtree, cloud, "quadtree point build");
 		expectPointBuildPreservesCounts(hybrid, cloud, "hybrid point build");
 
+		const char* gpuFlavorJson = R"json(
+		{
+		  "name": "gpu_flavors",
+		  "levels": [
+		    { "type": "BIH", "numLevels": 1, "leafCapacity": 16, "minPointsToSplit": 4 },
+		    { "type": "KarrasOctree", "numLevels": 1, "leafCapacity": 16, "minPointsToSplit": 4 },
+		    { "type": "LBVH", "numLevels": 1, "leafCapacity": 16, "minPointsToSplit": 4 },
+		    { "type": "RegularGrid", "numLevels": 1, "leafCapacity": 16, "minPointsToSplit": 4 },
+		    { "type": "HGrid", "numLevels": 1, "leafCapacity": 16, "minPointsToSplit": 4 }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 3,
+		    "leafCapacity": 16,
+		    "minPointsToSplit": 4,
+		    "collapseSingleChild": true,
+		    "removeEmptyNodes": true,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+		const SchemaConfig gpuFlavors = Config::parseSchemaConfig(gpuFlavorJson, "gpu_flavors");
+		expect(gpuFlavors.levels[0].type == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH parses as KD-compatible family");
+		expect(gpuFlavors.levels[0].typeName == "BIH", "BIH schema name is preserved");
+		expect(gpuFlavors.levels[1].type == MultiDataStructure::DataStructureLevel::OctreeNode, "KarrasOctree parses as Octree-compatible family");
+		expect(gpuFlavors.levels[1].typeName == "KarrasOctree", "KarrasOctree schema name is preserved");
+		expect(gpuFlavors.levels[2].type == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH parses as BVH-compatible family");
+		expect(gpuFlavors.levels[3].type == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid parses as Octree-compatible family");
+		expect(gpuFlavors.levels[3].typeName == "RegularGrid", "RegularGrid schema name is preserved");
+		expect(gpuFlavors.levels[4].type == MultiDataStructure::DataStructureLevel::OctreeNode, "HGrid parses as Octree-compatible family");
+		expect(gpuFlavors.levels[4].typeName == "HGrid", "HGrid schema name is preserved");
+
 		const char* noSplitJson = R"json(
 		{
 		  "name": "no_split",

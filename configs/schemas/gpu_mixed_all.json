@@ -1,0 +1,63 @@
+{
+  "name": "gpu_mixed_all",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 1,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8
+    },
+    {
+      "type": "RegularGrid",
+      "numLevels": 1,
+      "leafCapacity": 24,
+      "minPointsToSplit": 8
+    },
+    {
+      "type": "HGrid",
+      "numLevels": 1,
+      "leafCapacity": 20,
+      "minPointsToSplit": 8
+    },
+    {
+      "type": "KarrasOctree",
+      "numLevels": 1,
+      "leafCapacity": 24,
+      "minPointsToSplit": 8
+    },
+    {
+      "type": "Octree",
+      "numLevels": 1,
+      "leafCapacity": 16,
+      "minPointsToSplit": 4
+    },
+    {
+      "type": "BIH",
+      "numLevels": 1,
+      "leafCapacity": 12,
+      "minPointsToSplit": 4,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 12,
+      "minPointsToSplit": 4,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "LBVH",
+      "numLevels": 1,
+      "leafCapacity": 12,
+      "minPointsToSplit": 4
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 16,
+    "minPointsToSplit": 4,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

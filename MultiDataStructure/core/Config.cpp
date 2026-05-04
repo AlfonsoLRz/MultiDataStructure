@@ -289,9 +289,19 @@ MultiDataStructure::DataStructureLevel Config::parseDataStructureLevel(const std
 		return MultiDataStructure::DataStructureLevel::QuadTreeNode;
 	if (normalized == "kdtree" || normalized == "kdtreenode")
 		return MultiDataStructure::DataStructureLevel::KDTreeNode;
+	if (normalized == "bih" || normalized == "binaryintervalhierarchy" || normalized == "intervalhierarchy")
+		return MultiDataStructure::DataStructureLevel::KDTreeNode;
 	if (normalized == "octree" || normalized == "octreenode")
 		return MultiDataStructure::DataStructureLevel::OctreeNode;
+	if (normalized == "karrasoctree" || normalized == "mortonoctree" || normalized == "octreekarras" || normalized == "octreemorton")
+		return MultiDataStructure::DataStructureLevel::OctreeNode;
+	if (normalized == "regulargrid" || normalized == "uniformgrid" || normalized == "grid" || normalized == "grid3d")
+		return MultiDataStructure::DataStructureLevel::OctreeNode;
+	if (normalized == "hgrid" || normalized == "hierarchicalgrid" || normalized == "hierarchicalgrid3d")
+		return MultiDataStructure::DataStructureLevel::OctreeNode;
 	if (normalized == "bvh" || normalized == "bvhnode")
+		return MultiDataStructure::DataStructureLevel::BvhNode;
+	if (normalized == "lbvh" || normalized == "linearbvh")
 		return MultiDataStructure::DataStructureLevel::BvhNode;
 
 	throw std::runtime_error("Unsupported spatial structure type: " + value);

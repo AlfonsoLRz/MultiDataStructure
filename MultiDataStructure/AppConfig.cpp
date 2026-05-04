@@ -271,6 +271,26 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.evolution.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
 		}
+		else if (arg == "--evaluator" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evaluator = argv[++i];
+		}
+		else if (arg == "--cuda-device" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.cuda.device = std::stoi(argv[++i]);
+		}
+		else if (arg == "--cuda-builder" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.cuda.builder = argv[++i];
+		}
+		else if (arg == "--cuda-query-batch" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.cuda.queryBatchSize = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--cuda-memory-budget-mb" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.cuda.memoryBudgetMb = static_cast<size_t>(std::stoull(argv[++i]));
+		}
 		else if (arg == "--score-build-weight" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.lambdaBuild = std::stod(argv[++i]);
@@ -372,6 +392,11 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --optimizer-mutation-rate <v> Extra mutation probability per child, default 0.65\n"
 		<< "  --optimizer-random-fraction <v> Fraction of each generation sampled randomly, default 0.20\n"
 		<< "  --optimizer-seed <seed>     Seed for optimizer parent choice and mutation\n"
+		<< "  --evaluator cpu|cuda        Benchmark backend for schema-search mode\n"
+		<< "  --cuda-device <id>          CUDA device id for --evaluator cuda; default 0\n"
+		<< "  --cuda-builder lbvh|kdtree|bih|octree|karras_octree|quadtree|regular_grid|hgrid|mixed CUDA builder; LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented\n"
+		<< "  --cuda-query-batch <n>      Query batch size for CUDA evaluator; 0 uses all queries\n"
+		<< "  --cuda-memory-budget-mb <n> Reject CUDA builds estimated above this memory budget\n"
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
 		<< "  --score-memory-weight <v>   Memory score weight, default 0.01\n"
 		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0.01\n"

@@ -7,6 +7,8 @@
 
 namespace Experiments
 {
+	struct SchemaSearchRecord;
+
 	struct SchemaCandidate
 	{
 		std::string name;
@@ -46,8 +48,8 @@ namespace Experiments
 	struct ScoreWeights
 	{
 		double lambdaBuild = 0.0;
-		double lambdaMemory = 0.01;
-		double lambdaImbalance = 0.01;
+		double lambdaMemory = 0.0;
+		double lambdaImbalance = 0.0;
 	};
 
 	struct EvolutionOptions
@@ -59,6 +61,14 @@ namespace Experiments
 		double mutationRate = 0.65;
 		double randomImmigrationRate = 0.20;
 		uint32_t seed = 1337;
+	};
+
+	struct CudaEvaluationOptions
+	{
+		int device = -1;
+		std::string builder = "lbvh";
+		size_t queryBatchSize = 0;
+		size_t memoryBudgetMb = 0;
 	};
 
 	struct SchemaSearchOptions
@@ -83,6 +93,9 @@ namespace Experiments
 		SchemaGenerationOptions generation;
 		ScoreWeights weights;
 		EvolutionOptions evolution;
+		std::string evaluator = "cpu";
+		CudaEvaluationOptions cuda;
+		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
 
 	struct SchemaSearchRecord
@@ -102,6 +115,7 @@ namespace Experiments
 		BuildMetrics buildMetrics;
 		QueryMetrics queryMetrics;
 		size_t rangeQueries = 0;
+		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
 		size_t knnQueries = 0;
 		double score = 0.0;
@@ -110,6 +124,13 @@ namespace Experiments
 		ScoreWeights weights;
 		PointCloudFeatures pointFeatures;
 		WorkloadFeatures workloadFeatures;
+		std::string backend = "cpu";
+		int cudaDevice = -1;
+		std::string cudaBuilder;
+		double gpuUploadMs = 0.0;
+		double gpuBuildMs = 0.0;
+		double gpuQueryMs = 0.0;
+		size_t gpuMemoryBytes = 0;
 	};
 
 	WorkloadProfile parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName = {});

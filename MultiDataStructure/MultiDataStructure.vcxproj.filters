@@ -135,13 +135,40 @@
     <ClInclude Include="workloads\points\PointBenchmark.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
+    <ClInclude Include="workloads\points\BIH.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
     <ClInclude Include="workloads\points\PointCloud.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\HGrid.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\KDTree.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\MixedTree.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
     <ClInclude Include="workloads\points\PointPrimitive.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
+    <ClInclude Include="workloads\points\LBVH.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\Octree.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointGpuTypes.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
     <ClInclude Include="workloads\points\PointSpatialIndex.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\QuadTree.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\RegularGrid.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
     <ClInclude Include="workloads\points\SyntheticPointClouds.h">
@@ -152,7 +179,19 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\tests\test_bih.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\tests\test_config_parsing.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_hgrid.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_kdtree.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_lbvh.cpp">
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_feature_extraction.cpp">
@@ -164,10 +203,22 @@
     <ClCompile Include="..\tests\test_metrics.cpp">
       <Filter>tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\tests\test_mixed_tree.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_octree.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\tests\test_pointcloud_io.cpp">
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_point_queries.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_quadtree.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_regular_grid.cpp">
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_schema_search.cpp">
@@ -258,6 +309,12 @@
     <ClCompile Include="experiments\SchemaSelector.cpp">
       <Filter>experiments</Filter>
     </ClCompile>
+    <ClCompile Include="workloads\points\BIH.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\HGrid.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
     <ClCompile Include="workloads\points\PointBenchmark.cpp">
       <Filter>workloads\points</Filter>
     </ClCompile>
@@ -288,6 +345,24 @@
       <Filter>cuda</Filter>
     </CudaCompile>
     <CudaCompile Include="cuda_globals.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\KDTree.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\LBVH.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\MixedTree.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\Octree.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\QuadTree.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\RegularGrid.cu">
       <Filter>cuda</Filter>
     </CudaCompile>
   </ItemGroup>

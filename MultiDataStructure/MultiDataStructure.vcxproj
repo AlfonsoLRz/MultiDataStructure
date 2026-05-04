@@ -71,8 +71,9 @@
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CodeGeneration>compute_52,sm_52;compute_89,sm_89</CodeGeneration>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 --maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -98,8 +99,9 @@
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CodeGeneration>compute_52,sm_52;compute_89,sm_89</CodeGeneration>
       <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
-      <AdditionalOptions>--maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>--std=c++17 --maxrregcount=64 %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(OnnxRuntimeIncludeDir)'!='' And '$(OnnxRuntimeLibraryDir)'!=''">
@@ -158,18 +160,35 @@
     <ClInclude Include="TriangleMesh.h" />
     <ClInclude Include="ui\OptimizerGui.h" />
     <ClInclude Include="workloads\points\PointBenchmark.h" />
+    <ClInclude Include="workloads\points\BIH.h" />
     <ClInclude Include="workloads\points\PointCloud.h" />
+    <ClInclude Include="workloads\points\HGrid.h" />
+    <ClInclude Include="workloads\points\KDTree.h" />
+    <ClInclude Include="workloads\points\MixedTree.h" />
     <ClInclude Include="workloads\points\PointPrimitive.h" />
+    <ClInclude Include="workloads\points\LBVH.h" />
+    <ClInclude Include="workloads\points\Octree.h" />
+    <ClInclude Include="workloads\points\PointGpuTypes.h" />
     <ClInclude Include="workloads\points\PointSpatialIndex.h" />
+    <ClInclude Include="workloads\points\QuadTree.h" />
+    <ClInclude Include="workloads\points\RegularGrid.h" />
     <ClInclude Include="workloads\points\SyntheticPointClouds.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\tests\test_bih.cpp" />
     <ClCompile Include="..\tests\test_config_parsing.cpp" />
+    <ClCompile Include="..\tests\test_hgrid.cpp" />
+    <ClCompile Include="..\tests\test_kdtree.cpp" />
+    <ClCompile Include="..\tests\test_lbvh.cpp" />
     <ClCompile Include="..\tests\test_feature_extraction.cpp" />
     <ClCompile Include="..\tests\test_level_schedule.cpp" />
     <ClCompile Include="..\tests\test_metrics.cpp" />
+    <ClCompile Include="..\tests\test_mixed_tree.cpp" />
+    <ClCompile Include="..\tests\test_octree.cpp" />
     <ClCompile Include="..\tests\test_pointcloud_io.cpp" />
     <ClCompile Include="..\tests\test_point_queries.cpp" />
+    <ClCompile Include="..\tests\test_quadtree.cpp" />
+    <ClCompile Include="..\tests\test_regular_grid.cpp" />
     <ClCompile Include="..\tests\test_schema_search.cpp" />
     <ClCompile Include="..\tests\test_schema_selector.cpp" />
     <ClCompile Include="..\tests\test_tree_cleanup.cpp" />
@@ -200,6 +219,8 @@
     <ClCompile Include="ExternalBvh.cpp" />
     <ClCompile Include="TriangleMesh.cpp" />
     <ClCompile Include="ui\OptimizerGui.cpp" />
+    <ClCompile Include="workloads\points\BIH.cpp" />
+    <ClCompile Include="workloads\points\HGrid.cpp" />
     <ClCompile Include="workloads\points\PointBenchmark.cpp" />
     <ClCompile Include="workloads\points\PointCloud.cpp" />
     <ClCompile Include="workloads\points\PointPrimitive.cpp" />
@@ -214,6 +235,30 @@
     </CudaCompile>
     <CudaCompile Include="cuda_globals.cu" />
     <CudaCompile Include="morton_encoding_kernels.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\KDTree.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\LBVH.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\MixedTree.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\Octree.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\QuadTree.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\RegularGrid.cu">
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>

@@ -68,6 +68,11 @@ Supported command-line overrides:
 | `--workloads <a;b;c>` | Selects workload profile JSON files for schema-search mode. |
 | `--synthetic-scale <count>` | Sets the synthetic dataset size scale for schema-search mode. |
 | `--no-synthetic` | Uses only `--input` datasets in schema-search mode. |
+| `--evaluator cpu\|cuda` | Selects CPU index benchmarking or a GPU evaluator for schema-search mode. |
+| `--cuda-device <id>` | Selects the CUDA device for `--evaluator cuda`. |
+| `--cuda-builder lbvh\|kdtree\|bih\|octree\|karras_octree\|quadtree\|regular_grid\|hgrid\|mixed` | Selects the CUDA structure; `lbvh`, `kdtree`, `bih`, `octree`, `karras_octree`, `quadtree`, `regular_grid`, `hgrid`, and static `mixed` schemas are implemented. |
+| `--cuda-query-batch <count>` | Sets CUDA query batch size; `0` runs each generated workload as one batch. |
+| `--cuda-memory-budget-mb <mb>` | Optional CUDA memory budget guard. |
 | `--no-cache` | Reads source point data without reading or writing `.mdspc`. |
 | `--rebuild-cache` | Re-reads source point data and replaces the `.mdspc` cache. |
 | `--no-pause` | Skips the final console pause. |
@@ -130,7 +135,7 @@ Example:
 .\x64\Release\MultiDataStructure.exe --mode schema-search --queries 128 --csv results\schema_search.csv --best-csv results\schema_search_best.csv --no-pause
 ```
 
-Generated hyperspace search is available in the same mode. The generator samples valid nested schemas from bounded intervals over the currently implemented node types (`QuadTree`, `Octree`, `KDTree`), writes replayable schema JSON files under `results/generated_schemas/`, optionally ranks all candidates with a selector model, and benchmarks only the top-k:
+Generated hyperspace search is available in the same mode. The generator samples valid nested schemas from bounded intervals over the currently implemented node families (`QuadTree`, `Octree`, `KDTree`, `BVH`) and can emit GPU-specific variants (`KarrasOctree`, `BIH`, `LBVH`, `RegularGrid`, `HGrid`) for mixed CUDA evaluation. It writes replayable schema JSON files under `results/generated_schemas/`, optionally ranks all candidates with a selector model, and benchmarks only the top-k:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --rank-model models/schema_selector_onnx.json --benchmark-top 16 --workloads configs/workloads/mixed.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
@@ -168,10 +173,12 @@ Useful generator controls:
 The score is:
 
 ```text
-avg_query_latency_ms + 0.0 * build_time_ms + 0.01 * memory_mb + 0.01 * imbalance_penalty
+avg_query_latency_ms + 0.0 * build_time_ms + 0.0 * memory_mb + 0.0 * imbalance_penalty
 ```
 
-where `imbalance_penalty = max_leaf_occupancy / max(1, avg_leaf_occupancy)`. Build time is logged but ignored by default because schemas can be built offline and reused. Raw metrics and score components are also stored so later milestones can recompute labels.
+where `imbalance_penalty = max_leaf_occupancy / max(1, avg_leaf_occupancy)`. Build time, memory, and imbalance are logged but ignored by default because schemas can be built offline and reused. Raw metrics and score components are also stored so later milestones can recompute labels.
+
+With `--evaluator cuda`, schema search uploads each point cloud to the GPU and measures range/count-range/radius query batches through the selected CUDA builder. `lbvh` uses a Morton-sorted point order, `kdtree` and `bih` use binary linear nodes, `octree` and `quadtree` use midpoint child buckets, `karras_octree` uses Morton sorting plus prefix child ranges, `regular_grid` and `hgrid` use grid cell bins, and `mixed` follows the schema's per-depth schedule. Mixed CUDA schemas can name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid` as recursive split levels. In mixed schemas, `RegularGrid` and `HGrid` are per-node grid split flavors rather than the standalone global sorted-cell evaluators. KNN remains on the CPU path for now.
 
 The Python helpers support both point benchmark sweeps and schema search:
 

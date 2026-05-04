@@ -21,7 +21,7 @@ namespace AppDefaults
 	inline constexpr size_t POINT_QUERY_COUNT = 16;
 	inline constexpr size_t POINT_QUERY_K = 8;
 	inline constexpr uint32_t POINT_QUERY_SEED = 1337;
-	inline constexpr const char* SCHEMA_SEARCH_SCHEMA_PATHS = "configs/schemas/quadtree.json;configs/schemas/octree.json;configs/schemas/kdtree.json;configs/schemas/quadtree_octree.json;configs/schemas/octree_kdtree.json;configs/schemas/urban_hybrid.json";
+	inline constexpr const char* SCHEMA_SEARCH_SCHEMA_PATHS = "configs/schemas/quadtree.json;configs/schemas/octree.json;configs/schemas/kdtree.json;configs/schemas/bvh.json;configs/schemas/quadtree_octree.json;configs/schemas/octree_kdtree.json;configs/schemas/urban_hybrid.json";
 	inline constexpr const char* SCHEMA_SEARCH_WORKLOAD_PATHS = "configs/workloads/range_heavy.json;configs/workloads/knn_heavy.json;configs/workloads/mixed.json";
 	inline constexpr const char* SCHEMA_SEARCH_CSV_PATH = "results/schema_search.csv";
 	inline constexpr const char* SCHEMA_SEARCH_BEST_CSV_PATH = "results/schema_search_best.csv";
