@@ -3,6 +3,8 @@
 
 namespace
 {
+	constexpr double EPSILON = 1e-9;
+
 	glm::uint longestAxis(const AABB& bounds)
 	{
 		const glm::vec3 size = bounds.size();
@@ -37,6 +39,39 @@ namespace
 	{
 		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 	}
+
+	size_t schemaBlockEndDepth(const SchemaConfig& schema, size_t schemaDepth)
+	{
+		size_t cumulative = 0;
+		for (const SchemaLevelConfig& level : schema.levels)
+		{
+			cumulative += level.numLevels;
+			if (schemaDepth < cumulative)
+				return cumulative;
+		}
+
+		return schema.totalLevels();
+	}
+
+	bool belowMin(size_t value, const std::optional<size_t>& minValue)
+	{
+		return minValue.has_value() && value < minValue.value();
+	}
+
+	bool aboveMax(size_t value, const std::optional<size_t>& maxValue)
+	{
+		return maxValue.has_value() && value > maxValue.value();
+	}
+
+	bool belowMin(double value, const std::optional<double>& minValue)
+	{
+		return minValue.has_value() && value < minValue.value();
+	}
+
+	bool aboveMax(double value, const std::optional<double>& maxValue)
+	{
+		return maxValue.has_value() && value > maxValue.value();
+	}
 }
 
 void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schema)
@@ -47,6 +82,7 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 	_root = std::make_unique<Node>();
 	_root->bounds = cloud.bounds();
 	_root->depth = 0;
+	_root->schemaDepth = 0;
 	_root->pointIndices.resize(cloud.size());
 	std::iota(_root->pointIndices.begin(), _root->pointIndices.end(), 0);
 
@@ -134,7 +170,12 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 
 void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 {
-	const SchemaLevelConfig& levelConfig = _schema.levelForDepth(node->depth);
+	const std::optional<ActiveLevel> activeLevel = activeLevelForNode(*node);
+	if (!activeLevel.has_value())
+		return;
+
+	const SchemaLevelConfig& levelConfig = *activeLevel->config;
+	node->schemaDepth = activeLevel->schemaDepth;
 	node->type = levelConfig.type;
 
 	if (!shouldSplit(*node, levelConfig))
@@ -177,6 +218,7 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 		child->bounds = bounds[childIndex];
 		child->type = levelConfig.type;
 		child->depth = node->depth + 1;
+		child->schemaDepth = activeLevel->schemaDepth + 1;
 		child->pointIndices = std::move(childPoints[childIndex]);
 		buildNode(child);
 		children.push_back(std::move(child));
@@ -198,10 +240,60 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 	node->children = std::move(children);
 }
 
+std::optional<PointSpatialIndex::ActiveLevel> PointSpatialIndex::activeLevelForNode(const Node& node) const
+{
+	const size_t totalLevels = _schema.totalLevels();
+	size_t schemaDepth = node.schemaDepth;
+
+	while (schemaDepth < totalLevels)
+	{
+		const SchemaLevelConfig& levelConfig = _schema.levelForDepth(schemaDepth);
+		if (matchesCondition(node, levelConfig.condition))
+			return ActiveLevel{ &levelConfig, schemaDepth };
+
+		schemaDepth = schemaBlockEndDepth(_schema, schemaDepth);
+	}
+
+	return std::nullopt;
+}
+
+bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCondition& condition) const
+{
+	if (condition.empty())
+		return true;
+
+	const size_t pointCount = node.pointIndices.size();
+	if (belowMin(pointCount, condition.minPoints) || aboveMax(pointCount, condition.maxPoints))
+		return false;
+
+	const glm::vec3 extent = glm::max(node.bounds.size(), glm::vec3(0.0f));
+	const double horizontalExtent = std::max({ static_cast<double>(extent.x), static_cast<double>(extent.y), EPSILON });
+	const double heightRatio = static_cast<double>(extent.z) / horizontalExtent;
+	if (belowMin(heightRatio, condition.minHeightRatio) || aboveMax(heightRatio, condition.maxHeightRatio))
+		return false;
+
+	const double volume = static_cast<double>(extent.x) * static_cast<double>(extent.y) * static_cast<double>(extent.z);
+	const double density = volume > EPSILON ? static_cast<double>(pointCount) / volume : 0.0;
+	if (belowMin(density, condition.minDensity) || aboveMax(density, condition.maxDensity))
+		return false;
+
+	const double extentX = static_cast<double>(extent.x);
+	const double extentY = static_cast<double>(extent.y);
+	const double extentZ = static_cast<double>(extent.z);
+	if (belowMin(extentX, condition.minExtentX) || aboveMax(extentX, condition.maxExtentX))
+		return false;
+	if (belowMin(extentY, condition.minExtentY) || aboveMax(extentY, condition.maxExtentY))
+		return false;
+	if (belowMin(extentZ, condition.minExtentZ) || aboveMax(extentZ, condition.maxExtentZ))
+		return false;
+
+	return true;
+}
+
 bool PointSpatialIndex::shouldSplit(const Node& node, const SchemaLevelConfig& levelConfig) const
 {
 	const size_t maxDepth = _schema.buildPolicy.maxDepth > 0 ? _schema.buildPolicy.maxDepth : _schema.totalLevels();
-	if (node.depth >= maxDepth || node.depth >= _schema.totalLevels())
+	if (node.depth >= maxDepth || node.schemaDepth >= _schema.totalLevels())
 		return false;
 
 	const size_t leafCapacity = levelConfig.leafCapacity > 0 ? levelConfig.leafCapacity : _schema.buildPolicy.leafCapacity;

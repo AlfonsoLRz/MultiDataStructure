@@ -68,3 +68,5 @@ The Python training pipeline augments raw rows with schema-composition features 
 | `schema_min_leaf_capacity` | Minimum nonzero leaf capacity across blocks. |
 
 These features are the first bridge from fixed candidates to generated schema combinations.
+
+Schema JSON levels can also contain local `condition` predicates. The current C++ benchmark honors those predicates during index construction, allowing different branches to skip or enter nested blocks. The first ML feature set still describes the level schedule itself; condition-aware feature columns are a follow-up once enough conditional search rows exist.

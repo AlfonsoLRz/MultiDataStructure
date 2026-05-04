@@ -136,6 +136,22 @@ Generated hyperspace search is available in the same mode. The generator samples
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --rank-model models/schema_selector_onnx.json --benchmark-top 16 --workloads configs/workloads/mixed.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
 ```
 
+Schema levels may include a `condition` object. Conditions are evaluated per node, so one branch can enter a nested block while a sibling skips it and advances to the next schema block:
+
+```json
+{
+  "type": "Octree",
+  "numLevels": 6,
+  "leafCapacity": 4096,
+  "condition": {
+    "minPoints": 8192,
+    "minHeightRatio": 0.2
+  }
+}
+```
+
+Supported condition fields are `minPoints`, `maxPoints`, `minDensity`, `maxDensity`, `minHeightRatio`, `maxHeightRatio`, and per-axis extent bounds (`minExtentX`, `maxExtentX`, etc.). `configs/schemas/adaptive_quadtree_octree.json` is a hand-authored example. Generated search can sample conditions with `--generated-conditional`.
+
 Useful generator controls:
 
 ```text
@@ -143,6 +159,8 @@ Useful generator controls:
 --generated-max-depth <n>
 --generated-min-leaf <n>
 --generated-max-leaf <n>
+--generated-conditional
+--generated-condition-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
 ```

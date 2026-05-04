@@ -98,6 +98,73 @@ namespace BaselineTests
 		splitIndex.build(cloud, Config::parseSchemaConfig(splitJson, "split"));
 		expect(splitIndex.stats().numNodes > 1, "small leaf capacity allows point subdivision");
 		expect(splitIndex.stats().numPoints == cloud.size(), "policy-controlled split preserves point count");
+
+		const char* conditionalFalseJson = R"json(
+		{
+		  "name": "conditional_false",
+		  "levels": [
+		    { "type": "QuadTree", "numLevels": 1, "leafCapacity": 4, "minPointsToSplit": 2 },
+		    {
+		      "type": "Octree",
+		      "numLevels": 3,
+		      "leafCapacity": 4,
+		      "minPointsToSplit": 2,
+		      "condition": {
+		        "minHeightRatio": 999.0,
+		        "minPoints": 2
+		      }
+		    }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 4,
+		    "leafCapacity": 4,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": true,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+
+		const char* conditionalTrueJson = R"json(
+		{
+		  "name": "conditional_true",
+		  "levels": [
+		    { "type": "QuadTree", "numLevels": 1, "leafCapacity": 4, "minPointsToSplit": 2 },
+		    {
+		      "type": "Octree",
+		      "numLevels": 3,
+		      "leafCapacity": 4,
+		      "minPointsToSplit": 2,
+		      "condition": {
+		        "minHeightRatio": 0.0,
+		        "minPoints": 2
+		      }
+		    }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 4,
+		    "leafCapacity": 4,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": true,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+
+		const SchemaConfig conditionalFalse = Config::parseSchemaConfig(conditionalFalseJson, "conditional_false");
+		expect(conditionalFalse.levels[1].condition.minHeightRatio.has_value(), "schema condition parses height ratio");
+		expect(conditionalFalse.levels[1].condition.minPoints.has_value(), "schema condition parses min points");
+
+		PointSpatialIndex conditionalFalseIndex;
+		conditionalFalseIndex.build(cloud, conditionalFalse);
+
+		PointSpatialIndex conditionalTrueIndex;
+		conditionalTrueIndex.build(cloud, Config::parseSchemaConfig(conditionalTrueJson, "conditional_true"));
+
+		expect(conditionalFalseIndex.stats().numPoints == cloud.size(), "conditional false build preserves point count");
+		expect(conditionalTrueIndex.stats().numPoints == cloud.size(), "conditional true build preserves point count");
+		expect(conditionalTrueIndex.stats().maxDepth > conditionalFalseIndex.stats().maxDepth, "matching schema condition unfolds deeper levels");
 	}
 }
-

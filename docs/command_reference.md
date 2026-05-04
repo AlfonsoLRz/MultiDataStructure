@@ -142,6 +142,18 @@ Small-to-medium 3D volume-query search. This uses AABB range queries only, with 
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --workloads configs/workloads/volume_small_medium.json --queries 128 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_small_medium.csv --best-csv results/alhambra_volume_small_medium_best.csv --no-pause
 ```
 
+Generated conditional schema search. Later generated blocks may include local node predicates, so sibling branches can skip or enter different nested blocks:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --generated-conditional --generated-condition-probability 0.5 --workloads configs/workloads/volume_small_medium.json --queries 128 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_conditional.csv --best-csv results/alhambra_volume_conditional_best.csv --no-pause
+```
+
+Replay the hand-authored conditional quadtree-to-octree schema:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --input C:/Datasets/points/Alhambra_100M.las --schema configs/schemas/adaptive_quadtree_octree.json --queries 64 --no-pause
+```
+
 Workload query-scale syntax:
 
 ```json
@@ -233,6 +245,8 @@ Generated schema search:
 --generated-max-depth <n>
 --generated-min-leaf <n>
 --generated-max-leaf <n>
+--generated-conditional
+--generated-condition-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
 ```

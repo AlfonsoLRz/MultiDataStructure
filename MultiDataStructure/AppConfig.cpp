@@ -222,6 +222,14 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.generation.maxLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--generated-conditional")
+		{
+			config.schemaSearchOptions.generation.conditionalLevels = true;
+		}
+		else if (arg == "--generated-condition-probability" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.conditionalProbability = std::stod(argv[++i]);
+		}
 		else if (arg == "--generated-seed" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.generation.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
@@ -319,6 +327,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-max-depth <n>   Max total generated schema depth\n"
 		<< "  --generated-min-leaf <n>    Min generated leaf capacity\n"
 		<< "  --generated-max-leaf <n>    Max generated leaf capacity\n"
+		<< "  --generated-conditional     Add local node predicates to sampled nested blocks\n"
+		<< "  --generated-condition-probability <v> Probability for generated conditional blocks\n"
 		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
 		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"

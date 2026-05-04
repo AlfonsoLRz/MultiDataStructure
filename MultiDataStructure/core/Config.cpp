@@ -21,6 +21,42 @@ namespace
 		return fallback;
 	}
 
+	std::optional<size_t> optionalSize(const boost::json::object& object, std::initializer_list<const char*> keys)
+	{
+		for (const char* key : keys)
+		{
+			if (const boost::json::value* value = object.if_contains(key))
+			{
+				if (value->is_int64())
+					return static_cast<size_t>(std::max<int64_t>(0, value->as_int64()));
+				if (value->is_uint64())
+					return static_cast<size_t>(value->as_uint64());
+				if (value->is_double())
+					return static_cast<size_t>(std::max(0.0, value->as_double()));
+			}
+		}
+
+		return std::nullopt;
+	}
+
+	std::optional<double> optionalDouble(const boost::json::object& object, std::initializer_list<const char*> keys)
+	{
+		for (const char* key : keys)
+		{
+			if (const boost::json::value* value = object.if_contains(key))
+			{
+				if (value->is_double())
+					return value->as_double();
+				if (value->is_int64())
+					return static_cast<double>(value->as_int64());
+				if (value->is_uint64())
+					return static_cast<double>(value->as_uint64());
+			}
+		}
+
+		return std::nullopt;
+	}
+
 	bool asBool(const boost::json::object& object, const char* key, bool fallback)
 	{
 		if (const boost::json::value* value = object.if_contains(key))
@@ -84,6 +120,24 @@ namespace
 		return configuredPath;
 	}
 
+	SchemaLevelCondition parseLevelCondition(const boost::json::object& object)
+	{
+		SchemaLevelCondition condition;
+		condition.minPoints = optionalSize(object, { "minPoints", "pointCountMin", "minPointCount", "point_count_min" });
+		condition.maxPoints = optionalSize(object, { "maxPoints", "pointCountMax", "maxPointCount", "point_count_max" });
+		condition.minDensity = optionalDouble(object, { "minDensity", "densityMin", "density_min" });
+		condition.maxDensity = optionalDouble(object, { "maxDensity", "densityMax", "density_max" });
+		condition.minHeightRatio = optionalDouble(object, { "minHeightRatio", "heightRatioMin", "height_ratio_min" });
+		condition.maxHeightRatio = optionalDouble(object, { "maxHeightRatio", "heightRatioMax", "height_ratio_max" });
+		condition.minExtentX = optionalDouble(object, { "minExtentX", "extentXMin", "extent_x_min" });
+		condition.maxExtentX = optionalDouble(object, { "maxExtentX", "extentXMax", "extent_x_max" });
+		condition.minExtentY = optionalDouble(object, { "minExtentY", "extentYMin", "extent_y_min" });
+		condition.maxExtentY = optionalDouble(object, { "maxExtentY", "extentYMax", "extent_y_max" });
+		condition.minExtentZ = optionalDouble(object, { "minExtentZ", "extentZMin", "extent_z_min" });
+		condition.maxExtentZ = optionalDouble(object, { "maxExtentZ", "extentZMax", "extent_z_max" });
+		return condition;
+	}
+
 	SchemaLevelConfig parseLevel(const boost::json::object& object)
 	{
 		SchemaLevelConfig level;
@@ -94,6 +148,12 @@ namespace
 		level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
 		level.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level.minPrimitivesToSplit);
 		level.axisPolicy = asString(object, "axisPolicy", level.axisPolicy);
+		if (const boost::json::value* conditionValue = object.if_contains("condition"))
+		{
+			if (!conditionValue->is_object())
+				throw std::runtime_error("Schema level condition must be an object");
+			level.condition = parseLevelCondition(conditionValue->as_object());
+		}
 
 		if (level.numLevels == 0)
 			throw std::runtime_error("Schema level numLevels must be greater than zero");
@@ -113,6 +173,16 @@ namespace
 		policy.allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy.allowOverlapDuplication);
 		return policy;
 	}
+}
+
+bool SchemaLevelCondition::empty() const
+{
+	return !minPoints && !maxPoints &&
+		!minDensity && !maxDensity &&
+		!minHeightRatio && !maxHeightRatio &&
+		!minExtentX && !maxExtentX &&
+		!minExtentY && !maxExtentY &&
+		!minExtentZ && !maxExtentZ;
 }
 
 size_t SchemaConfig::totalLevels() const

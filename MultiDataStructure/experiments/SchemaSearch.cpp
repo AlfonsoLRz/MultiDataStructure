@@ -262,6 +262,70 @@ namespace
 		}
 	}
 
+	void appendOptionalSize(std::ostringstream& output, const char* jsonName, const std::optional<size_t>& value, bool& first)
+	{
+		if (!value.has_value())
+			return;
+
+		output << (first ? "" : ",\n") << "        \"" << jsonName << "\": " << value.value();
+		first = false;
+	}
+
+	void appendOptionalDouble(std::ostringstream& output, const char* jsonName, const std::optional<double>& value, bool& first)
+	{
+		if (!value.has_value())
+			return;
+
+		output << (first ? "" : ",\n") << "        \"" << jsonName << "\": " << value.value();
+		first = false;
+	}
+
+	void appendConditionSignature(std::ostringstream& output, const SchemaLevelCondition& condition)
+	{
+		if (condition.empty())
+			return;
+
+		output << "c";
+		if (condition.minPoints) output << "p" << condition.minPoints.value();
+		if (condition.maxPoints) output << "P" << condition.maxPoints.value();
+		if (condition.minDensity) output << "d" << static_cast<size_t>(condition.minDensity.value() * 1000.0);
+		if (condition.maxDensity) output << "D" << static_cast<size_t>(condition.maxDensity.value() * 1000.0);
+		if (condition.minHeightRatio) output << "h" << static_cast<size_t>(condition.minHeightRatio.value() * 1000.0);
+		if (condition.maxHeightRatio) output << "H" << static_cast<size_t>(condition.maxHeightRatio.value() * 1000.0);
+		if (condition.minExtentX) output << "x" << static_cast<size_t>(condition.minExtentX.value() * 1000.0);
+		if (condition.maxExtentX) output << "X" << static_cast<size_t>(condition.maxExtentX.value() * 1000.0);
+		if (condition.minExtentY) output << "y" << static_cast<size_t>(condition.minExtentY.value() * 1000.0);
+		if (condition.maxExtentY) output << "Y" << static_cast<size_t>(condition.maxExtentY.value() * 1000.0);
+		if (condition.minExtentZ) output << "z" << static_cast<size_t>(condition.minExtentZ.value() * 1000.0);
+		if (condition.maxExtentZ) output << "Z" << static_cast<size_t>(condition.maxExtentZ.value() * 1000.0);
+	}
+
+	SchemaLevelCondition randomLevelCondition(
+		std::mt19937& rng,
+		MultiDataStructure::DataStructureLevel type,
+		size_t minLeaf,
+		size_t maxLeaf)
+	{
+		SchemaLevelCondition condition;
+		const size_t maxPointThreshold = std::max<size_t>(minLeaf * 2, std::min<size_t>(maxLeaf * 8, 1 << 20));
+		condition.minPoints = randomPowerOfTwo(rng, std::max<size_t>(minLeaf, 32), maxPointThreshold);
+
+		if (type == MultiDataStructure::OctreeNode)
+		{
+			static const std::array<double, 6> values = { 0.05, 0.10, 0.20, 0.35, 0.50, 0.75 };
+			std::uniform_int_distribution<size_t> distribution(0, values.size() - 1);
+			condition.minHeightRatio = values[distribution(rng)];
+		}
+		else if (type == MultiDataStructure::QuadTreeNode)
+		{
+			static const std::array<double, 5> values = { 0.05, 0.10, 0.20, 0.35, 0.50 };
+			std::uniform_int_distribution<size_t> distribution(0, values.size() - 1);
+			condition.maxHeightRatio = values[distribution(rng)];
+		}
+
+		return condition;
+	}
+
 	std::string schemaSignature(const SchemaConfig& schema)
 	{
 		std::ostringstream output;
@@ -275,6 +339,7 @@ namespace
 				<< level.numLevels
 				<< "l"
 				<< level.leafCapacity;
+			appendConditionSignature(output, level.condition);
 		}
 		return output.str();
 	}
@@ -294,9 +359,26 @@ namespace
 			output << "      \"leafCapacity\": " << level.leafCapacity << ",\n";
 			output << "      \"minPointsToSplit\": " << level.minPrimitivesToSplit;
 			if (!level.axisPolicy.empty())
-				output << ",\n      \"axisPolicy\": \"" << level.axisPolicy << "\"\n";
-			else
-				output << '\n';
+				output << ",\n      \"axisPolicy\": \"" << level.axisPolicy << "\"";
+			if (!level.condition.empty())
+			{
+				output << ",\n      \"condition\": {\n";
+				bool first = true;
+				appendOptionalSize(output, "minPoints", level.condition.minPoints, first);
+				appendOptionalSize(output, "maxPoints", level.condition.maxPoints, first);
+				appendOptionalDouble(output, "minDensity", level.condition.minDensity, first);
+				appendOptionalDouble(output, "maxDensity", level.condition.maxDensity, first);
+				appendOptionalDouble(output, "minHeightRatio", level.condition.minHeightRatio, first);
+				appendOptionalDouble(output, "maxHeightRatio", level.condition.maxHeightRatio, first);
+				appendOptionalDouble(output, "minExtentX", level.condition.minExtentX, first);
+				appendOptionalDouble(output, "maxExtentX", level.condition.maxExtentX, first);
+				appendOptionalDouble(output, "minExtentY", level.condition.minExtentY, first);
+				appendOptionalDouble(output, "maxExtentY", level.condition.maxExtentY, first);
+				appendOptionalDouble(output, "minExtentZ", level.condition.minExtentZ, first);
+				appendOptionalDouble(output, "maxExtentZ", level.condition.maxExtentZ, first);
+				output << "\n      }";
+			}
+			output << '\n';
 			output << "    }" << (i + 1 < schema.levels.size() ? "," : "") << "\n";
 		}
 		output << "  ],\n";
@@ -733,8 +815,10 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 	const size_t maxBlocks = std::min(std::max<size_t>(1, options.maxBlocks), maxDepth);
 	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
 	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+	const double conditionProbability = std::clamp(options.conditionalProbability, 0.0, 1.0);
 
 	std::mt19937 rng(options.seed);
+	std::bernoulli_distribution conditionDistribution(conditionProbability);
 	std::unordered_set<std::string> seen;
 	std::vector<SchemaCandidate> candidates;
 	candidates.reserve(options.count);
@@ -770,6 +854,8 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
 			if (level.type == MultiDataStructure::KDTreeNode)
 				level.axisPolicy = "median_longest_axis";
+			if (options.conditionalLevels && block > 0 && conditionDistribution(rng))
+				level.condition = randomLevelCondition(rng, level.type, minLeaf, maxLeaf);
 
 			schema.levels.push_back(level);
 			previousType = level.type;
@@ -941,7 +1027,11 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	std::cout << "  datasets: " << datasets.size() << '\n';
 	std::cout << "  schemas: " << schemas.size() << '\n';
 	if (options.generation.count > 0)
+	{
 		std::cout << "  generated schemas: " << options.generation.count << " requested\n";
+		if (options.generation.conditionalLevels)
+			std::cout << "  generated conditions: probability " << options.generation.conditionalProbability << '\n';
+	}
 	if (rankModel.has_value())
 	{
 		std::cout << "  surrogate rank model: " << options.rankModelPath << '\n';

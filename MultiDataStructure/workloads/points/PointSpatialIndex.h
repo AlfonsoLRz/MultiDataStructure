@@ -12,6 +12,7 @@ public:
 		AABB bounds;
 		MultiDataStructure::DataStructureLevel type = MultiDataStructure::DataStructureLevel::OctreeNode;
 		size_t depth = 0;
+		size_t schemaDepth = 0;
 		std::vector<size_t> pointIndices;
 		std::vector<std::unique_ptr<Node>> children;
 
@@ -55,11 +56,19 @@ public:
 	QueryResult knnQuery(const glm::vec3& center, size_t k) const;
 
 private:
+	struct ActiveLevel
+	{
+		const SchemaLevelConfig* config = nullptr;
+		size_t schemaDepth = 0;
+	};
+
 	const PointCloud* _cloud = nullptr;
 	SchemaConfig _schema;
 	std::unique_ptr<Node> _root;
 
 	void buildNode(std::unique_ptr<Node>& node);
+	std::optional<ActiveLevel> activeLevelForNode(const Node& node) const;
+	bool matchesCondition(const Node& node, const SchemaLevelCondition& condition) const;
 	bool shouldSplit(const Node& node, const SchemaLevelConfig& levelConfig) const;
 	std::vector<AABB> childBounds(const Node& node, const SchemaLevelConfig& levelConfig, float& splitValue, glm::uint& splitAxis) const;
 	size_t locateChild(const glm::vec3& point, const SchemaLevelConfig& levelConfig, const Node& node, float splitValue, glm::uint splitAxis, size_t numChildren) const;

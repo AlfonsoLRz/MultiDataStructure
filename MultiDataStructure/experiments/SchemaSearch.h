@@ -22,6 +22,8 @@ namespace Experiments
 		size_t maxDepth = 12;
 		size_t minLeafCapacity = 32;
 		size_t maxLeafCapacity = 32768;
+		bool conditionalLevels = false;
+		double conditionalProbability = 0.35;
 		uint32_t seed = 1337;
 		std::string outputDirectory = "results/generated_schemas";
 	};

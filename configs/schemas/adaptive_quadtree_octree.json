@@ -1,0 +1,28 @@
+{
+  "name": "adaptive_quadtree_conditional_octree",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 4,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 1024
+    },
+    {
+      "type": "Octree",
+      "numLevels": 6,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 1024,
+      "condition": {
+        "minPoints": 8192
+      }
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 4096,
+    "minPointsToSplit": 1024,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}
