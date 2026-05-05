@@ -6,10 +6,8 @@
 struct PointPrimitive
 {
 	glm::vec3 position = glm::vec3(0.0f);
-	float intensity = 0.0f;
-	uint32_t classification = 0;
-	uint64_t id = 0;
 
 	AABB bounds(float epsilon = 0.0f) const;
 };
 
+static_assert(sizeof(PointPrimitive) == sizeof(float) * 3, "PointPrimitive must stay position-only for point-cloud memory use.");

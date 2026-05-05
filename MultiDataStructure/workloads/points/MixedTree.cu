@@ -291,13 +291,14 @@ namespace
 		return std::max<size_t>(static_cast<size_t>(maxChildSlots + 1), capacity);
 	}
 
-	std::vector<DevicePoint> copyPoints(const PointCloud& cloud)
+	size_t estimateLevelScratchNodeCapacity(size_t pointCount, size_t leafCapacity, size_t nodeCapacity, size_t maxChildSlots)
 	{
-		std::vector<DevicePoint> points;
-		points.reserve(cloud.size());
-		for (const PointPrimitive& point : cloud.points())
-			points.push_back(DevicePoint{ point.position.x, point.position.y, point.position.z, 0.0f });
-		return points;
+		maxChildSlots = std::max<size_t>(2, std::min<size_t>(MaxChildCount, maxChildSlots));
+		const size_t targetLeaves = std::max<size_t>(1, divUp(pointCount, std::max<size_t>(1, leafCapacity)));
+		const size_t estimatedFrontier = targetLeaves > std::numeric_limits<size_t>::max() / maxChildSlots
+			? std::numeric_limits<size_t>::max()
+			: targetLeaves * maxChildSlots;
+		return std::max<size_t>(maxChildSlots + 1, std::min(nodeCapacity, std::min(pointCount, estimatedFrontier)));
 	}
 
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
@@ -723,7 +724,7 @@ namespace
 		for (uint32_t child = 0; child < childSlots; ++child)
 		{
 			if (localCounts[child] > 0)
-				atomicAdd(&childCounts[nodeIndex * childSlotStride + child], localCounts[child]);
+				atomicAdd(&childCounts[localNode * childSlotStride + child], localCounts[child]);
 		}
 	}
 
@@ -756,7 +757,7 @@ namespace
 		uint32_t childMask = 0;
 		for (uint32_t child = 0; child < childSlots; ++child)
 		{
-			if (childCounts[nodeIndex * childSlotStride + child] > 0)
+			if (childCounts[localNode * childSlotStride + child] > 0)
 			{
 				++nonEmptyChildren;
 				childMask |= (1u << child);
@@ -788,9 +789,9 @@ namespace
 		uint32_t runningOffset = node.pointOffset;
 		for (uint32_t child = 0; child < childSlots; ++child)
 		{
-			const uint32_t count = childCounts[nodeIndex * childSlotStride + child];
+			const uint32_t count = childCounts[localNode * childSlotStride + child];
 			nodes[childBase + child] = makeChildNode(node, child, runningOffset, count, static_cast<int>(nodeIndex), splitType);
-			writeCursors[nodeIndex * childSlotStride + child] = runningOffset;
+			writeCursors[localNode * childSlotStride + child] = runningOffset;
 			runningOffset += count;
 		}
 	}
@@ -822,7 +823,7 @@ namespace
 		{
 			const uint32_t pointIndex = indices[node.pointOffset + offset];
 			const uint32_t child = childForPoint(points[pointIndex], node, splitType);
-			const uint32_t writeOffset = atomicAdd(&writeCursors[nodeIndex * childSlotStride + child], 1u);
+			const uint32_t writeOffset = atomicAdd(&writeCursors[localNode * childSlotStride + child], 1u);
 			outputIndices[writeOffset] = pointIndex;
 		}
 	}
@@ -1002,6 +1003,7 @@ struct PointGpu::MixedTree::DeviceState
 	size_t minSplit = 2;
 	size_t maxDepth = 0;
 	size_t childSlotStride = 2;
+	size_t levelScratchNodeCapacity = 0;
 	size_t baseMemoryBytes = 0;
 	size_t memoryBytes = 0;
 	int device = 0;
@@ -1079,6 +1081,7 @@ void PointGpu::MixedTree::releaseTree()
 	_state->actualNodes = 0;
 	_state->actualLeaves = 0;
 	_state->childSlotStride = 2;
+	_state->levelScratchNodeCapacity = 0;
 	_state->memoryBytes = _state->baseMemoryBytes;
 }
 
@@ -1178,13 +1181,11 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 
 	if (!canReusePoints)
 	{
-		const std::vector<DevicePoint> hostPoints = copyPoints(cloud);
-
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, hostPoints.data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
 		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
@@ -1198,10 +1199,15 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 	}
 
 	_state->nodeCapacity = estimateNodeCapacity(_state->pointCount, _state->leafCapacity, _state->maxDepth, _state->childSlotStride);
+	_state->levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(
+		_state->pointCount,
+		_state->leafCapacity,
+		_state->nodeCapacity,
+		_state->childSlotStride);
 	_state->memoryBytes =
 		_state->baseMemoryBytes +
 		sizeof(LinearMixedTreeNode) * _state->nodeCapacity +
-		sizeof(uint32_t) * _state->nodeCapacity * _state->childSlotStride * 2 +
+		sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride * 2 +
 		sizeof(int) * _state->maxDepth +
 		sizeof(uint32_t) * _state->maxDepth * 2 +
 		sizeof(DeviceLevelCondition) * _state->maxDepth +
@@ -1209,8 +1215,8 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
 
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodes), sizeof(LinearMixedTreeNode) * _state->nodeCapacity));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->nodeCapacity * _state->childSlotStride));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->nodeCapacity * _state->childSlotStride));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->splitTypes), sizeof(int) * _state->maxDepth));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->leafCapacities), sizeof(uint32_t) * _state->maxDepth));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->minSplits), sizeof(uint32_t) * _state->maxDepth));
@@ -1248,8 +1254,11 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 	uint32_t currentNodeCount = 1;
 	for (size_t depth = 0; depth < _state->maxDepth && levelCount > 0; ++depth)
 	{
+		if (levelCount > _state->levelScratchNodeCapacity)
+			throw std::runtime_error("MixedTree exceeded its level scratch budget. Increase leaf capacity or reduce max depth.");
+
 		CudaHelper::checkError(cudaMemset(
-			_state->childCounts + levelStart * _state->childSlotStride,
+			_state->childCounts,
 			0,
 			sizeof(uint32_t) * levelCount * _state->childSlotStride));
 		const dim3 prepareBlocks(static_cast<unsigned int>(divUp(levelCount, ThreadsPerBlock)));

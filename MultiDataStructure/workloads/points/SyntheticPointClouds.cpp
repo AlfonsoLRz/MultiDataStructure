@@ -9,13 +9,10 @@ namespace
 		return distribution(rng);
 	}
 
-	PointPrimitive makePoint(const glm::vec3& position, uint64_t id, uint32_t classification = 0, float intensity = 0.0f)
+	PointPrimitive makePoint(const glm::vec3& position, uint64_t, uint32_t = 0, float = 0.0f)
 	{
 		PointPrimitive point;
 		point.position = position;
-		point.id = id;
-		point.classification = classification;
-		point.intensity = intensity;
 		return point;
 	}
 
@@ -25,7 +22,6 @@ namespace
 		{
 			PointPrimitive point = sourcePoint;
 			point.position += offset;
-			point.id = static_cast<uint64_t>(target.size());
 			target.addPoint(point);
 		}
 	}

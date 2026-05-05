@@ -76,6 +76,9 @@ namespace
 
 void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schema)
 {
+	if (cloud.size() > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
+		throw std::runtime_error("CPU point index currently supports up to 2^32 - 1 points.");
+
 	_cloud = &cloud;
 	_schema = schema;
 
@@ -84,7 +87,7 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 	_root->depth = 0;
 	_root->schemaDepth = 0;
 	_root->pointIndices.resize(cloud.size());
-	std::iota(_root->pointIndices.begin(), _root->pointIndices.end(), 0);
+	std::iota(_root->pointIndices.begin(), _root->pointIndices.end(), 0u);
 
 	if (!cloud.empty())
 		buildNode(_root);
@@ -184,9 +187,9 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 	float splitValue = 0.0f;
 	glm::uint splitAxis = 0;
 	const std::vector<AABB> bounds = childBounds(*node, levelConfig, splitValue, splitAxis);
-	std::vector<std::vector<size_t>> childPoints(bounds.size());
+	std::vector<std::vector<uint32_t>> childPoints(bounds.size());
 
-	for (const size_t pointIndex : node->pointIndices)
+	for (const uint32_t pointIndex : node->pointIndices)
 	{
 		const glm::vec3& position = _cloud->points()[pointIndex].position;
 		const size_t childIndex = locateChild(position, levelConfig, *node, splitValue, splitAxis, bounds.size());
@@ -326,7 +329,7 @@ std::vector<AABB> PointSpatialIndex::childBounds(const Node& node, const SchemaL
 	{
 		std::vector<float> coordinates;
 		coordinates.reserve(node.pointIndices.size());
-		for (const size_t pointIndex : node.pointIndices)
+		for (const uint32_t pointIndex : node.pointIndices)
 			coordinates.push_back(_cloud->points()[pointIndex].position[splitAxis]);
 
 		const size_t median = coordinates.size() / 2;
@@ -405,7 +408,7 @@ void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, Que
 
 	if (node->isLeaf())
 	{
-		for (const size_t pointIndex : node->pointIndices)
+		for (const uint32_t pointIndex : node->pointIndices)
 		{
 			++result.stats.testedPoints;
 			if (containsPoint(bounds, _cloud->points()[pointIndex].position))
@@ -429,7 +432,7 @@ void PointSpatialIndex::countRangeNode(const Node* node, const AABB& bounds, Cou
 
 	if (node->isLeaf())
 	{
-		for (const size_t pointIndex : node->pointIndices)
+		for (const uint32_t pointIndex : node->pointIndices)
 		{
 			++result.stats.testedPoints;
 			if (containsPoint(bounds, _cloud->points()[pointIndex].position))
@@ -453,7 +456,7 @@ void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& cente
 
 	if (node->isLeaf())
 	{
-		for (const size_t pointIndex : node->pointIndices)
+		for (const uint32_t pointIndex : node->pointIndices)
 		{
 			++result.stats.testedPoints;
 			const glm::vec3& position = _cloud->points()[pointIndex].position;
@@ -479,7 +482,7 @@ void PointSpatialIndex::knnQueryNode(const Node* node, const glm::vec3& center, 
 
 	if (node->isLeaf())
 	{
-		for (const size_t pointIndex : node->pointIndices)
+		for (const uint32_t pointIndex : node->pointIndices)
 		{
 			++stats.testedPoints;
 			const glm::vec3& position = _cloud->points()[pointIndex].position;

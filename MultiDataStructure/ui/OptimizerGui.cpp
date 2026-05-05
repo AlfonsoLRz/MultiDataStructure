@@ -1,5 +1,6 @@
 #include "OptimizerGui.h"
 
+#include "../core/Config.h"
 #include "../experiments/SchemaSearch.h"
 #include "../workloads/points/LBVH.h"
 
@@ -56,6 +57,52 @@ namespace
 		uint64_t memoryBytes = 0;
 	};
 
+	struct SchemaFileViewer
+	{
+		bool open = false;
+		bool wrap = false;
+		std::string title = "Schema JSON";
+		std::string path;
+		std::string content;
+		std::string error;
+	};
+
+	struct PreviewBox
+	{
+		glm::vec3 min = glm::vec3(0.0f);
+		glm::vec3 max = glm::vec3(0.0f);
+		std::string typeName;
+		size_t depth = 0;
+	};
+
+	struct PreviewPhase
+	{
+		SchemaLevelConfig level;
+		std::string label;
+		size_t startDepth = 0;
+		size_t endDepth = 0;
+	};
+
+	struct StructurePreview
+	{
+		bool open = false;
+		bool needsRebuild = false;
+		bool truncated = false;
+		bool showFullSchedule = false;
+		std::string title = "Structure Preview";
+		std::string path;
+		std::string schemaName;
+		std::string error;
+		std::vector<PreviewBox> boxes;
+		std::vector<PreviewPhase> phases;
+		int phaseIndex = 0;
+		int maxDepth = 2;
+		int maxBoxes = 2048;
+		float yaw = 0.68f;
+		float pitch = 0.42f;
+		float zoom = 3.2f;
+	};
+
 	struct GuiState
 	{
 		std::array<char, TextBufferSize> inputPath{};
@@ -104,6 +151,9 @@ namespace
 		float scoreBuildWeight = 0.0f;
 		float scoreMemoryWeight = 0.0f;
 		float scoreImbalanceWeight = 0.0f;
+
+		SchemaFileViewer fileViewer;
+		StructurePreview structurePreview;
 	};
 
 	struct RunSession
@@ -328,6 +378,339 @@ namespace
 		{
 			return 0;
 		}
+	}
+
+	std::string loadTextFile(const std::string& configuredPath, std::string& error)
+	{
+		error.clear();
+		const std::string path = resolvePath(configuredPath);
+		std::ifstream input(path, std::ios::binary);
+		if (!input.is_open())
+		{
+			error = "Unable to open file: " + configuredPath;
+			return {};
+		}
+
+		std::ostringstream buffer;
+		buffer << input.rdbuf();
+		std::string content = buffer.str();
+		constexpr size_t MaxPreviewBytes = 4 * 1024 * 1024;
+		if (content.size() > MaxPreviewBytes)
+		{
+			content.resize(MaxPreviewBytes);
+			content += "\n\n... truncated ...";
+		}
+		return content;
+	}
+
+	std::string normalizedStructureName(std::string value)
+	{
+		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+			return std::isspace(c) || c == '_' || c == '-';
+		}), value.end());
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+			return static_cast<char>(std::tolower(c));
+		});
+		return value;
+	}
+
+	bool isStructureName(const std::string& normalized, std::initializer_list<const char*> names)
+	{
+		for (const char* name : names)
+		{
+			if (normalized == name)
+				return true;
+		}
+		return false;
+	}
+
+	ImVec4 colorForStructureName(const std::string& typeName, float alpha = 1.0f)
+	{
+		const std::string normalized = normalizedStructureName(typeName);
+		if (isStructureName(normalized, { "quadtree", "quadtreenode", "qt" }))
+			return ImVec4(0.38f, 0.86f, 0.58f, alpha);
+		if (isStructureName(normalized, { "kdtree", "kdtreenode", "kd" }))
+			return ImVec4(0.95f, 0.78f, 0.32f, alpha);
+		if (isStructureName(normalized, { "bih", "binaryintervalhierarchy", "intervalhierarchy" }))
+			return ImVec4(1.00f, 0.48f, 0.55f, alpha);
+		if (isStructureName(normalized, { "karrasoctree", "mortonoctree", "octreekarras", "octreemorton" }))
+			return ImVec4(0.42f, 0.72f, 1.00f, alpha);
+		if (isStructureName(normalized, { "octree", "octreenode", "ot" }))
+			return ImVec4(0.35f, 0.88f, 0.92f, alpha);
+		if (isStructureName(normalized, { "regulargrid", "uniformgrid", "grid", "grid3d" }))
+			return ImVec4(1.00f, 0.58f, 0.28f, alpha);
+		if (isStructureName(normalized, { "hgrid", "hierarchicalgrid", "hierarchicalgrid3d" }))
+			return ImVec4(0.78f, 0.64f, 1.00f, alpha);
+		if (isStructureName(normalized, { "bvh", "bvhnode" }))
+			return ImVec4(0.55f, 0.70f, 1.00f, alpha);
+		if (isStructureName(normalized, { "lbvh", "linearbvh" }))
+			return ImVec4(0.66f, 0.82f, 1.00f, alpha);
+		return ImVec4(0.78f, 0.82f, 0.88f, alpha);
+	}
+
+	ImU32 packedColorForStructureName(const std::string& typeName, float alpha = 1.0f)
+	{
+		return ImGui::ColorConvertFloat4ToU32(colorForStructureName(typeName, alpha));
+	}
+
+	int longestAxis(const glm::vec3& extent)
+	{
+		if (extent.x >= extent.y && extent.x >= extent.z)
+			return 0;
+		if (extent.y >= extent.z)
+			return 1;
+		return 2;
+	}
+
+	std::string previewPhaseLabel(const SchemaLevelConfig& level, size_t startDepth, size_t endDepth)
+	{
+		std::ostringstream output;
+		output << level.typeName << " d" << startDepth << "-d" << (endDepth == 0 ? 0 : endDepth - 1);
+		if (!level.condition.empty())
+			output << " conditional";
+		return output.str();
+	}
+
+	std::vector<PreviewPhase> previewPhasesForSchema(const SchemaConfig& schema)
+	{
+		std::vector<PreviewPhase> phases;
+		const size_t schemaMaxDepth = schema.buildPolicy.maxDepth > 0
+			? std::min(schema.buildPolicy.maxDepth, schema.totalLevels())
+			: schema.totalLevels();
+		size_t startDepth = 0;
+		for (const SchemaLevelConfig& level : schema.levels)
+		{
+			const size_t endDepth = startDepth + level.numLevels;
+			if (startDepth >= schemaMaxDepth)
+				break;
+
+			PreviewPhase phase;
+			phase.level = level;
+			phase.startDepth = startDepth;
+			phase.endDepth = std::min(endDepth, schemaMaxDepth);
+			phase.label = previewPhaseLabel(level, phase.startDepth, phase.endDepth);
+			phases.push_back(std::move(phase));
+			startDepth = endDepth;
+		}
+		return phases;
+	}
+
+	void pushGridPreviewChildren(
+		const PreviewBox& parent,
+		size_t depth,
+		const std::string& typeName,
+		int cellsX,
+		int cellsY,
+		int cellsZ,
+		std::vector<PreviewBox>& children)
+	{
+		const glm::vec3 extent = parent.max - parent.min;
+		for (int z = 0; z < cellsZ; ++z)
+		{
+			for (int y = 0; y < cellsY; ++y)
+			{
+				for (int x = 0; x < cellsX; ++x)
+				{
+					PreviewBox child;
+					child.typeName = typeName;
+					child.depth = depth;
+					child.min = glm::vec3(
+						parent.min.x + extent.x * (static_cast<float>(x) / static_cast<float>(cellsX)),
+						parent.min.y + extent.y * (static_cast<float>(y) / static_cast<float>(cellsY)),
+						parent.min.z + extent.z * (static_cast<float>(z) / static_cast<float>(cellsZ)));
+					child.max = glm::vec3(
+						parent.min.x + extent.x * (static_cast<float>(x + 1) / static_cast<float>(cellsX)),
+						parent.min.y + extent.y * (static_cast<float>(y + 1) / static_cast<float>(cellsY)),
+						parent.min.z + extent.z * (static_cast<float>(z + 1) / static_cast<float>(cellsZ)));
+					children.push_back(child);
+				}
+			}
+		}
+	}
+
+	void pushGridPreviewChildren(
+		const PreviewBox& parent,
+		size_t depth,
+		const std::string& typeName,
+		const glm::uvec3& cells,
+		std::vector<PreviewBox>& children)
+	{
+		pushGridPreviewChildren(
+			parent,
+			depth,
+			typeName,
+			static_cast<int>(cells.x),
+			static_cast<int>(cells.y),
+			static_cast<int>(cells.z),
+			children);
+	}
+
+	std::vector<PreviewBox> previewChildrenForLevel(const PreviewBox& parent, const SchemaLevelConfig& level, size_t depth)
+	{
+		std::vector<PreviewBox> children;
+		const std::string normalized = normalizedStructureName(level.typeName);
+		if (isStructureName(normalized, { "quadtree", "quadtreenode", "qt" }))
+		{
+			glm::uvec3 cells(2, 2, 2);
+			cells[longestAxis(parent.max - parent.min)] = 1;
+			pushGridPreviewChildren(parent, depth, level.typeName, cells, children);
+		}
+		else if (isStructureName(normalized, { "octree", "octreenode", "ot", "karrasoctree", "mortonoctree", "octreekarras", "octreemorton" }))
+		{
+			pushGridPreviewChildren(parent, depth, level.typeName, 2, 2, 2, children);
+		}
+		else if (isStructureName(normalized, { "regulargrid", "uniformgrid", "grid", "grid3d", "hgrid", "hierarchicalgrid", "hierarchicalgrid3d" }))
+		{
+			pushGridPreviewChildren(parent, depth, level.typeName, 3, 3, 3, children);
+		}
+		else
+		{
+			const glm::vec3 extent = parent.max - parent.min;
+			const int axis = longestAxis(extent);
+			const float splitValue = parent.min[axis] + extent[axis] * 0.5f;
+
+			PreviewBox left = parent;
+			PreviewBox right = parent;
+			left.typeName = level.typeName;
+			right.typeName = level.typeName;
+			left.depth = depth;
+			right.depth = depth;
+			left.max[axis] = splitValue;
+			right.min[axis] = splitValue;
+			children.push_back(left);
+			children.push_back(right);
+		}
+		return children;
+	}
+
+	void rebuildStructurePreview(StructurePreview& preview)
+	{
+		preview.error.clear();
+		preview.boxes.clear();
+		preview.phases.clear();
+		preview.truncated = false;
+		preview.needsRebuild = false;
+		preview.maxDepth = std::clamp(preview.maxDepth, 1, 9);
+		preview.maxBoxes = std::clamp(preview.maxBoxes, 64, 20000);
+
+		try
+		{
+			const SchemaConfig schema = Config::loadSchemaConfig(preview.path);
+			preview.schemaName = schema.name.empty() ? schemaLabelFromPath(preview.path) : schema.name;
+			preview.phases = previewPhasesForSchema(schema);
+			if (preview.phases.empty())
+				throw std::runtime_error("Schema has no previewable levels");
+			preview.phaseIndex = std::clamp(preview.phaseIndex, 0, static_cast<int>(preview.phases.size() - 1));
+			const size_t schemaMaxDepth = schema.buildPolicy.maxDepth > 0
+				? std::min(schema.buildPolicy.maxDepth, schema.totalLevels())
+				: schema.totalLevels();
+
+			PreviewBox root;
+			root.min = glm::vec3(-1.0f, -1.0f, -1.0f);
+			root.max = glm::vec3(1.0f, 1.0f, 1.0f);
+			root.typeName = preview.showFullSchedule ? "Bounds" : preview.phases[preview.phaseIndex].level.typeName;
+			root.depth = 0;
+			preview.boxes.push_back(root);
+
+			std::vector<PreviewBox> frontier = { root };
+			if (preview.showFullSchedule)
+			{
+				const size_t targetDepth = std::min<size_t>(schemaMaxDepth, static_cast<size_t>(preview.maxDepth));
+				for (size_t depth = 0; depth < targetDepth && !frontier.empty(); ++depth)
+				{
+					const SchemaLevelConfig& level = schema.levelForDepth(depth);
+					std::vector<PreviewBox> next;
+					for (const PreviewBox& node : frontier)
+					{
+						std::vector<PreviewBox> children = previewChildrenForLevel(node, level, depth + 1);
+						for (PreviewBox& child : children)
+						{
+							if (preview.boxes.size() >= static_cast<size_t>(preview.maxBoxes))
+							{
+								preview.truncated = true;
+								break;
+							}
+							next.push_back(child);
+							preview.boxes.push_back(std::move(child));
+						}
+						if (preview.truncated)
+							break;
+					}
+					frontier = std::move(next);
+					if (preview.truncated)
+						break;
+				}
+			}
+			else
+			{
+				const PreviewPhase& phase = preview.phases[preview.phaseIndex];
+				const size_t phaseLevels = std::max<size_t>(1, phase.endDepth - phase.startDepth);
+				const size_t targetDepth = std::min<size_t>(phaseLevels, static_cast<size_t>(preview.maxDepth));
+				for (size_t depth = 0; depth < targetDepth && !frontier.empty(); ++depth)
+				{
+					std::vector<PreviewBox> next;
+					for (const PreviewBox& node : frontier)
+					{
+						std::vector<PreviewBox> children = previewChildrenForLevel(node, phase.level, depth + 1);
+						for (PreviewBox& child : children)
+						{
+							if (preview.boxes.size() >= static_cast<size_t>(preview.maxBoxes))
+							{
+								preview.truncated = true;
+								break;
+							}
+							next.push_back(child);
+							preview.boxes.push_back(std::move(child));
+						}
+						if (preview.truncated)
+							break;
+					}
+					frontier = std::move(next);
+					if (preview.truncated)
+						break;
+				}
+			}
+		}
+		catch (const std::exception& exception)
+		{
+			preview.error = exception.what();
+		}
+	}
+
+	void openSchemaFile(GuiState& state, const std::string& path)
+	{
+		state.fileViewer.open = true;
+		state.fileViewer.path = resolvePath(path);
+		state.fileViewer.title = schemaLabelFromPath(path);
+		state.fileViewer.content = loadTextFile(path, state.fileViewer.error);
+	}
+
+	void openStructurePreview(GuiState& state, const std::string& path)
+	{
+		const std::string resolved = resolvePath(path);
+		if (state.structurePreview.path != resolved)
+		{
+			state.structurePreview.phaseIndex = 0;
+			state.structurePreview.maxDepth = 2;
+			state.structurePreview.showFullSchedule = false;
+		}
+		state.structurePreview.open = true;
+		state.structurePreview.path = resolved;
+		state.structurePreview.title = schemaLabelFromPath(path);
+		state.structurePreview.needsRebuild = true;
+		rebuildStructurePreview(state.structurePreview);
+	}
+
+	void drawSchemaActions(GuiState& state, const std::string& path)
+	{
+		const bool hasPath = !path.empty();
+		ImGui::BeginDisabled(!hasPath);
+		if (ImGui::SmallButton("JSON"))
+			openSchemaFile(state, path);
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Boxes"))
+			openStructurePreview(state, path);
+		ImGui::EndDisabled();
 	}
 
 	std::vector<BestResult> loadBestResults(const std::string& bestCsvPath)
@@ -912,11 +1295,12 @@ namespace
 		ImGui::Checkbox("Generated only", &state.generatedOnly);
 		drawHelpMarker("Ignores checked fixed schemas and searches only generated candidates. Turn this off to compare generated candidates against known baselines.");
 
-		if (ImGui::BeginTable("schemas", 3, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+		if (ImGui::BeginTable("schemas", 4, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 32.0f);
 			ImGui::TableSetupColumn("Schema", ImGuiTableColumnFlags_WidthStretch, 0.32f);
-			ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.68f);
+			ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.58f);
+			ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
 			ImGui::TableHeadersRow();
 			for (size_t i = 0; i < state.schemas.size(); ++i)
 			{
@@ -927,11 +1311,13 @@ namespace
 				ImGui::BeginDisabled(state.generatedOnly);
 				ImGui::Checkbox("##selected", &entry.selected);
 				ImGui::EndDisabled();
-				ImGui::PopID();
 				ImGui::TableSetColumnIndex(1);
 				ImGui::TextUnformatted(entry.label.c_str());
 				ImGui::TableSetColumnIndex(2);
 				ImGui::TextUnformatted(entry.path.c_str());
+				ImGui::TableSetColumnIndex(3);
+				drawSchemaActions(state, entry.path);
+				ImGui::PopID();
 			}
 			ImGui::EndTable();
 		}
@@ -1032,7 +1418,7 @@ namespace
 		return backend == "cuda" || backend == "gpu";
 	}
 
-	void drawResultsTable(const std::vector<BestResult>& results)
+	void drawResultsTable(const std::vector<BestResult>& results, GuiState& state)
 	{
 		if (results.empty())
 		{
@@ -1040,7 +1426,7 @@ namespace
 			return;
 		}
 
-		if (ImGui::BeginTable("best-results", 11, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		if (ImGui::BeginTable("best-results", 12, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("Dataset");
 			ImGui::TableSetupColumn("Workload");
@@ -1053,10 +1439,12 @@ namespace
 			ImGui::TableSetupColumn("GPU query", ImGuiTableColumnFlags_WidthFixed, 84.0f);
 			ImGui::TableSetupColumn("Memory MB", ImGuiTableColumnFlags_WidthFixed, 92.0f);
 			ImGui::TableSetupColumn("Candidates", ImGuiTableColumnFlags_WidthFixed, 92.0f);
+			ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
 			ImGui::TableHeadersRow();
 
-			for (const BestResult& result : results)
+			for (size_t i = 0; i < results.size(); ++i)
 			{
+				const BestResult& result = results[i];
 				ImGui::TableNextRow();
 				ImGui::TableSetColumnIndex(0);
 				ImGui::TextUnformatted(result.dataset.c_str());
@@ -1088,13 +1476,17 @@ namespace
 				ImGui::Text("%.1f", static_cast<double>(result.memoryBytes) / (1024.0 * 1024.0));
 				ImGui::TableSetColumnIndex(10);
 				ImGui::Text("%zu", result.candidates);
+				ImGui::TableSetColumnIndex(11);
+				ImGui::PushID(static_cast<int>(i));
+				drawSchemaActions(state, result.schemaPath);
+				ImGui::PopID();
 			}
 
 			ImGui::EndTable();
 		}
 	}
 
-	void drawLiveRankingTable(const std::vector<LiveRankingEntry>& ranking, size_t evaluatedCandidates, int topN)
+	void drawLiveRankingTable(const std::vector<LiveRankingEntry>& ranking, size_t evaluatedCandidates, int topN, GuiState& state)
 	{
 		ImGui::Text("Measured candidates: %zu", evaluatedCandidates);
 		if (ranking.empty())
@@ -1103,7 +1495,7 @@ namespace
 			return;
 		}
 
-		if (ImGui::BeginTable("live-ranking", 11, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		if (ImGui::BeginTable("live-ranking", 12, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 34.0f);
 			ImGui::TableSetupColumn("Schema");
@@ -1116,6 +1508,7 @@ namespace
 			ImGui::TableSetupColumn("GPU build", ImGuiTableColumnFlags_WidthFixed, 84.0f);
 			ImGui::TableSetupColumn("GPU query", ImGuiTableColumnFlags_WidthFixed, 84.0f);
 			ImGui::TableSetupColumn("Backend", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+			ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
 			ImGui::TableHeadersRow();
 
 			const size_t rowCount = std::min<size_t>(ranking.size(), static_cast<size_t>(std::max(1, topN)));
@@ -1174,6 +1567,10 @@ namespace
 					ImGui::Text("%s/%s", entry.backend.c_str(), entry.cudaBuilder.c_str());
 				else
 					ImGui::TextUnformatted(entry.backend.empty() ? "cpu" : entry.backend.c_str());
+				ImGui::TableSetColumnIndex(11);
+				ImGui::PushID(static_cast<int>(i));
+				drawSchemaActions(state, entry.schemaPath);
+				ImGui::PopID();
 			}
 
 			ImGui::EndTable();
@@ -1220,10 +1617,10 @@ namespace
 		ImGui::SetNextItemWidth(96.0f);
 		ImGui::InputInt("Top N", &state.liveRankingTopN);
 		drawHelpMarker("Number of live leaderboard rows to display. The run still measures every candidate and writes every row to CSV.");
-		drawLiveRankingTable(liveRanking, evaluatedCandidates, state.liveRankingTopN);
+		drawLiveRankingTable(liveRanking, evaluatedCandidates, state.liveRankingTopN, state);
 
 		drawSectionTitle("Best Results");
-		drawResultsTable(results);
+		drawResultsTable(results, state);
 
 		drawSectionTitle("Log");
 		ImGui::BeginChild("log", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
@@ -1232,6 +1629,239 @@ namespace
 		else
 			ImGui::TextUnformatted(log.c_str());
 		ImGui::EndChild();
+	}
+
+	ImVec2 projectPreviewPoint(const glm::vec3& point, const ImVec2& origin, const ImVec2& size, const StructurePreview& preview)
+	{
+		const float yawCos = std::cos(preview.yaw);
+		const float yawSin = std::sin(preview.yaw);
+		const float pitchCos = std::cos(preview.pitch);
+		const float pitchSin = std::sin(preview.pitch);
+
+		const float x0 = yawCos * point.x + yawSin * point.z;
+		const float z0 = -yawSin * point.x + yawCos * point.z;
+		const float y1 = pitchCos * point.y - pitchSin * z0;
+		const float z1 = pitchSin * point.y + pitchCos * z0;
+		const float perspective = preview.zoom / std::max(0.25f, preview.zoom + z1);
+		const float scale = std::min(size.x, size.y) * 0.34f * perspective;
+		return ImVec2(origin.x + size.x * 0.5f + x0 * scale, origin.y + size.y * 0.52f - y1 * scale);
+	}
+
+	void drawPreviewBox(ImDrawList* drawList, const PreviewBox& box, const ImVec2& origin, const ImVec2& size, const StructurePreview& preview)
+	{
+		const glm::vec3 corners[8] = {
+			{ box.min.x, box.min.y, box.min.z },
+			{ box.max.x, box.min.y, box.min.z },
+			{ box.max.x, box.max.y, box.min.z },
+			{ box.min.x, box.max.y, box.min.z },
+			{ box.min.x, box.min.y, box.max.z },
+			{ box.max.x, box.min.y, box.max.z },
+			{ box.max.x, box.max.y, box.max.z },
+			{ box.min.x, box.max.y, box.max.z },
+		};
+		constexpr int edges[12][2] = {
+			{ 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
+			{ 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
+			{ 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 },
+		};
+
+		const bool rootBounds = box.depth == 0 && preview.showFullSchedule;
+		const float alpha = rootBounds ? 0.30f : std::clamp(0.92f - static_cast<float>(box.depth) * 0.06f, 0.35f, 0.92f);
+		const float thickness = box.depth == 0 ? 1.6f : 1.0f;
+		const ImU32 color = rootBounds
+			? IM_COL32(174, 184, 196, 120)
+			: packedColorForStructureName(box.typeName, alpha);
+
+		for (const auto& edge : edges)
+		{
+			const ImVec2 a = projectPreviewPoint(corners[edge[0]], origin, size, preview);
+			const ImVec2 b = projectPreviewPoint(corners[edge[1]], origin, size, preview);
+			drawList->AddLine(a, b, color, thickness);
+		}
+	}
+
+	void drawPreviewLegend()
+	{
+		const struct
+		{
+			const char* label;
+			const char* typeName;
+		} entries[] = {
+			{ "QuadTree", "QuadTree" },
+			{ "KDTree", "KDTree" },
+			{ "BIH", "BIH" },
+			{ "Octree", "Octree" },
+			{ "KarrasOctree", "KarrasOctree" },
+			{ "BVH", "BVH" },
+			{ "LBVH", "LBVH" },
+			{ "RegularGrid", "RegularGrid" },
+			{ "HGrid", "HGrid" },
+		};
+
+		for (const auto& entry : entries)
+		{
+			const ImVec4 color = colorForStructureName(entry.typeName);
+			ImGui::TextColored(color, "%s", entry.label);
+			ImGui::SameLine();
+		}
+		ImGui::NewLine();
+	}
+
+	void drawSchemaFileViewerWindow(GuiState& state)
+	{
+		SchemaFileViewer& viewer = state.fileViewer;
+		if (!viewer.open)
+			return;
+
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 72.0f, viewport->WorkPos.y + 72.0f), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(720.0f, 560.0f), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin("Schema JSON", &viewer.open, ImGuiWindowFlags_HorizontalScrollbar))
+		{
+			ImGui::TextUnformatted(viewer.title.c_str());
+			if (!viewer.path.empty())
+			{
+				ImGui::TextDisabled("%s", viewer.path.c_str());
+				if (ImGui::Button("Reload"))
+					viewer.content = loadTextFile(viewer.path, viewer.error);
+				ImGui::SameLine();
+				if (ImGui::Button("Preview boxes"))
+					openStructurePreview(state, viewer.path);
+				ImGui::SameLine();
+				ImGui::Checkbox("Wrap", &viewer.wrap);
+			}
+			if (!viewer.error.empty())
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
+				ImGui::TextWrapped("%s", viewer.error.c_str());
+				ImGui::PopStyleColor();
+			}
+
+			ImGui::Separator();
+			ImGui::BeginChild("schema-json-content", ImVec2(0.0f, 0.0f), true, viewer.wrap ? 0 : ImGuiWindowFlags_HorizontalScrollbar);
+			if (viewer.wrap)
+				ImGui::TextWrapped("%s", viewer.content.c_str());
+			else
+				ImGui::TextUnformatted(viewer.content.c_str());
+			ImGui::EndChild();
+		}
+		ImGui::End();
+	}
+
+	void drawStructurePreviewWindow(GuiState& state, bool optimizerRunning)
+	{
+		StructurePreview& preview = state.structurePreview;
+		if (!preview.open)
+			return;
+
+		if (preview.needsRebuild)
+			rebuildStructurePreview(preview);
+
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 620.0f, viewport->WorkPos.y + 96.0f), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(760.0f, 560.0f), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin("Structure Preview", &preview.open))
+		{
+			ImGui::TextUnformatted(preview.title.c_str());
+			if (!preview.schemaName.empty())
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s", preview.schemaName.c_str());
+			}
+			if (!preview.path.empty())
+				ImGui::TextDisabled("%s", preview.path.c_str());
+
+			if (ImGui::Checkbox("Full schedule", &preview.showFullSchedule))
+				preview.needsRebuild = true;
+			ImGui::SameLine();
+			drawHelpMarker("Focused mode shows one schema block at a time. Full schedule shows the old cumulative expansion and is mainly useful for simple fixed schemas.");
+
+			if (!preview.showFullSchedule && !preview.phases.empty())
+			{
+				ImGui::SetNextItemWidth(260.0f);
+				const int phaseCount = static_cast<int>(preview.phases.size());
+				preview.phaseIndex = std::clamp(preview.phaseIndex, 0, phaseCount - 1);
+				const char* currentPhase = preview.phases[preview.phaseIndex].label.c_str();
+				if (ImGui::BeginCombo("Block", currentPhase))
+				{
+					for (int i = 0; i < phaseCount; ++i)
+					{
+						const bool selected = i == preview.phaseIndex;
+						if (ImGui::Selectable(preview.phases[i].label.c_str(), selected))
+						{
+							preview.phaseIndex = i;
+							preview.needsRebuild = true;
+						}
+						if (selected)
+							ImGui::SetItemDefaultFocus();
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::SameLine();
+			}
+
+			ImGui::SetNextItemWidth(92.0f);
+			if (ImGui::InputInt(preview.showFullSchedule ? "Global depth" : "Local levels", &preview.maxDepth))
+				preview.needsRebuild = true;
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(110.0f);
+			if (ImGui::InputInt("Box cap", &preview.maxBoxes))
+				preview.needsRebuild = true;
+			ImGui::SameLine();
+			if (ImGui::Button("Reload"))
+				preview.needsRebuild = true;
+			ImGui::SameLine();
+			drawHelpMarker("This preview renders normalized boxes only. It does not load or rebuild the point cloud, so it stays outside the optimizer worker.");
+
+			if (optimizerRunning)
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("optimizer running");
+			}
+
+			if (!preview.error.empty())
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
+				ImGui::TextWrapped("%s", preview.error.c_str());
+				ImGui::PopStyleColor();
+			}
+
+			if (!preview.showFullSchedule && !preview.phases.empty())
+			{
+				const PreviewPhase& phase = preview.phases[preview.phaseIndex];
+				ImGui::Text("Focused block: %s, schema depths %zu-%zu",
+					phase.level.typeName.c_str(),
+					phase.startDepth,
+					phase.endDepth == 0 ? 0 : phase.endDepth - 1);
+			}
+			ImGui::Text("Boxes: %zu%s", preview.boxes.size(), preview.truncated ? " (capped)" : "");
+			drawPreviewLegend();
+
+			const ImVec2 canvasSize = ImVec2(
+				std::max(320.0f, ImGui::GetContentRegionAvail().x),
+				std::max(280.0f, ImGui::GetContentRegionAvail().y));
+			const ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
+			ImGui::InvisibleButton("structure-preview-canvas", canvasSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+			const bool hovered = ImGui::IsItemHovered();
+			const bool active = ImGui::IsItemActive();
+			ImGuiIO& io = ImGui::GetIO();
+			if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+			{
+				preview.yaw += io.MouseDelta.x * 0.008f;
+				preview.pitch = std::clamp(preview.pitch + io.MouseDelta.y * 0.008f, -1.25f, 1.25f);
+			}
+			if (hovered && io.MouseWheel != 0.0f)
+				preview.zoom = std::clamp(preview.zoom - io.MouseWheel * 0.18f, 1.4f, 8.0f);
+
+			ImDrawList* drawList = ImGui::GetWindowDrawList();
+			drawList->AddRectFilled(canvasOrigin, ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y), IM_COL32(12, 15, 18, 255));
+			drawList->AddRect(canvasOrigin, ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y), IM_COL32(55, 64, 75, 255));
+			drawList->PushClipRect(canvasOrigin, ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y), true);
+			for (const PreviewBox& box : preview.boxes)
+				drawPreviewBox(drawList, box, canvasOrigin, canvasSize, preview);
+			drawList->PopClipRect();
+		}
+		ImGui::End();
 	}
 
 	void drawInterface(GuiState& state, RunSession& session)
@@ -1282,6 +1912,9 @@ namespace
 		drawRunPanel(state, session);
 		ImGui::EndChild();
 		ImGui::End();
+
+		drawSchemaFileViewerWindow(state);
+		drawStructurePreviewWindow(state, session.running);
 	}
 }
 

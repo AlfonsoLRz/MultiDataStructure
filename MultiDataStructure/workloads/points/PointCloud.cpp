@@ -4,7 +4,9 @@
 namespace
 {
 	constexpr char CACHE_MAGIC[8] = { 'M', 'D', 'S', 'P', 'C', '0', '1', '\0' };
-	constexpr uint32_t CACHE_VERSION = 1;
+	constexpr uint32_t CACHE_VERSION = 2;
+	constexpr uint32_t POSITION_ONLY_CACHE_VERSION = 2;
+	constexpr uint32_t LEGACY_FULL_POINT_CACHE_VERSION = 1;
 
 	struct BinaryHeader
 	{
@@ -20,10 +22,19 @@ namespace
 		float x = 0.0f;
 		float y = 0.0f;
 		float z = 0.0f;
+	};
+
+	struct LegacyBinaryPoint
+	{
+		float x = 0.0f;
+		float y = 0.0f;
+		float z = 0.0f;
 		float intensity = 0.0f;
 		uint32_t classification = 0;
 		uint64_t id = 0;
 	};
+
+	static_assert(sizeof(BinaryPoint) == sizeof(PointPrimitive), "Binary point cache must match the position-only point payload.");
 
 	std::string trim(const std::string& value)
 	{
@@ -140,13 +151,10 @@ namespace
 		return value;
 	}
 
-	PointPrimitive makePoint(float x, float y, float z, float intensity, uint32_t classification, uint64_t id)
+	PointPrimitive makePoint(float x, float y, float z, float = 0.0f, uint32_t = 0, uint64_t = 0)
 	{
 		PointPrimitive point;
 		point.position = glm::vec3(x, y, z);
-		point.intensity = intensity;
-		point.classification = classification;
-		point.id = id;
 		return point;
 	}
 
@@ -174,7 +182,7 @@ namespace
 	bool headerMatchesSource(const BinaryHeader& header, const std::string& sourcePath)
 	{
 		return std::memcmp(header.magic, CACHE_MAGIC, sizeof(header.magic)) == 0 &&
-			header.version == CACHE_VERSION &&
+			(header.version == POSITION_ONLY_CACHE_VERSION || header.version == LEGACY_FULL_POINT_CACHE_VERSION) &&
 			header.sourceSize == fileSize(sourcePath) &&
 			header.sourceWriteTime == fileWriteTime(sourcePath);
 	}
@@ -185,21 +193,17 @@ namespace
 		binaryPoint.x = point.position.x;
 		binaryPoint.y = point.position.y;
 		binaryPoint.z = point.position.z;
-		binaryPoint.intensity = point.intensity;
-		binaryPoint.classification = point.classification;
-		binaryPoint.id = point.id;
 		return binaryPoint;
 	}
 
 	PointPrimitive fromBinaryPoint(const BinaryPoint& binaryPoint)
 	{
-		return makePoint(
-			binaryPoint.x,
-			binaryPoint.y,
-			binaryPoint.z,
-			binaryPoint.intensity,
-			binaryPoint.classification,
-			binaryPoint.id);
+		return makePoint(binaryPoint.x, binaryPoint.y, binaryPoint.z);
+	}
+
+	PointPrimitive fromLegacyBinaryPoint(const LegacyBinaryPoint& binaryPoint)
+	{
+		return makePoint(binaryPoint.x, binaryPoint.y, binaryPoint.z);
 	}
 }
 
@@ -342,16 +346,39 @@ bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::fi
 	if (header.numPoints > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
 		return false;
 
-	std::vector<BinaryPoint> binaryPoints(static_cast<size_t>(header.numPoints));
-	if (!binaryPoints.empty())
-		file.read(reinterpret_cast<char*>(binaryPoints.data()), static_cast<std::streamsize>(binaryPoints.size() * sizeof(BinaryPoint)));
-	if (!file)
-		return false;
-
 	_points.clear();
-	_points.reserve(binaryPoints.size());
-	for (const BinaryPoint& binaryPoint : binaryPoints)
-		_points.push_back(fromBinaryPoint(binaryPoint));
+	const size_t pointCount = static_cast<size_t>(header.numPoints);
+	_points.reserve(pointCount);
+	if (header.version == POSITION_ONLY_CACHE_VERSION)
+	{
+		_points.resize(pointCount);
+		if (!_points.empty())
+			file.read(reinterpret_cast<char*>(_points.data()), static_cast<std::streamsize>(_points.size() * sizeof(BinaryPoint)));
+		if (!file)
+			return false;
+	}
+	else if (header.version == LEGACY_FULL_POINT_CACHE_VERSION)
+	{
+		constexpr size_t ChunkPoints = 1 << 20;
+		std::vector<LegacyBinaryPoint> chunk;
+		chunk.resize(std::min(pointCount, ChunkPoints));
+		size_t remaining = pointCount;
+		while (remaining > 0)
+		{
+			const size_t current = std::min(remaining, chunk.size());
+			file.read(reinterpret_cast<char*>(chunk.data()), static_cast<std::streamsize>(current * sizeof(LegacyBinaryPoint)));
+			if (!file)
+				return false;
+
+			for (size_t i = 0; i < current; ++i)
+				_points.push_back(fromLegacyBinaryPoint(chunk[i]));
+			remaining -= current;
+		}
+	}
+	else
+	{
+		return false;
+	}
 
 	_sourcePath = sourcePath;
 	_cachePath = cachePath.string();
@@ -376,13 +403,8 @@ void PointCloud::saveBinaryCache(const std::string& sourcePath, const std::files
 	const BinaryHeader header = makeHeader(sourcePath, _points.size());
 	file.write(reinterpret_cast<const char*>(&header), sizeof(header));
 
-	std::vector<BinaryPoint> binaryPoints;
-	binaryPoints.reserve(_points.size());
-	for (const PointPrimitive& point : _points)
-		binaryPoints.push_back(toBinaryPoint(point));
-
-	if (!binaryPoints.empty())
-		file.write(reinterpret_cast<const char*>(binaryPoints.data()), static_cast<std::streamsize>(binaryPoints.size() * sizeof(BinaryPoint)));
+	if (!_points.empty())
+		file.write(reinterpret_cast<const char*>(_points.data()), static_cast<std::streamsize>(_points.size() * sizeof(BinaryPoint)));
 
 	if (!file)
 		throw std::runtime_error("failed while writing " + tempPath.string());

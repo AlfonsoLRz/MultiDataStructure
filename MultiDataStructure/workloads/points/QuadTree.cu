@@ -80,13 +80,13 @@ namespace
 		return std::max<size_t>(static_cast<size_t>(ChildCount + 1), capacity);
 	}
 
-	std::vector<DevicePoint> copyPoints(const PointCloud& cloud)
+	size_t estimateLevelScratchNodeCapacity(size_t pointCount, size_t leafCapacity, size_t nodeCapacity)
 	{
-		std::vector<DevicePoint> points;
-		points.reserve(cloud.size());
-		for (const PointPrimitive& point : cloud.points())
-			points.push_back(DevicePoint{ point.position.x, point.position.y, point.position.z, 0.0f });
-		return points;
+		const size_t targetLeaves = std::max<size_t>(1, divUp(pointCount, std::max<size_t>(1, leafCapacity)));
+		const size_t estimatedFrontier = targetLeaves > std::numeric_limits<size_t>::max() / ChildCount
+			? std::numeric_limits<size_t>::max()
+			: targetLeaves * ChildCount;
+		return std::max<size_t>(static_cast<size_t>(ChildCount + 1), std::min(nodeCapacity, std::min(pointCount, estimatedFrontier)));
 	}
 
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
@@ -264,7 +264,7 @@ namespace
 		for (uint32_t child = 0; child < ChildCount; ++child)
 		{
 			if (localCounts[child] > 0)
-				atomicAdd(&childCounts[nodeIndex * ChildCount + child], localCounts[child]);
+				atomicAdd(&childCounts[localNode * ChildCount + child], localCounts[child]);
 		}
 	}
 
@@ -291,7 +291,7 @@ namespace
 		uint32_t childMask = 0;
 		for (uint32_t child = 0; child < ChildCount; ++child)
 		{
-			if (childCounts[nodeIndex * ChildCount + child] > 0)
+			if (childCounts[localNode * ChildCount + child] > 0)
 			{
 				++nonEmptyChildren;
 				childMask |= (1u << child);
@@ -323,9 +323,9 @@ namespace
 		uint32_t runningOffset = node.pointOffset;
 		for (uint32_t child = 0; child < ChildCount; ++child)
 		{
-			const uint32_t count = childCounts[nodeIndex * ChildCount + child];
+			const uint32_t count = childCounts[localNode * ChildCount + child];
 			nodes[childBase + child] = makeChildNode(node, child, runningOffset, count, static_cast<int>(nodeIndex));
-			writeCursors[nodeIndex * ChildCount + child] = runningOffset;
+			writeCursors[localNode * ChildCount + child] = runningOffset;
 			runningOffset += count;
 		}
 	}
@@ -352,7 +352,7 @@ namespace
 		{
 			const uint32_t pointIndex = indices[node.pointOffset + offset];
 			const uint32_t child = quadrantForPoint(points[pointIndex], node);
-			const uint32_t writeOffset = atomicAdd(&writeCursors[nodeIndex * ChildCount + child], 1u);
+			const uint32_t writeOffset = atomicAdd(&writeCursors[localNode * ChildCount + child], 1u);
 			outputIndices[writeOffset] = pointIndex;
 		}
 	}
@@ -453,6 +453,7 @@ struct PointGpu::QuadTree::DeviceState
 	size_t leafCapacity = 1;
 	size_t minSplit = 2;
 	size_t maxDepth = 0;
+	size_t levelScratchNodeCapacity = 0;
 	size_t baseMemoryBytes = 0;
 	size_t memoryBytes = 0;
 	int device = 0;
@@ -521,6 +522,7 @@ void PointGpu::QuadTree::releaseTree()
 	_state->allocatedNodes = 0;
 	_state->actualNodes = 0;
 	_state->actualLeaves = 0;
+	_state->levelScratchNodeCapacity = 0;
 	_state->memoryBytes = _state->baseMemoryBytes;
 }
 
@@ -614,13 +616,11 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 
 	if (!canReusePoints)
 	{
-		const std::vector<DevicePoint> hostPoints = copyPoints(cloud);
-
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, hostPoints.data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
 		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
@@ -634,16 +634,17 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 	}
 
 	_state->nodeCapacity = estimateNodeCapacity(_state->pointCount, _state->leafCapacity, _state->maxDepth);
+	_state->levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(_state->pointCount, _state->leafCapacity, _state->nodeCapacity);
 	_state->memoryBytes =
 		_state->baseMemoryBytes +
 		sizeof(LinearQuadTreeNode) * _state->nodeCapacity +
-		sizeof(uint32_t) * _state->nodeCapacity * ChildCount * 2 +
+		sizeof(uint32_t) * _state->levelScratchNodeCapacity * ChildCount * 2 +
 		sizeof(uint32_t) * 2;
 	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
 
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodes), sizeof(LinearQuadTreeNode) * _state->nodeCapacity));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->nodeCapacity * ChildCount));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->nodeCapacity * ChildCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->levelScratchNodeCapacity * ChildCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->levelScratchNodeCapacity * ChildCount));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodeCounter), sizeof(uint32_t)));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->overflowFlag), sizeof(uint32_t)));
 
@@ -673,8 +674,11 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 	uint32_t currentNodeCount = 1;
 	for (size_t depth = 0; depth < _state->maxDepth && levelCount > 0; ++depth)
 	{
+		if (levelCount > _state->levelScratchNodeCapacity)
+			throw std::runtime_error("QuadTree exceeded its level scratch budget. Increase leaf capacity or reduce max depth.");
+
 		CudaHelper::checkError(cudaMemset(
-			_state->childCounts + levelStart * ChildCount,
+			_state->childCounts,
 			0,
 			sizeof(uint32_t) * levelCount * ChildCount));
 		const dim3 prepareBlocks(static_cast<unsigned int>(divUp(levelCount, ThreadsPerBlock)));

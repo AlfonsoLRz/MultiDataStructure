@@ -81,6 +81,15 @@ namespace
 		return std::max<size_t>(9, capacity);
 	}
 
+	size_t estimateLevelScratchNodeCapacity(size_t pointCount, size_t leafCapacity, size_t nodeCapacity)
+	{
+		const size_t targetLeaves = std::max<size_t>(1, divUp(pointCount, std::max<size_t>(1, leafCapacity)));
+		const size_t estimatedFrontier = targetLeaves > std::numeric_limits<size_t>::max() / 8
+			? std::numeric_limits<size_t>::max()
+			: targetLeaves * 8;
+		return std::max<size_t>(9, std::min(nodeCapacity, std::min(pointCount, estimatedFrontier)));
+	}
+
 	bool isMidpointOctreeBuilder(const std::string& builder)
 	{
 		return builder == "octree" || builder == "ot";
@@ -89,15 +98,6 @@ namespace
 	bool isKarrasOctreeBuilder(const std::string& builder)
 	{
 		return builder == "karras_octree" || builder == "morton_octree" || builder == "octree_karras" || builder == "octree_morton";
-	}
-
-	std::vector<DevicePoint> copyPoints(const PointCloud& cloud)
-	{
-		std::vector<DevicePoint> points;
-		points.reserve(cloud.size());
-		for (const PointPrimitive& point : cloud.points())
-			points.push_back(DevicePoint{ point.position.x, point.position.y, point.position.z, 0.0f });
-		return points;
 	}
 
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
@@ -384,7 +384,7 @@ namespace
 		for (uint32_t child = 0; child < 8; ++child)
 		{
 			if (localCounts[child] > 0)
-				atomicAdd(&childCounts[nodeIndex * 8 + child], localCounts[child]);
+				atomicAdd(&childCounts[localNode * 8 + child], localCounts[child]);
 		}
 	}
 
@@ -411,7 +411,7 @@ namespace
 		uint32_t childMask = 0;
 		for (uint32_t child = 0; child < 8; ++child)
 		{
-			if (childCounts[nodeIndex * 8 + child] > 0)
+			if (childCounts[localNode * 8 + child] > 0)
 			{
 				++nonEmptyChildren;
 				childMask |= (1u << child);
@@ -443,9 +443,9 @@ namespace
 		uint32_t runningOffset = node.pointOffset;
 		for (uint32_t child = 0; child < 8; ++child)
 		{
-			const uint32_t count = childCounts[nodeIndex * 8 + child];
+			const uint32_t count = childCounts[localNode * 8 + child];
 			nodes[childBase + child] = makeChildNode(node, child, runningOffset, count, static_cast<int>(nodeIndex));
-			writeCursors[nodeIndex * 8 + child] = runningOffset;
+			writeCursors[localNode * 8 + child] = runningOffset;
 			runningOffset += count;
 		}
 	}
@@ -472,7 +472,7 @@ namespace
 		{
 			const uint32_t pointIndex = indices[node.pointOffset + offset];
 			const uint32_t child = octantForPoint(points[pointIndex], node);
-			const uint32_t writeOffset = atomicAdd(&writeCursors[nodeIndex * 8 + child], 1u);
+			const uint32_t writeOffset = atomicAdd(&writeCursors[localNode * 8 + child], 1u);
 			outputIndices[writeOffset] = pointIndex;
 		}
 	}
@@ -738,6 +738,7 @@ struct PointGpu::Octree::DeviceState
 	size_t leafCapacity = 1;
 	size_t minSplit = 2;
 	size_t maxDepth = 0;
+	size_t levelScratchNodeCapacity = 0;
 	size_t baseMemoryBytes = 0;
 	size_t memoryBytes = 0;
 	int device = 0;
@@ -812,6 +813,7 @@ void PointGpu::Octree::releaseTree()
 	_state->allocatedNodes = 0;
 	_state->actualNodes = 0;
 	_state->actualLeaves = 0;
+	_state->levelScratchNodeCapacity = 0;
 	_state->memoryBytes = _state->baseMemoryBytes;
 }
 
@@ -923,13 +925,11 @@ PointGpu::BuildResult PointGpu::Octree::build(const PointCloud& cloud, const Sch
 
 	if (!canReusePoints)
 	{
-		const std::vector<DevicePoint> hostPoints = copyPoints(cloud);
-
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, hostPoints.data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
 		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
@@ -962,6 +962,7 @@ PointGpu::BuildResult PointGpu::Octree::build(const PointCloud& cloud, const Sch
 	}
 
 	_state->nodeCapacity = estimateNodeCapacity(_state->pointCount, _state->leafCapacity, _state->maxDepth);
+	_state->levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(_state->pointCount, _state->leafCapacity, _state->nodeCapacity);
 	if (buildKarrasOctree)
 	{
 		_state->memoryBytes =
@@ -975,7 +976,7 @@ PointGpu::BuildResult PointGpu::Octree::build(const PointCloud& cloud, const Sch
 		_state->memoryBytes =
 			_state->baseMemoryBytes +
 			sizeof(LinearOctreeNode) * _state->nodeCapacity +
-			sizeof(uint32_t) * _state->nodeCapacity * 8 * 2 +
+			sizeof(uint32_t) * _state->levelScratchNodeCapacity * 8 * 2 +
 			sizeof(uint32_t) * 2;
 	}
 	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
@@ -987,8 +988,8 @@ PointGpu::BuildResult PointGpu::Octree::build(const PointCloud& cloud, const Sch
 	}
 	else
 	{
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->nodeCapacity * 8));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->nodeCapacity * 8));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->levelScratchNodeCapacity * 8));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->levelScratchNodeCapacity * 8));
 	}
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodeCounter), sizeof(uint32_t)));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->overflowFlag), sizeof(uint32_t)));
@@ -1092,8 +1093,11 @@ PointGpu::BuildResult PointGpu::Octree::build(const PointCloud& cloud, const Sch
 		}
 		else
 		{
+			if (levelCount > _state->levelScratchNodeCapacity)
+				throw std::runtime_error("Octree exceeded its level scratch budget. Increase leaf capacity or reduce max depth.");
+
 			CudaHelper::checkError(cudaMemset(
-				_state->childCounts + levelStart * 8,
+				_state->childCounts,
 				0,
 				sizeof(uint32_t) * levelCount * 8));
 			countChildBucketsKernel<<<static_cast<unsigned int>(levelCount), ThreadsPerBlock>>>(

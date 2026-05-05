@@ -67,15 +67,6 @@ namespace
 		return static_cast<size_t>(1) << depth;
 	}
 
-	std::vector<DevicePoint> copyPoints(const PointCloud& cloud)
-	{
-		std::vector<DevicePoint> points;
-		points.reserve(cloud.size());
-		for (const PointPrimitive& point : cloud.points())
-			points.push_back(DevicePoint{ point.position.x, point.position.y, point.position.z, 0.0f });
-		return points;
-	}
-
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
 	{
 		DeviceQuery result{};
@@ -708,13 +699,11 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 
 	if (!canReusePoints)
 	{
-		const std::vector<DevicePoint> hostPoints = copyPoints(cloud);
-
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, hostPoints.data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
 		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);

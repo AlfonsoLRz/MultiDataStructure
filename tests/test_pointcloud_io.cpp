@@ -45,8 +45,6 @@ namespace BaselineTests
 		const PointCloud xyzCloud = PointCloud::load(xyzPath.string());
 		expect(xyzCloud.size() == 2, "XYZ loader reads two points");
 		expect(nearlyEqual(xyzCloud.points()[0].position.z, 2.0f), "XYZ loader stores z coordinate");
-		expect(nearlyEqual(xyzCloud.points()[0].intensity, 0.5f), "XYZ loader stores optional intensity");
-		expect(xyzCloud.points()[1].classification == 5, "XYZ loader stores optional classification");
 		expect(nearlyEqual(xyzCloud.bounds().min().x, 0.0f), "XYZ bounds min is correct");
 		expect(nearlyEqual(xyzCloud.bounds().max().z, 4.0f), "XYZ bounds max is correct");
 		expect(std::filesystem::exists(PointCloud::cachePathFor(xyzPath.string())), "XYZ load writes sibling binary cache");
@@ -68,8 +66,7 @@ namespace BaselineTests
 		const PointCloud csvCloud = PointCloud::load(csvPath.string());
 		expect(csvCloud.size() == 2, "CSV loader skips header and reads two points");
 		expect(nearlyEqual(csvCloud.points()[0].position.x, -1.0f), "CSV loader stores x coordinate");
-		expect(nearlyEqual(csvCloud.points()[1].intensity, 0.75f), "CSV loader stores intensity");
-		expect(csvCloud.points()[1].classification == 6, "CSV loader stores classification");
+		expect(nearlyEqual(csvCloud.points()[1].position.z, 5.0f), "CSV loader stores z coordinate");
 
 		const std::filesystem::path plyPath = tempFile("multids_pointcloud_test.ply");
 		removePointCloudCache(plyPath);
@@ -91,8 +88,7 @@ namespace BaselineTests
 		const PointCloud plyCloud = PointCloud::load(plyPath.string());
 		expect(plyCloud.size() == 2, "PLY loader reads two vertices");
 		expect(nearlyEqual(plyCloud.points()[0].position.y, 2.0f), "PLY loader stores y coordinate");
-		expect(nearlyEqual(plyCloud.points()[1].intensity, 24.0f), "PLY loader stores intensity");
-		expect(plyCloud.points()[1].classification == 8, "PLY loader stores classification");
+		expect(nearlyEqual(plyCloud.points()[1].position.z, 7.0f), "PLY loader stores z coordinate");
 
 		const std::filesystem::path lasPath = tempFile("multids_pointcloud_test.las");
 		removePointCloudCache(lasPath);
@@ -136,8 +132,7 @@ namespace BaselineTests
 		expect(nearlyEqual(lasCloud.points()[0].position.x, 1001.0f), "LAS loader applies x scale and offset");
 		expect(nearlyEqual(lasCloud.points()[0].position.z, 13.0f), "LAS loader applies z scale and offset");
 		expect(nearlyEqual(lasCloud.points()[1].position.x, 999.5f), "LAS loader handles signed coordinates");
-		expect(nearlyEqual(lasCloud.points()[1].intensity, 2500.0f), "LAS loader stores intensity");
-		expect(lasCloud.points()[1].classification == 7, "LAS loader stores classification");
+		expect(nearlyEqual(lasCloud.points()[1].position.z, 11.25f), "LAS loader applies z scale to second point");
 
 		const PointCloud flat = SyntheticPointClouds::generateFlatTerrain(128, 10.0f, 20.0f, 0.1f);
 		expect(flat.size() == 128, "flat terrain generator returns requested point count");

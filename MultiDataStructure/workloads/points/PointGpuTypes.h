@@ -3,6 +3,7 @@
 #include "../../stdafx.h"
 #include "../../AABB.h"
 #include "../../experiments/Metrics.h"
+#include "PointPrimitive.h"
 
 namespace PointGpu
 {
@@ -63,8 +64,9 @@ namespace PointGpu
 		float x;
 		float y;
 		float z;
-		float w;
 	};
+
+	static_assert(sizeof(DevicePoint) == sizeof(PointPrimitive), "GPU points must match the position-only CPU point payload for direct upload.");
 
 	struct LinearNode
 	{

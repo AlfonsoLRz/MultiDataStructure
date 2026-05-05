@@ -13,7 +13,7 @@ public:
 		MultiDataStructure::DataStructureLevel type = MultiDataStructure::DataStructureLevel::OctreeNode;
 		size_t depth = 0;
 		size_t schemaDepth = 0;
-		std::vector<size_t> pointIndices;
+		std::vector<uint32_t> pointIndices;
 		std::vector<std::unique_ptr<Node>> children;
 
 		bool isLeaf() const { return children.empty(); }

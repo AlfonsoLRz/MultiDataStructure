@@ -50,7 +50,7 @@ Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialInd
 
 	metrics.memoryEstimateBytes =
 		stats.numNodes * sizeof(PointSpatialIndex::Node) +
-		stats.numPoints * sizeof(size_t);
+		stats.numPoints * sizeof(uint32_t);
 	return metrics;
 }
 

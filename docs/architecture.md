@@ -98,8 +98,8 @@ Some root-level core APIs still carry triangle/ray concepts from the original pr
 
 `workloads/points/` contains the maintained workload:
 
-- `PointPrimitive`: position plus optional intensity, classification, and id.
-- `PointCloud`: vector-backed point set with private stats, private `.xyz`/`.csv`/ASCII `.ply`/uncompressed `.las` loaders, and a sibling `.mdspc` binary cache.
+- `PointPrimitive`: position-only point payload for the optimizer path.
+- `PointCloud`: vector-backed point set with private stats, private `.xyz`/`.csv`/ASCII `.ply`/uncompressed `.las` loaders, and a sibling position-only `.mdspc` binary cache.
 - `PointBenchmark`: CLI entry point that loads a point cloud, loads a schema JSON, builds a CPU point index, runs an optional generated query profile, prints statistics, and optionally writes JSON metrics.
 - `PointSpatialIndex`: CPU point build/query path using schema configs and single-child point assignment. It supports exact AABB range, count-range, radius, and KNN queries with visited-node, tested-point, returned-point, and elapsed-time counters.
 - `SyntheticPointClouds`: deterministic generators for terrain, facades, buildings, urban mixes, and sparse/dense mixtures.

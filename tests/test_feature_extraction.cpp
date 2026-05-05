@@ -13,11 +13,10 @@ namespace BaselineTests
 			return std::abs(left - right) <= epsilon;
 		}
 
-		PointPrimitive makePoint(float x, float y, float z, uint64_t id)
+		PointPrimitive makePoint(float x, float y, float z, uint64_t)
 		{
 			PointPrimitive point;
 			point.position = glm::vec3(x, y, z);
-			point.id = id;
 			return point;
 		}
 	}
