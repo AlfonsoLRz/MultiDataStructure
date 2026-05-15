@@ -129,13 +129,15 @@ namespace
 		int cudaQueryBatch = 0;
 		int cudaMemoryBudgetMb = 0;
 		int liveRankingTopN = 10;
+		bool advancedEvaluatorOpen = false;
+		bool advancedScoringOpen = false;
 
-		int queryCount = 128;
+		int queryCount = 64;
 		int knnK = 16;
 		int querySeed = 1337;
 		int syntheticScale = 512;
-		int generatedCount = 1000;
-		int benchmarkTopK = 0;
+		int generatedCount = 256;
+		int benchmarkTopK = 32;
 		int generatedMaxBlocks = 3;
 		int generatedMaxDepth = 12;
 		int generatedMinLeaf = 32;
@@ -962,12 +964,20 @@ namespace
 	void initializeState(GuiState& state)
 	{
 		setText(state.inputPath, "C:/Datasets/points/Alhambra_100M.las");
-		setText(state.rankModelPath, resolvePath("models/schema_selector_onnx.json"));
+		const std::string rankModel = resolvePath("models/schema_selector.json");
+		setText(state.rankModelPath, rankModel);
 		setText(state.csvPath, projectPath("results/gui_schema_search.csv"));
 		setText(state.bestCsvPath, projectPath("results/gui_schema_search_best.csv"));
 		setText(state.generatedSchemaDir, projectPath("results/generated_schemas"));
 		state.schemas = discoverSchemas();
 		state.workloads = discoverWorkloads();
+		state.useRankModel = filesystemExists(rankModel);
+		state.evaluator = 1;
+		state.cudaDevice = 0;
+		state.cudaBuilder = 8;
+		state.queryCount = 64;
+		state.generatedCount = 256;
+		state.benchmarkTopK = 32;
 	}
 
 	void applyTheme()
@@ -1368,7 +1378,7 @@ namespace
 		drawSectionTitle("Evaluator");
 		const char* evaluators[] = { "CPU", "CUDA" };
 		ImGui::Combo("Backend", &state.evaluator, evaluators, IM_ARRAYSIZE(evaluators));
-		drawHelpMarker("Chooses where measured schema fitness runs. CUDA builds the selected GPU structure and measures range/count/radius queries there.");
+		drawHelpMarker("Chooses where measured schema fitness runs. CUDA builds the selected GPU structure and measures range/count/radius/KNN queries there.");
 		if (state.evaluator == 1)
 		{
 			std::string cudaError;
@@ -1384,15 +1394,19 @@ namespace
 				ImGui::PopStyleColor();
 			}
 
-			ImGui::InputInt("CUDA device", &state.cudaDevice);
-			drawHelpMarker("GPU id passed to cudaSetDevice. Use 0 unless you have several CUDA GPUs.");
 			const char* builders[] = { "LBVH", "KDTree", "BIH", "Octree", "KarrasOctree", "QuadTree", "RegularGrid", "HGrid", "Mixed" };
-			ImGui::Combo("Structure", &state.cudaBuilder, builders, IM_ARRAYSIZE(builders));
-			drawHelpMarker("LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented. KarrasOctree uses Morton sorting and prefix child ranges; BIH is a binary interval hierarchy with tight child bounds; standalone HGrid builds several RegularGrid levels and chooses one per query; Mixed follows the schema's per-depth structure schedule, including RegularGrid and HGrid grid split levels.");
-			ImGui::InputInt("Query batch", &state.cudaQueryBatch);
-			drawHelpMarker("Number of CUDA queries uploaded/launched per batch. 0 runs the whole generated workload as one batch.");
-			ImGui::InputInt("Memory budget MB", &state.cudaMemoryBudgetMb);
-			drawHelpMarker("Optional guardrail that rejects CUDA builds whose point buffers, sorted arrays, nodes, and sort scratch exceed this budget.");
+			ImGui::Text("CUDA: device %d, %s", state.cudaDevice, builders[state.cudaBuilder]);
+			if (ImGui::CollapsingHeader("Advanced CUDA"))
+			{
+				ImGui::InputInt("CUDA device", &state.cudaDevice);
+				drawHelpMarker("GPU id passed to cudaSetDevice. Use 0 unless you have several CUDA GPUs.");
+				ImGui::Combo("Structure", &state.cudaBuilder, builders, IM_ARRAYSIZE(builders));
+				drawHelpMarker("LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented. KarrasOctree uses Morton sorting and prefix child ranges; BIH is a binary interval hierarchy with tight child bounds; standalone HGrid builds several RegularGrid levels and chooses one per query; Mixed follows the schema's per-depth structure schedule, including RegularGrid and HGrid grid split levels.");
+				ImGui::InputInt("Query batch", &state.cudaQueryBatch);
+				drawHelpMarker("Number of CUDA queries uploaded/launched per batch. 0 runs the whole generated workload as one batch.");
+				ImGui::InputInt("Memory budget MB", &state.cudaMemoryBudgetMb);
+				drawHelpMarker("Optional guardrail that rejects CUDA builds whose point buffers, sorted arrays, nodes, and sort scratch exceed this budget.");
+			}
 		}
 
 		drawSectionTitle("Surrogate");
@@ -1401,12 +1415,19 @@ namespace
 		drawPathInput("Rank model", state.rankModelPath, "Path to a selector wrapper JSON, usually models/schema_selector.json or models/schema_selector_onnx.json.");
 
 		drawSectionTitle("Score Weights");
-		ImGui::InputFloat("Build", &state.scoreBuildWeight, 0.001f, 0.01f, "%.4f");
-		drawHelpMarker("Adds build time into the score. Keep at 0 if you only care about saved/reused structures and query speed.");
-		ImGui::InputFloat("Memory", &state.scoreMemoryWeight, 0.001f, 0.01f, "%.4f");
-		drawHelpMarker("Adds a memory penalty. Increase this if two schemas have similar query time but one is much larger.");
-		ImGui::InputFloat("Imbalance", &state.scoreImbalanceWeight, 0.001f, 0.01f, "%.4f");
-		drawHelpMarker("Adds a penalty for uneven leaf occupancy. Increase this if winners have pathological leaves or unstable query behavior.");
+		ImGui::Text("Build %.4f, memory %.4f, imbalance %.4f",
+			state.scoreBuildWeight,
+			state.scoreMemoryWeight,
+			state.scoreImbalanceWeight);
+		if (ImGui::CollapsingHeader("Advanced scoring"))
+		{
+			ImGui::InputFloat("Build", &state.scoreBuildWeight, 0.001f, 0.01f, "%.4f");
+			drawHelpMarker("Adds build time into the score. Keep at 0 if you only care about saved/reused structures and query speed.");
+			ImGui::InputFloat("Memory", &state.scoreMemoryWeight, 0.001f, 0.01f, "%.4f");
+			drawHelpMarker("Adds a memory penalty. Increase this if two schemas have similar query time but one is much larger.");
+			ImGui::InputFloat("Imbalance", &state.scoreImbalanceWeight, 0.001f, 0.01f, "%.4f");
+			drawHelpMarker("Adds a penalty for uneven leaf occupancy. Increase this if winners have pathological leaves or unstable query behavior.");
+		}
 
 		drawSectionTitle("Outputs");
 		drawPathInput("CSV", state.csvPath, "Full measured result table, with one row per dataset/workload/schema candidate.");

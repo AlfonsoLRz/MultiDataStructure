@@ -104,7 +104,14 @@ Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 	options.csvPath = AppDefaults::SCHEMA_SEARCH_CSV_PATH;
 	options.bestCsvPath = AppDefaults::SCHEMA_SEARCH_BEST_CSV_PATH;
 	options.syntheticScale = AppDefaults::SCHEMA_SEARCH_SYNTHETIC_SCALE;
+	options.queryCountOverride = AppDefaults::SCHEMA_SEARCH_QUERY_COUNT;
 	options.querySeed = AppDefaults::POINT_QUERY_SEED;
+	options.rankModelPath = AppDefaults::SCHEMA_SEARCH_RANK_MODEL_PATH;
+	options.generation.count = AppDefaults::SCHEMA_SEARCH_GENERATED_COUNT;
+	options.benchmarkTopK = AppDefaults::SCHEMA_SEARCH_BENCHMARK_TOP_K;
+	options.evaluator = AppDefaults::SCHEMA_SEARCH_EVALUATOR;
+	options.cuda.device = AppDefaults::SCHEMA_SEARCH_CUDA_DEVICE;
+	options.cuda.builder = AppDefaults::SCHEMA_SEARCH_CUDA_BUILDER;
 	options.pauseAtEnd = AppDefaults::PAUSE_AT_END;
 	return options;
 }
@@ -392,14 +399,14 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --optimizer-mutation-rate <v> Extra mutation probability per child, default 0.65\n"
 		<< "  --optimizer-random-fraction <v> Fraction of each generation sampled randomly, default 0.20\n"
 		<< "  --optimizer-seed <seed>     Seed for optimizer parent choice and mutation\n"
-		<< "  --evaluator cpu|cuda        Benchmark backend for schema-search mode\n"
+		<< "  --evaluator cpu|cuda        Benchmark backend for schema-search mode; default cuda with CPU fallback\n"
 		<< "  --cuda-device <id>          CUDA device id for --evaluator cuda; default 0\n"
 		<< "  --cuda-builder lbvh|kdtree|bih|octree|karras_octree|quadtree|regular_grid|hgrid|mixed CUDA builder; LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented\n"
 		<< "  --cuda-query-batch <n>      Query batch size for CUDA evaluator; 0 uses all queries\n"
 		<< "  --cuda-memory-budget-mb <n> Reject CUDA builds estimated above this memory budget\n"
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
-		<< "  --score-memory-weight <v>   Memory score weight, default 0.01\n"
-		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0.01\n"
+		<< "  --score-memory-weight <v>   Memory score weight, default 0\n"
+		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0\n"
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"

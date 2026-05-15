@@ -133,6 +133,19 @@ namespace Experiments
 		size_t gpuMemoryBytes = 0;
 	};
 
+	struct EvaluatorResolution
+	{
+		std::string evaluator = "cpu";
+		bool requestedCuda = false;
+		bool usingCuda = false;
+		bool fellBackToCpu = false;
+		std::string warning;
+	};
+
+	EvaluatorResolution resolveSchemaSearchEvaluator(
+		const std::string& requestedEvaluator,
+		bool cudaAvailable,
+		const std::string& cudaError = {});
 	WorkloadProfile parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName = {});
 	WorkloadProfile loadWorkloadProfile(const std::string& filename);
 	std::vector<SchemaCandidate> generateSchemaCandidates(const SchemaGenerationOptions& options);

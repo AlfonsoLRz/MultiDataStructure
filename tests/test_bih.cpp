@@ -98,11 +98,20 @@ namespace BaselineTests
 		radius.radius = 2.0f;
 		queries.push_back(radius);
 
+		PointGpu::Query knn;
+		knn.type = PointGpu::QueryType::Knn;
+		knn.center = glm::vec3(8.0f, -6.0f, 3.0f);
+		knn.k = 7;
+		queries.push_back(knn);
+
 		const PointGpu::QueryResult result = index.query(queries, options);
 		expect(result.samples.size() == queries.size(), "BIH returns one sample per query");
 		expect(result.samples[0].returnedPoints == bruteForceRangeCount(cloud, range.bounds), "BIH range count matches brute force");
 		expect(result.samples[1].returnedPoints == bruteForceRangeCount(cloud, countRange.bounds), "BIH count-range matches brute force");
 		expect(result.samples[2].returnedPoints == bruteForceRadiusCount(cloud, radius.center, radius.radius), "BIH radius count matches brute force");
+		expect(result.samples[3].returnedPoints == std::min(knn.k, cloud.size()), "BIH KNN returns requested neighbor count");
+		expect(result.samples[3].testedPoints == cloud.size(), "BIH KNN scans the GPU point buffer");
+		expect(result.knnQueries == 1, "BIH counts KNN queries");
 		expect(result.metrics.totalQueries == queries.size(), "BIH summarizes query samples");
 	}
 }

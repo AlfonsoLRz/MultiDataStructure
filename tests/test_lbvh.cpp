@@ -77,6 +77,8 @@ namespace BaselineTests
 		expect(build.metrics.indexedPoints == cloud.size(), "LBVH indexes every point");
 		expect(build.metrics.numLeaves > 0, "LBVH creates leaves");
 		expect(build.metrics.numNodes >= build.metrics.numLeaves, "LBVH creates a valid node array");
+		const PointGpu::BuildResult rebuild = index.build(cloud, makeLBVHSchema());
+		expect(rebuild.uploadTimeMs == 0.0, "LBVH reuses uploaded points on repeated builds");
 
 		std::vector<PointGpu::Query> queries;
 
@@ -95,11 +97,20 @@ namespace BaselineTests
 		radius.radius = 2.0f;
 		queries.push_back(radius);
 
+		PointGpu::Query knn;
+		knn.type = PointGpu::QueryType::Knn;
+		knn.center = glm::vec3(8.0f, -6.0f, 3.0f);
+		knn.k = 7;
+		queries.push_back(knn);
+
 		const PointGpu::QueryResult result = index.query(queries);
 		expect(result.samples.size() == queries.size(), "LBVH returns one sample per query");
 		expect(result.samples[0].returnedPoints == bruteForceRangeCount(cloud, range.bounds), "LBVH range count matches brute force");
 		expect(result.samples[1].returnedPoints == bruteForceRangeCount(cloud, countRange.bounds), "LBVH count-range matches brute force");
 		expect(result.samples[2].returnedPoints == bruteForceRadiusCount(cloud, radius.center, radius.radius), "LBVH radius count matches brute force");
+		expect(result.samples[3].returnedPoints == std::min(knn.k, cloud.size()), "LBVH KNN returns requested neighbor count");
+		expect(result.samples[3].testedPoints == cloud.size(), "LBVH KNN scans the GPU point buffer");
+		expect(result.knnQueries == 1, "LBVH counts KNN queries");
 		expect(result.metrics.totalQueries == queries.size(), "LBVH summarizes query samples");
 	}
 }

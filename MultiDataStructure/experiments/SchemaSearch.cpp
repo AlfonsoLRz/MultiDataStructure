@@ -36,9 +36,7 @@ namespace
 	const std::vector<std::string>& defaultWorkloadPaths()
 	{
 		static const std::vector<std::string> paths = {
-			"configs/workloads/range_heavy.json",
-			"configs/workloads/knn_heavy.json",
-			"configs/workloads/mixed.json",
+			"configs/workloads/volume_small_medium.json",
 		};
 		return paths;
 	}
@@ -60,10 +58,36 @@ namespace
 		double gpuQueryMs = 0.0;
 	};
 
+	enum class PreparedQueryKind
+	{
+		Range,
+		Radius,
+		Knn,
+	};
+
+	struct PreparedCpuQuery
+	{
+		PreparedQueryKind kind = PreparedQueryKind::Range;
+		AABB bounds;
+		glm::vec3 center = glm::vec3(0.0f);
+		float radius = 0.0f;
+	};
+
+	struct PreparedWorkload
+	{
+		std::vector<PreparedCpuQuery> cpuQueries;
+		std::vector<PointGpu::Query> cudaQueries;
+		size_t rangeQueries = 0;
+		size_t countRangeQueries = 0;
+		size_t radiusQueries = 0;
+		size_t knnQueries = 0;
+	};
+
 	struct DatasetContext
 	{
 		const SearchDataset* dataset = nullptr;
 		Experiments::PointCloudFeatures features;
+		std::vector<PreparedWorkload> preparedWorkloads;
 	};
 
 	struct EvaluatedCandidate
@@ -1120,39 +1144,115 @@ namespace
 		return weights;
 	}
 
-	WorkloadRun runWorkloadProfile(const Experiments::WorkloadProfile& profile, const PointCloud& cloud, const PointSpatialIndex& index)
+	PreparedWorkload prepareWorkloadProfile(
+		const Experiments::WorkloadProfile& profile,
+		const PointCloud& cloud,
+		bool cudaEvaluator)
 	{
-		WorkloadRun result;
+		PreparedWorkload prepared;
 		if (profile.numQueries == 0)
-			return result;
-
-		std::vector<PointSpatialIndex::QueryStats> samples;
-		samples.reserve(profile.numQueries);
+			return prepared;
 
 		std::mt19937 rng(profile.querySeed);
+		if (cudaEvaluator)
+		{
+			std::vector<double> weights = queryTypeWeights(profile);
+
+			prepared.cudaQueries.reserve(profile.numQueries);
+			std::discrete_distribution<size_t> queryType(weights.begin(), weights.end());
+			bool nextRangeIsCount = false;
+			for (size_t i = 0; i < profile.numQueries; ++i)
+			{
+				const size_t type = queryType(rng);
+				PointGpu::Query query;
+				if (type == 0)
+				{
+					query.type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
+					query.bounds = randomQueryBox(rng, cloud, profile);
+					if (nextRangeIsCount)
+						++prepared.countRangeQueries;
+					else
+						++prepared.rangeQueries;
+					nextRangeIsCount = !nextRangeIsCount;
+				}
+				else if (type == 1)
+				{
+					query.type = PointGpu::QueryType::Radius;
+					query.center = randomPointInBounds(rng, cloud.bounds());
+					query.radius = randomQueryRadius(rng, cloud, profile);
+					++prepared.radiusQueries;
+				}
+				else
+				{
+					query.type = PointGpu::QueryType::Knn;
+					query.center = randomPointInBounds(rng, cloud.bounds());
+					query.k = profile.knnK;
+					++prepared.knnQueries;
+				}
+				prepared.cudaQueries.push_back(query);
+			}
+
+			return prepared;
+		}
+
+		prepared.cpuQueries.reserve(profile.numQueries);
 		const std::vector<double> weights = queryTypeWeights(profile);
 		std::discrete_distribution<size_t> queryType(weights.begin(), weights.end());
-
 		for (size_t i = 0; i < profile.numQueries; ++i)
 		{
 			const size_t type = queryType(rng);
+			PreparedCpuQuery query;
 			if (type == 0)
 			{
-				samples.push_back(index.rangeQuery(randomQueryBox(rng, cloud, profile)).stats);
+				query.kind = PreparedQueryKind::Range;
+				query.bounds = randomQueryBox(rng, cloud, profile);
+				++prepared.rangeQueries;
+			}
+			else if (type == 1)
+			{
+				query.kind = PreparedQueryKind::Radius;
+				query.center = randomPointInBounds(rng, cloud.bounds());
+				query.radius = randomQueryRadius(rng, cloud, profile);
+				++prepared.radiusQueries;
+			}
+			else
+			{
+				query.kind = PreparedQueryKind::Knn;
+				query.center = randomPointInBounds(rng, cloud.bounds());
+				++prepared.knnQueries;
+			}
+			prepared.cpuQueries.push_back(query);
+		}
+
+		return prepared;
+	}
+
+	WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index)
+	{
+		WorkloadRun result;
+		if (prepared.cpuQueries.empty())
+			return result;
+
+		std::vector<PointSpatialIndex::QueryStats> samples;
+		samples.reserve(prepared.cpuQueries.size());
+
+		for (const PreparedCpuQuery& query : prepared.cpuQueries)
+		{
+			if (query.kind == PreparedQueryKind::Range)
+			{
+				samples.push_back(index.rangeQuery(query.bounds).stats);
 				++result.rangeQueries;
 				continue;
 			}
 
-			if (type == 1)
+			if (query.kind == PreparedQueryKind::Radius)
 			{
-				const glm::vec3 center = randomPointInBounds(rng, cloud.bounds());
-				samples.push_back(index.radiusQuery(center, randomQueryRadius(rng, cloud, profile)).stats);
+				samples.push_back(index.radiusQuery(query.center, query.radius).stats);
 				++result.radiusQueries;
 				continue;
 			}
 
-			const glm::vec3 center = randomPointInBounds(rng, cloud.bounds());
-			samples.push_back(index.knnQuery(center, profile.knnK).stats);
+			samples.push_back(index.knnQuery(query.center, knnK).stats);
 			++result.knnQueries;
 		}
 
@@ -1162,55 +1262,21 @@ namespace
 
 	template <typename IndexType>
 	WorkloadRun runCudaWorkloadProfile(
-		const Experiments::WorkloadProfile& profile,
-		const PointCloud& cloud,
+		const PreparedWorkload& prepared,
 		const IndexType& index,
 		const PointGpu::Options& cudaOptions)
 	{
 		WorkloadRun result;
-		if (profile.numQueries == 0)
+		if (prepared.cudaQueries.empty())
 			return result;
 
-		const double rangeWeight = std::max(0.0, profile.rangeWeight);
-		const double radiusWeight = std::max(0.0, profile.radiusWeight);
-		std::vector<double> weights = { rangeWeight, radiusWeight };
-		if (weights[0] == 0.0 && weights[1] == 0.0)
-			weights = { 1.0, 1.0 };
-
-		std::vector<PointGpu::Query> queries;
-		queries.reserve(profile.numQueries);
-
-		std::mt19937 rng(profile.querySeed);
-		std::discrete_distribution<size_t> queryType(weights.begin(), weights.end());
-		bool nextRangeIsCount = false;
-
-		for (size_t i = 0; i < profile.numQueries; ++i)
-		{
-			const size_t type = queryType(rng);
-			PointGpu::Query query;
-			if (type == 0)
-			{
-				query.type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
-				query.bounds = randomQueryBox(rng, cloud, profile);
-				if (nextRangeIsCount)
-					++result.countRangeQueries;
-				else
-					++result.rangeQueries;
-				nextRangeIsCount = !nextRangeIsCount;
-			}
-			else
-			{
-				query.type = PointGpu::QueryType::Radius;
-				query.center = randomPointInBounds(rng, cloud.bounds());
-				query.radius = randomQueryRadius(rng, cloud, profile);
-				++result.radiusQueries;
-			}
-			queries.push_back(query);
-		}
-
-		const PointGpu::QueryResult queryResult = index.query(queries, cudaOptions);
+		const PointGpu::QueryResult queryResult = index.query(prepared.cudaQueries, cudaOptions);
 		result.metrics = queryResult.metrics;
 		result.gpuQueryMs = queryResult.gpuQueryTimeMs;
+		result.rangeQueries = queryResult.rangeQueries;
+		result.countRangeQueries = queryResult.countRangeQueries;
+		result.radiusQueries = queryResult.radiusQueries;
+		result.knnQueries = queryResult.knnQueries;
 		return result;
 	}
 
@@ -1219,6 +1285,7 @@ namespace
 		const Experiments::PointCloudFeatures& pointFeatures,
 		const Experiments::WorkloadProfile& workload,
 		const Experiments::WorkloadFeatures& workloadFeatures,
+		const PreparedWorkload& preparedWorkload,
 		const Experiments::SchemaCandidate& schema,
 		const Experiments::SchemaSearchOptions& options,
 		CudaIndexCacheEntry* cudaCacheEntry = nullptr)
@@ -1254,7 +1321,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else if (isHGridBuilder(cudaOptions.builder))
 			{
@@ -1274,7 +1341,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else if (isKDTreeBuilder(cudaOptions.builder))
 			{
@@ -1294,7 +1361,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else if (isOctreeBuilder(cudaOptions.builder))
 			{
@@ -1314,7 +1381,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else if (isQuadTreeBuilder(cudaOptions.builder))
 			{
@@ -1334,7 +1401,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else if (isRegularGridBuilder(cudaOptions.builder))
 			{
@@ -1354,7 +1421,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else if (isMixedBuilder(cudaOptions.builder))
 			{
@@ -1374,7 +1441,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 			else
 			{
@@ -1394,7 +1461,7 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
-				workloadRun = runCudaWorkloadProfile(workload, dataset.cloud, index, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, index, cudaOptions);
 			}
 		}
 		else
@@ -1405,7 +1472,7 @@ namespace
 			const auto buildEnd = std::chrono::steady_clock::now();
 
 			buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd));
-			workloadRun = runWorkloadProfile(workload, dataset.cloud, index);
+			workloadRun = runWorkloadProfile(preparedWorkload, workload.knnK, index);
 		}
 
 		Experiments::SchemaSearchRecord record;
@@ -1461,8 +1528,9 @@ namespace
 		size_t scoreCount = 0;
 		for (const DatasetContext& datasetContext : datasets)
 		{
-			for (const Experiments::WorkloadProfile& workload : workloads)
+			for (size_t workloadIndex = 0; workloadIndex < workloads.size(); ++workloadIndex)
 			{
+				const Experiments::WorkloadProfile& workload = workloads[workloadIndex];
 				const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, options.weights);
 				CudaIndexCacheEntry* cudaEntry = cudaCache && useCudaEvaluator(options)
 					? &(*cudaCache)[datasetContext.dataset]
@@ -1472,6 +1540,7 @@ namespace
 					datasetContext.features,
 					workload,
 					workloadFeatures,
+					datasetContext.preparedWorkloads[workloadIndex],
 					candidate,
 					options,
 					cudaEntry);
@@ -1856,6 +1925,36 @@ namespace
 	}
 }
 
+Experiments::EvaluatorResolution Experiments::resolveSchemaSearchEvaluator(
+	const std::string& requestedEvaluator,
+	bool cudaAvailable,
+	const std::string& cudaError)
+{
+	const std::string evaluator = lowerCopy(requestedEvaluator);
+	EvaluatorResolution resolution;
+	resolution.requestedCuda = evaluator == "cuda" || evaluator == "gpu";
+	if (!resolution.requestedCuda)
+	{
+		resolution.evaluator = "cpu";
+		return resolution;
+	}
+
+	if (cudaAvailable)
+	{
+		resolution.evaluator = "cuda";
+		resolution.usingCuda = true;
+		return resolution;
+	}
+
+	resolution.evaluator = "cpu";
+	resolution.fellBackToCpu = true;
+	resolution.warning = "CUDA evaluator requested but unavailable";
+	if (!cudaError.empty())
+		resolution.warning += ": " + cudaError;
+	resolution.warning += "; falling back to CPU.";
+	return resolution;
+}
+
 std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(const SchemaGenerationOptions& options)
 {
 	if (options.count == 0)
@@ -2038,25 +2137,35 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 {
-	const std::vector<SearchDataset> datasets = loadDatasets(options);
-	std::vector<SchemaCandidate> schemas = loadSchemas(options.schemaPaths, options.includeConfiguredSchemas);
-	appendGeneratedSchemas(schemas, options.generation);
+	SchemaSearchOptions resolvedOptions = options;
+	std::string cudaError;
+	bool cudaAvailable = false;
+	if (useCudaEvaluator(options))
+		cudaAvailable = PointGpu::MixedTree::isAvailable(&cudaError);
+	const EvaluatorResolution evaluatorResolution = resolveSchemaSearchEvaluator(options.evaluator, cudaAvailable, cudaError);
+	resolvedOptions.evaluator = evaluatorResolution.evaluator;
+
+	const std::vector<SearchDataset> datasets = loadDatasets(resolvedOptions);
+	std::vector<SchemaCandidate> schemas = loadSchemas(resolvedOptions.schemaPaths, resolvedOptions.includeConfiguredSchemas);
+	appendGeneratedSchemas(schemas, resolvedOptions.generation);
 	if (schemas.empty())
 		throw std::runtime_error("Schema search has no schemas. Provide --schemas, omit --generated-only, or use --generate-schemas.");
-	const std::vector<WorkloadProfile> workloads = loadWorkloads(options);
-	const std::optional<SchemaSelectorModel> rankModel = (options.rankModelPath.empty() || options.evolution.enabled)
+	const std::vector<WorkloadProfile> workloads = loadWorkloads(resolvedOptions);
+	const std::optional<SchemaSelectorModel> rankModel = (resolvedOptions.rankModelPath.empty() || resolvedOptions.evolution.enabled)
 		? std::optional<SchemaSelectorModel>()
-		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(options.rankModelPath));
+		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(resolvedOptions.rankModelPath));
 
 	std::vector<SchemaSearchRecord> records;
 	records.reserve(datasets.size() * workloads.size() * schemas.size());
 
 	std::cout << std::fixed << std::setprecision(3);
 	std::cout << "Schema search\n";
-	std::cout << "  evaluator: " << (useCudaEvaluator(options) ? "cuda" : "cpu") << '\n';
-	if (useCudaEvaluator(options))
+	std::cout << "  evaluator: " << (useCudaEvaluator(resolvedOptions) ? "cuda" : "cpu") << '\n';
+	if (!evaluatorResolution.warning.empty())
+		std::cout << "  warning: " << evaluatorResolution.warning << '\n';
+	if (useCudaEvaluator(resolvedOptions))
 	{
-		const PointGpu::Options cudaOptions = cudaOptionsFrom(options);
+		const PointGpu::Options cudaOptions = cudaOptionsFrom(resolvedOptions);
 		std::cout << "  cuda builder: " << cudaBuilderDisplayName(cudaOptions.builder) << '\n';
 		std::cout << "  cuda device: " << cudaDeviceDescription(cudaOptions) << '\n';
 		std::cout << "  cuda warmup: " << warmUpCudaDevice(cudaOptions) << " ms\n";
@@ -2067,43 +2176,39 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	}
 	std::cout << "  datasets: " << datasets.size() << '\n';
 	std::cout << "  schemas: " << schemas.size() << '\n';
-	if (options.generation.count > 0)
+	if (resolvedOptions.generation.count > 0)
 	{
-		std::cout << "  generated schemas: " << options.generation.count << " requested\n";
-		if (options.generation.conditionalLevels)
-			std::cout << "  generated conditions: probability " << options.generation.conditionalProbability << '\n';
+		std::cout << "  generated schemas: " << resolvedOptions.generation.count << " requested\n";
+		if (resolvedOptions.generation.conditionalLevels)
+			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
 	}
-	if (!options.evolution.enabled && rankModel.has_value())
+	if (!resolvedOptions.evolution.enabled && rankModel.has_value())
 	{
-		std::cout << "  surrogate rank model: " << options.rankModelPath << '\n';
-		if (options.benchmarkTopK > 0)
-			std::cout << "  benchmark top-k: " << options.benchmarkTopK << '\n';
+		std::cout << "  surrogate rank model: " << resolvedOptions.rankModelPath << '\n';
+		if (resolvedOptions.benchmarkTopK > 0)
+			std::cout << "  benchmark top-k: " << resolvedOptions.benchmarkTopK << '\n';
 	}
-	else if (options.evolution.enabled && !options.rankModelPath.empty())
+	else if (resolvedOptions.evolution.enabled && !resolvedOptions.rankModelPath.empty())
 	{
 		std::cout << "  surrogate rank model: not used inside evolutionary loop; measured scores drive selection\n";
 	}
 	std::cout << "  workloads: " << workloads.size() << '\n';
-	if (useCudaEvaluator(options))
-	{
-		for (const WorkloadProfile& workload : workloads)
-		{
-			if (workload.knnWeight > 0.0)
-			{
-				std::cout << "  note: CUDA evaluator v1 ignores KNN weight for workload '" << workload.name
-					<< "' and redistributes generated GPU queries over range/count/radius\n";
-			}
-		}
-	}
-
 	std::vector<DatasetContext> datasetContexts;
 	datasetContexts.reserve(datasets.size());
 	for (const SearchDataset& dataset : datasets)
-		datasetContexts.push_back(DatasetContext{ &dataset, extractPointCloudFeatures(dataset.cloud) });
-
-	if (options.evolution.enabled)
 	{
-		records = runEvolutionarySchemaSearch(options, datasetContexts, workloads, schemas);
+		DatasetContext context;
+		context.dataset = &dataset;
+		context.features = extractPointCloudFeatures(dataset.cloud);
+		context.preparedWorkloads.reserve(workloads.size());
+		for (const WorkloadProfile& workload : workloads)
+			context.preparedWorkloads.push_back(prepareWorkloadProfile(workload, dataset.cloud, useCudaEvaluator(resolvedOptions)));
+		datasetContexts.push_back(std::move(context));
+	}
+
+	if (resolvedOptions.evolution.enabled)
+	{
+		records = runEvolutionarySchemaSearch(resolvedOptions, datasetContexts, workloads, schemas);
 	}
 	else
 	{
@@ -2111,63 +2216,65 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		for (const DatasetContext& datasetContext : datasetContexts)
 		{
 			const SearchDataset& dataset = *datasetContext.dataset;
-		std::cout << "  dataset: " << dataset.name << " (" << dataset.cloud.size() << " points)\n";
+			std::cout << "  dataset: " << dataset.name << " (" << dataset.cloud.size() << " points)\n";
 
-		for (const WorkloadProfile& workload : workloads)
-		{
-			const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, options.weights);
-			const std::vector<SchemaCandidate> benchmarkSchemas = selectBenchmarkSchemas(
-				options,
-				dataset,
-				workload,
-				schemas,
-				rankModel);
-
-			std::cout << "    workload: " << workload.name << " (" << workload.numQueries << " queries)\n";
-			if (benchmarkSchemas.size() != schemas.size())
-				std::cout << "      benchmarking " << benchmarkSchemas.size() << " / " << schemas.size() << " schemas after surrogate pruning\n";
-
-			for (const SchemaCandidate& schema : benchmarkSchemas)
+			for (size_t workloadIndex = 0; workloadIndex < workloads.size(); ++workloadIndex)
 			{
-				CudaIndexCacheEntry* cudaEntry = useCudaEvaluator(options)
-					? &cudaCache[datasetContext.dataset]
-					: nullptr;
-				SchemaSearchRecord record = benchmarkSchemaCandidate(
+				const WorkloadProfile& workload = workloads[workloadIndex];
+				const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, resolvedOptions.weights);
+				const std::vector<SchemaCandidate> benchmarkSchemas = selectBenchmarkSchemas(
+					resolvedOptions,
 					dataset,
-					datasetContext.features,
 					workload,
-					workloadFeatures,
-					schema,
-					options,
-					cudaEntry);
-				records.push_back(record);
-				emitProgress(options, record);
+					schemas,
+					rankModel);
 
-				std::cout << "      " << record.schemaName
-					<< ": score " << record.score
-					<< ", avg " << record.queryMetrics.averageLatencyMs
-					<< " ms, build " << record.buildMetrics.buildTimeMs
-					<< " ms";
-				if (record.backend == "cuda")
-					std::cout << ", gpu build " << record.gpuBuildMs
-						<< " ms, upload " << record.gpuUploadMs
-						<< " ms, gpu query " << record.gpuQueryMs << " ms";
-				std::cout << '\n';
+				std::cout << "    workload: " << workload.name << " (" << workload.numQueries << " queries)\n";
+				if (benchmarkSchemas.size() != schemas.size())
+					std::cout << "      benchmarking " << benchmarkSchemas.size() << " / " << schemas.size() << " schemas after surrogate pruning\n";
+
+				for (const SchemaCandidate& schema : benchmarkSchemas)
+				{
+					CudaIndexCacheEntry* cudaEntry = useCudaEvaluator(resolvedOptions)
+						? &cudaCache[datasetContext.dataset]
+						: nullptr;
+					SchemaSearchRecord record = benchmarkSchemaCandidate(
+						dataset,
+						datasetContext.features,
+						workload,
+						workloadFeatures,
+						datasetContext.preparedWorkloads[workloadIndex],
+						schema,
+						resolvedOptions,
+						cudaEntry);
+					records.push_back(record);
+					emitProgress(resolvedOptions, record);
+
+					std::cout << "      " << record.schemaName
+						<< ": score " << record.score
+						<< ", avg " << record.queryMetrics.averageLatencyMs
+						<< " ms, build " << record.buildMetrics.buildTimeMs
+						<< " ms";
+					if (record.backend == "cuda")
+						std::cout << ", gpu build " << record.gpuBuildMs
+							<< " ms, upload " << record.gpuUploadMs
+							<< " ms, gpu query " << record.gpuQueryMs << " ms";
+					std::cout << '\n';
+				}
 			}
-		}
 		}
 	}
 
-	writeSearchRows(options.csvPath, records);
-	writeBestRows(options.bestCsvPath, records);
+	writeSearchRows(resolvedOptions.csvPath, records);
+	writeBestRows(resolvedOptions.bestCsvPath, records);
 
 	std::cout << "  wrote rows: " << records.size() << '\n';
-	if (!options.csvPath.empty())
-		std::cout << "  csv: " << options.csvPath << '\n';
-	if (!options.bestCsvPath.empty())
-		std::cout << "  best csv: " << options.bestCsvPath << '\n';
+	if (!resolvedOptions.csvPath.empty())
+		std::cout << "  csv: " << resolvedOptions.csvPath << '\n';
+	if (!resolvedOptions.bestCsvPath.empty())
+		std::cout << "  best csv: " << resolvedOptions.bestCsvPath << '\n';
 
-	if (options.pauseAtEnd)
+	if (resolvedOptions.pauseAtEnd)
 		std::system("pause");
 
 	return 0;

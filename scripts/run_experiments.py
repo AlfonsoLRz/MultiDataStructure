@@ -13,9 +13,7 @@ DEFAULT_SCHEMAS = [
 ]
 
 DEFAULT_WORKLOADS = [
-    "configs/workloads/range_heavy.json",
-    "configs/workloads/knn_heavy.json",
-    "configs/workloads/mixed.json",
+    "configs/workloads/volume_small_medium.json",
 ]
 
 
@@ -26,7 +24,7 @@ def main() -> int:
     parser.add_argument("--input", help="Point cloud input path (.las, .ply, .xyz, .csv). Optional for schema search when synthetic datasets are enabled.")
     parser.add_argument("--schemas", nargs="*", default=DEFAULT_SCHEMAS, help="Schema JSON files to evaluate.")
     parser.add_argument("--workloads", nargs="*", default=DEFAULT_WORKLOADS, help="Workload JSON files for schema-search mode.")
-    parser.add_argument("--queries", type=int, default=128, help="Generated queries per query type.")
+    parser.add_argument("--queries", type=int, default=64, help="Generated queries per workload.")
     parser.add_argument("--knn-k", type=int, default=8, help="K for generated KNN queries.")
     parser.add_argument("--query-seed", type=int, default=1337, help="Generated query profile seed.")
     parser.add_argument("--output", default="results/points_experiment.json", help="JSON output path. Multiple schemas get suffixed filenames.")

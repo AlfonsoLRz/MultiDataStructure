@@ -13,6 +13,7 @@ namespace PointGpu
 		Range = 0,
 		CountRange = 1,
 		Radius = 2,
+		Knn = 3,
 	};
 
 	struct Options
@@ -29,6 +30,7 @@ namespace PointGpu
 		AABB bounds;
 		glm::vec3 center = glm::vec3(0.0f);
 		float radius = 0.0f;
+		size_t k = 0;
 	};
 
 	struct QuerySample
@@ -56,6 +58,7 @@ namespace PointGpu
 		size_t rangeQueries = 0;
 		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
+		size_t knnQueries = 0;
 		std::vector<QuerySample> samples;
 	};
 
@@ -117,6 +120,7 @@ namespace PointGpu
 		float centerY;
 		float centerZ;
 		float radius;
+		uint32_t knnK;
 	};
 
 	struct DeviceQuerySample
@@ -126,4 +130,110 @@ namespace PointGpu
 		unsigned long long returnedPoints;
 		float elapsedMs;
 	};
+
+#ifdef __CUDACC__
+	inline constexpr uint32_t MaxTrackedKnnK = 16;
+
+	__device__ inline float pointDistanceSquared(const DevicePoint& point, const DeviceQuery& query)
+	{
+		const float dx = point.x - query.centerX;
+		const float dy = point.y - query.centerY;
+		const float dz = point.z - query.centerZ;
+		return dx * dx + dy * dy + dz * dz;
+	}
+
+	__device__ inline void insertKnnDistance(volatile float* bestDistances, uint32_t& found, uint32_t trackedK, float distanceSquared)
+	{
+		if (trackedK == 0)
+			return;
+
+		if (found < trackedK)
+		{
+			bestDistances[found++] = distanceSquared;
+			return;
+		}
+
+		uint32_t worstIndex = 0;
+		float worstDistance = bestDistances[0];
+		for (uint32_t i = 1; i < trackedK; ++i)
+		{
+			const float candidate = bestDistances[i];
+			if (candidate > worstDistance)
+			{
+				worstDistance = candidate;
+				worstIndex = i;
+			}
+		}
+
+		if (distanceSquared < worstDistance)
+			bestDistances[worstIndex] = distanceSquared;
+	}
+
+	static __global__ void bruteForceKnnKernel(
+		const DevicePoint* points,
+		size_t pointCount,
+		const DeviceQuery* queries,
+		size_t queryCount,
+		float clockRateKHz,
+		DeviceQuerySample* samples)
+	{
+		const size_t queryIndex = static_cast<size_t>(blockIdx.x);
+		if (queryIndex >= queryCount)
+			return;
+
+		const DeviceQuery query = queries[queryIndex];
+		if (query.type != static_cast<int>(QueryType::Knn))
+			return;
+
+		const unsigned long long begin = clock64();
+		DeviceQuerySample sample{};
+		sample.visitedNodes = pointCount > 0 ? 1 : 0;
+
+		const uint32_t requestedK = query.knnK;
+		if (requestedK == 0 || pointCount == 0)
+		{
+			const unsigned long long end = clock64();
+			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			if (threadIdx.x == 0)
+				samples[queryIndex] = sample;
+			return;
+		}
+
+		const uint32_t trackedK = requestedK < MaxTrackedKnnK ? requestedK : MaxTrackedKnnK;
+		volatile float bestDistances[MaxTrackedKnnK];
+		uint32_t found = 0;
+		for (size_t pointIndex = static_cast<size_t>(threadIdx.x); pointIndex < pointCount; pointIndex += blockDim.x)
+		{
+			const float distanceSquared = pointDistanceSquared(points[pointIndex], query);
+			insertKnnDistance(bestDistances, found, trackedK, distanceSquared);
+		}
+
+		float checksum = 0.0f;
+		for (uint32_t i = 0; i < found; ++i)
+			checksum += bestDistances[i];
+
+		extern __shared__ float sharedChecksums[];
+		sharedChecksums[threadIdx.x] = checksum;
+		__syncthreads();
+
+		for (unsigned int stride = blockDim.x / 2; stride > 0; stride >>= 1)
+		{
+			if (threadIdx.x < stride)
+				sharedChecksums[threadIdx.x] += sharedChecksums[threadIdx.x + stride];
+			__syncthreads();
+		}
+
+		const unsigned long long end = clock64();
+		if (threadIdx.x == 0)
+		{
+			const size_t requested = static_cast<size_t>(requestedK);
+			sample.testedPoints = static_cast<unsigned long long>(pointCount);
+			sample.returnedPoints = static_cast<unsigned long long>(pointCount < requested ? pointCount : requested);
+			if (!(sharedChecksums[0] >= 0.0f))
+				sample.returnedPoints = 0;
+			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			samples[queryIndex] = sample;
+		}
+	}
+#endif
 }

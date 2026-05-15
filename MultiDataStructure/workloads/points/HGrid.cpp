@@ -208,12 +208,34 @@ PointGpu::BuildResult PointGpu::HGrid::build(const PointCloud& cloud, const Sche
 	if (!isAvailable(&availabilityError))
 		throw std::runtime_error("CUDA point evaluator is unavailable: " + availabilityError);
 
-	release();
+	const int count = deviceCount();
+	const int device = options.device >= 0 ? std::min(options.device, count - 1) : 0;
+	const size_t baseLeafCapacity = leafCapacityForSchema(schema);
+	const size_t levelCount = hgridLevelCountForSchema(schema);
+	const bool canReuseLevels =
+		_state->ready &&
+		_state->cloud == &cloud &&
+		_state->pointCount == cloud.size() &&
+		_state->device == device &&
+		_state->levels.size() == levelCount;
+	std::vector<DeviceState::Level> previousLevels;
+	if (canReuseLevels)
+	{
+		previousLevels = std::move(_state->levels);
+		_state->levels.clear();
+		_state->totalCellCount = 0;
+		_state->memoryBytes = 0;
+		_state->ready = false;
+	}
+	else
+	{
+		release();
+	}
 
 	_state->pointCount = cloud.size();
 	_state->cloud = &cloud;
 	_state->bounds = cloud.bounds();
-	_state->device = options.device >= 0 ? std::min(options.device, deviceCount() - 1) : 0;
+	_state->device = device;
 
 	BuildResult result;
 	result.device = _state->device;
@@ -221,8 +243,6 @@ PointGpu::BuildResult PointGpu::HGrid::build(const PointCloud& cloud, const Sche
 	if (cloud.empty())
 		return result;
 
-	const size_t baseLeafCapacity = leafCapacityForSchema(schema);
-	const size_t levelCount = hgridLevelCountForSchema(schema);
 	_state->levels.reserve(levelCount);
 
 	PointGpu::Options gridOptions = regularGridOptions(options);
@@ -235,7 +255,10 @@ PointGpu::BuildResult PointGpu::HGrid::build(const PointCloud& cloud, const Sche
 	{
 		DeviceState::Level level;
 		level.leafCapacity = scaledLeafCapacity(baseLeafCapacity, levelIndex, levelCount);
-		level.grid = std::make_unique<RegularGrid>();
+		if (levelIndex < previousLevels.size() && previousLevels[levelIndex].grid)
+			level.grid = std::move(previousLevels[levelIndex].grid);
+		else
+			level.grid = std::make_unique<RegularGrid>();
 
 		const BuildResult levelBuild = level.grid->build(cloud, schemaForLevel(schema, level.leafCapacity), gridOptions);
 		level.cellCount = level.grid->cellCount();
@@ -285,6 +308,8 @@ PointGpu::QueryResult PointGpu::HGrid::query(const std::vector<Query>& queries, 
 			++result.radiusQueries;
 		else if (query.type == QueryType::CountRange)
 			++result.countRangeQueries;
+		else if (query.type == QueryType::Knn)
+			++result.knnQueries;
 		else
 			++result.rangeQueries;
 

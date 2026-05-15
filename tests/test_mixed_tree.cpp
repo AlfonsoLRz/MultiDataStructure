@@ -156,11 +156,20 @@ namespace BaselineTests
 		radius.radius = 18.0f;
 		queries.push_back(radius);
 
+		PointGpu::Query knn;
+		knn.type = PointGpu::QueryType::Knn;
+		knn.center = glm::vec3(0.0f, 0.0f, 2.0f);
+		knn.k = 7;
+		queries.push_back(knn);
+
 		const PointGpu::QueryResult result = index.query(queries, options);
 		expect(result.samples.size() == queries.size(), "MixedTree returns one sample per query");
 		expect(result.samples[0].returnedPoints == bruteForceRangeCount(cloud, range.bounds), "MixedTree range count matches brute force");
 		expect(result.samples[1].returnedPoints == bruteForceRangeCount(cloud, countRange.bounds), "MixedTree count-range matches brute force");
 		expect(result.samples[2].returnedPoints == bruteForceRadiusCount(cloud, radius.center, radius.radius), "MixedTree radius count matches brute force");
+		expect(result.samples[3].returnedPoints == std::min(knn.k, cloud.size()), "MixedTree KNN returns requested neighbor count");
+		expect(result.samples[3].testedPoints == cloud.size(), "MixedTree KNN scans the GPU point buffer");
+		expect(result.knnQueries == 1, "MixedTree counts KNN queries");
 		expect(result.metrics.totalQueries == queries.size(), "MixedTree summarizes query samples");
 	}
 }

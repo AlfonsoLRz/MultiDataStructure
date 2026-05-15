@@ -68,8 +68,8 @@ Supported command-line overrides:
 | `--workloads <a;b;c>` | Selects workload profile JSON files for schema-search mode. |
 | `--synthetic-scale <count>` | Sets the synthetic dataset size scale for schema-search mode. |
 | `--no-synthetic` | Uses only `--input` datasets in schema-search mode. |
-| `--evaluator cpu\|cuda` | Selects CPU index benchmarking or a GPU evaluator for schema-search mode. |
-| `--cuda-device <id>` | Selects the CUDA device for `--evaluator cuda`. |
+| `--evaluator cpu\|cuda` | Selects CPU index benchmarking or a GPU evaluator for schema-search mode; default is CUDA with CPU fallback. |
+| `--cuda-device <id>` | Selects the CUDA device for `--evaluator cuda`; default is `0`. |
 | `--cuda-builder lbvh\|kdtree\|bih\|octree\|karras_octree\|quadtree\|regular_grid\|hgrid\|mixed` | Selects the CUDA structure; `lbvh`, `kdtree`, `bih`, `octree`, `karras_octree`, `quadtree`, `regular_grid`, `hgrid`, and static `mixed` schemas are implemented. |
 | `--cuda-query-batch <count>` | Sets CUDA query batch size; `0` runs each generated workload as one batch. |
 | `--cuda-memory-budget-mb <mb>` | Optional CUDA memory budget guard. |
@@ -102,12 +102,14 @@ The CSV summary uses one row per `(dataset, schema, workload)` run and is meant 
 Multi-schema experiment helper:
 
 ```powershell
-python scripts\run_experiments.py --input C:\data\sample.las --queries 128
+python scripts\run_experiments.py --input C:\data\sample.las --queries 64
 ```
 
 ## Schema Search
 
-Schema-search mode creates the first selector-training table. It loads candidate schemas, workload profiles from `configs/workloads/`, and at least three deterministic synthetic point datasets by default:
+Schema-search mode creates the first selector-training table. It defaults to CUDA evaluation on device `0` with the `mixed` CUDA builder, `configs/workloads/volume_small_medium.json`, 64 prepared workload queries, 256 generated candidates, `models/schema_selector.json` as the lightweight ranker, and measured benchmarking of the top 32 ranked candidates. If CUDA is unavailable, schema-search logs a warning and falls back to the CPU evaluator.
+
+It loads candidate schemas, workload profiles from `configs/workloads/`, and at least three deterministic synthetic point datasets by default:
 
 - `synthetic_flat_terrain`
 - `synthetic_facade`
@@ -132,13 +134,13 @@ For AABB range queries the scale is a linear fraction of each dataset bounding-b
 Example:
 
 ```powershell
-.\x64\Release\MultiDataStructure.exe --mode schema-search --queries 128 --csv results\schema_search.csv --best-csv results\schema_search_best.csv --no-pause
+.\x64\Release\MultiDataStructure.exe --mode schema-search --csv results\schema_search.csv --best-csv results\schema_search_best.csv --no-pause
 ```
 
 Generated hyperspace search is available in the same mode. The generator samples valid nested schemas from bounded intervals over the currently implemented node families (`QuadTree`, `Octree`, `KDTree`, `BVH`) and can emit GPU-specific variants (`KarrasOctree`, `BIH`, `LBVH`, `RegularGrid`, `HGrid`) for mixed CUDA evaluation. It writes replayable schema JSON files under `results/generated_schemas/`, optionally ranks all candidates with a selector model, and benchmarks only the top-k:
 
 ```powershell
-.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 1000 --rank-model models/schema_selector_onnx.json --benchmark-top 16 --workloads configs/workloads/mixed.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --rank-model models/schema_selector.json --benchmark-top 32 --workloads configs/workloads/volume_small_medium.json --queries 64 --csv results\alhambra_generated_search.csv --best-csv results\alhambra_generated_best.csv --no-pause
 ```
 
 Schema levels may include a `condition` object. Conditions are evaluated per node, so one branch can enter a nested block while a sibling skips it and advances to the next schema block:
@@ -178,12 +180,12 @@ avg_query_latency_ms + 0.0 * build_time_ms + 0.0 * memory_mb + 0.0 * imbalance_p
 
 where `imbalance_penalty = max_leaf_occupancy / max(1, avg_leaf_occupancy)`. Build time, memory, and imbalance are logged but ignored by default because schemas can be built offline and reused. Raw metrics and score components are also stored so later milestones can recompute labels.
 
-With `--evaluator cuda`, schema search uploads each point cloud to the GPU and measures range/count-range/radius query batches through the selected CUDA builder. `lbvh` uses a Morton-sorted point order, `kdtree` and `bih` use binary linear nodes, `octree` and `quadtree` use midpoint child buckets, `karras_octree` uses Morton sorting plus prefix child ranges, `regular_grid` and `hgrid` use grid cell bins, and `mixed` follows the schema's per-depth schedule. Mixed CUDA schemas can name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid` as recursive split levels. In mixed schemas, `RegularGrid` and `HGrid` are per-node grid split flavors rather than the standalone global sorted-cell evaluators. KNN remains on the CPU path for now.
+With `--evaluator cuda`, schema search uploads each point cloud to the GPU and measures range/count-range/radius/KNN query batches through the selected CUDA builder. Workload queries are prepared once per dataset/workload, CUDA query buffers are reused across candidate measurements, and repeated CUDA builds on the same cloud/device reuse uploaded point buffers where the builder supports it. `lbvh` uses a Morton-sorted point order, `kdtree` and `bih` use binary linear nodes, `octree` and `quadtree` use midpoint child buckets, `karras_octree` uses Morton sorting plus prefix child ranges, `regular_grid` and `hgrid` use grid cell bins, and `mixed` follows the schema's per-depth schedule. Mixed CUDA schemas can name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid` as recursive split levels. In mixed schemas, `RegularGrid` and `HGrid` are per-node grid split flavors rather than the standalone global sorted-cell evaluators. CUDA KNN currently reports benchmark statistics without neighbor ids and uses a parallel GPU point-buffer scan; the default CUDA workload still avoids KNN to keep measured search light.
 
 The Python helpers support both point benchmark sweeps and schema search:
 
 ```powershell
-python scripts\run_experiments.py --schema-search --queries 128
+python scripts\run_experiments.py --schema-search --queries 64
 python scripts\summarize_results.py --input results\schema_search.csv --output results\schema_search_best.csv
 python scripts\train_schema_selector.py --input results\schema_search.csv
 python scripts\export_model.py --model models\schema_selector.joblib --metadata models\schema_selector_meta.json --output models\schema_selector.json
@@ -224,7 +226,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_with_onnx.ps1
 For per-cloud overfitting, use the local tuner:
 
 ```powershell
-python scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs\workloads\mixed.json --queries 128 --output models\alhambra_local_selector.json
+python scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs\workloads\volume_small_medium.json --queries 64 --output models\alhambra_local_selector.json
 ```
 
 The local tuner benchmarks candidates on the target point cloud and writes a `measured_best_schema` selector. With that artifact, `--schema auto` reuses the measured winner instead of predicting from a global model.

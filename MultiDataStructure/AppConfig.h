@@ -21,10 +21,17 @@ namespace AppDefaults
 	inline constexpr size_t POINT_QUERY_K = 8;
 	inline constexpr uint32_t POINT_QUERY_SEED = 1337;
 	inline constexpr const char* SCHEMA_SEARCH_SCHEMA_PATHS = "configs/schemas/quadtree.json;configs/schemas/octree.json;configs/schemas/kdtree.json;configs/schemas/bvh.json;configs/schemas/quadtree_octree.json;configs/schemas/octree_kdtree.json;configs/schemas/urban_hybrid.json";
-	inline constexpr const char* SCHEMA_SEARCH_WORKLOAD_PATHS = "configs/workloads/range_heavy.json;configs/workloads/knn_heavy.json;configs/workloads/mixed.json";
+	inline constexpr const char* SCHEMA_SEARCH_WORKLOAD_PATHS = "configs/workloads/volume_small_medium.json";
 	inline constexpr const char* SCHEMA_SEARCH_CSV_PATH = "results/schema_search.csv";
 	inline constexpr const char* SCHEMA_SEARCH_BEST_CSV_PATH = "results/schema_search_best.csv";
 	inline constexpr size_t SCHEMA_SEARCH_SYNTHETIC_SCALE = 512;
+	inline constexpr size_t SCHEMA_SEARCH_QUERY_COUNT = 64;
+	inline constexpr const char* SCHEMA_SEARCH_RANK_MODEL_PATH = "models/schema_selector.json";
+	inline constexpr size_t SCHEMA_SEARCH_GENERATED_COUNT = 256;
+	inline constexpr size_t SCHEMA_SEARCH_BENCHMARK_TOP_K = 32;
+	inline constexpr const char* SCHEMA_SEARCH_EVALUATOR = "cuda";
+	inline constexpr int SCHEMA_SEARCH_CUDA_DEVICE = 0;
+	inline constexpr const char* SCHEMA_SEARCH_CUDA_BUILDER = "mixed";
 	inline constexpr bool RUN_TESTS = false;
 	inline constexpr bool PAUSE_AT_END = false;
 }
