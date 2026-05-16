@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_with_onnx.ps1
 For per-cloud local tuning:
 
 ```powershell
-python scripts/tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --output models/alhambra_local_selector.json
+python scripts/tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --auto-conditions --output models/alhambra_local_selector.json
 ```
 
-That writes a `measured_best_schema` artifact. It is intentionally overfit to the tuned cloud/workload and reuses the measured best schema during `--schema auto`.
+That writes a `measured_best_schema` artifact. With `--auto-conditions`, the tuned schema contains concrete numeric condition thresholds estimated and measured for the target cloud. It is intentionally overfit to the tuned cloud/workload and reuses the measured best schema during `--schema auto`.

@@ -110,16 +110,19 @@ namespace
 		std::array<char, TextBufferSize> csvPath{};
 		std::array<char, TextBufferSize> bestCsvPath{};
 		std::array<char, TextBufferSize> generatedSchemaDir{};
+		std::array<char, TextBufferSize> autoConditionSchemaDir{};
+		std::array<char, TextBufferSize> selectorOutputPath{};
 
 		std::vector<SchemaEntry> schemas;
 		std::vector<WorkloadEntry> workloads;
 		int selectedWorkload = 0;
 
+		bool autoConditions = true;
 		bool includeSynthetic = false;
 		bool useBinaryCache = true;
 		bool rebuildBinaryCache = false;
 		bool generateSchemas = true;
-		bool generatedOnly = false;
+		bool generatedOnly = true;
 		bool generatedConditional = true;
 		bool useRankModel = false;
 		bool optimizeSchemas = false;
@@ -147,12 +150,38 @@ namespace
 		int optimizerPopulation = 64;
 		int optimizerElites = 6;
 		int optimizerSeed = 1337;
+		int conditionProxyCandidates = 256;
+		int conditionProxyPoints = 262144;
+		int conditionProxyQueries = 8;
+		int conditionFinalTopK = 16;
+		int conditionConfirmTopK = 4;
 		float generatedConditionProbability = 0.5f;
 		float optimizerMutationRate = 0.65f;
 		float optimizerRandomFraction = 0.20f;
 		float scoreBuildWeight = 0.0f;
 		float scoreMemoryWeight = 0.0f;
 		float scoreImbalanceWeight = 0.0f;
+
+		// Score cache + parallel dispatch defaults exposed via the optimizer panel.
+		bool scoreCacheEnabled = true;
+		std::array<char, 512> scoreCachePath{};
+		bool rebuildScoreCache = false;
+		int parallelDispatch = 1;
+		bool includeBaselineSchemas = true;
+
+		// Multi-fidelity rung schedule (Phase A successive halving). When enabled, each
+		// optimizer batch flows through a cheap visit-proxy stage, a mid-fidelity latency stage,
+		// and a confirmation stage at the full workload.
+		bool useRungSchedule = false;
+		int rungProxyQueries = 4;
+		int rungProxyAdvance = 32;
+		float rungProxyAlpha = 0.1f;
+		int rungFullQueries = 16;
+		int rungFullAdvance = 8;
+		int rungConfirmQueries = 64;
+		std::array<char, TextBufferSize> rungSurrogatePath{};
+		int rungSurrogatePool = 0;
+		int rungSurrogateTop = 0;
 
 		SchemaFileViewer fileViewer;
 		StructurePreview structurePreview;
@@ -961,6 +990,57 @@ namespace
 		return entries;
 	}
 
+	int workloadIndexForToken(const GuiState& state, const std::string& token)
+	{
+		for (size_t i = 0; i < state.workloads.size(); ++i)
+		{
+			const std::string haystack = state.workloads[i].path + "|" + state.workloads[i].label;
+			if (haystack.find(token) != std::string::npos)
+				return static_cast<int>(i);
+		}
+		return -1;
+	}
+
+	void applyPublicationDefaults(GuiState& state)
+	{
+		state.autoConditions = true;
+		state.includeSynthetic = false;
+		state.useBinaryCache = true;
+		state.rebuildBinaryCache = false;
+		state.generateSchemas = true;
+		state.generatedOnly = true;
+		state.generatedConditional = true;
+		state.useRankModel = false;
+		state.optimizeSchemas = false;
+		state.evaluator = 1;
+		state.cudaDevice = 0;
+		state.cudaBuilder = 8;
+		state.cudaQueryBatch = 0;
+		state.cudaMemoryBudgetMb = 0;
+		state.queryCount = 64;
+		state.knnK = 16;
+		state.querySeed = 1337;
+		state.generatedCount = 256;
+		state.benchmarkTopK = 32;
+		state.generatedMaxBlocks = 3;
+		state.generatedMaxDepth = 12;
+		state.generatedMinLeaf = 32;
+		state.generatedMaxLeaf = 32768;
+		state.generatedSeed = 1337;
+		state.generatedConditionProbability = 0.75f;
+		state.conditionProxyCandidates = 256;
+		state.conditionProxyPoints = 262144;
+		state.conditionProxyQueries = 8;
+		state.conditionFinalTopK = 16;
+		state.conditionConfirmTopK = 4;
+		state.scoreBuildWeight = 0.0f;
+		state.scoreMemoryWeight = 0.0f;
+		state.scoreImbalanceWeight = 0.0f;
+		const int volumeIndex = workloadIndexForToken(state, "volume_small_medium");
+		if (volumeIndex >= 0)
+			state.selectedWorkload = volumeIndex;
+	}
+
 	void initializeState(GuiState& state)
 	{
 		setText(state.inputPath, "C:/Datasets/points/Alhambra_100M.las");
@@ -969,15 +1049,12 @@ namespace
 		setText(state.csvPath, projectPath("results/gui_schema_search.csv"));
 		setText(state.bestCsvPath, projectPath("results/gui_schema_search_best.csv"));
 		setText(state.generatedSchemaDir, projectPath("results/generated_schemas"));
+		setText(state.autoConditionSchemaDir, projectPath("results/auto_conditions"));
+		setText(state.selectorOutputPath, projectPath("models/local_schema_selector.json"));
+		setText(state.scoreCachePath, projectPath("results/gui_score_cache.jsonl"));
 		state.schemas = discoverSchemas();
 		state.workloads = discoverWorkloads();
-		state.useRankModel = filesystemExists(rankModel);
-		state.evaluator = 1;
-		state.cudaDevice = 0;
-		state.cudaBuilder = 8;
-		state.queryCount = 64;
-		state.generatedCount = 256;
-		state.benchmarkTopK = 32;
+		applyPublicationDefaults(state);
 	}
 
 	void applyTheme()
@@ -1071,6 +1148,11 @@ namespace
 		state.cudaQueryBatch = std::max(0, state.cudaQueryBatch);
 		state.cudaMemoryBudgetMb = std::max(0, state.cudaMemoryBudgetMb);
 		state.liveRankingTopN = std::clamp(state.liveRankingTopN, 1, 100);
+		state.conditionProxyCandidates = std::max(1, state.conditionProxyCandidates);
+		state.conditionProxyPoints = std::max(1, state.conditionProxyPoints);
+		state.conditionProxyQueries = std::max(1, state.conditionProxyQueries);
+		state.conditionFinalTopK = std::max(1, state.conditionFinalTopK);
+		state.conditionConfirmTopK = std::max(1, std::min(state.conditionConfirmTopK, state.conditionFinalTopK));
 		state.generatedConditionProbability = std::clamp(state.generatedConditionProbability, 0.0f, 1.0f);
 		state.optimizerMutationRate = std::clamp(state.optimizerMutationRate, 0.0f, 1.0f);
 		state.optimizerRandomFraction = std::clamp(state.optimizerRandomFraction, 0.0f, 1.0f);
@@ -1137,6 +1219,22 @@ namespace
 		if (!state.generatedOnly && options.schemaPaths.empty() && options.generation.count == 0)
 			return "Select at least one fixed schema or enable generated schemas.";
 
+		options.autoConditions.enabled = state.autoConditions;
+		options.autoConditions.proxyCandidateCount = static_cast<size_t>(state.conditionProxyCandidates);
+		options.autoConditions.proxyPointCap = static_cast<size_t>(state.conditionProxyPoints);
+		options.autoConditions.proxyQueryCount = static_cast<size_t>(state.conditionProxyQueries);
+		options.autoConditions.finalTopK = static_cast<size_t>(state.conditionFinalTopK);
+		options.autoConditions.confirmationTopK = static_cast<size_t>(state.conditionConfirmTopK);
+		options.autoConditions.outputDirectory = textValue(state.autoConditionSchemaDir);
+		options.autoConditions.selectorOutputPath = textValue(state.selectorOutputPath);
+		if (options.autoConditions.enabled)
+		{
+			options.generation.conditionalLevels = true;
+			options.generation.conditionalProbability = std::max(options.generation.conditionalProbability, 0.75);
+			if (!state.generateSchemas && options.schemaPaths.empty())
+				return "Auto-condition tuning needs generated schemas or at least one selected fixed schema.";
+		}
+
 		options.benchmarkTopK = static_cast<size_t>(state.benchmarkTopK);
 		if (state.useRankModel)
 			options.rankModelPath = resolvePath(textValue(state.rankModelPath));
@@ -1144,6 +1242,17 @@ namespace
 		options.weights.lambdaBuild = state.scoreBuildWeight;
 		options.weights.lambdaMemory = state.scoreMemoryWeight;
 		options.weights.lambdaImbalance = state.scoreImbalanceWeight;
+		if (state.scoreCacheEnabled)
+		{
+			options.scoreCachePath = textValue(state.scoreCachePath);
+			options.rebuildScoreCache = state.rebuildScoreCache;
+		}
+		else
+		{
+			options.scoreCachePath.clear();
+		}
+		options.parallelDispatch = std::max(1, state.parallelDispatch);
+		options.includeBaselineSchemas = state.includeBaselineSchemas;
 		options.evolution.enabled = state.optimizeSchemas;
 		options.evolution.generations = static_cast<size_t>(state.optimizerGenerations);
 		options.evolution.populationSize = static_cast<size_t>(state.optimizerPopulation);
@@ -1151,6 +1260,37 @@ namespace
 		options.evolution.seed = static_cast<uint32_t>(state.optimizerSeed);
 		options.evolution.mutationRate = static_cast<double>(state.optimizerMutationRate);
 		options.evolution.randomImmigrationRate = static_cast<double>(state.optimizerRandomFraction);
+
+		if (state.optimizeSchemas && state.useRungSchedule)
+		{
+			Experiments::RungSpec proxy;
+			proxy.name = "proxy";
+			proxy.queryCountOverride = static_cast<size_t>(std::max(1, state.rungProxyQueries));
+			proxy.useVisitProxy = true;
+			proxy.visitProxyAlpha = static_cast<double>(state.rungProxyAlpha);
+			proxy.advanceTopK = static_cast<size_t>(std::max(1, state.rungProxyAdvance));
+
+			Experiments::RungSpec full;
+			full.name = "full";
+			full.queryCountOverride = static_cast<size_t>(std::max(1, state.rungFullQueries));
+			full.useVisitProxy = false;
+			full.advanceTopK = static_cast<size_t>(std::max(1, state.rungFullAdvance));
+
+			Experiments::RungSpec confirm;
+			confirm.name = "confirm";
+			confirm.queryCountOverride = static_cast<size_t>(std::max(1, state.rungConfirmQueries));
+			confirm.useVisitProxy = false;
+			confirm.advanceTopK = 0;
+
+			options.evolution.rungSchedule.rungs = { proxy, full, confirm };
+			options.evolution.rungSchedule.surrogateModelPath = resolvePath(textValue(state.rungSurrogatePath));
+			options.evolution.rungSchedule.surrogateCandidatePool = static_cast<size_t>(std::max(0, state.rungSurrogatePool));
+			options.evolution.rungSchedule.surrogateProposalsPerStep = static_cast<size_t>(std::max(0, state.rungSurrogateTop));
+		}
+		else
+		{
+			options.evolution.rungSchedule = Experiments::RungSchedule{};
+		}
 		options.evaluator = state.evaluator == 1 ? "cuda" : "cpu";
 		options.cuda.device = state.cudaDevice;
 		if (state.cudaBuilder == 1)
@@ -1243,9 +1383,76 @@ namespace
 		});
 	}
 
+	void drawPublicationPanel(GuiState& state)
+	{
+		drawSectionTitle("Publication Path");
+		if (ImGui::Button("Apply publication defaults"))
+			applyPublicationDefaults(state);
+		drawHelpMarker("CUDA/Mixed, one real cloud, volume workload, generated conditional schemas, staged auto-condition tuning, and query-only score.");
+
+		if (ImGui::Checkbox("Per-cloud auto conditions", &state.autoConditions) && state.autoConditions)
+		{
+			state.generatedConditional = true;
+			state.useRankModel = false;
+		}
+		drawHelpMarker("Estimates cheap point-cloud/node domains, tunes numeric condition thresholds, and writes a reusable measured selector.");
+		ImGui::SameLine();
+		bool realCloudOnly = !state.includeSynthetic;
+		if (ImGui::Checkbox("Real cloud only", &realCloudOnly))
+			state.includeSynthetic = !realCloudOnly;
+		drawHelpMarker("Keeps the run specialized to the selected cloud instead of mixing in synthetic validation clouds.");
+
+		bool cudaMixed = state.evaluator == 1 && state.cudaBuilder == 8 && state.cudaDevice == 0;
+		if (ImGui::Checkbox("CUDA Mixed device 0", &cudaMixed))
+		{
+			if (cudaMixed)
+			{
+				state.evaluator = 1;
+				state.cudaDevice = 0;
+				state.cudaBuilder = 8;
+			}
+			else
+			{
+				state.evaluator = 0;
+			}
+		}
+		drawHelpMarker("Uses the schema-aware mixed CUDA builder on device 0. Schema-search still falls back to CPU if CUDA is unavailable.");
+		ImGui::SameLine();
+		const int volumeIndex = workloadIndexForToken(state, "volume_small_medium");
+		bool volumeWorkload = volumeIndex >= 0 && state.selectedWorkload == volumeIndex;
+		ImGui::BeginDisabled(volumeIndex < 0);
+		if (ImGui::Checkbox("Volume workload", &volumeWorkload) && volumeWorkload)
+			state.selectedWorkload = volumeIndex;
+		ImGui::EndDisabled();
+		drawHelpMarker("Uses the small/medium 3D volume workload, avoiding KNN in the default tuning path.");
+
+		if (ImGui::Checkbox("Generated-only candidates", &state.generatedOnly))
+			state.generateSchemas = state.generateSchemas || state.generatedOnly;
+		drawHelpMarker("Focuses the measured search on generated schema variants instead of fixed baselines.");
+		ImGui::SameLine();
+		if (ImGui::Checkbox("Conditional generated blocks", &state.generatedConditional) && state.autoConditions)
+			state.generatedConditional = true;
+		drawHelpMarker("Keeps local node predicates in the generated schema space.");
+
+		if (state.autoConditions)
+		{
+			ImGui::Text("Budget: %d proxy candidates, %d proxy queries, top %d -> %d",
+				state.conditionProxyCandidates,
+				state.conditionProxyQueries,
+				state.conditionFinalTopK,
+				state.conditionConfirmTopK);
+		}
+		else
+		{
+			ImGui::Text("Budget: %d generated candidates, top-k %d",
+				state.generatedCount,
+				state.benchmarkTopK);
+		}
+	}
+
 	void drawDatasetPanel(GuiState& state)
 	{
-		drawSectionTitle("Dataset");
+		drawSectionTitle("Point Cloud");
 		drawPathInput("Point cloud", state.inputPath, "Point cloud to optimize against. With synthetic datasets disabled, the selected best schema is overfit to this one cloud and workload.");
 		ImGui::Checkbox("Use binary cache", &state.useBinaryCache);
 		drawHelpMarker("Loads and writes the .mdspc cache beside the source point cloud. This speeds repeated runs but does not change the measured query workload.");
@@ -1254,8 +1461,11 @@ namespace
 		drawHelpMarker("Forces a fresh read from the source point cloud and replaces the .mdspc cache. Useful after the input file changes or if the cache looks stale.");
 		ImGui::Checkbox("Include synthetic datasets", &state.includeSynthetic);
 		drawHelpMarker("Adds built-in synthetic point clouds to the search. Keep this off when you want the optimizer to specialize to your current point cloud only.");
-		ImGui::InputInt("Synthetic scale", &state.syntheticScale);
-		drawHelpMarker("Point count scale for each synthetic dataset. Larger values make synthetic validation more realistic and slower.");
+		if (state.includeSynthetic)
+		{
+			ImGui::InputInt("Synthetic scale", &state.syntheticScale);
+			drawHelpMarker("Point count scale for each synthetic dataset. Larger values make synthetic validation more realistic and slower.");
+		}
 
 		drawSectionTitle("Workload");
 		if (!state.workloads.empty())
@@ -1281,96 +1491,154 @@ namespace
 		}
 		ImGui::InputInt("Queries", &state.queryCount);
 		drawHelpMarker("Number of generated measured queries for the workload. More queries reduce noise but increase optimization time.");
-		ImGui::InputInt("KNN k", &state.knnK);
-		drawHelpMarker("Neighbor count for KNN queries. Larger k usually increases KNN cost and can favor different structures.");
+		const bool knnWorkload = !state.workloads.empty() &&
+			state.workloads[static_cast<size_t>(state.selectedWorkload)].path.find("knn") != std::string::npos;
+		if (knnWorkload)
+		{
+			ImGui::InputInt("KNN k", &state.knnK);
+			drawHelpMarker("Neighbor count for KNN queries. Larger k usually increases KNN cost and can favor different structures.");
+		}
 		ImGui::InputInt("Query seed", &state.querySeed);
 		drawHelpMarker("Random seed for generated query centers and boxes. Keep fixed for comparable runs; change it to test robustness.");
 	}
 
 	void drawSchemaPanel(GuiState& state)
 	{
-		drawSectionTitle("Fixed Schemas");
-		if (ImGui::Button("Select all"))
-		{
-			for (SchemaEntry& entry : state.schemas)
-				entry.selected = true;
-		}
+		drawSectionTitle("Search Space");
+		ImGui::Checkbox("Generate schemas", &state.generateSchemas);
+		drawHelpMarker("Samples new multi-DS JSON candidates from the configured bounds, then benchmarks them. This expands beyond the fixed schema list.");
 		ImGui::SameLine();
-		if (ImGui::Button("Clear"))
-		{
-			for (SchemaEntry& entry : state.schemas)
-				entry.selected = false;
-		}
+		if (ImGui::Checkbox("Conditional blocks", &state.generatedConditional) && state.autoConditions)
+			state.generatedConditional = true;
+		drawHelpMarker("Allows later schema blocks to activate only for local node conditions such as point count, density, or height ratio. This is the current branch-adaptive multi-DS mechanism.");
 		ImGui::SameLine();
 		ImGui::Checkbox("Generated only", &state.generatedOnly);
 		drawHelpMarker("Ignores checked fixed schemas and searches only generated candidates. Turn this off to compare generated candidates against known baselines.");
 
-		if (ImGui::BeginTable("schemas", 4, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+		if (state.autoConditions)
 		{
-			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 32.0f);
-			ImGui::TableSetupColumn("Schema", ImGuiTableColumnFlags_WidthStretch, 0.32f);
-			ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.58f);
-			ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
-			ImGui::TableHeadersRow();
-			for (size_t i = 0; i < state.schemas.size(); ++i)
-			{
-				SchemaEntry& entry = state.schemas[i];
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				ImGui::PushID(static_cast<int>(i));
-				ImGui::BeginDisabled(state.generatedOnly);
-				ImGui::Checkbox("##selected", &entry.selected);
-				ImGui::EndDisabled();
-				ImGui::TableSetColumnIndex(1);
-				ImGui::TextUnformatted(entry.label.c_str());
-				ImGui::TableSetColumnIndex(2);
-				ImGui::TextUnformatted(entry.path.c_str());
-				ImGui::TableSetColumnIndex(3);
-				drawSchemaActions(state, entry.path);
-				ImGui::PopID();
-			}
-			ImGui::EndTable();
+			drawSectionTitle("Auto-Condition Budget");
+			ImGui::InputInt("Proxy candidates", &state.conditionProxyCandidates);
+			drawHelpMarker("Number of domain-aware candidate schemas screened on the downsampled proxy cloud.");
+			ImGui::InputInt("Proxy points", &state.conditionProxyPoints);
+			drawHelpMarker("Point cap for the proxy stage. The full cloud is still used for shortlist and confirmation stages.");
+			ImGui::InputInt("Proxy queries", &state.conditionProxyQueries);
+			drawHelpMarker("Prepared workload query count for the first cheap stage.");
+			ImGui::InputInt("Shortlist top-k", &state.conditionFinalTopK);
+			drawHelpMarker("Candidates promoted from proxy screening to a full-cloud short run.");
+			ImGui::InputInt("Confirm top-k", &state.conditionConfirmTopK);
+			drawHelpMarker("Candidates promoted from the short full-cloud run to final confirmation with the requested query count.");
+			drawPathInput("Tuned schemas", state.autoConditionSchemaDir, "Directory for the final numeric tuned schema JSON files.");
+			drawPathInput("Selector", state.selectorOutputPath, "Measured selector artifact used by later --schema auto runs.");
+		}
+		else
+		{
+			ImGui::InputInt("Generated count", &state.generatedCount);
+			drawHelpMarker("Number of candidate JSON schemas to sample. More candidates explores more of the space and takes longer.");
+			ImGui::InputInt("Benchmark top-k", &state.benchmarkTopK);
+			drawHelpMarker("If a rank model is enabled, benchmark only the model's top-k candidates. 0 means benchmark every candidate and rely only on measured results.");
 		}
 
-		drawSectionTitle("Generated Search");
-		ImGui::Checkbox("Generate schemas", &state.generateSchemas);
-		drawHelpMarker("Samples new multi-DS JSON candidates from the configured bounds, then benchmarks them. This expands beyond the fixed schema list.");
-		ImGui::SameLine();
-		ImGui::Checkbox("Conditional blocks", &state.generatedConditional);
-		drawHelpMarker("Allows later schema blocks to activate only for local node conditions such as point count, density, or height ratio. This is the current branch-adaptive multi-DS mechanism.");
-		ImGui::InputInt("Generated count", &state.generatedCount);
-		drawHelpMarker("Number of candidate JSON schemas to sample. More candidates explores more of the space and takes longer.");
-		ImGui::InputInt("Benchmark top-k", &state.benchmarkTopK);
-		drawHelpMarker("If a rank model is enabled, benchmark only the model's top-k candidates. 0 means benchmark every candidate and rely only on measured results.");
-		ImGui::InputInt("Max blocks", &state.generatedMaxBlocks);
-		drawHelpMarker("Maximum number of nested structure blocks per generated schema, for example quadtree then octree then kdtree.");
-		ImGui::InputInt("Max depth", &state.generatedMaxDepth);
-		drawHelpMarker("Maximum total tree depth across generated blocks. Larger depth can improve pruning but increases build cost and memory risk.");
-		ImGui::InputInt("Min leaf", &state.generatedMinLeaf);
-		drawHelpMarker("Smallest generated leaf capacity. Lower values produce deeper/finer trees and usually test fewer points per leaf.");
-		ImGui::InputInt("Max leaf", &state.generatedMaxLeaf);
-		drawHelpMarker("Largest generated leaf capacity. Higher values produce coarser leaves and can reduce memory/build cost while increasing per-leaf point tests.");
-		ImGui::InputInt("Generated seed", &state.generatedSeed);
-		drawHelpMarker("Random seed for schema sampling. Keep fixed for repeatability; change it to explore a different batch of candidates.");
-		ImGui::SliderFloat("Condition probability", &state.generatedConditionProbability, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Probability that a generated block gets a local activation condition. Higher values make more branch-adaptive schemas.");
 		drawPathInput("Generated dir", state.generatedSchemaDir, "Directory where generated schema JSON files are written. The best result table points back to one of these files when a generated candidate wins.");
 
-		drawSectionTitle("Iterative Optimizer");
-		ImGui::Checkbox("Optimize iteratively", &state.optimizeSchemas);
-		drawHelpMarker("Runs evolutionary mutation search after the initial fixed/generated population. Selection is driven by measured C++ benchmark scores, not gradients.");
-		ImGui::InputInt("Generations", &state.optimizerGenerations);
-		drawHelpMarker("Number of mutation rounds after the initial population is measured. 0 evaluates only the initial population.");
-		ImGui::InputInt("Population", &state.optimizerPopulation);
-		drawHelpMarker("Number of new candidates evaluated per generation. Larger populations explore more schemas and take longer.");
-		ImGui::InputInt("Elites", &state.optimizerElites);
-		drawHelpMarker("Best measured candidates used as parents for the next generation. Too few can get stuck; too many makes search less focused.");
-		ImGui::InputInt("Optimizer seed", &state.optimizerSeed);
-		drawHelpMarker("Seed for parent choice and mutations. Keep fixed for repeatability; change it for a different search trajectory.");
-		ImGui::SliderFloat("Mutation rate", &state.optimizerMutationRate, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Probability of applying extra edits to a child schema. Higher values make larger jumps in topology/depth/leaf/condition space.");
-		ImGui::SliderFloat("Random fraction", &state.optimizerRandomFraction, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Fraction of each generation filled with fresh random candidates instead of mutations. This preserves exploration.");
+		if (ImGui::CollapsingHeader("Baseline schemas"))
+		{
+			if (ImGui::Button("Select all"))
+			{
+				for (SchemaEntry& entry : state.schemas)
+					entry.selected = true;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Clear"))
+			{
+				for (SchemaEntry& entry : state.schemas)
+					entry.selected = false;
+			}
+
+			if (ImGui::BeginTable("schemas", 4, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+			{
+				ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 32.0f);
+				ImGui::TableSetupColumn("Schema", ImGuiTableColumnFlags_WidthStretch, 0.32f);
+				ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.58f);
+				ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
+				ImGui::TableHeadersRow();
+				for (size_t i = 0; i < state.schemas.size(); ++i)
+				{
+					SchemaEntry& entry = state.schemas[i];
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::PushID(static_cast<int>(i));
+					ImGui::BeginDisabled(state.generatedOnly);
+					ImGui::Checkbox("##selected", &entry.selected);
+					ImGui::EndDisabled();
+					ImGui::TableSetColumnIndex(1);
+					ImGui::TextUnformatted(entry.label.c_str());
+					ImGui::TableSetColumnIndex(2);
+					ImGui::TextUnformatted(entry.path.c_str());
+					ImGui::TableSetColumnIndex(3);
+					drawSchemaActions(state, entry.path);
+					ImGui::PopID();
+				}
+				ImGui::EndTable();
+			}
+		}
+
+		if (ImGui::CollapsingHeader("Advanced generated bounds"))
+		{
+			ImGui::InputInt("Max blocks", &state.generatedMaxBlocks);
+			drawHelpMarker("Maximum number of nested structure blocks per generated schema, for example quadtree then octree then kdtree.");
+			ImGui::InputInt("Max depth", &state.generatedMaxDepth);
+			drawHelpMarker("Maximum total tree depth across generated blocks. Larger depth can improve pruning but increases build cost and memory risk.");
+			ImGui::InputInt("Min leaf", &state.generatedMinLeaf);
+			drawHelpMarker("Smallest generated leaf capacity. Lower values produce deeper/finer trees and usually test fewer points per leaf.");
+			ImGui::InputInt("Max leaf", &state.generatedMaxLeaf);
+			drawHelpMarker("Largest generated leaf capacity. Higher values produce coarser leaves and can reduce memory/build cost while increasing per-leaf point tests.");
+			ImGui::InputInt("Generated seed", &state.generatedSeed);
+			drawHelpMarker("Random seed for schema sampling. Keep fixed for repeatability; change it to explore a different batch of candidates.");
+			ImGui::SliderFloat("Condition probability", &state.generatedConditionProbability, 0.0f, 1.0f, "%.2f");
+			drawHelpMarker("Probability that a generated block gets a local activation condition. Higher values make more branch-adaptive schemas.");
+		}
+
+		if (ImGui::CollapsingHeader("Evolutionary optimizer"))
+		{
+			ImGui::Checkbox("Optimize iteratively", &state.optimizeSchemas);
+			drawHelpMarker("Runs evolutionary mutation search after the initial fixed/generated population. Selection is driven by measured C++ benchmark scores, not gradients.");
+			ImGui::InputInt("Generations", &state.optimizerGenerations);
+			drawHelpMarker("Number of mutation rounds after the initial population is measured. 0 evaluates only the initial population.");
+			ImGui::InputInt("Population", &state.optimizerPopulation);
+			drawHelpMarker("Number of new candidates evaluated per generation. Larger populations explore more schemas and take longer.");
+			ImGui::InputInt("Elites", &state.optimizerElites);
+			drawHelpMarker("Best measured candidates used as parents for the next generation. Too few can get stuck; too many makes search less focused.");
+			ImGui::InputInt("Optimizer seed", &state.optimizerSeed);
+			drawHelpMarker("Seed for parent choice and mutations. Keep fixed for repeatability; change it for a different search trajectory.");
+			ImGui::SliderFloat("Mutation rate", &state.optimizerMutationRate, 0.0f, 1.0f, "%.2f");
+			drawHelpMarker("Probability of applying extra edits to a child schema. Higher values make larger jumps in topology/depth/leaf/condition space.");
+			ImGui::SliderFloat("Random fraction", &state.optimizerRandomFraction, 0.0f, 1.0f, "%.2f");
+			drawHelpMarker("Fraction of each generation filled with fresh random candidates instead of mutations. This preserves exploration.");
+
+			ImGui::Separator();
+			ImGui::Checkbox("Multi-fidelity rungs", &state.useRungSchedule);
+			drawHelpMarker("Successive halving: each batch is first scored cheaply with the visit-count surrogate, then the top survivors are re-measured with wall-clock latency at increasing query counts. Lets the optimizer touch more candidates for the same wall-clock.");
+			ImGui::BeginDisabled(!state.useRungSchedule);
+			ImGui::InputInt("R0 proxy queries", &state.rungProxyQueries);
+			drawHelpMarker("Query count for the cheap proxy rung. 4 is plenty since the proxy uses deterministic visit/test counters, not noisy timings.");
+			ImGui::InputInt("R0 proxy advance top-K", &state.rungProxyAdvance);
+			drawHelpMarker("Number of candidates promoted from the proxy rung to the latency rung. Typically a quarter of the population.");
+			ImGui::SliderFloat("R0 proxy alpha", &state.rungProxyAlpha, 0.0f, 1.0f, "%.2f");
+			drawHelpMarker("Weight applied to averageTestedPoints in the proxy score (visitedNodes + alpha * testedPoints). Raise it to penalise schemas that touch many points per visited node.");
+			ImGui::InputInt("R1 full queries", &state.rungFullQueries);
+			drawHelpMarker("Query count for the mid-fidelity latency rung. 16 keeps measurement cheap while still discriminating real winners.");
+			ImGui::InputInt("R1 full advance top-K", &state.rungFullAdvance);
+			drawHelpMarker("Number of candidates promoted from the latency rung to the confirmation rung. 4-8 is a normal publication setting.");
+			ImGui::InputInt("R2 confirm queries", &state.rungConfirmQueries);
+			drawHelpMarker("Query count for the confirmation rung. The optimizer only writes records from this final rung to the CSV.");
+			drawPathInput("Surrogate model", state.rungSurrogatePath, "Optional. Path to an exported linear/ONNX selector JSON. When set, between rungs the surrogate proposes top-K candidates from a random pool, injected as extra immigrants.");
+			ImGui::InputInt("Surrogate pool", &state.rungSurrogatePool);
+			drawHelpMarker("Number of fresh genomes sampled per generation and scored by the surrogate. 0 disables the acquisition step.");
+			ImGui::InputInt("Surrogate top-K", &state.rungSurrogateTop);
+			drawHelpMarker("Number of surrogate-ranked candidates injected as additional immigrants each generation. Cheap to raise; the proxy rung filters them anyway.");
+			ImGui::EndDisabled();
+		}
 	}
 
 	void drawScoringPanel(GuiState& state)
@@ -1410,9 +1678,13 @@ namespace
 		}
 
 		drawSectionTitle("Surrogate");
+		if (state.autoConditions)
+			ImGui::TextDisabled("Bypassed while per-cloud auto-condition tuning is enabled.");
+		ImGui::BeginDisabled(state.autoConditions);
 		ImGui::Checkbox("Use rank model", &state.useRankModel);
 		drawHelpMarker("Uses the exported JSON/ONNX selector only to rank/prune candidates before benchmarking. The final best schema still comes from measured C++ timings.");
 		drawPathInput("Rank model", state.rankModelPath, "Path to a selector wrapper JSON, usually models/schema_selector.json or models/schema_selector_onnx.json.");
+		ImGui::EndDisabled();
 
 		drawSectionTitle("Score Weights");
 		ImGui::Text("Build %.4f, memory %.4f, imbalance %.4f",
@@ -1432,6 +1704,29 @@ namespace
 		drawSectionTitle("Outputs");
 		drawPathInput("CSV", state.csvPath, "Full measured result table, with one row per dataset/workload/schema candidate.");
 		drawPathInput("Best CSV", state.bestCsvPath, "Compact winner table. This is what the GUI reads back to populate Best Results.");
+
+		drawSectionTitle("Speed-ups");
+		ImGui::TextWrapped(
+			"Auto-conditions runs three stages: proxy (256 candidates on a tiny downsampled cloud, "
+			"ranked by deterministic visit-counts), shortlist (top 16 rebuilt on the full cloud with "
+			"a short query set), confirmation (top 4 with the full query set). The score cache "
+			"survives all stages and across runs, so a re-run after a crash or interruption resumes "
+			"where it left off.");
+		ImGui::Checkbox("Persistent score cache", &state.scoreCacheEnabled);
+		drawHelpMarker("Memoises (schema, cloud, workload) -> measured score. If you abort a run mid-shortlist, the next run skips everything already measured. Designed for safe restarts on stalled candidates like deep hgrid configs.");
+		if (state.scoreCacheEnabled)
+		{
+			drawPathInput("Cache JSONL", state.scoreCachePath, "Append-only JSONL file. Delete it (or tick rebuild) to invalidate.");
+			ImGui::Checkbox("Rebuild cache this run", &state.rebuildScoreCache);
+			drawHelpMarker("Deletes the cache file before this run so every candidate is measured fresh.");
+		}
+		ImGui::SliderInt("Parallel CPU workers", &state.parallelDispatch, 1, 32);
+		drawHelpMarker("Honored only when the evaluator is CPU. Parallelises the evolutionary GA loop AND the auto-condition proxy/shortlist/confirmation loops. The CUDA path stays serial: GPU state and the per-builder build cache are not thread-safe.");
+		if (state.evaluator == 1 && state.parallelDispatch > 1)
+			ImGui::TextDisabled("(currently using CUDA: workers are ignored)");
+
+		ImGui::Checkbox("Include baseline data structures", &state.includeBaselineSchemas);
+		drawHelpMarker("Adds canonical single-block schemas (pure QuadTree, Octree, KDTree, BVH on CPU; also LBVH, KarrasOctree, RegularGrid, HGrid, BIH on CUDA) as controls. Baselines are force-promoted through the proxy/shortlist/confirmation stages so you can always see how the naive structures perform on the full cloud, even if their proxy rank is poor.");
 	}
 
 	bool isCudaResult(const std::string& backend)
@@ -1619,7 +1914,7 @@ namespace
 		drawSectionTitle("Run");
 		const bool canStart = !session.running;
 		ImGui::BeginDisabled(!canStart);
-		if (ImGui::Button("Start optimization", ImVec2(180.0f, 34.0f)))
+		if (ImGui::Button("Start tuning", ImVec2(180.0f, 34.0f)))
 			startRun(session, state);
 		ImGui::EndDisabled();
 		ImGui::SameLine();
@@ -1907,19 +2202,20 @@ namespace
 
 		const float leftWidth = std::max(360.0f, ImGui::GetContentRegionAvail().x * 0.36f);
 		ImGui::BeginChild("left-panel", ImVec2(leftWidth, 0.0f), true);
+		drawPublicationPanel(state);
 		if (ImGui::BeginTabBar("configuration-tabs"))
 		{
-			if (ImGui::BeginTabItem("Dataset"))
+			if (ImGui::BeginTabItem("Inputs"))
 			{
 				drawDatasetPanel(state);
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Schemas"))
+			if (ImGui::BeginTabItem("Search"))
 			{
 				drawSchemaPanel(state);
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Scoring"))
+			if (ImGui::BeginTabItem("Advanced"))
 			{
 				drawScoringPanel(state);
 				ImGui::EndTabItem();

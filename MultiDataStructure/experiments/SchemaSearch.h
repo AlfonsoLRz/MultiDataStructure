@@ -7,6 +7,7 @@
 
 namespace Experiments
 {
+	class EvaluationCache;
 	struct SchemaSearchRecord;
 
 	struct SchemaCandidate
@@ -15,11 +16,17 @@ namespace Experiments
 		std::string path;
 		SchemaConfig config;
 		bool generated = false;
+		// Marks canonical single-block controls (pure QuadTree, Octree, KDTree, BVH, etc.).
+		// Baselines are force-promoted through every auto-condition stage so the operator can
+		// always see how the naive structures perform on the full cloud, even if their proxy-stage
+		// rank is poor.
+		bool isBaseline = false;
 	};
 
 	struct SchemaGenerationOptions
 	{
 		size_t count = 0;
+		size_t minBlocks = 1;
 		size_t maxBlocks = 3;
 		size_t maxDepth = 12;
 		size_t minLeafCapacity = 32;
@@ -28,6 +35,31 @@ namespace Experiments
 		double conditionalProbability = 0.35;
 		uint32_t seed = 1337;
 		std::string outputDirectory = "results/generated_schemas";
+	};
+
+	struct ConditionDomain
+	{
+		std::vector<size_t> pointThresholds;
+		std::vector<double> densityThresholds;
+		std::vector<double> heightRatioThresholds;
+		std::vector<double> extentXThresholds;
+		std::vector<double> extentYThresholds;
+		std::vector<double> extentZThresholds;
+		size_t samplePoints = 0;
+		size_t sketchNodes = 0;
+		bool estimatedFromCloud = false;
+	};
+
+	struct AutoConditionOptions
+	{
+		bool enabled = false;
+		size_t proxyCandidateCount = 256;
+		size_t proxyPointCap = 262144;
+		size_t proxyQueryCount = 8;
+		size_t finalTopK = 16;
+		size_t confirmationTopK = 4;
+		std::string outputDirectory = "results/auto_conditions";
+		std::string selectorOutputPath = "models/local_schema_selector.json";
 	};
 
 	struct WorkloadProfile
@@ -50,6 +82,46 @@ namespace Experiments
 		double lambdaBuild = 0.0;
 		double lambdaMemory = 0.0;
 		double lambdaImbalance = 0.0;
+		// When useVisitProxy is set, the score is computed from cheap deterministic kernel counters
+		// (averageVisitedNodes + visitProxyAlpha * averageTestedPoints) instead of wall-clock query
+		// latency. Useful for screening stages where many candidates must be ranked without
+		// committing to a noisy latency measurement.
+		bool useVisitProxy = false;
+		double visitProxyAlpha = 0.1;
+	};
+
+	// One rung in a successive-halving / multi-fidelity schedule. The batch flows R0 -> R1 -> ... ;
+	// each rung evaluates its input candidates at its own fidelity, then keeps the top
+	// `advanceTopK` to feed the next rung. The final rung's ranked output is the archive update.
+	struct RungSpec
+	{
+		std::string name = "rung";
+		// 0 means "use the workload profile's own numQueries". A positive value overrides it for
+		// this rung only (e.g. 4 for the cheap proxy, 64 for confirmation).
+		size_t queryCountOverride = 0;
+		// When true, this rung scores candidates by the cheap deterministic visit-proxy
+		// (averageVisitedNodes + alpha * averageTestedPoints) instead of wall-clock latency.
+		bool useVisitProxy = false;
+		double visitProxyAlpha = 0.1;
+		// Number of candidates to promote to the next rung. 0 = promote all (only meaningful for
+		// the last rung).
+		size_t advanceTopK = 0;
+	};
+
+	struct RungSchedule
+	{
+		// When empty, the optimizer falls back to today's single-rung behavior.
+		std::vector<RungSpec> rungs;
+		// If set, points to an exported selector model JSON used between rungs to sample fresh
+		// genomes via the surrogate (Bayesian acquisition step). Empty disables surrogate
+		// proposals; the GA's mutation/immigration path stays untouched in that case.
+		std::string surrogateModelPath;
+		// Number of fresh candidates the surrogate is asked to propose between rungs. Ignored
+		// when surrogateModelPath is empty.
+		size_t surrogateProposalsPerStep = 0;
+		// Pool size the surrogate ranks down to `surrogateProposalsPerStep`. Larger pool =
+		// better acquisition at the cost of cheap surrogate evaluations.
+		size_t surrogateCandidatePool = 0;
 	};
 
 	struct EvolutionOptions
@@ -61,6 +133,9 @@ namespace Experiments
 		double mutationRate = 0.65;
 		double randomImmigrationRate = 0.20;
 		uint32_t seed = 1337;
+		// Multi-fidelity rung schedule applied to each evaluated batch. Empty = today's flat
+		// evaluate-all-then-mutate behavior.
+		RungSchedule rungSchedule;
 	};
 
 	struct CudaEvaluationOptions
@@ -90,11 +165,26 @@ namespace Experiments
 		size_t benchmarkTopK = 0;
 		uint32_t querySeed = 1337;
 		bool querySeedOverride = false;
+		bool deepNestedSearch = false;
 		SchemaGenerationOptions generation;
+		AutoConditionOptions autoConditions;
 		ScoreWeights weights;
 		EvolutionOptions evolution;
 		std::string evaluator = "cpu";
 		CudaEvaluationOptions cuda;
+		// Always include canonical single-block schemas (pure QuadTree, Octree, KDTree, BVH, plus
+		// GPU-native LBVH, KarrasOctree, RegularGrid, HGrid, BIH) as controls alongside whatever
+		// generated/configured candidates are present. Lets the operator confirm that nested
+		// candidates actually beat the naive baselines instead of just comparing nested to nested.
+		bool includeBaselineSchemas = true;
+		std::string scoreCachePath;
+		bool rebuildScoreCache = false;
+		EvaluationCache* scoreCache = nullptr;
+		// Maximum number of CPU candidates to benchmark concurrently in the evolutionary loop.
+		// Only honored when the evaluator is "cpu" (the CUDA path is serialised because the GPU
+		// state and the per-builder build cache are not thread-safe). Default 1 keeps current
+		// behaviour exactly.
+		size_t parallelDispatch = 1;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
 
@@ -131,6 +221,16 @@ namespace Experiments
 		double gpuBuildMs = 0.0;
 		double gpuQueryMs = 0.0;
 		size_t gpuMemoryBytes = 0;
+		size_t conditionalLevels = 0;
+		size_t conditionFields = 0;
+		std::string conditionSummary;
+		bool isBaseline = false;
+		size_t activeStructureTypes = 0;
+		double nestedActiveFraction = 0.0;
+		std::string activeStructureSummary;
+		std::string bestBaselineSchema;
+		double bestBaselineScore = 0.0;
+		double relativeSpeedupVsBaseline = 0.0;
 	};
 
 	struct EvaluatorResolution
@@ -148,7 +248,11 @@ namespace Experiments
 		const std::string& cudaError = {});
 	WorkloadProfile parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName = {});
 	WorkloadProfile loadWorkloadProfile(const std::string& filename);
+	ConditionDomain estimateConditionDomain(const PointCloud& cloud, size_t maxSamplePoints = 262144);
 	std::vector<SchemaCandidate> generateSchemaCandidates(const SchemaGenerationOptions& options);
+	std::vector<SchemaCandidate> generateSchemaCandidates(
+		const SchemaGenerationOptions& options,
+		const ConditionDomain* conditionDomain);
 	double computeSchemaSearchScore(
 		const BuildMetrics& buildMetrics,
 		const QueryMetrics& queryMetrics,
@@ -157,4 +261,10 @@ namespace Experiments
 		double& imbalancePenalty);
 	std::vector<SchemaSearchRecord> selectBestRecords(const std::vector<SchemaSearchRecord>& records);
 	int runSchemaSearch(const SchemaSearchOptions& options);
+
+	// One-shot evaluator: loads exactly one dataset, one schema, and one workload from `options`,
+	// runs build + queries, and writes the resulting SchemaSearchRecord as JSON to stdout. Intended
+	// to back Python-driven optimizers (Optuna ask/tell, Hyperband) where the C++ exe is launched
+	// per candidate. CSV outputs are suppressed regardless of options.csvPath.
+	int runEvaluateOne(const SchemaSearchOptions& options);
 }

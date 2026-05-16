@@ -3,6 +3,78 @@
 
 namespace
 {
+	// Parses a single rung spec of the form `name:queries:scoreMode:advance`. queries=0 means
+	// "use workload default"; scoreMode is `visit` or `latency`; advance=0 means "promote all
+	// candidates" (only meaningful for the last rung).
+	bool parseRungSpec(const std::string& token, Experiments::RungSpec& outRung)
+	{
+		std::vector<std::string> parts;
+		size_t start = 0;
+		while (start <= token.size())
+		{
+			const size_t end = token.find(':', start);
+			parts.push_back(token.substr(start, end == std::string::npos ? std::string::npos : end - start));
+			if (end == std::string::npos)
+				break;
+			start = end + 1;
+		}
+		if (parts.size() < 3)
+			return false;
+
+		outRung.name = parts[0];
+		try { outRung.queryCountOverride = static_cast<size_t>(std::stoull(parts[1])); }
+		catch (...) { return false; }
+
+		const std::string& mode = parts[2];
+		if (mode == "visit" || mode == "visit-proxy" || mode == "proxy")
+		{
+			outRung.useVisitProxy = true;
+			if (outRung.visitProxyAlpha <= 0.0)
+				outRung.visitProxyAlpha = 0.1;
+		}
+		else if (mode == "latency")
+		{
+			outRung.useVisitProxy = false;
+		}
+		else
+		{
+			return false;
+		}
+
+		if (parts.size() >= 4 && !parts[3].empty())
+		{
+			try { outRung.advanceTopK = static_cast<size_t>(std::stoull(parts[3])); }
+			catch (...) { return false; }
+		}
+		return true;
+	}
+
+	// Parses `--rungs` argument: comma-separated rung specs.
+	bool parseRungSchedule(const std::string& argument, std::vector<Experiments::RungSpec>& outRungs)
+	{
+		outRungs.clear();
+		if (argument.empty())
+			return true;
+
+		size_t start = 0;
+		while (start <= argument.size())
+		{
+			const size_t end = argument.find(',', start);
+			const std::string token = argument.substr(start, end == std::string::npos ? std::string::npos : end - start);
+			if (!token.empty())
+			{
+				Experiments::RungSpec rung;
+				if (!parseRungSpec(token, rung))
+					return false;
+				outRungs.push_back(std::move(rung));
+			}
+			if (end == std::string::npos)
+				break;
+			start = end + 1;
+		}
+		return true;
+	}
+
 	bool pathExists(const std::filesystem::path& path)
 	{
 		std::error_code error;
@@ -112,6 +184,11 @@ Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 	options.evaluator = AppDefaults::SCHEMA_SEARCH_EVALUATOR;
 	options.cuda.device = AppDefaults::SCHEMA_SEARCH_CUDA_DEVICE;
 	options.cuda.builder = AppDefaults::SCHEMA_SEARCH_CUDA_BUILDER;
+	options.autoConditions.proxyCandidateCount = AppDefaults::AUTO_CONDITION_PROXY_CANDIDATES;
+	options.autoConditions.proxyPointCap = AppDefaults::AUTO_CONDITION_PROXY_POINTS;
+	options.autoConditions.proxyQueryCount = AppDefaults::AUTO_CONDITION_PROXY_QUERIES;
+	options.autoConditions.finalTopK = AppDefaults::AUTO_CONDITION_FINAL_TOP_K;
+	options.autoConditions.confirmationTopK = AppDefaults::AUTO_CONDITION_CONFIRM_TOP_K;
 	options.pauseAtEnd = AppDefaults::PAUSE_AT_END;
 	return options;
 }
@@ -214,9 +291,37 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.includeConfiguredSchemas = false;
 		}
+		else if (arg == "--deep-nested-search")
+		{
+			config.schemaSearchOptions.deepNestedSearch = true;
+			config.schemaSearchOptions.evaluator = "cpu";
+			config.schemaSearchOptions.rankModelPath.clear();
+			config.schemaSearchOptions.includeConfiguredSchemas = false;
+			config.schemaSearchOptions.includeBaselineSchemas = true;
+			config.schemaSearchOptions.autoConditions.enabled = true;
+			config.schemaSearchOptions.autoConditions.proxyCandidateCount = 2048;
+			config.schemaSearchOptions.autoConditions.proxyPointCap = 262144;
+			config.schemaSearchOptions.autoConditions.proxyQueryCount = 8;
+			config.schemaSearchOptions.autoConditions.finalTopK = 128;
+			config.schemaSearchOptions.autoConditions.confirmationTopK = 24;
+			config.schemaSearchOptions.generation.count = 2048;
+			config.schemaSearchOptions.generation.minBlocks = 2;
+			config.schemaSearchOptions.generation.maxBlocks = std::max<size_t>(3, config.schemaSearchOptions.generation.maxBlocks);
+			config.schemaSearchOptions.generation.conditionalLevels = true;
+			config.schemaSearchOptions.generation.conditionalProbability = std::max(0.75, config.schemaSearchOptions.generation.conditionalProbability);
+			config.schemaSearchOptions.queryCountOverride = 256;
+			if (config.schemaSearchOptions.scoreCachePath.empty())
+				config.schemaSearchOptions.scoreCachePath = "results/deep_nested_score_cache.jsonl";
+			config.schemaSearchOptions.cuda.device = 0;
+			config.schemaSearchOptions.cuda.builder = "mixed";
+		}
 		else if (arg == "--benchmark-top" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.benchmarkTopK = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--generated-min-blocks" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.minBlocks = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-max-blocks" && i + 1 < argc)
 		{
@@ -250,6 +355,39 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.generation.outputDirectory = argv[++i];
 		}
+		else if (arg == "--auto-conditions")
+		{
+			config.schemaSearchOptions.autoConditions.enabled = true;
+			config.schemaSearchOptions.generation.conditionalLevels = true;
+		}
+		else if (arg == "--condition-proxy-candidates" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.proxyCandidateCount = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--condition-proxy-points" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.proxyPointCap = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--condition-proxy-queries" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.proxyQueryCount = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--condition-final-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.finalTopK = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--condition-confirm-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.confirmationTopK = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--condition-output-dir" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.outputDirectory = argv[++i];
+		}
+		else if (arg == "--condition-selector-output" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.autoConditions.selectorOutputPath = argv[++i];
+		}
 		else if (arg == "--optimize-schemas")
 		{
 			config.schemaSearchOptions.evolution.enabled = true;
@@ -277,6 +415,24 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--optimizer-seed" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.evolution.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+		}
+		else if (arg == "--rungs" && i + 1 < argc)
+		{
+			const std::string spec = argv[++i];
+			if (!parseRungSchedule(spec, config.schemaSearchOptions.evolution.rungSchedule.rungs))
+				throw std::runtime_error("--rungs expects 'name:queries:visit|latency:advance,...' (e.g. proxy:4:visit:32,full:16:latency:8,confirm:64:latency:0)");
+		}
+		else if (arg == "--rung-surrogate" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.rungSchedule.surrogateModelPath = argv[++i];
+		}
+		else if (arg == "--rung-surrogate-pool" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.rungSchedule.surrogateCandidatePool = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--rung-surrogate-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.rungSchedule.surrogateProposalsPerStep = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--evaluator" && i + 1 < argc)
 		{
@@ -345,6 +501,38 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 			config.schemaSearchOptions.querySeed = config.pointOptions.querySeed;
 			config.schemaSearchOptions.querySeedOverride = true;
 		}
+		else if (arg == "--score-cache" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.scoreCachePath = argv[++i];
+		}
+		else if (arg == "--score-visit-proxy")
+		{
+			config.schemaSearchOptions.weights.useVisitProxy = true;
+		}
+		else if (arg == "--score-visit-alpha" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.weights.visitProxyAlpha = std::stod(argv[++i]);
+		}
+		else if (arg == "--parallel" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.parallelDispatch = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--no-baselines")
+		{
+			config.schemaSearchOptions.includeBaselineSchemas = false;
+		}
+		else if (arg == "--include-baselines")
+		{
+			config.schemaSearchOptions.includeBaselineSchemas = true;
+		}
+		else if (arg == "--no-score-cache")
+		{
+			config.schemaSearchOptions.scoreCachePath.clear();
+		}
+		else if (arg == "--rebuild-score-cache")
+		{
+			config.schemaSearchOptions.rebuildScoreCache = true;
+		}
 		else
 		{
 			throw std::invalid_argument("Unknown or incomplete argument: " + arg);
@@ -371,7 +559,8 @@ void AppConfig::printHelp(std::ostream& output)
 	output
 		<< "MultiDataStructure point-cloud benchmark\n"
 		<< "  Editable defaults live in MultiDataStructure/AppConfig.h\n"
-		<< "  --mode gui|points|schema-search|tests\n"
+		<< "  --mode gui|points|schema-search|evaluate-one|tests\n"
+		<< "  --mode evaluate-one          One-shot: build/query a single (cloud, schema, workload) and emit JSON to stdout\n"
 		<< "  --gui                       Open the ImGui optimizer interface\n"
 		<< "  --input <path>              Point cloud path (.las, .ply, .xyz, .csv)\n"
 		<< "  --schema <path>             Spatial schema JSON\n"
@@ -383,7 +572,9 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --workloads <a;b;c>         Workload profile JSONs for schema-search mode\n"
 		<< "  --generate-schemas <count>  Generate nested schema candidates from bounded intervals\n"
 		<< "  --generated-only            Search generated candidates without the configured static schema list\n"
+		<< "  --deep-nested-search        CPU-first staged search for nested schemas against injected single-DS baselines\n"
 		<< "  --benchmark-top <count>     Benchmark only top-k generated/static schemas after surrogate ranking\n"
+		<< "  --generated-min-blocks <n>  Min nested blocks for generated schemas; deep search sets 2\n"
 		<< "  --generated-max-blocks <n>  Max nested blocks for generated schemas\n"
 		<< "  --generated-max-depth <n>   Max total generated schema depth\n"
 		<< "  --generated-min-leaf <n>    Min generated leaf capacity\n"
@@ -392,12 +583,26 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-condition-probability <v> Probability for generated conditional blocks\n"
 		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
 		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
+		<< "  --auto-conditions           Tune generated conditional schema thresholds for the current cloud/workload\n"
+		<< "  --condition-proxy-candidates <n> Candidates for auto-condition proxy stage; default 256\n"
+		<< "  --condition-proxy-points <n> Downsample cap for auto-condition proxy stage; default 262144\n"
+		<< "  --condition-proxy-queries <n> Queries for auto-condition proxy stage; default 8\n"
+		<< "  --condition-final-top <n>   Full-cloud candidates after proxy pruning; default 16\n"
+		<< "  --condition-confirm-top <n> Confirmation candidates after short full run; default 4\n"
+		<< "  --condition-output-dir <dir> Directory for tuned schema JSON artifacts\n"
+		<< "  --condition-selector-output <path> Measured selector JSON path for tuned schemas\n"
 		<< "  --optimize-schemas          Run evolutionary mutation search after the initial candidate set\n"
 		<< "  --optimizer-generations <n> Evolution generations, default 3\n"
 		<< "  --optimizer-population <n>  Mutated/random candidates per generation, default 64\n"
 		<< "  --optimizer-elites <n>      Best measured candidates kept as parents, default 6\n"
 		<< "  --optimizer-mutation-rate <v> Extra mutation probability per child, default 0.65\n"
 		<< "  --optimizer-random-fraction <v> Fraction of each generation sampled randomly, default 0.20\n"
+		<< "  --rungs <schedule>          Multi-fidelity rung schedule applied inside the optimizer.\n"
+		<< "                              Format: name:queries:visit|latency:advance,... e.g.\n"
+		<< "                              proxy:4:visit:32,full:16:latency:8,confirm:64:latency:0\n"
+		<< "  --rung-surrogate <path>     Exported selector JSON used to propose candidates each generation\n"
+		<< "  --rung-surrogate-pool <n>   Pool size sampled and scored by the surrogate per generation\n"
+		<< "  --rung-surrogate-top <n>    Top-K surrogate predictions injected as immigrants per generation\n"
 		<< "  --optimizer-seed <seed>     Seed for optimizer parent choice and mutation\n"
 		<< "  --evaluator cpu|cuda        Benchmark backend for schema-search mode; default cuda with CPU fallback\n"
 		<< "  --cuda-device <id>          CUDA device id for --evaluator cuda; default 0\n"
@@ -407,6 +612,11 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
 		<< "  --score-memory-weight <v>   Memory score weight, default 0\n"
 		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0\n"
+		<< "  --score-visit-proxy         Score by visited-nodes + alpha*tested-points (deterministic, GPU-free)\n"
+		<< "  --score-visit-alpha <v>     Weight for tested-points in visit-proxy score, default 0.1\n"
+		<< "  --parallel <n>              Number of concurrent CPU candidate workers in evolutionary mode (default 1; CUDA path stays serial)\n"
+		<< "  --no-baselines              Skip canonical single-block control schemas (pure quadtree/octree/kdtree/bvh, plus GPU-native variants)\n"
+		<< "  --include-baselines         Force baseline schemas to be evaluated alongside generated candidates (default on)\n"
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
@@ -418,6 +628,9 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --no-synthetic              Use only --input datasets in schema-search mode\n"
 		<< "  --no-cache                  Read the source point cloud without using/writing .mdspc\n"
 		<< "  --rebuild-cache             Read the source point cloud and replace the .mdspc cache\n"
+		<< "  --score-cache <path>        Persistent JSONL cache of (schema,dataset,workload)->score; reuses prior runs\n"
+		<< "  --no-score-cache            Disable score cache lookup/write for this run\n"
+		<< "  --rebuild-score-cache       Delete the score cache file before this run\n"
 		<< "  --run-tests                 Run smoke tests\n"
 		<< "  --no-pause                  Skip the final console pause\n";
 }

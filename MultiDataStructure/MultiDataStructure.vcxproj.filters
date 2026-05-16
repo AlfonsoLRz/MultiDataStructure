@@ -123,6 +123,12 @@
     <ClInclude Include="experiments\Metrics.h">
       <Filter>experiments</Filter>
     </ClInclude>
+    <ClInclude Include="experiments\EvaluationCache.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
+    <ClInclude Include="experiments\SurrogateAcquisition.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
     <ClInclude Include="experiments\FeatureExtraction.h">
       <Filter>experiments</Filter>
     </ClInclude>
@@ -298,6 +304,12 @@
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="experiments\Metrics.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\EvaluationCache.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\SurrogateAcquisition.cpp">
       <Filter>experiments</Filter>
     </ClCompile>
     <ClCompile Include="experiments\FeatureExtraction.cpp">

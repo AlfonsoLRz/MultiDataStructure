@@ -32,6 +32,11 @@ namespace AppDefaults
 	inline constexpr const char* SCHEMA_SEARCH_EVALUATOR = "cuda";
 	inline constexpr int SCHEMA_SEARCH_CUDA_DEVICE = 0;
 	inline constexpr const char* SCHEMA_SEARCH_CUDA_BUILDER = "mixed";
+	inline constexpr size_t AUTO_CONDITION_PROXY_CANDIDATES = 256;
+	inline constexpr size_t AUTO_CONDITION_PROXY_POINTS = 262144;
+	inline constexpr size_t AUTO_CONDITION_PROXY_QUERIES = 8;
+	inline constexpr size_t AUTO_CONDITION_FINAL_TOP_K = 16;
+	inline constexpr size_t AUTO_CONDITION_CONFIRM_TOP_K = 4;
 	inline constexpr bool RUN_TESTS = false;
 	inline constexpr bool PAUSE_AT_END = false;
 }

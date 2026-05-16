@@ -109,6 +109,8 @@ python scripts\run_experiments.py --input C:\data\sample.las --queries 64
 
 Schema-search mode creates the first selector-training table. It defaults to CUDA evaluation on device `0` with the `mixed` CUDA builder, `configs/workloads/volume_small_medium.json`, 64 prepared workload queries, 256 generated candidates, `models/schema_selector.json` as the lightweight ranker, and measured benchmarking of the top 32 ranked candidates. If CUDA is unavailable, schema-search logs a warning and falls back to the CPU evaluator.
 
+The GUI is oriented around the per-cloud publication workflow by default: real-cloud-only tuning, CUDA/Mixed on device `0`, the volume workload, generated-only conditional candidates, and `--auto-conditions` with the staged proxy/shortlist/confirmation budget. Broader schema lists, surrogate ranking, score weights, and CUDA device/builder knobs remain available under secondary sections.
+
 It loads candidate schemas, workload profiles from `configs/workloads/`, and at least three deterministic synthetic point datasets by default:
 
 - `synthetic_flat_terrain`
@@ -159,9 +161,24 @@ Schema levels may include a `condition` object. Conditions are evaluated per nod
 
 Supported condition fields are `minPoints`, `maxPoints`, `minDensity`, `maxDensity`, `minHeightRatio`, `maxHeightRatio`, and per-axis extent bounds (`minExtentX`, `maxExtentX`, etc.). `configs/schemas/adaptive_quadtree_octree.json` is a hand-authored example. Generated search can sample conditions with `--generated-conditional`.
 
+Per-cloud condition tuning is available with `--auto-conditions`. This path estimates a deterministic shallow feature sketch from the target cloud, builds condition-threshold domains from occupancy, density, height-ratio, and extent quantiles, then writes generated schemas with concrete numeric thresholds. It evaluates many candidates with a small proxy workload and downsampled cloud, shortlists a few on the full cloud, and confirms the best candidates with the requested query count. The raw/best CSV formats keep all existing columns and append condition-summary, runtime nesting, and baseline-normalized columns.
+
+Example local threshold tuning:
+
+```powershell
+python scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs\workloads\volume_small_medium.json --queries 64 --auto-conditions --output models\alhambra_local_selector.json
+```
+
+Deep nested search is available with `--deep-nested-search`. It is CPU-first for discovery, injects the pure single-DS controls (`QuadTree`, `Octree`, `KDTree`, `BVH`, `BIH`, `LBVH`, `KarrasOctree`, `RegularGrid`, `HGrid`), runs a nested-opportunity diagnostic, generates template-guided nested candidates, stages proxy/full/confirmation/robustness measurements, and uses CUDA/Mixed only for a report-only confirmation when CUDA is available. A candidate is reported as runtime-nested only when at least two structure types become active and non-primary structures own at least 5% of nodes or leaf points.
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --deep-nested-search --workloads configs\workloads\volume_small_medium.json --csv results\alhambra_deep_nested.csv --best-csv results\alhambra_deep_nested_best.csv --no-pause
+```
+
 Useful generator controls:
 
 ```text
+--generated-min-blocks <n>
 --generated-max-blocks <n>
 --generated-max-depth <n>
 --generated-min-leaf <n>
@@ -170,6 +187,8 @@ Useful generator controls:
 --generated-condition-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
+--condition-output-dir <path>
+--condition-selector-output <path>
 ```
 
 The score is:
@@ -226,10 +245,10 @@ powershell -ExecutionPolicy Bypass -File scripts\build_with_onnx.ps1
 For per-cloud overfitting, use the local tuner:
 
 ```powershell
-python scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs\workloads\volume_small_medium.json --queries 64 --output models\alhambra_local_selector.json
+python scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs\workloads\volume_small_medium.json --queries 64 --auto-conditions --output models\alhambra_local_selector.json
 ```
 
-The local tuner benchmarks candidates on the target point cloud and writes a `measured_best_schema` selector. With that artifact, `--schema auto` reuses the measured winner instead of predicting from a global model.
+The local tuner benchmarks candidates on the target point cloud and writes a `measured_best_schema` selector. With `--auto-conditions`, it also saves the winning numeric schema JSON so later `--schema auto` runs reuse the tuned thresholds instead of re-estimating them. With that artifact, `--schema auto` reuses the measured winner instead of predicting from a global model.
 
 ## Point Queries
 

@@ -52,7 +52,7 @@ Open the ImGui optimizer interface:
 
 With no arguments, the executable now opens the same GUI by default.
 
-Schema-search and the GUI default to CUDA/Mixed on device `0`, `configs/workloads/volume_small_medium.json`, 64 prepared queries, 256 generated candidates, `models/schema_selector.json`, and top-32 measured benchmarking. If CUDA is unavailable, schema-search logs a warning and falls back to CPU. Point-mode benchmarking keeps its existing CPU path.
+Schema-search defaults to CUDA/Mixed on device `0`, `configs/workloads/volume_small_medium.json`, 64 prepared queries, 256 generated candidates, `models/schema_selector.json`, and top-32 measured benchmarking. The GUI opens on the publication-focused path: one real cloud, CUDA/Mixed device `0`, volume workload, generated-only conditional candidates, and per-cloud auto-condition tuning with the staged 256/16/4 budget. If CUDA is unavailable, schema-search logs a warning and falls back to CPU. Point-mode benchmarking keeps its existing CPU path.
 
 ## Fixed-Schema Point Benchmark
 
@@ -79,7 +79,7 @@ Replay a generated schema:
 Tune one point cloud over the configured candidate list and export a measured-best selector:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --output models/alhambra_local_selector.json
+.\.venv\Scripts\python.exe scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --auto-conditions --output models/alhambra_local_selector.json
 ```
 
 Use that measured winner:
@@ -156,6 +156,24 @@ Generated conditional schema search. Later generated blocks may include local no
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --generated-condition-probability 0.5 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_conditional.csv --best-csv results/alhambra_volume_conditional_best.csv --no-pause
+```
+
+Per-cloud auto-condition tuning. This estimates threshold domains from the point cloud, screens generated numeric conditional schemas with a small proxy workload, confirms the shortlist on the full cloud, writes the winning schema JSON, and updates a measured selector artifact:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --auto-conditions --workloads configs/workloads/volume_small_medium.json --queries 64 --csv results/alhambra_auto_conditions.csv --best-csv results/alhambra_auto_conditions_best.csv --no-pause
+```
+
+Deep nested search for the publication target. This injects pure single-DS baselines, runs CPU discovery with template-guided nested candidates, records runtime active-structure fractions, and performs CUDA/Mixed confirmation as a report only:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --deep-nested-search --workloads configs/workloads/volume_small_medium.json --csv results/alhambra_deep_nested.csv --best-csv results/alhambra_deep_nested_best.csv --no-pause
+```
+
+Reduced deep-search smoke preset for quick validation on synthetic data:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --synthetic-scale 32 --deep-nested-search --condition-proxy-candidates 4 --condition-final-top 2 --condition-confirm-top 1 --condition-proxy-queries 1 --queries 2 --condition-output-dir $env:TEMP\mdspc_deep_smoke --condition-selector-output $env:TEMP\mdspc_deep_smoke_selector.json --no-csv --no-pause
 ```
 
 Evolutionary schema optimization. This evaluates an initial population, keeps the best measured schemas as parents, mutates them, adds random immigrants, and repeats:
@@ -370,8 +388,10 @@ Generated schema search:
 ```text
 --generate-schemas <count>
 --generated-only
+--deep-nested-search
 --benchmark-top <count>
 --rank-model <path>
+--generated-min-blocks <n>
 --generated-max-blocks <n>
 --generated-max-depth <n>
 --generated-min-leaf <n>
@@ -380,6 +400,19 @@ Generated schema search:
 --generated-condition-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
+```
+
+Auto-condition schema tuning:
+
+```text
+--auto-conditions
+--condition-proxy-candidates <n>
+--condition-proxy-points <n>
+--condition-proxy-queries <n>
+--condition-final-top <n>
+--condition-confirm-top <n>
+--condition-output-dir <dir>
+--condition-selector-output <path>
 ```
 
 Evolutionary schema optimizer:
@@ -456,6 +489,12 @@ Build time, memory, and imbalance are still logged, but they are not part of the
 --best-csv <path>
 --output <path>
 --no-cache
+--auto-conditions
+--condition-proxy-candidates <n>
+--condition-proxy-points <n>
+--condition-proxy-queries <n>
+--condition-final-top <n>
+--condition-confirm-top <n>
 ```
 
 `scripts/train_schema_selector.py`:

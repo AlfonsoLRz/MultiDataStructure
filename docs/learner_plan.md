@@ -33,10 +33,18 @@ The static schemas are therefore the initial measured candidate set. They are tr
 Use this when you want to overfit schema choice to one point cloud:
 
 ```powershell
-python scripts/tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --output models/alhambra_local_selector.json
+python scripts/tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --auto-conditions --output models/alhambra_local_selector.json
 ```
 
-This runs schema-search with `--no-synthetic`, benchmarks the candidate schemas on that one point cloud, chooses the lowest measured score, and writes a `measured_best_schema` JSON.
+This runs schema-search with `--no-synthetic`, benchmarks the candidate schemas on that one point cloud, chooses the lowest measured score, and writes a `measured_best_schema` JSON. With `--auto-conditions`, it first estimates cheap point-cloud/node-feature domains, tunes concrete conditional thresholds through a staged proxy/full/confirmation search, and saves the winning numeric schema JSON for reuse.
+
+For the deeper publication-oriented search, use the CPU-first nested mode:
+
+```powershell
+python scripts/tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --deep-nested-search --output models/alhambra_deep_nested_selector.json
+```
+
+That mode treats pure single-structure schemas as injected baselines, searches only generated nested families during discovery, records whether the nested blocks actually became active, and reports the speedup against the best baseline in the CSV.
 
 Then run:
 

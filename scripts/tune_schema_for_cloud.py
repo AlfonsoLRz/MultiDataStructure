@@ -29,8 +29,11 @@ def load_best_row(csv_path):
     if not rows:
         raise ValueError(f"No schema-search rows found in {csv_path}")
 
-    rows.sort(key=lambda row: (row["_score"], row["schema_name"]))
-    return rows[0], rows
+    selection_rows = [row for row in rows if "_robust_seed" not in row.get("workload_name", "")]
+    if not selection_rows:
+        selection_rows = rows
+    selection_rows.sort(key=lambda row: (row["_score"], row["schema_name"]))
+    return selection_rows[0], rows
 
 
 def export_measured_selector(output_path, input_path, workload_path, best_row, rows, source_csv):
@@ -80,6 +83,14 @@ def main() -> int:
     parser.add_argument("--best-csv", help="Best-row CSV path from schema-search.")
     parser.add_argument("--output", default="models/local_schema_selector.json", help="Local measured selector JSON for --schema auto.")
     parser.add_argument("--no-cache", action="store_true", help="Disable point-cloud cache use during tuning.")
+    parser.add_argument("--auto-conditions", action="store_true", help="Tune conditional schema thresholds with staged proxy/full measurements.")
+    parser.add_argument("--deep-nested-search", action="store_true", help="Run CPU-first deep nested search against single-DS baselines, with CUDA confirmation when available.")
+    parser.add_argument("--condition-proxy-candidates", type=int, help="Candidates for the auto-condition proxy stage.")
+    parser.add_argument("--condition-proxy-points", type=int, help="Point cap for the auto-condition proxy stage.")
+    parser.add_argument("--condition-proxy-queries", type=int, help="Queries for the auto-condition proxy stage.")
+    parser.add_argument("--condition-final-top", type=int, help="Full-cloud candidates after proxy pruning.")
+    parser.add_argument("--condition-confirm-top", type=int, help="Confirmation candidates after short full-cloud pruning.")
+    parser.add_argument("--condition-output-dir", help="Directory for tuned schema JSON artifacts.")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -112,6 +123,22 @@ def main() -> int:
     ]
     if args.no_cache:
         command.append("--no-cache")
+    if args.deep_nested_search:
+        command.append("--deep-nested-search")
+    if args.auto_conditions or args.deep_nested_search:
+        command.append("--auto-conditions")
+        optional_condition_args = [
+            ("--condition-proxy-candidates", args.condition_proxy_candidates),
+            ("--condition-proxy-points", args.condition_proxy_points),
+            ("--condition-proxy-queries", args.condition_proxy_queries),
+            ("--condition-final-top", args.condition_final_top),
+            ("--condition-confirm-top", args.condition_confirm_top),
+            ("--condition-output-dir", args.condition_output_dir),
+        ]
+        for flag, value in optional_condition_args:
+            if value is not None:
+                command.extend([flag, str(value)])
+        command.extend(["--condition-selector-output", args.output])
 
     subprocess.run(command, cwd=repo_root, check=True)
 
