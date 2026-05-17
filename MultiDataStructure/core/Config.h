@@ -18,6 +18,19 @@ struct SchemaLevelCondition
 	std::optional<double> maxExtentY;
 	std::optional<double> minExtentZ;
 	std::optional<double> maxExtentZ;
+	// Phase B3 anisotropy predicate. Defined per-node as `1 - shortExtent / longExtent` over
+	// the node's bbox extents: 0.0 = perfectly cubic / regular, 1.0 = infinitely elongated.
+	// Lets branches specialize on shape rather than just on size or density (e.g. a tall thin
+	// facade region triggers a nested LBVH while a roughly-cubic region falls through).
+	std::optional<double> minAnisotropy;
+	std::optional<double> maxAnisotropy;
+	// Phase B3 occupancy-entropy predicate. Per-node Shannon entropy over a 4x4x4 sub-grid of
+	// the node's points, normalized to [0, 1] by dividing by ln(64). 0 = all points in one
+	// sub-cell (perfectly clustered), 1 = uniformly spread across all sub-cells. Lets branches
+	// distinguish "clumpy" regions (low entropy — favor coarse leaves) from "even" regions
+	// (high entropy — favor fine recursion).
+	std::optional<double> minOccupancyEntropy;
+	std::optional<double> maxOccupancyEntropy;
 
 	bool empty() const;
 };

@@ -45,6 +45,15 @@ namespace Experiments
 		std::vector<double> extentXThresholds;
 		std::vector<double> extentYThresholds;
 		std::vector<double> extentZThresholds;
+		// Phase B3 anisotropy thresholds. Quantiles of `1 - shortExtent / longExtent` computed
+		// over the 8x8x8 sketch cells during `estimateConditionDomain`. Empty when the cloud's
+		// shape didn't produce enough variation for the quantile estimator (very uniform clouds).
+		std::vector<double> anisotropyThresholds;
+		// Phase B3 occupancy-entropy thresholds. Per-node entropy is normalized to [0, 1] by
+		// dividing by ln(64) (a 4x4x4 sub-grid is used at evaluation time). The domain is
+		// populated from a fixed [0.1, 0.9] range plus the cloud's own 8x8x8 normalized entropy
+		// so per-cloud tuning still has an anchor.
+		std::vector<double> occupancyEntropyThresholds;
 		size_t samplePoints = 0;
 		size_t sketchNodes = 0;
 		bool estimatedFromCloud = false;
@@ -148,6 +157,14 @@ namespace Experiments
 		size_t refineThresholdsEvaluations = 60;
 		double refineThresholdsSigma0 = 0.3;
 		uint32_t refineThresholdsSeed = 1337;
+		// Phase B4 diversity controls.
+		// Two-parent crossover: probability that a child is built by splicing two elite parents'
+		// level lists instead of mutating one. 0 = pure mutation (legacy behavior).
+		double crossoverRate = 0.4;
+		// NSGA-II elite ranking: when true, elites are picked by non-dominated-sort + crowding
+		// distance over the four Pareto objectives instead of the scalar aggregateScore.
+		// Intrinsically preserves diversity across the front.
+		bool useNsga2Ranking = true;
 	};
 
 	struct CudaEvaluationOptions
@@ -169,6 +186,13 @@ namespace Experiments
 		// Optional Phase C1 Pareto-front CSV. One row per non-dominated candidate per
 		// (dataset, workload) group with the `pareto_rank` column. Empty = skip.
 		std::string paretoCsvPath;
+		// Phase C2 multi-seed confirmation. When >= 2, the top-K candidates per (dataset, workload)
+		// are re-measured with N distinct query seeds and their record fields are updated with
+		// mean ± 95% bootstrap CI on (avgLatencyMs, p95LatencyMs, gpuBuildMs). The Pareto
+		// dominance check then uses the seed-averaged mean instead of the single-seed point
+		// estimate. 0 or 1 disables (one-shot single-seed measurement).
+		size_t confirmSeeds = 0;
+		size_t confirmTopK = 4;
 		bool includeSyntheticDatasets = true;
 		bool includeConfiguredSchemas = true;
 		bool useBinaryCache = true;
@@ -250,6 +274,19 @@ namespace Experiments
 		// 0-indexed rank by avgLatencyMs among non-dominated peers. Populated by
 		// `selectParetoRecords`; unset after a bare measurement run.
 		int paretoRank = -1;
+		// Phase C2 multi-seed confirmation. `confirmSeedsUsed` > 0 means the three latency / build
+		// statistics below were computed across that many distinct query seeds; otherwise they are
+		// left at 0.0 and consumers fall back to `queryMetrics.averageLatencyMs` etc.
+		size_t confirmSeedsUsed = 0;
+		double latencyMean = 0.0;
+		double latencyCiLow = 0.0;
+		double latencyCiHigh = 0.0;
+		double p95LatencyMean = 0.0;
+		double p95LatencyCiLow = 0.0;
+		double p95LatencyCiHigh = 0.0;
+		double gpuBuildMean = 0.0;
+		double gpuBuildCiLow = 0.0;
+		double gpuBuildCiHigh = 0.0;
 	};
 
 	struct EvaluatorResolution
@@ -296,6 +333,15 @@ namespace Experiments
 	// strict definition: a dominates b iff a is component-wise <= b on all four and < on at least
 	// one. Records that share all four metrics get distinct ranks but neither dominates the other.
 	std::vector<SchemaSearchRecord> selectParetoRecords(const std::vector<SchemaSearchRecord>& records);
+
+	// Bootstrap mean and 95% percentile-CI from a sample vector. Returns {mean, ciLow, ciHigh}.
+	// Empty input yields zeros; single-element input collapses CI to the point value. Uses a
+	// fixed-seed RNG so the returned CI is deterministic given the same samples — needed for
+	// reproducible publication tables.
+	std::tuple<double, double, double> bootstrapMeanCI(
+		const std::vector<double>& samples,
+		size_t resamples = 1000,
+		uint32_t seed = 0xC0FFEEu);
 	int runSchemaSearch(const SchemaSearchOptions& options);
 
 	// One-shot evaluator: loads exactly one dataset, one schema, and one workload from `options`,

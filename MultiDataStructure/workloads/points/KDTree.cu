@@ -49,6 +49,28 @@ namespace
 		return maxDepth;
 	}
 
+	// Reads the first KDTree/BIH level's axisPolicy string. Recognized policy names are
+	// "round_robin" / "round-robin" (Phase B2 new) and the existing extent-driven variants
+	// ("longest_extent", "median_longest_axis", "center_longest_axis"). Anything else falls
+	// back to LongestExtent so unknown / blank policies keep today's behavior.
+	PointGpu::KdAxisPolicy axisPolicyFromSchema(const SchemaConfig& schema)
+	{
+		for (const SchemaLevelConfig& level : schema.levels)
+		{
+			if (level.axisPolicy.empty())
+				continue;
+			std::string normalized = level.axisPolicy;
+			std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+				[](unsigned char c) { return std::tolower(c); });
+			normalized.erase(std::remove(normalized.begin(), normalized.end(), '_'), normalized.end());
+			normalized.erase(std::remove(normalized.begin(), normalized.end(), '-'), normalized.end());
+			if (normalized == "roundrobin" || normalized == "rr")
+				return PointGpu::KdAxisPolicy::RoundRobin;
+			break;
+		}
+		return PointGpu::KdAxisPolicy::LongestExtent;
+	}
+
 	size_t nodeCapacityForDepth(size_t maxDepth)
 	{
 		size_t capacity = 1;
@@ -103,8 +125,31 @@ namespace
 		return Experiments::summarizeQueryStats(cpuSamples);
 	}
 
+	// Flag bit layout matches the comment on LinearNode in PointGpuTypes.h:
+	//   bit 0   = leaf, bits 1..2 = stored axis, bit 3 = axis-stored flag, bits 4..11 = depth.
+	constexpr uint32_t kLeafFlagBit = 0x1u;
+	constexpr uint32_t kAxisMask = 0x6u;       // bits 1..2
+	constexpr int kAxisShift = 1;
+	constexpr uint32_t kAxisStoredBit = 0x8u;  // bit 3
+	constexpr uint32_t kDepthMask = 0xFF0u;    // bits 4..11
+	constexpr int kDepthShift = 4;
+
+	__device__ __host__ uint32_t encodeNodeFlags(bool isLeaf, int axis, bool axisStored, uint32_t depth)
+	{
+		uint32_t flags = isLeaf ? kLeafFlagBit : 0u;
+		if (axisStored)
+		{
+			flags |= kAxisStoredBit;
+			flags |= (static_cast<uint32_t>(axis & 0x3) << kAxisShift);
+		}
+		flags |= (std::min(depth, 0xFFu) << kDepthShift);
+		return flags;
+	}
+
 	__device__ int splitAxisForNode(const LinearNode& node)
 	{
+		if (node.flags & kAxisStoredBit)
+			return static_cast<int>((node.flags & kAxisMask) >> kAxisShift);
 		const float extentX = node.maxX - node.minX;
 		const float extentY = node.maxY - node.minY;
 		const float extentZ = node.maxZ - node.minZ;
@@ -222,7 +267,8 @@ namespace
 		float minZ,
 		float maxX,
 		float maxY,
-		float maxZ)
+		float maxZ,
+		int axisPolicy)
 	{
 		LinearNode root{};
 		root.minX = minX;
@@ -236,7 +282,10 @@ namespace
 		root.parent = -1;
 		root.pointOffset = 0;
 		root.pointCount = static_cast<uint32_t>(pointCount);
-		root.flags = 1;
+		// Root depth 0. For round-robin the root's axis is X; the split kernel rewrites this
+		// when the root actually splits (so leaf-only trees keep flags clean).
+		const bool storeAxis = axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin);
+		root.flags = encodeNodeFlags(true /*temporarily leaf*/, 0, storeAxis, 0u);
 		nodes[0] = root;
 	}
 
@@ -284,7 +333,9 @@ namespace
 		size_t nodeStart,
 		size_t nodeCount,
 		const uint32_t* leftCounts,
-		uint32_t* writeCursors)
+		uint32_t* writeCursors,
+		int axisPolicy,
+		uint32_t depth)
 	{
 		const size_t localNode = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
 		if (localNode >= nodeCount)
@@ -295,23 +346,33 @@ namespace
 		if (node.pointCount == 0)
 			return;
 
+		const bool storeAxis = axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin);
 		const uint32_t leftCount = leftCounts[nodeIndex];
 		const uint32_t rightCount = node.pointCount - leftCount;
 		if (leftCount == 0 || rightCount == 0)
 		{
 			nodes[nodeIndex].left = -1;
 			nodes[nodeIndex].right = -1;
-			nodes[nodeIndex].flags = 1;
+			// Mark leaf, preserve depth, drop the axis-stored bit (no split happened here).
+			nodes[nodeIndex].flags = encodeNodeFlags(true, 0, false, depth);
 			return;
 		}
 
-		const int axis = splitAxisForNode(node);
+		// Pick the split axis. Round-robin uses depth%3 so traversal can reproduce the same
+		// axis without re-reading parent metadata at query time. Longest-extent leaves the bit
+		// clear so splitAxisForNode falls back to the extent computation.
+		int axis = 0;
+		if (axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin))
+			axis = static_cast<int>(depth % 3u);
+		else
+			axis = splitAxisForNode(node);
+
 		const float plane = splitPlaneForNode(node, axis);
 		const int leftIndex = static_cast<int>(nodeIndex * 2 + 1);
 		const int rightIndex = leftIndex + 1;
 		nodes[nodeIndex].left = leftIndex;
 		nodes[nodeIndex].right = rightIndex;
-		nodes[nodeIndex].flags = 0;
+		nodes[nodeIndex].flags = encodeNodeFlags(false, axis, storeAxis, depth);
 
 		LinearNode left = node;
 		left.left = -1;
@@ -319,7 +380,7 @@ namespace
 		left.parent = static_cast<int>(nodeIndex);
 		left.pointOffset = node.pointOffset;
 		left.pointCount = leftCount;
-		left.flags = 1;
+		left.flags = encodeNodeFlags(true, 0, false, depth + 1u);
 
 		LinearNode right = node;
 		right.left = -1;
@@ -327,7 +388,7 @@ namespace
 		right.parent = static_cast<int>(nodeIndex);
 		right.pointOffset = node.pointOffset + leftCount;
 		right.pointCount = rightCount;
-		right.flags = 1;
+		right.flags = encodeNodeFlags(true, 0, false, depth + 1u);
 
 		if (axis == 0)
 		{
@@ -773,6 +834,12 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 	initializeNodesKernel<<<nodeBlocks, ThreadsPerBlock>>>(_state->nodes, _state->nodeCapacity);
 	CudaHelper::synchronize("initializeKdNodesKernel");
 
+	// Schema's per-level axisPolicy takes precedence over the global options default, so the
+	// generator can request round_robin on a per-candidate basis without round-tripping through
+	// PointGpu::Options. axisPolicyFromSchema returns LongestExtent when the schema policy
+	// string is empty or unrecognized, so this is safe for legacy schema JSONs too.
+	const PointGpu::KdAxisPolicy resolvedPolicy = axisPolicyFromSchema(schema);
+	const int axisPolicy = static_cast<int>(resolvedPolicy);
 	initializeRootKernel<<<1, 1>>>(
 		_state->nodes,
 		_state->pointCount,
@@ -781,7 +848,8 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 		boundsMin.z,
 		boundsMax.x,
 		boundsMax.y,
-		boundsMax.z);
+		boundsMax.z,
+		axisPolicy);
 	CudaHelper::synchronize("initializeKdRootKernel");
 
 	for (size_t depth = 0; depth < _state->maxDepth; ++depth)
@@ -807,7 +875,9 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 			nodeStart,
 			levelNodeCount,
 			_state->leftCounts,
-			_state->writeCursors);
+			_state->writeCursors,
+			axisPolicy,
+			static_cast<uint32_t>(depth));
 		CudaHelper::synchronize("prepareKdSplitNodesKernel");
 
 		CudaHelper::checkError(cudaMemcpy(

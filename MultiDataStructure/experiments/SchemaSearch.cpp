@@ -103,6 +103,12 @@ namespace
 		Experiments::SchemaCandidate candidate;
 		std::vector<Experiments::SchemaSearchRecord> records;
 		double aggregateScore = std::numeric_limits<double>::infinity();
+		// Phase B4 NSGA-II tagging. -1 = not ranked yet; otherwise 0 = current Pareto front,
+		// 1 = next front after removing rank 0, etc. crowdingDistance is the sum of normalized
+		// objective gaps to neighbors within the same front (used to break ties; larger = more
+		// isolated, i.e. more diverse).
+		int paretoFront = -1;
+		double crowdingDistance = 0.0;
 	};
 
 	template <typename TIndex>
@@ -441,9 +447,19 @@ namespace
 		{
 			out << "default -> " << device;
 		}
+		size_t freeBytes = 0;
+		size_t totalBytes = 0;
+		const cudaError_t setResult = cudaSetDevice(device);
+		(void)setResult;
+		const cudaError_t memResult = cudaMemGetInfo(&freeBytes, &totalBytes);
 		out << " (" << properties.name
 			<< ", cc " << properties.major << '.' << properties.minor
-			<< ", " << static_cast<size_t>(properties.totalGlobalMem / (1024 * 1024)) << " MB)";
+			<< ", " << static_cast<size_t>(properties.totalGlobalMem / (1024 * 1024)) << " MB total";
+		if (memResult == cudaSuccess && totalBytes > 0)
+		{
+			out << ", " << static_cast<size_t>(freeBytes / (1024 * 1024)) << " MB free";
+		}
+		out << ")";
 		return out.str();
 	}
 
@@ -480,6 +496,27 @@ namespace
 		return elapsedMilliseconds(begin, end);
 	}
 
+	// Queries total VRAM on the selected (or default) CUDA device. Returns 0 if CUDA is
+	// unavailable or the device cannot be queried. Used both for the schema-search header line
+	// and to auto-default `memoryBudgetMb` when the caller leaves it at 0.
+	size_t cudaTotalVramMb(int deviceHint)
+	{
+		int count = 0;
+		if (cudaGetDeviceCount(&count) != cudaSuccess || count <= 0)
+			return 0;
+
+		int device = 0;
+		if (deviceHint >= 0)
+			device = std::min(deviceHint, count - 1);
+		else if (cudaGetDevice(&device) != cudaSuccess || device < 0 || device >= count)
+			device = 0;
+
+		cudaDeviceProp properties{};
+		if (cudaGetDeviceProperties(&properties, device) != cudaSuccess)
+			return 0;
+		return static_cast<size_t>(properties.totalGlobalMem / (1024 * 1024));
+	}
+
 	PointGpu::Options cudaOptionsFrom(const Experiments::SchemaSearchOptions& options)
 	{
 		PointGpu::Options cudaOptions;
@@ -487,6 +524,16 @@ namespace
 		cudaOptions.builder = canonicalCudaBuilder(options.cuda.builder);
 		cudaOptions.queryBatchSize = options.cuda.queryBatchSize;
 		cudaOptions.memoryBudgetMb = options.cuda.memoryBudgetMb;
+		// Auto-default the budget to 75% of total VRAM when the caller leaves it at 0. The
+		// HGrid aggregate pre-check and the RegularGrid per-level cap both consult this value,
+		// so a sensible default protects users who haven't manually set it without preventing
+		// the rest of the GPU stack from grabbing the remaining headroom.
+		if (cudaOptions.memoryBudgetMb == 0)
+		{
+			const size_t totalMb = cudaTotalVramMb(cudaOptions.device);
+			if (totalMb > 0)
+				cudaOptions.memoryBudgetMb = (totalMb * 3) / 4;
+		}
 		return cudaOptions;
 	}
 
@@ -796,6 +843,10 @@ namespace
 		if (condition.maxExtentY) output << "Y" << static_cast<size_t>(condition.maxExtentY.value() * 1000.0);
 		if (condition.minExtentZ) output << "z" << static_cast<size_t>(condition.minExtentZ.value() * 1000.0);
 		if (condition.maxExtentZ) output << "Z" << static_cast<size_t>(condition.maxExtentZ.value() * 1000.0);
+		if (condition.minAnisotropy) output << "a" << static_cast<size_t>(condition.minAnisotropy.value() * 1000.0);
+		if (condition.maxAnisotropy) output << "A" << static_cast<size_t>(condition.maxAnisotropy.value() * 1000.0);
+		if (condition.minOccupancyEntropy) output << "e" << static_cast<size_t>(condition.minOccupancyEntropy.value() * 1000.0);
+		if (condition.maxOccupancyEntropy) output << "E" << static_cast<size_t>(condition.maxOccupancyEntropy.value() * 1000.0);
 	}
 
 	size_t conditionFieldCount(const SchemaLevelCondition& condition)
@@ -813,6 +864,10 @@ namespace
 		count += condition.maxExtentY.has_value() ? 1 : 0;
 		count += condition.minExtentZ.has_value() ? 1 : 0;
 		count += condition.maxExtentZ.has_value() ? 1 : 0;
+		count += condition.minAnisotropy.has_value() ? 1 : 0;
+		count += condition.maxAnisotropy.has_value() ? 1 : 0;
+		count += condition.minOccupancyEntropy.has_value() ? 1 : 0;
+		count += condition.maxOccupancyEntropy.has_value() ? 1 : 0;
 		return count;
 	}
 
@@ -1016,6 +1071,38 @@ namespace
 				fallbackHeightRatioThresholds());
 		}
 
+		// Phase B3: opportunistically add an anisotropy gate when the domain has one. Sampled
+		// with probability 0.5 to keep half the generated candidates anisotropy-free, so the
+		// optimizer can compare branches that gate on shape vs. branches that don't.
+		if (domain && !domain->anisotropyThresholds.empty())
+		{
+			std::bernoulli_distribution coin(0.5);
+			if (coin(rng))
+			{
+				std::bernoulli_distribution minOrMax(0.5);
+				if (minOrMax(rng))
+					condition.minAnisotropy = chooseDoubleValue(rng, domain->anisotropyThresholds, {});
+				else
+					condition.maxAnisotropy = chooseDoubleValue(rng, domain->anisotropyThresholds, {});
+			}
+		}
+
+		// Same pattern for occupancy entropy: 0.5 chance to gate, 0.5 between min/max. Cheap to
+		// add and gives the GA another shape-vs-uniform discriminator without ballooning the
+		// search space (the matchesCondition fast-path skips entropy when no threshold is set).
+		if (domain && !domain->occupancyEntropyThresholds.empty())
+		{
+			std::bernoulli_distribution coin(0.5);
+			if (coin(rng))
+			{
+				std::bernoulli_distribution minOrMax(0.5);
+				if (minOrMax(rng))
+					condition.minOccupancyEntropy = chooseDoubleValue(rng, domain->occupancyEntropyThresholds, {});
+				else
+					condition.maxOccupancyEntropy = chooseDoubleValue(rng, domain->occupancyEntropyThresholds, {});
+			}
+		}
+
 		return condition;
 	}
 
@@ -1032,7 +1119,36 @@ namespace
 				<< level.numLevels
 				<< "l"
 				<< level.leafCapacity;
+			// Phase B2: include the axis policy in the signature so two KDTree/BIH genomes that
+			// differ only in policy land under distinct cache keys and seenSignatures slots. We
+			// only emit the suffix when the policy meaningfully changes behavior — empty or the
+			// long-standing default is treated as "no suffix" to keep legacy signatures stable.
+			if (!level.axisPolicy.empty() && level.axisPolicy != "median_longest_axis")
+			{
+				if (level.axisPolicy == "round_robin")
+					output << "ap=rr";
+				else if (level.axisPolicy == "center_longest_axis")
+					output << "ap=cl";
+				else
+					output << "ap=other";
+			}
 			appendConditionSignature(output, level.condition);
+		}
+		return output.str();
+	}
+
+	// Coarser key than schemaSignature: only the level-type sequence. Two schemas with the same
+	// topology hash differ only in numeric details (leaf caps, depths, conditions). Used by the
+	// diversity audit so we can ask "how many qualitatively distinct shapes did the optimizer
+	// actually try, regardless of how many leaf-cap variants of each one it stamped out?".
+	std::string schemaTopologyKey(const SchemaConfig& schema)
+	{
+		std::ostringstream output;
+		for (size_t i = 0; i < schema.levels.size(); ++i)
+		{
+			if (i > 0)
+				output << ':';
+			output << schemaTypeShortName(schema.levels[i]);
 		}
 		return output.str();
 	}
@@ -1069,6 +1185,10 @@ namespace
 				appendOptionalDouble(output, "maxExtentY", level.condition.maxExtentY, first);
 				appendOptionalDouble(output, "minExtentZ", level.condition.minExtentZ, first);
 				appendOptionalDouble(output, "maxExtentZ", level.condition.maxExtentZ, first);
+				appendOptionalDouble(output, "minAnisotropy", level.condition.minAnisotropy, first);
+				appendOptionalDouble(output, "maxAnisotropy", level.condition.maxAnisotropy, first);
+				appendOptionalDouble(output, "minOccupancyEntropy", level.condition.minOccupancyEntropy, first);
+				appendOptionalDouble(output, "maxOccupancyEntropy", level.condition.maxOccupancyEntropy, first);
 				output << "\n      }";
 			}
 			output << '\n';
@@ -1134,8 +1254,22 @@ namespace
 		level.numLevels = 1;
 		level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
-		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
+		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode
+			? (std::bernoulli_distribution(0.5)(rng) ? "round_robin" : "median_longest_axis")
+			: std::string();
 		return level;
+	}
+
+	// Phase B2: KDTree/BIH levels (both share KDTreeNode under the hood) sample over the axis
+	// policy. round_robin alternates X/Y/Z by depth; median_longest_axis is the legacy
+	// extent-driven default. Coin-flip selection gives the optimizer both variants per topology
+	// without exploding the search space.
+	std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataStructureLevel type)
+	{
+		if (type != MultiDataStructure::KDTreeNode)
+			return "";
+		std::bernoulli_distribution coin(0.5);
+		return coin(rng) ? "round_robin" : "median_longest_axis";
 	}
 
 	void refreshLevelTypeName(SchemaLevelConfig& level)
@@ -1147,7 +1281,13 @@ namespace
 		const bool compatibleHGrid = level.type == MultiDataStructure::OctreeNode && isHGridLevelName(level.typeName);
 		if (!compatibleBIH && !compatibleKarras && !compatibleLBVH && !compatibleRegularGrid && !compatibleHGrid)
 			level.typeName = Config::dataStructureLevelName(level.type);
-		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
+		// Preserve axisPolicy if it's already set to a recognized value; only reset when the
+		// type is not KDTree-family. Lets crossover/mutation children inherit their parent's
+		// sampled policy instead of being clobbered back to median_longest_axis.
+		if (level.type != MultiDataStructure::KDTreeNode)
+			level.axisPolicy = "";
+		else if (level.axisPolicy.empty())
+			level.axisPolicy = "median_longest_axis";
 	}
 
 	void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments::SchemaGenerationOptions& options)
@@ -1222,7 +1362,7 @@ namespace
 			return;
 		}
 
-		std::uniform_int_distribution<int> editDistribution(0, 6);
+		std::uniform_int_distribution<int> editDistribution(0, 10);
 		switch (editDistribution(rng))
 		{
 		case 0:
@@ -1271,10 +1411,86 @@ namespace
 					level.condition.minExtentZ = nearbyDomainValue(domain->extentZThresholds, level.condition.minExtentZ.value_or(domain->extentZThresholds.front()), rng);
 			}
 			break;
+		case 6:
+			// Phase B3 anisotropy edit: toggle a min/max anisotropy threshold from the domain.
+			if (domain && !domain->anisotropyThresholds.empty())
+			{
+				std::bernoulli_distribution minOrMax(0.5);
+				if (minOrMax(rng))
+					level.condition.minAnisotropy = nearbyDomainValue(domain->anisotropyThresholds,
+						level.condition.minAnisotropy.value_or(domain->anisotropyThresholds.front()), rng);
+				else
+					level.condition.maxAnisotropy = nearbyDomainValue(domain->anisotropyThresholds,
+						level.condition.maxAnisotropy.value_or(domain->anisotropyThresholds.back()), rng);
+			}
+			break;
+		case 7:
+			// Clear the anisotropy gate while keeping other threshold fields intact.
+			level.condition.minAnisotropy.reset();
+			level.condition.maxAnisotropy.reset();
+			break;
+		case 8:
+			// Toggle a min/max occupancy entropy threshold from the domain.
+			if (domain && !domain->occupancyEntropyThresholds.empty())
+			{
+				std::bernoulli_distribution minOrMax(0.5);
+				if (minOrMax(rng))
+					level.condition.minOccupancyEntropy = nearbyDomainValue(domain->occupancyEntropyThresholds,
+						level.condition.minOccupancyEntropy.value_or(domain->occupancyEntropyThresholds.front()), rng);
+				else
+					level.condition.maxOccupancyEntropy = nearbyDomainValue(domain->occupancyEntropyThresholds,
+						level.condition.maxOccupancyEntropy.value_or(domain->occupancyEntropyThresholds.back()), rng);
+			}
+			break;
+		case 9:
+			// Clear the entropy gate.
+			level.condition.minOccupancyEntropy.reset();
+			level.condition.maxOccupancyEntropy.reset();
+			break;
 		default:
 			level.condition = {};
 			break;
 		}
+	}
+
+	// Single-point crossover on the level list. Splices the first `splitA` levels from parent A
+	// with the tail of parent B starting at `splitB`. Lets the search reach topology combinations
+	// neither parent had — e.g. parent A is "QuadTree -> Octree" and parent B is "BIH -> LBVH",
+	// crossover can produce "QuadTree -> LBVH" which mutation alone would never reach because
+	// it requires two simultaneous local edits in a narrow window.
+	SchemaConfig crossoverSchemaConfigs(
+		const SchemaConfig& parentA,
+		const SchemaConfig& parentB,
+		std::mt19937& rng,
+		const Experiments::SchemaGenerationOptions& options)
+	{
+		if (parentA.levels.empty()) return parentB;
+		if (parentB.levels.empty()) return parentA;
+
+		std::uniform_int_distribution<size_t> cutADist(0, parentA.levels.size());
+		std::uniform_int_distribution<size_t> cutBDist(0, parentB.levels.size());
+		size_t splitA = cutADist(rng);
+		size_t splitB = cutBDist(rng);
+
+		// Reject the degenerate case "take all of A or all of B" — that just returns a parent
+		// untouched and burns a child slot for nothing.
+		if (splitA == 0 && splitB == 0)
+			splitA = 1;
+		else if (splitA == parentA.levels.size() && splitB == parentB.levels.size())
+			splitB = std::max<size_t>(0, parentB.levels.size() - 1);
+
+		SchemaConfig child;
+		child.buildPolicy = parentA.buildPolicy;
+		child.levels.reserve(splitA + (parentB.levels.size() - splitB));
+		for (size_t i = 0; i < splitA; ++i)
+			child.levels.push_back(parentA.levels[i]);
+		for (size_t i = splitB; i < parentB.levels.size(); ++i)
+			child.levels.push_back(parentB.levels[i]);
+
+		// Hand off to the same normalization the mutation operator uses so depth caps, leaf-cap
+		// monotonicity, and root-level condition stripping match the rest of the population.
+		normalizeSchemaForGeneration(child, options);
+		return child;
 	}
 
 	SchemaConfig mutateSchemaConfig(
@@ -1315,13 +1531,13 @@ namespace
 			const size_t levelIndex = levelDistribution(rng);
 			SchemaLevelConfig& level = schema.levels[levelIndex];
 
-			std::uniform_int_distribution<int> mutationDistribution(0, 7);
+			std::uniform_int_distribution<int> mutationDistribution(0, 8);
 			switch (mutationDistribution(rng))
 			{
 			case 0:
 				level.type = randomStructureType(rng, std::nullopt);
 				level.typeName = randomTypeNameForBase(level.type, rng);
-				level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
+				level.axisPolicy = sampleAxisPolicy(rng, level.type);
 				if (levelIndex == 0)
 					level.condition = {};
 				break;
@@ -1372,6 +1588,16 @@ namespace
 					const size_t other = swapDistribution(rng);
 					if (other != levelIndex)
 						std::swap(schema.levels[levelIndex], schema.levels[other]);
+				}
+				break;
+			case 8:
+				// Phase B2 axis-policy flip. Only meaningful for KDTree/BIH levels — for others
+				// it's a no-op so the slot doesn't waste mutation budget.
+				if (level.type == MultiDataStructure::KDTreeNode)
+				{
+					level.axisPolicy = (level.axisPolicy == "round_robin")
+						? std::string("median_longest_axis")
+						: std::string("round_robin");
 				}
 				break;
 			}
@@ -2020,18 +2246,53 @@ namespace
 				CudaIndexCacheEntry* cudaEntry = cudaCache && useCudaEvaluator(options)
 					? &(*cudaCache)[datasetContext.dataset]
 					: nullptr;
-				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidateCached(
-					*datasetContext.dataset,
-					datasetContext.features,
-					workload,
-					workloadFeatures,
-					datasetContext.preparedWorkloads[workloadIndex],
-					candidate,
-					options,
-					cudaEntry);
-				scoreSum += record.score;
-				++scoreCount;
-				evaluation.records.push_back(std::move(record));
+
+				// Wrap the per-(dataset, workload) evaluation so a single failed candidate (e.g.
+				// HGrid configurations that blow the memory budget, KDTree builds that hit a
+				// CUDA OOM, malformed schema JSONs) cannot kill the whole optimizer run. The
+				// failed candidate gets a sentinel record with infinite score and the GA moves
+				// on to the next one.
+				try
+				{
+					Experiments::SchemaSearchRecord record = benchmarkSchemaCandidateCached(
+						*datasetContext.dataset,
+						datasetContext.features,
+						workload,
+						workloadFeatures,
+						datasetContext.preparedWorkloads[workloadIndex],
+						candidate,
+						options,
+						cudaEntry);
+					scoreSum += record.score;
+					++scoreCount;
+					evaluation.records.push_back(std::move(record));
+				}
+				catch (const std::exception& exception)
+				{
+					std::cerr << "    candidate '" << candidate.config.name
+						<< "' failed on dataset '" << datasetContext.dataset->name
+						<< "' / workload '" << workload.name << "': " << exception.what() << '\n';
+					Experiments::SchemaSearchRecord failed;
+					failed.datasetName = datasetContext.dataset->name;
+					failed.datasetSource = datasetContext.dataset->source;
+					failed.numPoints = datasetContext.dataset->cloud.size();
+					failed.workloadName = workload.name;
+					failed.rangeWeight = workload.rangeWeight;
+					failed.radiusWeight = workload.radiusWeight;
+					failed.knnWeight = workload.knnWeight;
+					failed.numQueries = workload.numQueries;
+					failed.knnK = workload.knnK;
+					failed.querySeed = workload.querySeed;
+					failed.schemaName = candidate.config.name;
+					failed.schemaPath = candidate.path;
+					failed.weights = options.weights;
+					failed.pointFeatures = datasetContext.features;
+					failed.workloadFeatures = workloadFeatures;
+					failed.backend = useCudaEvaluator(options) ? "cuda_failed" : "cpu_failed";
+					failed.score = std::numeric_limits<double>::infinity();
+					failed.isBaseline = candidate.isBaseline;
+					evaluation.records.push_back(std::move(failed));
+				}
 			}
 		}
 
@@ -2078,7 +2339,10 @@ namespace
 			<< "range_queries,radius_queries,knn_queries,score,score_memory_mb,score_imbalance_penalty,lambda_build,lambda_memory,lambda_imbalance,"
 			<< "backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries,"
 			<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
-			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline\n";
+			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
+			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
+			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
+			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms\n";
 	}
 
 	void writeSearchRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
@@ -2182,7 +2446,17 @@ namespace
 				<< csvEscape(record.activeStructureSummary) << ','
 				<< csvEscape(record.bestBaselineSchema) << ','
 				<< record.bestBaselineScore << ','
-				<< record.relativeSpeedupVsBaseline << '\n';
+				<< record.relativeSpeedupVsBaseline << ','
+				<< record.confirmSeedsUsed << ','
+				<< record.latencyMean << ','
+				<< record.latencyCiLow << ','
+				<< record.latencyCiHigh << ','
+				<< record.p95LatencyMean << ','
+				<< record.p95LatencyCiLow << ','
+				<< record.p95LatencyCiHigh << ','
+				<< record.gpuBuildMean << ','
+				<< record.gpuBuildCiLow << ','
+				<< record.gpuBuildCiHigh << '\n';
 		}
 	}
 
@@ -2215,7 +2489,10 @@ namespace
 			<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
 			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates,backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
 			<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
-			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline\n";
+			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
+			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
+			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
+			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
 		{
@@ -2281,7 +2558,17 @@ namespace
 				<< csvEscape(record.activeStructureSummary) << ','
 				<< csvEscape(record.bestBaselineSchema) << ','
 				<< record.bestBaselineScore << ','
-				<< record.relativeSpeedupVsBaseline << '\n';
+				<< record.relativeSpeedupVsBaseline << ','
+				<< record.confirmSeedsUsed << ','
+				<< record.latencyMean << ','
+				<< record.latencyCiLow << ','
+				<< record.latencyCiHigh << ','
+				<< record.p95LatencyMean << ','
+				<< record.p95LatencyCiLow << ','
+				<< record.p95LatencyCiHigh << ','
+				<< record.gpuBuildMean << ','
+				<< record.gpuBuildCiLow << ','
+				<< record.gpuBuildCiHigh << '\n';
 		}
 	}
 
@@ -2303,7 +2590,10 @@ namespace
 			<< "dataset_name,workload_name,pareto_rank,schema_name,schema_path,score,"
 			<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
 			<< "p95_latency_ms,throughput_qps,backend,cuda_builder,is_baseline,"
-			<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction\n";
+			<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction,"
+			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
+			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
+			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : front)
 		{
@@ -2331,7 +2621,17 @@ namespace
 				<< record.conditionalLevels << ','
 				<< record.conditionFields << ','
 				<< record.activeStructureTypes << ','
-				<< record.nestedActiveFraction << '\n';
+				<< record.nestedActiveFraction << ','
+				<< record.confirmSeedsUsed << ','
+				<< record.latencyMean << ','
+				<< record.latencyCiLow << ','
+				<< record.latencyCiHigh << ','
+				<< record.p95LatencyMean << ','
+				<< record.p95LatencyCiLow << ','
+				<< record.p95LatencyCiHigh << ','
+				<< record.gpuBuildMean << ','
+				<< record.gpuBuildCiLow << ','
+				<< record.gpuBuildCiHigh << '\n';
 		}
 	}
 
@@ -2454,6 +2754,182 @@ namespace
 	{
 		std::sort(evaluations.begin(), evaluations.end(), [](const EvaluatedCandidate& left, const EvaluatedCandidate& right) {
 			return left.aggregateScore < right.aggregateScore;
+		});
+	}
+
+	struct CandidateObjectives
+	{
+		double avgLatencyMs = 0.0;
+		double buildTimeMs = 0.0;
+		double memoryMb = 0.0;
+		double imbalancePenalty = 0.0;
+	};
+
+	// Averages the four Pareto objectives across an EvaluatedCandidate's records (one per
+	// (dataset, workload)). For single-dataset / single-workload runs — the publication target —
+	// this is the record's metrics verbatim. For multi-dataset sweeps, averaging treats all
+	// datasets equally, which matches how `aggregateScore` already combines per-record scores.
+	CandidateObjectives objectivesOf(const EvaluatedCandidate& evaluation)
+	{
+		CandidateObjectives obj;
+		if (evaluation.records.empty())
+			return obj;
+		for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+		{
+			// Use the seed-averaged mean when multi-seed confirmation was run, otherwise the
+			// single-seed point estimate. Mirrors the Pareto step in selectParetoRecords so the
+			// optimizer and the CSV agree on what "latency" means.
+			const double latency = record.confirmSeedsUsed > 0
+				? record.latencyMean
+				: record.queryMetrics.averageLatencyMs;
+			const double memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+			const double imbalance = record.buildMetrics.averageLeafOccupancy > 0.0
+				? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+				: 0.0;
+			obj.avgLatencyMs += latency;
+			obj.buildTimeMs += record.buildMetrics.buildTimeMs;
+			obj.memoryMb += memoryMb;
+			obj.imbalancePenalty += imbalance;
+		}
+		const double n = static_cast<double>(evaluation.records.size());
+		obj.avgLatencyMs /= n;
+		obj.buildTimeMs /= n;
+		obj.memoryMb /= n;
+		obj.imbalancePenalty /= n;
+		return obj;
+	}
+
+	bool dominatesCandidate(const CandidateObjectives& a, const CandidateObjectives& b)
+	{
+		const bool allLeq =
+			a.avgLatencyMs <= b.avgLatencyMs &&
+			a.buildTimeMs <= b.buildTimeMs &&
+			a.memoryMb <= b.memoryMb &&
+			a.imbalancePenalty <= b.imbalancePenalty;
+		if (!allLeq)
+			return false;
+		return
+			a.avgLatencyMs < b.avgLatencyMs ||
+			a.buildTimeMs < b.buildTimeMs ||
+			a.memoryMb < b.memoryMb ||
+			a.imbalancePenalty < b.imbalancePenalty;
+	}
+
+	// Standard NSGA-II fast non-dominated sort + crowding distance. After this call, each
+	// EvaluatedCandidate has its `paretoFront` (0 = best, higher = worse) and `crowdingDistance`
+	// fields populated, and the vector is sorted: smaller paretoFront first, ties broken by
+	// larger crowdingDistance (more isolated = preferred). Lets the GA pick elites that are not
+	// only good but spread across the front, which directly addresses the "one corridor" failure
+	// mode of scalar-score elite selection.
+	void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
+	{
+		const size_t n = evaluations.size();
+		if (n == 0)
+			return;
+
+		std::vector<CandidateObjectives> objectives(n);
+		for (size_t i = 0; i < n; ++i)
+		{
+			objectives[i] = objectivesOf(evaluations[i]);
+			evaluations[i].paretoFront = -1;
+			evaluations[i].crowdingDistance = 0.0;
+		}
+
+		std::vector<std::vector<size_t>> dominatedBy(n);
+		std::vector<size_t> dominationCount(n, 0);
+		std::vector<size_t> currentFront;
+		currentFront.reserve(n);
+
+		for (size_t p = 0; p < n; ++p)
+		{
+			for (size_t q = 0; q < n; ++q)
+			{
+				if (p == q)
+					continue;
+				if (dominatesCandidate(objectives[p], objectives[q]))
+					dominatedBy[p].push_back(q);
+				else if (dominatesCandidate(objectives[q], objectives[p]))
+					++dominationCount[p];
+			}
+			if (dominationCount[p] == 0)
+			{
+				evaluations[p].paretoFront = 0;
+				currentFront.push_back(p);
+			}
+		}
+
+		int rank = 0;
+		while (!currentFront.empty())
+		{
+			std::vector<size_t> nextFront;
+			for (const size_t p : currentFront)
+			{
+				for (const size_t q : dominatedBy[p])
+				{
+					if (dominationCount[q] == 0)
+						continue;
+					if (--dominationCount[q] == 0)
+					{
+						evaluations[q].paretoFront = rank + 1;
+						nextFront.push_back(q);
+					}
+				}
+			}
+			++rank;
+			currentFront = std::move(nextFront);
+		}
+
+		// Crowding distance per front. The candidate at each objective's extreme gets +inf so the
+		// edges of the front are always preserved when elites are picked.
+		std::map<int, std::vector<size_t>> fronts;
+		for (size_t i = 0; i < n; ++i)
+			fronts[evaluations[i].paretoFront].push_back(i);
+
+		auto objectiveValue = [&](size_t idx, int axis) {
+			switch (axis)
+			{
+			case 0: return objectives[idx].avgLatencyMs;
+			case 1: return objectives[idx].buildTimeMs;
+			case 2: return objectives[idx].memoryMb;
+			default: return objectives[idx].imbalancePenalty;
+			}
+		};
+
+		for (auto& [frontRank, indices] : fronts)
+		{
+			if (indices.size() <= 2)
+			{
+				for (const size_t idx : indices)
+					evaluations[idx].crowdingDistance = std::numeric_limits<double>::infinity();
+				continue;
+			}
+			for (int axis = 0; axis < 4; ++axis)
+			{
+				std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+					return objectiveValue(a, axis) < objectiveValue(b, axis);
+				});
+				const double lo = objectiveValue(indices.front(), axis);
+				const double hi = objectiveValue(indices.back(), axis);
+				evaluations[indices.front()].crowdingDistance = std::numeric_limits<double>::infinity();
+				evaluations[indices.back()].crowdingDistance = std::numeric_limits<double>::infinity();
+				if (hi <= lo)
+					continue;
+				const double range = hi - lo;
+				for (size_t i = 1; i + 1 < indices.size(); ++i)
+				{
+					if (std::isinf(evaluations[indices[i]].crowdingDistance))
+						continue;
+					const double prev = objectiveValue(indices[i - 1], axis);
+					const double next = objectiveValue(indices[i + 1], axis);
+					evaluations[indices[i]].crowdingDistance += (next - prev) / range;
+				}
+			}
+		}
+
+		std::sort(evaluations.begin(), evaluations.end(), [](const EvaluatedCandidate& a, const EvaluatedCandidate& b) {
+			if (a.paretoFront != b.paretoFront)
+				return a.paretoFront < b.paretoFront;
+			return a.crowdingDistance > b.crowdingDistance;
 		});
 	}
 
@@ -2820,20 +3296,64 @@ namespace
 		return candidates;
 	}
 
+	// Returns a key identifying the candidate's primary block type — what sits at the root of
+	// its tree. Used to guarantee primary-block diversity when advancing top-K between rungs.
+	// Two candidates that both start with Octree (regardless of their nested blocks) share a
+	// key; this lets the diversifier preserve "at least one Octree-rooted survivor" even when
+	// the score-sort is dominated by a different family.
+	std::string primaryBlockKey(const SchemaConfig& schema)
+	{
+		if (schema.levels.empty())
+			return "";
+		return schemaTypeShortName(schema.levels.front());
+	}
+
 	std::vector<Experiments::SchemaCandidate> topCandidates(
 		const std::vector<EvaluatedCandidate>& evaluations,
 		size_t count)
 	{
+		// Score-sorted advancement, but with a per-primary-block diversity pass first. The
+		// motivation is the proxy-rung asymmetry: visit-proxy scoring underestimates HGrid's
+		// real wall-clock cost, so HGrid candidates sweep the top of R0's score-sort and the
+		// shortlist becomes mono-cultural. By guaranteeing one survivor per primary block type
+		// before filling the rest by score, the latency rung gets to compare apples to apples
+		// (an Octree-rooted candidate vs. a HGrid-rooted candidate) instead of comparing HGrid
+		// variants to each other.
 		std::vector<Experiments::SchemaCandidate> result;
 		const size_t limit = count == 0 ? evaluations.size() : std::min(count, evaluations.size());
 		result.reserve(limit);
 		std::unordered_set<std::string> picked;
-		for (size_t i = 0; i < limit; ++i)
+		std::unordered_set<std::string> primarySeen;
+		std::vector<size_t> deferred;
+		deferred.reserve(evaluations.size());
+
+		// Pass 1: take the best of each primary-block type, in score order.
+		for (size_t i = 0; i < evaluations.size() && result.size() < limit; ++i)
 		{
+			const Experiments::SchemaCandidate& candidate = evaluations[i].candidate;
+			const std::string primary = primaryBlockKey(candidate.config);
+			if (!primarySeen.insert(primary).second)
+			{
+				deferred.push_back(i);
+				continue;
+			}
+			result.push_back(candidate);
+			picked.insert(candidate.path.empty() ? candidate.name : candidate.path);
+		}
+
+		// Pass 2: fill remaining slots from the deferred pool, still in score order.
+		for (const size_t i : deferred)
+		{
+			if (result.size() >= limit)
+				break;
 			const Experiments::SchemaCandidate& candidate = evaluations[i].candidate;
 			result.push_back(candidate);
 			picked.insert(candidate.path.empty() ? candidate.name : candidate.path);
 		}
+
+		const size_t diverseCount = primarySeen.size();
+		if (diverseCount > 1 && diverseCount < result.size())
+			std::cout << "    + advanced " << diverseCount << " distinct primary-block type(s) into next rung\n";
 
 		// Force-promote any baseline candidate that wasn't already in the top-K so the operator
 		// always sees how naive single-block structures perform at the next stage.
@@ -3632,11 +4152,49 @@ namespace
 				const size_t keep = (rung.advanceTopK == 0)
 					? evaluations.size()
 					: std::min(rung.advanceTopK, evaluations.size());
+
+				// Diverse-by-primary advancement: guarantee each distinct primary-block type
+				// has at least one survivor passing to the next rung before filling the rest by
+				// score. Without this, a proxy-rung asymmetry (visit-proxy under-counts HGrid's
+				// real GPU cost, for example) can sweep HGrid descendants into every promotion
+				// slot, starving the latency rung of any Octree/KDTree-rooted candidates to
+				// compare against. Reuses the same `primaryBlockKey` helper as the auto-condition
+				// `topCandidates` filter for consistency.
+				std::vector<size_t> advanceOrder;
+				advanceOrder.reserve(keep);
+				std::unordered_set<std::string> primarySeen;
+				std::vector<size_t> deferred;
+				deferred.reserve(evaluations.size());
+				for (size_t i = 0; i < evaluations.size() && advanceOrder.size() < keep; ++i)
+				{
+					const std::string primary = primaryBlockKey(evaluations[i].candidate.config);
+					if (primarySeen.insert(primary).second)
+						advanceOrder.push_back(i);
+					else
+						deferred.push_back(i);
+				}
+				for (const size_t i : deferred)
+				{
+					if (advanceOrder.size() >= keep)
+						break;
+					advanceOrder.push_back(i);
+				}
+
 				current.clear();
-				current.reserve(keep);
-				for (size_t i = 0; i < keep; ++i)
+				current.reserve(advanceOrder.size());
+				std::vector<EvaluatedCandidate> trimmed;
+				trimmed.reserve(advanceOrder.size());
+				for (const size_t i : advanceOrder)
+				{
 					current.push_back(evaluations[i].candidate);
-				evaluations.resize(keep);
+					trimmed.push_back(std::move(evaluations[i]));
+				}
+				evaluations = std::move(trimmed);
+
+				if (primarySeen.size() > 1)
+					std::cout << "      rung '" << rung.name << "' advancing " << current.size()
+						<< " candidate(s), " << primarySeen.size()
+						<< " distinct primary-block type(s)\n";
 			}
 		}
 
@@ -3659,6 +4217,24 @@ namespace
 		std::vector<EvaluatedCandidate> archive;
 		std::vector<Experiments::SchemaSearchRecord> records;
 		CudaIndexCache cudaCache;
+
+		// Phase B4 diversity audit: count distinct topology hashes (level-type sequence only,
+		// ignoring leaf caps / depth / conditions) across every evaluated candidate. Reported at
+		// end of run so we can tell whether the GA explored qualitatively different shapes or
+		// just polished a single corridor of the search space.
+		std::map<std::string, size_t> topologyCounts;
+		size_t totalEvaluatedCandidates = 0;
+
+		// Picks the right ordering helper based on options.useNsga2Ranking. NSGA-II ranks by
+		// non-dominated front first (smaller = better), ties broken by larger crowding distance
+		// (more isolated = preferred). Scalar fallback keeps the single-score path bit-for-bit
+		// identical to pre-B4 behavior.
+		auto rankArchive = [&]() {
+			if (evolution.useNsga2Ranking)
+				nsga2RankAndSort(archive);
+			else
+				sortEvaluations(archive);
+		};
 
 		std::vector<Experiments::SchemaCandidate> batch = uniqueCandidates(initialCandidates, seenSignatures);
 		if (batch.empty())
@@ -3710,6 +4286,15 @@ namespace
 			if (candidates.empty())
 				return;
 
+			// Topology audit: every candidate that makes it this far counts, whether or not it
+			// survives the rung schedule's downstream filters. Lets the diversity report capture
+			// the *attempted* search breadth, not just what the front rewarded.
+			for (const Experiments::SchemaCandidate& candidate : candidates)
+			{
+				++topologyCounts[schemaTopologyKey(candidate.config)];
+				++totalEvaluatedCandidates;
+			}
+
 			if (useRungSchedule)
 			{
 				std::vector<EvaluatedCandidate> finalEvaluations = runRungSchedule(
@@ -3721,7 +4306,7 @@ namespace
 						<< "  aggregate score " << finalEvaluations[i].aggregateScore << '\n';
 					archive.push_back(std::move(finalEvaluations[i]));
 				}
-				sortEvaluations(archive);
+				rankArchive();
 				if (!archive.empty())
 					std::cout << "      best so far: " << archive.front().candidate.config.name
 						<< " score " << archive.front().aggregateScore << '\n';
@@ -3769,18 +4354,24 @@ namespace
 				{
 					const Experiments::SchemaCandidate& candidate = candidates[i];
 					std::cout << "      " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate.config.name << '\n';
+					const auto candidateStart = std::chrono::steady_clock::now();
 					EvaluatedCandidate evaluation = evaluateCandidate(candidate, datasets, workloads, options, &cudaCache);
+					const auto candidateElapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - candidateStart).count();
 					std::cout << "        aggregate score " << evaluation.aggregateScore;
 					if (!evaluation.records.empty() && evaluation.records.front().backend == "cuda")
 						std::cout << " (" << cudaBuilderDisplayName(evaluation.records.front().cudaBuilder) << ")";
+					std::cout << " [" << candidateElapsed << " s]";
 					std::cout << '\n';
+					if (candidateElapsed > 30.0)
+						std::cout << "        WARNING: candidate '" << candidate.config.name
+							<< "' took " << candidateElapsed << " s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.\n";
 					appendRecords(records, evaluation);
 					for (const Experiments::SchemaSearchRecord& record : evaluation.records)
 						emitProgress(options, record);
 					archive.push_back(std::move(evaluation));
 				}
 			}
-			sortEvaluations(archive);
+			rankArchive();
 			if (!archive.empty())
 				std::cout << "      best so far: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
 		};
@@ -3789,7 +4380,7 @@ namespace
 
 		for (size_t generation = 1; generation <= evolution.generations; ++generation)
 		{
-			sortEvaluations(archive);
+			rankArchive();
 			const size_t currentEliteCount = std::min(eliteCount, archive.size());
 			if (currentEliteCount == 0)
 				break;
@@ -3852,18 +4443,52 @@ namespace
 
 			size_t attempts = 0;
 			const size_t maxAttempts = std::max<size_t>(populationSize * 80, 512);
+			const double crossoverProbability = std::clamp(evolution.crossoverRate, 0.0, 1.0);
+			std::bernoulli_distribution useCrossover(crossoverProbability);
+			size_t crossoverAccepted = 0;
+			size_t mutationAccepted = 0;
 			while (children.size() < populationSize && attempts++ < maxAttempts)
 			{
 				std::uniform_int_distribution<size_t> eliteDistribution(0, currentEliteCount - 1);
-				const EvaluatedCandidate& parent = archive[eliteDistribution(rng)];
-				SchemaConfig childSchema = mutateSchemaConfig(parent.candidate.config, rng, options.generation, evolution, nullptr);
+				SchemaConfig childSchema;
+				bool wasCrossover = false;
+				if (currentEliteCount >= 2 && useCrossover(rng))
+				{
+					const size_t aIdx = eliteDistribution(rng);
+					size_t bIdx = eliteDistribution(rng);
+					// Force two distinct parents so crossover actually combines two genomes;
+					// otherwise it degenerates into a no-op.
+					for (size_t attempt = 0; attempt < 4 && bIdx == aIdx; ++attempt)
+						bIdx = eliteDistribution(rng);
+					childSchema = crossoverSchemaConfigs(
+						archive[aIdx].candidate.config,
+						archive[bIdx].candidate.config,
+						rng,
+						options.generation);
+					wasCrossover = true;
+				}
+				else
+				{
+					const EvaluatedCandidate& parent = archive[eliteDistribution(rng)];
+					childSchema = mutateSchemaConfig(parent.candidate.config, rng, options.generation, evolution, nullptr);
+				}
 				const std::string signature = schemaSignature(childSchema);
 				if (!seenSignatures.insert(signature).second)
 					continue;
 
-				const std::string prefix = "evolved_g" + std::to_string(generation) + "_i" + std::to_string(children.size());
+				const std::string prefix = wasCrossover
+					? std::string("xover_g") + std::to_string(generation) + "_i" + std::to_string(children.size())
+					: std::string("evolved_g") + std::to_string(generation) + "_i" + std::to_string(children.size());
 				children.push_back(materializeGeneratedSchema(childSchema, prefix, options.generation.outputDirectory));
+				if (wasCrossover)
+					++crossoverAccepted;
+				else
+					++mutationAccepted;
 			}
+			if (crossoverAccepted + mutationAccepted > 0)
+				std::cout << "      generation " << generation << " children: "
+					<< crossoverAccepted << " crossover + "
+					<< mutationAccepted << " mutation\n";
 
 			if (children.empty())
 			{
@@ -3874,9 +4499,50 @@ namespace
 			evaluateBatch(children, "generation " + std::to_string(generation));
 		}
 
-		sortEvaluations(archive);
+		rankArchive();
 		if (!archive.empty())
 			std::cout << "  optimizer best aggregate: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
+
+		// Phase B4 diversity audit. Reports distinct topology shapes attempted across the run
+		// vs. the total candidate count. A low distinct-to-total ratio means the GA spent its
+		// budget refining a few corridors instead of exploring the manifold — fix is then to
+		// raise crossoverRate, enable NSGA-II ranking, or broaden the generator's bounds.
+		if (totalEvaluatedCandidates > 0)
+		{
+			std::cout << "  diversity audit: " << topologyCounts.size()
+				<< " distinct topology shapes across " << totalEvaluatedCandidates
+				<< " evaluated candidates"
+				<< " (ratio " << std::fixed << std::setprecision(3)
+				<< (static_cast<double>(topologyCounts.size()) / static_cast<double>(totalEvaluatedCandidates))
+				<< ")\n";
+
+			std::vector<std::pair<std::string, size_t>> sortedTopologies(topologyCounts.begin(), topologyCounts.end());
+			std::sort(sortedTopologies.begin(), sortedTopologies.end(),
+				[](const auto& a, const auto& b) { return a.second > b.second; });
+			const size_t topReport = std::min<size_t>(8, sortedTopologies.size());
+			std::cout << "    top topologies by evaluation count:\n";
+			for (size_t i = 0; i < topReport; ++i)
+			{
+				std::cout << "      " << sortedTopologies[i].second << "x  "
+					<< (sortedTopologies[i].first.empty() ? "<empty>" : sortedTopologies[i].first) << '\n';
+			}
+
+			// Front-0 diversity is the load-bearing number: if every Pareto-front entry has the
+			// same topology, B4 (or richer generation in B2/B3) needs more pressure. Computed
+			// only when NSGA-II ran, so the front ranks are populated.
+			if (evolution.useNsga2Ranking)
+			{
+				std::set<std::string> frontTopologies;
+				for (const EvaluatedCandidate& evaluation : archive)
+				{
+					if (evaluation.paretoFront != 0)
+						continue;
+					frontTopologies.insert(schemaTopologyKey(evaluation.candidate.config));
+				}
+				if (!frontTopologies.empty())
+					std::cout << "    Pareto-front-0 distinct topologies: " << frontTopologies.size() << '\n';
+			}
+		}
 
 		// Threshold refinement (Phase B1). Picks the top-K archive entries with conditional
 		// levels and runs a continuous-parameter (1+lambda)-ES on the active threshold vector.
@@ -3973,6 +4639,135 @@ namespace
 
 		return records;
 	}
+
+	// Phase C2: re-measure the top-K candidates per (dataset, workload) with multiple query
+	// seeds, then store seed-averaged mean + 95% bootstrap CI on (avgLatency, p95Latency,
+	// gpuBuild). The Pareto step (and the best-CSV view of latency) will prefer these means
+	// over the single-seed point estimate.
+	void runMultiSeedConfirmation(
+		std::vector<Experiments::SchemaSearchRecord>& records,
+		const std::vector<SearchDataset>& datasets,
+		const std::vector<Experiments::WorkloadProfile>& workloads,
+		const Experiments::SchemaSearchOptions& options)
+	{
+		if (options.confirmSeeds < 2 || records.empty())
+			return;
+
+		const size_t topK = std::max<size_t>(1, options.confirmTopK);
+		const bool cudaEvaluator = useCudaEvaluator(options);
+
+		std::cout << "  multi-seed confirmation: top-" << topK
+			<< " per (dataset, workload), " << options.confirmSeeds << " seeds each\n";
+
+		std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
+		for (size_t i = 0; i < records.size(); ++i)
+			groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
+
+		auto findDataset = [&](const std::string& name) -> const SearchDataset* {
+			for (const SearchDataset& dataset : datasets)
+			{
+				if (dataset.name == name)
+					return &dataset;
+			}
+			return nullptr;
+		};
+		auto findWorkload = [&](const std::string& name) -> const Experiments::WorkloadProfile* {
+			for (const Experiments::WorkloadProfile& workload : workloads)
+			{
+				if (workload.name == name)
+					return &workload;
+			}
+			return nullptr;
+		};
+
+		for (auto& [key, indices] : groups)
+		{
+			const SearchDataset* dataset = findDataset(key.first);
+			const Experiments::WorkloadProfile* workload = findWorkload(key.second);
+			if (!dataset || !workload)
+				continue;
+
+			// Pick top-K by score within this group. Lower score wins.
+			std::sort(indices.begin(), indices.end(), [&records](size_t a, size_t b) {
+				return records[a].score < records[b].score;
+			});
+			if (indices.size() > topK)
+				indices.resize(topK);
+
+			const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset->cloud);
+			const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(*workload, options.weights);
+
+			for (const size_t recordIndex : indices)
+			{
+				Experiments::SchemaSearchRecord& target = records[recordIndex];
+
+				Experiments::SchemaCandidate candidate;
+				candidate.name = target.schemaName;
+				candidate.path = target.schemaPath;
+				candidate.isBaseline = target.isBaseline;
+				try
+				{
+					candidate.config = Config::loadSchemaConfig(target.schemaPath);
+				}
+				catch (const std::exception& exception)
+				{
+					std::cerr << "    multi-seed confirmation skipped '" << target.schemaName
+						<< "' (" << exception.what() << ")\n";
+					continue;
+				}
+
+				std::vector<double> latencies;
+				std::vector<double> p95s;
+				std::vector<double> gpuBuilds;
+				latencies.reserve(options.confirmSeeds);
+				p95s.reserve(options.confirmSeeds);
+				gpuBuilds.reserve(options.confirmSeeds);
+
+				for (size_t s = 0; s < options.confirmSeeds; ++s)
+				{
+					Experiments::WorkloadProfile seededWorkload = *workload;
+					// 7919 is a prime offset that decorrelates seeded sub-runs even when the
+					// caller's base querySeed is also bumped between invocations.
+					seededWorkload.querySeed = workload->querySeed + static_cast<uint32_t>(7919u * (s + 1));
+					const PreparedWorkload preparedWorkload = prepareWorkloadProfile(
+						seededWorkload, dataset->cloud, cudaEvaluator);
+
+					Experiments::SchemaSearchRecord trialRecord = benchmarkSchemaCandidateCached(
+						*dataset,
+						features,
+						seededWorkload,
+						workloadFeatures,
+						preparedWorkload,
+						candidate,
+						options,
+						nullptr);
+
+					latencies.push_back(trialRecord.queryMetrics.averageLatencyMs);
+					p95s.push_back(trialRecord.queryMetrics.p95LatencyMs);
+					gpuBuilds.push_back(trialRecord.gpuBuildMs);
+				}
+
+				const auto [latMean, latLo, latHi] = Experiments::bootstrapMeanCI(latencies);
+				const auto [p95Mean, p95Lo, p95Hi] = Experiments::bootstrapMeanCI(p95s);
+				const auto [bldMean, bldLo, bldHi] = Experiments::bootstrapMeanCI(gpuBuilds);
+
+				target.confirmSeedsUsed = options.confirmSeeds;
+				target.latencyMean = latMean;
+				target.latencyCiLow = latLo;
+				target.latencyCiHigh = latHi;
+				target.p95LatencyMean = p95Mean;
+				target.p95LatencyCiLow = p95Lo;
+				target.p95LatencyCiHigh = p95Hi;
+				target.gpuBuildMean = bldMean;
+				target.gpuBuildCiLow = bldLo;
+				target.gpuBuildCiHigh = bldHi;
+
+				std::cout << "    confirm '" << target.schemaName << "' [" << key.first << "/" << key.second
+					<< "]: latency " << latMean << " ms (95% CI " << latLo << "-" << latHi
+					<< "), gpu build " << bldMean << " ms\n";
+			}
+		}
+	}
 }
 
 Experiments::EvaluatorResolution Experiments::resolveSchemaSearchEvaluator(
@@ -4028,6 +4823,15 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	std::vector<double> extentXValues;
 	std::vector<double> extentYValues;
 	std::vector<double> extentZValues;
+	// Phase B3 anisotropy samples: `1 - shortExtent / longExtent` per sketch cell. Root counts too
+	// so the quantile estimator has at least one sample on extremely uniform clouds.
+	std::vector<double> anisotropyValues;
+	auto pushAnisotropy = [&anisotropyValues](double x, double y, double z) {
+		const double minE = std::min({ x, y, z });
+		const double maxE = std::max({ x, y, z });
+		if (maxE > 1.0e-9)
+			addUniqueDouble(anisotropyValues, 1.0 - (minE / maxE));
+	};
 
 	const glm::vec3 rootExtent = glm::max(cloud.bounds().size(), glm::vec3(0.0f));
 	const double horizontalExtent = std::max({ static_cast<double>(rootExtent.x), static_cast<double>(rootExtent.y), 1.0e-9 });
@@ -4043,6 +4847,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	addUniqueDouble(extentXValues, rootExtent.x);
 	addUniqueDouble(extentYValues, rootExtent.y);
 	addUniqueDouble(extentZValues, rootExtent.z);
+	pushAnisotropy(rootExtent.x, rootExtent.y, rootExtent.z);
 
 	const size_t sampleCount = domain.samplePoints;
 	auto sampleIndexAt = [&](size_t sampleIndex) {
@@ -4082,6 +4887,8 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 		const double cellHorizontalExtent = std::max({ cellExtent.x, cellExtent.y, 1.0e-9 });
 		const double cellHeightRatio = cellExtent.z / cellHorizontalExtent;
 		const double cellVolume = cellExtent.x * cellExtent.y * cellExtent.z;
+		// All cells at this division share the same aspect ratio, so one sample is sufficient.
+		pushAnisotropy(cellExtent.x, cellExtent.y, cellExtent.z);
 		const double sampleScale = sampleCount > 0 ? static_cast<double>(cloud.size()) / static_cast<double>(sampleCount) : 1.0;
 
 		for (const SketchCell& cell : cells)
@@ -4113,7 +4920,23 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 		addUniqueDouble(domain.extentXThresholds, quantileValue(extentXValues, quantile));
 		addUniqueDouble(domain.extentYThresholds, quantileValue(extentYValues, quantile));
 		addUniqueDouble(domain.extentZThresholds, quantileValue(extentZValues, quantile));
+		if (!anisotropyValues.empty())
+			addUniqueDouble(domain.anisotropyThresholds, std::clamp(quantileValue(anisotropyValues, quantile), 0.0, 1.0));
 	}
+	// Default fallback anisotropy gates when the sketch yielded too few samples — covers a
+	// reasonable spread from "near-cubic" to "highly elongated" so the generator always has
+	// something to sample from.
+	if (domain.anisotropyThresholds.size() < 3)
+	{
+		for (const double fallback : { 0.1, 0.25, 0.4, 0.55, 0.7, 0.85 })
+			addUniqueDouble(domain.anisotropyThresholds, fallback);
+	}
+	// Occupancy-entropy thresholds. Fixed spread over [0.1, 0.9] in the [0, 1] normalized space
+	// covers the useful gating range — values near 0 fire on extremely clustered nodes, values
+	// near 1 fire on near-uniform ones. No per-cloud anchoring needed since the per-node entropy
+	// is itself normalized by ln(64) at evaluation time.
+	for (const double fallback : { 0.15, 0.30, 0.45, 0.60, 0.75, 0.90 })
+		addUniqueDouble(domain.occupancyEntropyThresholds, fallback);
 
 	for (const size_t fallback : fallbackPointThresholds())
 	{
@@ -4140,6 +4963,8 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	sortUniqueValues(domain.extentXThresholds);
 	sortUniqueValues(domain.extentYThresholds);
 	sortUniqueValues(domain.extentZThresholds);
+	sortUniqueValues(domain.anisotropyThresholds);
+	sortUniqueValues(domain.occupancyEntropyThresholds);
 	return domain;
 }
 
@@ -4196,8 +5021,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 			level.numLevels = levelDistribution(rng);
 			level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
-			if (level.type == MultiDataStructure::KDTreeNode)
-				level.axisPolicy = "median_longest_axis";
+			level.axisPolicy = sampleAxisPolicy(rng, level.type);
 			if (options.conditionalLevels && block > 0 && conditionDistribution(rng))
 				level.condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, conditionDomain);
 
@@ -4482,7 +5306,12 @@ namespace
 	ParetoMetrics extractParetoMetrics(const Experiments::SchemaSearchRecord& record)
 	{
 		ParetoMetrics m;
-		m.avgLatencyMs = record.queryMetrics.averageLatencyMs;
+		// When the record went through multi-seed confirmation, prefer the seed-averaged mean.
+		// A single noisy seed that got lucky can't fake a Pareto win because its win has to hold
+		// up against the average over confirmSeedsUsed independent draws.
+		m.avgLatencyMs = record.confirmSeedsUsed > 0
+			? record.latencyMean
+			: record.queryMetrics.averageLatencyMs;
 		m.buildTimeMs = record.buildMetrics.buildTimeMs;
 		// memoryEstimateBytes is always populated; scoreMemoryMb may be 0 when the record is
 		// loaded from the cache without recomputing computeSchemaSearchScore. Always derive
@@ -4564,6 +5393,37 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 	return front;
 }
 
+std::tuple<double, double, double> Experiments::bootstrapMeanCI(
+	const std::vector<double>& samples,
+	size_t resamples,
+	uint32_t seed)
+{
+	if (samples.empty())
+		return { 0.0, 0.0, 0.0 };
+
+	const double pointMean = std::accumulate(samples.begin(), samples.end(), 0.0)
+		/ static_cast<double>(samples.size());
+
+	if (samples.size() == 1 || resamples == 0)
+		return { pointMean, pointMean, pointMean };
+
+	std::mt19937 rng(seed);
+	std::uniform_int_distribution<size_t> pick(0, samples.size() - 1);
+	std::vector<double> resampledMeans(resamples);
+	for (size_t b = 0; b < resamples; ++b)
+	{
+		double sum = 0.0;
+		for (size_t i = 0; i < samples.size(); ++i)
+			sum += samples[pick(rng)];
+		resampledMeans[b] = sum / static_cast<double>(samples.size());
+	}
+	std::sort(resampledMeans.begin(), resampledMeans.end());
+
+	const size_t loIdx = static_cast<size_t>(static_cast<double>(resamples) * 0.025);
+	const size_t hiIdx = std::min(resamples - 1, static_cast<size_t>(static_cast<double>(resamples) * 0.975));
+	return { pointMean, resampledMeans[loIdx], resampledMeans[hiIdx] };
+}
+
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 {
 	SchemaSearchOptions resolvedOptions = options;
@@ -4640,7 +5500,12 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		if (cudaOptions.queryBatchSize > 0)
 			std::cout << "  cuda query batch: " << cudaOptions.queryBatchSize << '\n';
 		if (cudaOptions.memoryBudgetMb > 0)
-			std::cout << "  cuda memory budget: " << cudaOptions.memoryBudgetMb << " MB\n";
+		{
+			std::cout << "  cuda memory budget: " << cudaOptions.memoryBudgetMb << " MB";
+			if (resolvedOptions.cuda.memoryBudgetMb == 0)
+				std::cout << " (auto, 75% of total VRAM)";
+			std::cout << '\n';
+		}
 	}
 	std::cout << "  datasets: " << datasets.size() << '\n';
 	std::cout << "  schemas: " << schemas.size() << '\n';
@@ -4745,6 +5610,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		}
 	}
 
+	runMultiSeedConfirmation(records, datasets, workloads, resolvedOptions);
 	annotateBaselineComparisons(records);
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);

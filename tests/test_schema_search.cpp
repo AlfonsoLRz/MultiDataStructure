@@ -837,6 +837,77 @@ namespace BaselineTests
 			expect(front.front().paretoRank == 0, "first row of returned front is rank 0");
 		}
 
+		// Phase C2: bootstrap mean + 95% CI helper.
+		{
+			// Deterministic samples: mean is exactly 5.0, CI should bracket it tightly.
+			const std::vector<double> samples = { 4.0, 4.5, 5.0, 5.5, 6.0 };
+			const auto [mean, ciLow, ciHigh] = Experiments::bootstrapMeanCI(samples, 2000, 0xC0FFEE);
+			expect(nearlyEqual(mean, 5.0), "bootstrap reports the sample mean");
+			expect(ciLow <= mean && mean <= ciHigh,
+				"95% CI brackets the point mean");
+			expect(ciLow >= 4.0 && ciHigh <= 6.0,
+				"95% CI stays within the sample range");
+			expect((ciHigh - ciLow) < 2.0,
+				"95% CI is narrower than the sample range");
+
+			// Empty input collapses cleanly.
+			const auto [emptyMean, emptyLo, emptyHi] = Experiments::bootstrapMeanCI({}, 100, 1);
+			expect(nearlyEqual(emptyMean, 0.0) && nearlyEqual(emptyLo, 0.0) && nearlyEqual(emptyHi, 0.0),
+				"empty sample produces zeroed mean/CI");
+
+			// Single-element input collapses CI to the point value.
+			const auto [oneMean, oneLo, oneHi] = Experiments::bootstrapMeanCI({ 7.25 }, 100, 1);
+			expect(nearlyEqual(oneMean, 7.25) && nearlyEqual(oneLo, 7.25) && nearlyEqual(oneHi, 7.25),
+				"single-element CI collapses to the point value");
+
+			// Deterministic for fixed seed: repeating the call with the same seed yields the same CI.
+			const auto [_, ciLowA, ciHighA] = Experiments::bootstrapMeanCI(samples, 500, 99);
+			const auto [__, ciLowB, ciHighB] = Experiments::bootstrapMeanCI(samples, 500, 99);
+			expect(nearlyEqual(ciLowA, ciLowB) && nearlyEqual(ciHighA, ciHighB),
+				"bootstrap CI is reproducible for a fixed seed");
+		}
+
+		// Phase C2: Pareto dominance uses latencyMean when the record came out of multi-seed
+		// confirmation. A noisy record with a lucky low single-seed latency must not Pareto-dominate
+		// a stable record whose mean is genuinely better.
+		{
+			auto makeRecord = [](const std::string& schemaName, double latencyMs, double buildMs,
+				size_t memoryBytes, double avgOccupancy, size_t maxOccupancy,
+				size_t confirmSeeds, double latencyMean) {
+				Experiments::SchemaSearchRecord record;
+				record.datasetName = "ds";
+				record.workloadName = "wl";
+				record.schemaName = schemaName;
+				record.queryMetrics.averageLatencyMs = latencyMs;
+				record.buildMetrics.buildTimeMs = buildMs;
+				record.buildMetrics.memoryEstimateBytes = memoryBytes;
+				record.buildMetrics.averageLeafOccupancy = avgOccupancy;
+				record.buildMetrics.maxLeafOccupancy = maxOccupancy;
+				record.score = latencyMs;
+				record.confirmSeedsUsed = confirmSeeds;
+				record.latencyMean = latencyMean;
+				return record;
+			};
+
+			std::vector<Experiments::SchemaSearchRecord> raw;
+			// A: noisy single-seed point estimate is 0.1 ms but the confirmed mean across 5 seeds is 1.0 ms.
+			raw.push_back(makeRecord("noisy_lucky", 0.1, 10.0, 50ull * 1024 * 1024, 40.0, 60, 5, 1.0));
+			// B: confirmed mean of 0.5 ms — better than A's confirmed mean, but worse than A's
+			// single-seed point estimate.
+			raw.push_back(makeRecord("stable",       0.6, 10.0, 50ull * 1024 * 1024, 40.0, 60, 5, 0.5));
+
+			const std::vector<Experiments::SchemaSearchRecord> front = Experiments::selectParetoRecords(raw);
+			bool sawNoisy = false;
+			bool sawStable = false;
+			for (const auto& entry : front)
+			{
+				if (entry.schemaName == "noisy_lucky") sawNoisy = true;
+				if (entry.schemaName == "stable")      sawStable = true;
+			}
+			expect(sawStable, "stable candidate (best confirmed mean) survives the Pareto front");
+			expect(!sawNoisy, "noisy single-seed lucky candidate is dominated by the confirmed mean");
+		}
+
 		// Candidates with no conditional levels short-circuit cleanly — no evaluations, score
 		// equals initial, candidate returned unchanged.
 		{

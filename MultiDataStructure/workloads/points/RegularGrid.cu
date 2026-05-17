@@ -44,12 +44,26 @@ namespace
 		return static_cast<size_t>(product);
 	}
 
+	// Hard cap that fires even when the user runs with memoryBudgetMb = 0 (unlimited). A grid
+	// past this point is practically unusable for query latency and a near-certain GPU OOM on
+	// any consumer-grade card. 256M cells * 8 bytes (cellStarts + cellEnds) = 2 GB just for the
+	// cell tables, before any point or scratch allocations.
+	constexpr size_t MaxCellsPerLevel = 256ull * 1024 * 1024;
+
 	GridShape chooseGridShape(size_t pointCount, size_t leafCapacity, const glm::vec3& coordinateRange)
 	{
 		if (pointCount == 0)
 			return {};
 
 		const double targetCells = static_cast<double>(std::max<size_t>(1, divUp(pointCount, leafCapacity)));
+		if (targetCells > static_cast<double>(MaxCellsPerLevel))
+		{
+			throw std::runtime_error("RegularGrid target cell count ("
+				+ std::to_string(static_cast<size_t>(targetCells))
+				+ ") exceeds the per-level safety cap ("
+				+ std::to_string(MaxCellsPerLevel)
+				+ "). Increase leaf capacity or restrict the schema generator's min leaf bound.");
+		}
 		const glm::dvec3 range(
 			std::max(0.0f, coordinateRange.x),
 			std::max(0.0f, coordinateRange.y),
@@ -94,6 +108,14 @@ namespace
 		shape.y = dimensions[1];
 		shape.z = dimensions[2];
 		shape.cells = checkedProduct(shape.x, shape.y, shape.z);
+		if (shape.cells > MaxCellsPerLevel)
+		{
+			throw std::runtime_error("RegularGrid post-rounding cell count ("
+				+ std::to_string(shape.cells)
+				+ ") exceeds the per-level safety cap ("
+				+ std::to_string(MaxCellsPerLevel)
+				+ ") after axis ceiling.");
+		}
 		return shape;
 	}
 

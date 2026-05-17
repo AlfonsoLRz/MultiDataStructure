@@ -135,6 +135,10 @@ namespace
 		condition.maxExtentY = optionalDouble(object, { "maxExtentY", "extentYMax", "extent_y_max" });
 		condition.minExtentZ = optionalDouble(object, { "minExtentZ", "extentZMin", "extent_z_min" });
 		condition.maxExtentZ = optionalDouble(object, { "maxExtentZ", "extentZMax", "extent_z_max" });
+		condition.minAnisotropy = optionalDouble(object, { "minAnisotropy", "anisotropyMin", "anisotropy_min" });
+		condition.maxAnisotropy = optionalDouble(object, { "maxAnisotropy", "anisotropyMax", "anisotropy_max" });
+		condition.minOccupancyEntropy = optionalDouble(object, { "minOccupancyEntropy", "occupancyEntropyMin", "occupancy_entropy_min" });
+		condition.maxOccupancyEntropy = optionalDouble(object, { "maxOccupancyEntropy", "occupancyEntropyMax", "occupancy_entropy_max" });
 		return condition;
 	}
 
@@ -182,7 +186,9 @@ bool SchemaLevelCondition::empty() const
 		!minHeightRatio && !maxHeightRatio &&
 		!minExtentX && !maxExtentX &&
 		!minExtentY && !maxExtentY &&
-		!minExtentZ && !maxExtentZ;
+		!minExtentZ && !maxExtentZ &&
+		!minAnisotropy && !maxAnisotropy &&
+		!minOccupancyEntropy && !maxOccupancyEntropy;
 }
 
 size_t SchemaConfig::totalLevels() const

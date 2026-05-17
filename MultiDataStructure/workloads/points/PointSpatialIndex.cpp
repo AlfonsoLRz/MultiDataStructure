@@ -290,6 +290,62 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 	if (belowMin(extentZ, condition.minExtentZ) || aboveMax(extentZ, condition.maxExtentZ))
 		return false;
 
+	if (condition.minAnisotropy.has_value() || condition.maxAnisotropy.has_value())
+	{
+		// Per-node anisotropy proxy: 1 - shortExtent / longExtent over the bbox. Range [0, 1].
+		// 0 = perfectly cubic, 1 = degenerate line. Skip the test when the bbox is degenerate
+		// (e.g. zero-volume slice) — there's no meaningful aspect ratio to compare against the
+		// threshold there, and gating on a singular ratio would cause condition cliffs.
+		const double minE = std::min({ extentX, extentY, extentZ });
+		const double maxE = std::max({ extentX, extentY, extentZ });
+		if (maxE > EPSILON)
+		{
+			const double anisotropy = 1.0 - (minE / maxE);
+			if (belowMin(anisotropy, condition.minAnisotropy) || aboveMax(anisotropy, condition.maxAnisotropy))
+				return false;
+		}
+	}
+
+	if (condition.minOccupancyEntropy.has_value() || condition.maxOccupancyEntropy.has_value())
+	{
+		// Per-node Shannon entropy over a 4x4x4 = 64-cell sub-grid of this node's bbox.
+		// Normalized to [0, 1] by dividing by ln(64). 0 = all points in one sub-cell (perfectly
+		// clustered), 1 = uniformly spread. Skip the test when the node has too few points to
+		// estimate entropy meaningfully (a couple of points always gives near-zero entropy and
+		// would trigger maxOccupancyEntropy gates spuriously).
+		const size_t pointThreshold = 16;
+		if (pointCount >= pointThreshold && extentX > EPSILON && extentY > EPSILON && extentZ > EPSILON)
+		{
+			constexpr int kDivisions = 4;
+			constexpr int kCellCount = kDivisions * kDivisions * kDivisions;
+			std::array<size_t, kCellCount> cells{};
+			const glm::vec3 minBound = node.bounds.min();
+			for (const uint32_t pointIndex : node.pointIndices)
+			{
+				const glm::vec3& position = _cloud->points()[pointIndex].position;
+				int cx = static_cast<int>((static_cast<double>(position.x - minBound.x) / extentX) * kDivisions);
+				int cy = static_cast<int>((static_cast<double>(position.y - minBound.y) / extentY) * kDivisions);
+				int cz = static_cast<int>((static_cast<double>(position.z - minBound.z) / extentZ) * kDivisions);
+				cx = std::clamp(cx, 0, kDivisions - 1);
+				cy = std::clamp(cy, 0, kDivisions - 1);
+				cz = std::clamp(cz, 0, kDivisions - 1);
+				++cells[(cx * kDivisions + cy) * kDivisions + cz];
+			}
+			double entropy = 0.0;
+			const double total = static_cast<double>(pointCount);
+			for (const size_t cellCount : cells)
+			{
+				if (cellCount == 0)
+					continue;
+				const double probability = static_cast<double>(cellCount) / total;
+				entropy -= probability * std::log(probability);
+			}
+			const double normalized = entropy / std::log(static_cast<double>(kCellCount));
+			if (belowMin(normalized, condition.minOccupancyEntropy) || aboveMax(normalized, condition.maxOccupancyEntropy))
+				return false;
+		}
+	}
+
 	return true;
 }
 

@@ -417,6 +417,18 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.evolution.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
 		}
+		else if (arg == "--optimizer-crossover-rate" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.crossoverRate = std::stod(argv[++i]);
+		}
+		else if (arg == "--optimizer-nsga2")
+		{
+			config.schemaSearchOptions.evolution.useNsga2Ranking = true;
+		}
+		else if (arg == "--no-optimizer-nsga2")
+		{
+			config.schemaSearchOptions.evolution.useNsga2Ranking = false;
+		}
 		else if (arg == "--rungs" && i + 1 < argc)
 		{
 			const std::string spec = argv[++i];
@@ -510,6 +522,14 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--pareto-csv" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.paretoCsvPath = argv[++i];
+		}
+		else if (arg == "--confirm-seeds" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.confirmSeeds = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--confirm-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.confirmTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--queries" && i + 1 < argc)
 		{
@@ -623,6 +643,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --optimizer-elites <n>      Best measured candidates kept as parents, default 6\n"
 		<< "  --optimizer-mutation-rate <v> Extra mutation probability per child, default 0.65\n"
 		<< "  --optimizer-random-fraction <v> Fraction of each generation sampled randomly, default 0.20\n"
+		<< "  --optimizer-crossover-rate <v> Probability that a child is built by splicing two elites, default 0.40\n"
+		<< "  --optimizer-nsga2 / --no-optimizer-nsga2  Toggle NSGA-II non-dominated + crowding-distance elite ranking\n"
 		<< "  --rungs <schedule>          Multi-fidelity rung schedule applied inside the optimizer.\n"
 		<< "                              Format: name:queries:visit|latency:advance,... e.g.\n"
 		<< "                              proxy:4:visit:32,full:16:latency:8,confirm:64:latency:0\n"
@@ -653,6 +675,10 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
 		<< "  --pareto-csv <path>         Write Pareto front (non-dominated rows over latency/build/memory/imbalance)\n"
+		<< "  --confirm-seeds <n>         After the main run, re-measure the top-K with N distinct query seeds and\n"
+		<< "                              record mean + 95% bootstrap CI on (avg latency, p95 latency, GPU build).\n"
+		<< "                              N < 2 disables. The Pareto step uses the seed-averaged mean.\n"
+		<< "  --confirm-top <k>           Number of top candidates per (dataset, workload) to re-measure, default 4\n"
 		<< "  --no-csv                    Disable CSV summary output\n"
 		<< "  --queries <count>           Run generated query profile; 0 disables it\n"
 		<< "  --knn-k <count>             Neighbor count for generated KNN queries\n"

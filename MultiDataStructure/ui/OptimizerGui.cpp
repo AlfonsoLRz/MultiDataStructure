@@ -197,6 +197,19 @@ namespace
 		float refineThresholdsSigma = 0.3f;
 		int refineThresholdsSeed = 1337;
 
+		// Multi-seed confirmation (Phase C2). After the main measurement loop the top-K per
+		// (dataset, workload) is re-measured with N distinct query seeds and the seed-averaged
+		// mean + 95% bootstrap CI lands in the record. Default-on with 5 seeds, top-4.
+		bool confirmSeeds = true;
+		int confirmSeedsCount = 5;
+		int confirmTopK = 4;
+
+		// Phase B4 diversity controls. Default-on: crossover at 0.4 + NSGA-II elite ranking are
+		// the recommended pipeline for traversing the search manifold instead of polishing a
+		// single corridor.
+		float optimizerCrossoverRate = 0.4f;
+		bool optimizerUseNsga2 = true;
+
 		SchemaFileViewer fileViewer;
 		StructurePreview structurePreview;
 	};
@@ -1280,6 +1293,8 @@ namespace
 		options.evolution.seed = static_cast<uint32_t>(state.optimizerSeed);
 		options.evolution.mutationRate = static_cast<double>(state.optimizerMutationRate);
 		options.evolution.randomImmigrationRate = static_cast<double>(state.optimizerRandomFraction);
+		options.evolution.crossoverRate = static_cast<double>(state.optimizerCrossoverRate);
+		options.evolution.useNsga2Ranking = state.optimizerUseNsga2;
 
 		if (state.optimizeSchemas && state.useRungSchedule)
 		{
@@ -1323,6 +1338,16 @@ namespace
 		else
 		{
 			options.evolution.refineThresholds = false;
+		}
+
+		if (state.confirmSeeds && state.confirmSeedsCount >= 2)
+		{
+			options.confirmSeeds = static_cast<size_t>(state.confirmSeedsCount);
+			options.confirmTopK = static_cast<size_t>(std::max(1, state.confirmTopK));
+		}
+		else
+		{
+			options.confirmSeeds = 0;
 		}
 		options.evaluator = state.evaluator == 1 ? "cuda" : "cpu";
 		options.cuda.device = state.cudaDevice;
@@ -1648,6 +1673,10 @@ namespace
 			drawHelpMarker("Probability of applying extra edits to a child schema. Higher values make larger jumps in topology/depth/leaf/condition space.");
 			ImGui::SliderFloat("Random fraction", &state.optimizerRandomFraction, 0.0f, 1.0f, "%.2f");
 			drawHelpMarker("Fraction of each generation filled with fresh random candidates instead of mutations. This preserves exploration.");
+			ImGui::SliderFloat("Crossover rate", &state.optimizerCrossoverRate, 0.0f, 1.0f, "%.2f");
+			drawHelpMarker("Probability that a child is built by splicing two elite parents' level lists instead of mutating one. Reaches topology combinations neither parent had; 0 disables crossover (pre-B4 behavior).");
+			ImGui::Checkbox("NSGA-II elite ranking", &state.optimizerUseNsga2);
+			drawHelpMarker("Rank elites by non-dominated-sort + crowding distance over (latency, build, memory, imbalance). Preserves diversity across the Pareto front instead of collapsing it to a scalar score winner.");
 
 			ImGui::Separator();
 			ImGui::Checkbox("Multi-fidelity rungs", &state.useRungSchedule);
@@ -1684,6 +1713,16 @@ namespace
 			drawHelpMarker("Initial step size in normalised [0,1] threshold space. 0.3 is a good default; larger values explore wider, smaller values polish.");
 			ImGui::InputInt("Refine seed", &state.refineThresholdsSeed);
 			drawHelpMarker("RNG seed for the refiner. Different seeds produce different threshold trajectories.");
+			ImGui::EndDisabled();
+
+			ImGui::Separator();
+			ImGui::Checkbox("Multi-seed confirmation", &state.confirmSeeds);
+			drawHelpMarker("After the main run, the top-K per (dataset, workload) is re-measured with N distinct query seeds. Records pick up a seed-averaged mean and 95% bootstrap CI on avg latency, p95 latency, and GPU build time; the Pareto step uses the mean so noise can't fake a win.");
+			ImGui::BeginDisabled(!state.confirmSeeds);
+			ImGui::InputInt("Confirm seeds", &state.confirmSeedsCount);
+			drawHelpMarker("Number of distinct query seeds to draw. 5 is the publication default; lower it for quick iteration, raise it for tighter CIs.");
+			ImGui::InputInt("Confirm top-K", &state.confirmTopK);
+			drawHelpMarker("Number of top-by-score candidates per (dataset, workload) to re-measure. 4 keeps the extra cost bounded while still covering the Pareto front entries in most setups.");
 			ImGui::EndDisabled();
 		}
 	}

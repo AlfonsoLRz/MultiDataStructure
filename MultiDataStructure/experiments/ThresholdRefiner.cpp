@@ -141,6 +141,14 @@ namespace
 			condition.minExtentZ = value;
 		else if (field == "maxExtentZ")
 			condition.maxExtentZ = value;
+		else if (field == "minAnisotropy")
+			condition.minAnisotropy = std::clamp(value, 0.0, 1.0);
+		else if (field == "maxAnisotropy")
+			condition.maxAnisotropy = std::clamp(value, 0.0, 1.0);
+		else if (field == "minOccupancyEntropy")
+			condition.minOccupancyEntropy = std::clamp(value, 0.0, 1.0);
+		else if (field == "maxOccupancyEntropy")
+			condition.maxOccupancyEntropy = std::clamp(value, 0.0, 1.0);
 	}
 }
 
@@ -157,6 +165,8 @@ namespace Experiments
 		const DomainBound extentXBound = boundsOf(domain.extentXThresholds);
 		const DomainBound extentYBound = boundsOf(domain.extentYThresholds);
 		const DomainBound extentZBound = boundsOf(domain.extentZThresholds);
+		const DomainBound anisotropyBound = boundsOf(domain.anisotropyThresholds);
+		const DomainBound entropyBound = boundsOf(domain.occupancyEntropyThresholds);
 
 		for (size_t levelIndex = 0; levelIndex < candidate.config.levels.size(); ++levelIndex)
 		{
@@ -200,6 +210,18 @@ namespace Experiments
 			addDimensionIfActive(dims, levelIndex, "maxExtentZ", false, false,
 				[&]() -> const std::optional<double>& { return condition.maxExtentZ; },
 				[&]() { return extentZBound; });
+			addDimensionIfActive(dims, levelIndex, "minAnisotropy", false, false,
+				[&]() -> const std::optional<double>& { return condition.minAnisotropy; },
+				[&]() { return anisotropyBound; });
+			addDimensionIfActive(dims, levelIndex, "maxAnisotropy", false, false,
+				[&]() -> const std::optional<double>& { return condition.maxAnisotropy; },
+				[&]() { return anisotropyBound; });
+			addDimensionIfActive(dims, levelIndex, "minOccupancyEntropy", false, false,
+				[&]() -> const std::optional<double>& { return condition.minOccupancyEntropy; },
+				[&]() { return entropyBound; });
+			addDimensionIfActive(dims, levelIndex, "maxOccupancyEntropy", false, false,
+				[&]() -> const std::optional<double>& { return condition.maxOccupancyEntropy; },
+				[&]() { return entropyBound; });
 		}
 
 		return dims;

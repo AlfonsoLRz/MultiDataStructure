@@ -6,6 +6,19 @@
 
 namespace
 {
+	// Upper bound on cells in a single RegularGrid level, derived the same way
+	// `chooseGridShape` derives `targetCells`: divUp(pointCount, leafCapacity). The actual cell
+	// count after `chooseGridShape` rounds up may exceed this by at most a small factor (one
+	// extra cell per active axis), so we add a 1.25x safety margin.
+	size_t estimateCellsForLevel(size_t pointCount, size_t leafCapacity)
+	{
+		if (pointCount == 0 || leafCapacity == 0)
+			return 0;
+		const size_t target = (pointCount + leafCapacity - 1) / leafCapacity;
+		const size_t margin = target + target / 4;
+		return std::max<size_t>(1, margin);
+	}
+
 	size_t leafCapacityForSchema(const SchemaConfig& schema)
 	{
 		size_t leafCapacity = schema.buildPolicy.leafCapacity;
@@ -15,6 +28,13 @@ namespace
 		return std::max<size_t>(1, leafCapacity);
 	}
 
+	// Was clamped to 4 historically to keep memory bounded on cards we couldn't measure. With
+	// the VRAM auto-detection + aggregate memory pre-check now in place, the build path throws
+	// early when a schema would exceed the budget, so the cap can be relaxed. 12 lets `hg6` /
+	// `hg9` / `hg12` schemas actually realize their requested level count (previously they
+	// silently truncated to 4 and the schema name lied about reality).
+	constexpr size_t MaxHGridLevels = 12;
+
 	size_t hgridLevelCountForSchema(const SchemaConfig& schema)
 	{
 		size_t configuredDepth = schema.buildPolicy.maxDepth;
@@ -23,7 +43,14 @@ namespace
 		if (configuredDepth == 0)
 			configuredDepth = 3;
 
-		return std::clamp(configuredDepth, static_cast<size_t>(2), static_cast<size_t>(4));
+		const size_t clamped = std::clamp(configuredDepth, static_cast<size_t>(2), MaxHGridLevels);
+		if (clamped != configuredDepth)
+		{
+			std::cerr << "    HGrid: requested " << configuredDepth
+				<< " levels, clamped to " << clamped
+				<< " (range [2, " << MaxHGridLevels << "])\n";
+		}
+		return clamped;
 	}
 
 	size_t scaledLeafCapacity(size_t baseLeafCapacity, size_t level, size_t levelCount)
@@ -242,6 +269,35 @@ PointGpu::BuildResult PointGpu::HGrid::build(const PointCloud& cloud, const Sche
 	result.builder = "hgrid";
 	if (cloud.empty())
 		return result;
+
+	// Aggregate memory pre-check. Each sub-level RegularGrid checks `options.memoryBudgetMb` on
+	// its own, so configurations where each level fits the budget but the *sum* of all levels
+	// exceeds it slip through and fill GPU memory one allocation at a time. Estimate the total
+	// here so pathological cases throw immediately instead of taking minutes / hanging the GPU.
+	if (options.memoryBudgetMb > 0)
+	{
+		// Per-point overhead in the RegularGrid base buffers (DevicePoint + 4 uint32 keys/indices
+		// + radix-sort scratch buffer). The scratch is dataset-dependent so we approximate it
+		// with 1.5x the point buffer size, which matches CUB's worst case for 100M-point sorts.
+		const size_t basePerPointBytes = sizeof(float) * 3 + sizeof(uint32_t) * 4;
+		const size_t basePerLevelBytes = static_cast<size_t>(cloud.size()) *
+			(basePerPointBytes + sizeof(uint32_t) * 6 / 4);
+		size_t aggregateBytes = 0;
+		for (size_t levelIndex = 0; levelIndex < levelCount; ++levelIndex)
+		{
+			const size_t levelLeafCap = scaledLeafCapacity(baseLeafCapacity, levelIndex, levelCount);
+			const size_t estimatedCells = estimateCellsForLevel(cloud.size(), levelLeafCap);
+			const size_t cellBytes = estimatedCells * sizeof(uint32_t) * 2;
+			aggregateBytes += basePerLevelBytes + cellBytes;
+		}
+		const size_t budgetBytes = options.memoryBudgetMb * size_t(1024) * size_t(1024);
+		if (aggregateBytes > budgetBytes)
+		{
+			throw std::runtime_error("HGrid aggregate memory (" + std::to_string(aggregateBytes / (1024 * 1024))
+				+ " MB across " + std::to_string(levelCount) + " levels) exceeds the configured budget ("
+				+ std::to_string(options.memoryBudgetMb) + " MB). Raise --cuda-memory-budget-mb or use larger leaf capacities.");
+		}
+	}
 
 	_state->levels.reserve(levelCount);
 
