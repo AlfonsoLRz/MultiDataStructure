@@ -124,6 +124,9 @@ namespace Experiments
 		size_t surrogateCandidatePool = 0;
 	};
 
+	// Forward declaration; full definition lives in ThresholdRefiner.h.
+	struct ThresholdRefinementOptions;
+
 	struct EvolutionOptions
 	{
 		bool enabled = false;
@@ -136,6 +139,15 @@ namespace Experiments
 		// Multi-fidelity rung schedule applied to each evaluated batch. Empty = today's flat
 		// evaluate-all-then-mutate behavior.
 		RungSchedule rungSchedule;
+		// Continuous-threshold post-pass over the GA archive. Disabled by default. The full
+		// settings struct (sigma, evaluation budget, etc.) is defined in ThresholdRefiner.h to
+		// keep that header self-contained, but the on/off flag and top-K live here so callers
+		// don't need to include the refiner header just to wire the GA.
+		bool refineThresholds = false;
+		size_t refineThresholdsTopK = 4;
+		size_t refineThresholdsEvaluations = 60;
+		double refineThresholdsSigma0 = 0.3;
+		uint32_t refineThresholdsSeed = 1337;
 	};
 
 	struct CudaEvaluationOptions
@@ -154,6 +166,9 @@ namespace Experiments
 		std::string rankModelPath;
 		std::string csvPath = "results/schema_search.csv";
 		std::string bestCsvPath = "results/schema_search_best.csv";
+		// Optional Phase C1 Pareto-front CSV. One row per non-dominated candidate per
+		// (dataset, workload) group with the `pareto_rank` column. Empty = skip.
+		std::string paretoCsvPath;
 		bool includeSyntheticDatasets = true;
 		bool includeConfiguredSchemas = true;
 		bool useBinaryCache = true;
@@ -231,6 +246,10 @@ namespace Experiments
 		std::string bestBaselineSchema;
 		double bestBaselineScore = 0.0;
 		double relativeSpeedupVsBaseline = 0.0;
+		// Phase C1 Pareto-front tagging. -1 = not on the (dataset, workload) front; otherwise the
+		// 0-indexed rank by avgLatencyMs among non-dominated peers. Populated by
+		// `selectParetoRecords`; unset after a bare measurement run.
+		int paretoRank = -1;
 	};
 
 	struct EvaluatorResolution
@@ -259,7 +278,24 @@ namespace Experiments
 		const ScoreWeights& weights,
 		double& memoryMb,
 		double& imbalancePenalty);
+
+	// Writes `schema` as a generated JSON under `outputDirectory` (empty = no file, candidate
+	// gets a generated:* pseudo path) and returns a SchemaCandidate with a name derived from the
+	// canonical schema signature plus `namePrefix`. Exposed publicly so the threshold refiner
+	// (and any future external generators) can produce unique replayable candidates without
+	// duplicating the JSON serializer.
+	SchemaCandidate materializeSchemaCandidate(
+		SchemaConfig schema,
+		const std::string& namePrefix,
+		const std::string& outputDirectory);
 	std::vector<SchemaSearchRecord> selectBestRecords(const std::vector<SchemaSearchRecord>& records);
+
+	// Returns the non-dominated set per (dataset, workload) group over the four-tuple
+	// (avgLatencyMs, buildTimeMs, memoryMb, imbalancePenalty). Each returned record carries its
+	// `paretoRank` (0 = lowest avgLatencyMs on the front, 1 = next, ...). Domination uses the
+	// strict definition: a dominates b iff a is component-wise <= b on all four and < on at least
+	// one. Records that share all four metrics get distinct ranks but neither dominates the other.
+	std::vector<SchemaSearchRecord> selectParetoRecords(const std::vector<SchemaSearchRecord>& records);
 	int runSchemaSearch(const SchemaSearchOptions& options);
 
 	// One-shot evaluator: loads exactly one dataset, one schema, and one workload from `options`,

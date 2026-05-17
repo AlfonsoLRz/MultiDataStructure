@@ -109,6 +109,7 @@ namespace
 		std::array<char, TextBufferSize> rankModelPath{};
 		std::array<char, TextBufferSize> csvPath{};
 		std::array<char, TextBufferSize> bestCsvPath{};
+		std::array<char, TextBufferSize> paretoCsvPath{};
 		std::array<char, TextBufferSize> generatedSchemaDir{};
 		std::array<char, TextBufferSize> autoConditionSchemaDir{};
 		std::array<char, TextBufferSize> selectorOutputPath{};
@@ -125,7 +126,9 @@ namespace
 		bool generatedOnly = true;
 		bool generatedConditional = true;
 		bool useRankModel = false;
-		bool optimizeSchemas = false;
+		// Default-on: when the user disables auto-conditions, the GA path is the publication
+		// pipeline and Phase A+B1 (rungs + threshold refinement) ride on top of it.
+		bool optimizeSchemas = true;
 		int evaluator = 0;
 		int cudaDevice = 0;
 		int cudaBuilder = 0;
@@ -171,8 +174,9 @@ namespace
 
 		// Multi-fidelity rung schedule (Phase A successive halving). When enabled, each
 		// optimizer batch flows through a cheap visit-proxy stage, a mid-fidelity latency stage,
-		// and a confirmation stage at the full workload.
-		bool useRungSchedule = false;
+		// and a confirmation stage at the full workload. Default-on so the smarter-search
+		// pipeline is the GUI's recommended starting point.
+		bool useRungSchedule = true;
 		int rungProxyQueries = 4;
 		int rungProxyAdvance = 32;
 		float rungProxyAlpha = 0.1f;
@@ -182,6 +186,16 @@ namespace
 		std::array<char, TextBufferSize> rungSurrogatePath{};
 		int rungSurrogatePool = 0;
 		int rungSurrogateTop = 0;
+
+		// Threshold refinement (Phase B1). After the GA finishes, the top-K archive entries with
+		// conditional levels get their numeric thresholds tuned by a (1+lambda)-ES using the
+		// visit-proxy score; survivors that improved are re-measured at full fidelity. Default-on
+		// so the GA path ships its best Phase B1 settings out of the box.
+		bool refineThresholds = true;
+		int refineThresholdsTopK = 4;
+		int refineThresholdsEvals = 60;
+		float refineThresholdsSigma = 0.3f;
+		int refineThresholdsSeed = 1337;
 
 		SchemaFileViewer fileViewer;
 		StructurePreview structurePreview;
@@ -1011,7 +1025,11 @@ namespace
 		state.generatedOnly = true;
 		state.generatedConditional = true;
 		state.useRankModel = false;
-		state.optimizeSchemas = false;
+		// Reset defaults match the struct defaults: GA + rung schedule + threshold refinement on
+		// so the optimizer panel reflects the recommended pipeline whenever the user resets state.
+		state.optimizeSchemas = true;
+		state.useRungSchedule = true;
+		state.refineThresholds = true;
 		state.evaluator = 1;
 		state.cudaDevice = 0;
 		state.cudaBuilder = 8;
@@ -1048,6 +1066,7 @@ namespace
 		setText(state.rankModelPath, rankModel);
 		setText(state.csvPath, projectPath("results/gui_schema_search.csv"));
 		setText(state.bestCsvPath, projectPath("results/gui_schema_search_best.csv"));
+		setText(state.paretoCsvPath, projectPath("results/gui_schema_search_pareto.csv"));
 		setText(state.generatedSchemaDir, projectPath("results/generated_schemas"));
 		setText(state.autoConditionSchemaDir, projectPath("results/auto_conditions"));
 		setText(state.selectorOutputPath, projectPath("models/local_schema_selector.json"));
@@ -1177,6 +1196,7 @@ namespace
 		options.querySeedOverride = true;
 		options.csvPath = textValue(state.csvPath);
 		options.bestCsvPath = textValue(state.bestCsvPath);
+		options.paretoCsvPath = textValue(state.paretoCsvPath);
 
 		const std::string inputPath = resolvePath(textValue(state.inputPath));
 		if (!inputPath.empty())
@@ -1290,6 +1310,19 @@ namespace
 		else
 		{
 			options.evolution.rungSchedule = Experiments::RungSchedule{};
+		}
+
+		if (state.optimizeSchemas && state.refineThresholds)
+		{
+			options.evolution.refineThresholds = true;
+			options.evolution.refineThresholdsTopK = static_cast<size_t>(std::max(1, state.refineThresholdsTopK));
+			options.evolution.refineThresholdsEvaluations = static_cast<size_t>(std::max(1, state.refineThresholdsEvals));
+			options.evolution.refineThresholdsSigma0 = static_cast<double>(state.refineThresholdsSigma);
+			options.evolution.refineThresholdsSeed = static_cast<uint32_t>(state.refineThresholdsSeed);
+		}
+		else
+		{
+			options.evolution.refineThresholds = false;
 		}
 		options.evaluator = state.evaluator == 1 ? "cuda" : "cpu";
 		options.cuda.device = state.cudaDevice;
@@ -1638,6 +1671,20 @@ namespace
 			ImGui::InputInt("Surrogate top-K", &state.rungSurrogateTop);
 			drawHelpMarker("Number of surrogate-ranked candidates injected as additional immigrants each generation. Cheap to raise; the proxy rung filters them anyway.");
 			ImGui::EndDisabled();
+
+			ImGui::Separator();
+			ImGui::Checkbox("Refine thresholds (CMA-style ES)", &state.refineThresholds);
+			drawHelpMarker("After the GA finishes, the top-K archive entries with conditional levels get their numeric thresholds tuned by a (1+lambda)-ES under the visit-proxy. Survivors that improved are re-measured at full fidelity.");
+			ImGui::BeginDisabled(!state.refineThresholds);
+			ImGui::InputInt("Refine top-K", &state.refineThresholdsTopK);
+			drawHelpMarker("Number of GA archive survivors that get their thresholds refined. 4 is a normal publication setting.");
+			ImGui::InputInt("Refine evals/cand", &state.refineThresholdsEvals);
+			drawHelpMarker("Total evaluation budget per refined candidate. 40-80 is the regime where the (1+lambda)-ES converges without overspending.");
+			ImGui::SliderFloat("Refine sigma0", &state.refineThresholdsSigma, 0.01f, 0.8f, "%.2f");
+			drawHelpMarker("Initial step size in normalised [0,1] threshold space. 0.3 is a good default; larger values explore wider, smaller values polish.");
+			ImGui::InputInt("Refine seed", &state.refineThresholdsSeed);
+			drawHelpMarker("RNG seed for the refiner. Different seeds produce different threshold trajectories.");
+			ImGui::EndDisabled();
 		}
 	}
 
@@ -1704,6 +1751,7 @@ namespace
 		drawSectionTitle("Outputs");
 		drawPathInput("CSV", state.csvPath, "Full measured result table, with one row per dataset/workload/schema candidate.");
 		drawPathInput("Best CSV", state.bestCsvPath, "Compact winner table. This is what the GUI reads back to populate Best Results.");
+		drawPathInput("Pareto CSV", state.paretoCsvPath, "Non-dominated front over (avg latency, build time, memory, imbalance) per (dataset, workload). Empty path disables.");
 
 		drawSectionTitle("Speed-ups");
 		ImGui::TextWrapped(

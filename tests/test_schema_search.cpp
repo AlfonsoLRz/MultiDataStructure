@@ -1,6 +1,7 @@
 #include "../MultiDataStructure/stdafx.h"
 #include "../MultiDataStructure/experiments/EvaluationCache.h"
 #include "../MultiDataStructure/experiments/SchemaSearch.h"
+#include "../MultiDataStructure/experiments/ThresholdRefiner.h"
 #include "../MultiDataStructure/workloads/points/MixedTree.h"
 #include "../MultiDataStructure/workloads/points/SyntheticPointClouds.h"
 
@@ -642,6 +643,229 @@ namespace BaselineTests
 				"rung schedule survivor count round-trips");
 			expect(copied.evolution.rungSchedule.surrogateProposalsPerStep == 4,
 				"surrogate proposal count round-trips");
+		}
+
+		// Phase B1: ThresholdRefiner. Builds a candidate whose level has a numeric minPoints
+		// threshold, sets up a synthetic ConditionDomain bounding it, and runs the refiner with
+		// a synthetic score function that has a known minimum. Verifies that:
+		//   (a) collectRefinementDimensions discovers exactly the dims the candidate set
+		//   (b) the (1+lambda)-ES drives the score below the initial value
+		//   (c) the final candidate has minPoints inside the searched range
+		{
+			Experiments::SchemaCandidate seed;
+			seed.config.name = "ot_with_conditional_kd";
+			seed.config.levels.resize(2);
+			seed.config.levels[0].type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			seed.config.levels[0].typeName = "Octree";
+			seed.config.levels[0].numLevels = 4;
+			seed.config.levels[0].leafCapacity = 64;
+			seed.config.levels[1].type = MultiDataStructure::DataStructureLevel::KDTreeNode;
+			seed.config.levels[1].typeName = "KDTree";
+			seed.config.levels[1].numLevels = 3;
+			seed.config.levels[1].leafCapacity = 32;
+			seed.config.levels[1].condition.minPoints = 4096;     // starting point — refiner should move it
+			seed.config.levels[1].condition.minHeightRatio = 0.3; // second active dim
+			seed.path = "test:seed";
+
+			Experiments::ConditionDomain domain;
+			domain.pointThresholds = { 256, 512, 1024, 2048, 4096, 8192, 16384, 32768 };
+			domain.heightRatioThresholds = { 0.05, 0.1, 0.2, 0.4, 0.6, 0.8 };
+			domain.estimatedFromCloud = true;
+			domain.samplePoints = 64;
+
+			const std::vector<Experiments::RefinementDimension> dims =
+				Experiments::collectRefinementDimensions(seed, domain);
+			expect(dims.size() == 2,
+				"refiner discovers exactly the two active condition dimensions");
+			bool foundPoints = false;
+			bool foundHeight = false;
+			for (const Experiments::RefinementDimension& dim : dims)
+			{
+				if (dim.field == "minPoints")
+				{
+					foundPoints = true;
+					expect(dim.integerValued && dim.logScale,
+						"minPoints uses integer + log-scale encoding");
+					expect(nearlyEqual(dim.lo, 256.0) && nearlyEqual(dim.hi, 32768.0),
+						"minPoints bounds come from the supplied domain");
+				}
+				else if (dim.field == "minHeightRatio")
+				{
+					foundHeight = true;
+					expect(!dim.integerValued && !dim.logScale,
+						"minHeightRatio uses continuous linear encoding");
+					expect(dim.lo < dim.hi && dim.lo >= 0.05 && dim.hi <= 0.8,
+						"minHeightRatio bounds come from the supplied domain");
+				}
+			}
+			expect(foundPoints && foundHeight,
+				"refiner reports both minPoints and minHeightRatio as active dims");
+
+			// Synthetic objective: minimised when minPoints ~ 1024 and minHeightRatio ~ 0.4.
+			// Quadratic bowl in encoded threshold space; the refiner must drive the score down.
+			auto syntheticScore = [&](const Experiments::SchemaCandidate& candidate) {
+				if (candidate.config.levels.size() < 2)
+					return 1.0e9;
+				const SchemaLevelCondition& c = candidate.config.levels[1].condition;
+				const double minP = c.minPoints.has_value() ? static_cast<double>(c.minPoints.value()) : 4096.0;
+				const double minH = c.minHeightRatio.value_or(0.3);
+				const double pointError = std::log2(std::max(minP, 1.0)) - std::log2(1024.0);
+				const double heightError = minH - 0.4;
+				return pointError * pointError + 12.0 * heightError * heightError;
+			};
+
+			Experiments::ThresholdRefinementOptions refineOptions;
+			refineOptions.enabled = true;
+			refineOptions.maxEvaluations = 50;
+			refineOptions.populationLambda = 5;
+			refineOptions.sigma0 = 0.4;
+			refineOptions.seed = 4242;
+			refineOptions.outputDirectory.clear();
+
+			const Experiments::ThresholdRefinementResult result =
+				Experiments::refineSchemaThresholds(seed, domain, refineOptions, syntheticScore);
+			expect(result.dimensions == 2, "refinement result reports 2 active dimensions");
+			expect(result.evaluationsUsed >= 6,
+				"refinement consumes at least one generation worth of evaluations");
+			expect(result.refinedScore < result.initialScore,
+				"refinement drives the synthetic objective below its starting value");
+			expect(result.refinedCandidate.config.levels.size() == 2,
+				"refined candidate preserves discrete topology");
+			expect(result.refinedCandidate.config.levels[1].condition.minPoints.has_value(),
+				"refined candidate still carries the minPoints threshold");
+			const size_t refinedMinPoints = result.refinedCandidate.config.levels[1].condition.minPoints.value();
+			expect(refinedMinPoints >= 256 && refinedMinPoints <= 32768,
+				"refined minPoints stays inside the supplied domain bounds");
+			expect(result.refinedCandidate.config.levels[1].condition.minHeightRatio.has_value(),
+				"refined candidate still carries the minHeightRatio threshold");
+
+			// Topology must be frozen: types, level counts, and leaf capacities are untouched.
+			expect(result.refinedCandidate.config.levels[0].typeName == seed.config.levels[0].typeName,
+				"refinement does not change level types");
+			expect(result.refinedCandidate.config.levels[0].leafCapacity == seed.config.levels[0].leafCapacity,
+				"refinement does not change leaf capacity");
+			expect(result.refinedCandidate.config.levels[1].numLevels == seed.config.levels[1].numLevels,
+				"refinement does not change level counts");
+		}
+
+		// Phase C1: Pareto front. Build a synthetic record table with a known structure and
+		// assert selectParetoRecords returns exactly the non-dominated set, ranked by latency.
+		{
+			auto makeRecord = [](const std::string& dataset, const std::string& workload,
+				const std::string& schemaName, double latencyMs, double buildMs,
+				size_t memoryBytes, double avgOccupancy, size_t maxOccupancy) {
+				Experiments::SchemaSearchRecord record;
+				record.datasetName = dataset;
+				record.workloadName = workload;
+				record.schemaName = schemaName;
+				record.queryMetrics.averageLatencyMs = latencyMs;
+				record.buildMetrics.buildTimeMs = buildMs;
+				record.buildMetrics.memoryEstimateBytes = memoryBytes;
+				record.buildMetrics.averageLeafOccupancy = avgOccupancy;
+				record.buildMetrics.maxLeafOccupancy = maxOccupancy;
+				record.score = latencyMs;
+				return record;
+			};
+
+			// Group A: latency-tradeoff front, three should survive.
+			//   fast_big       0.2 ms / 50 ms build / 200 MB / imbalance 2.0   (cheapest latency)
+			//   balanced       0.5 ms / 20 ms build / 100 MB / imbalance 1.5   (balanced)
+			//   tiny           1.0 ms /  5 ms build /  20 MB / imbalance 1.2   (cheapest build/mem)
+			//   dominated      0.6 ms / 25 ms build / 110 MB / imbalance 1.6   (worse than balanced on all)
+			//   matches_balanced 0.5 / 20 / 100 / 1.5  (identical to balanced; co-front, both kept)
+			std::vector<Experiments::SchemaSearchRecord> raw;
+			raw.push_back(makeRecord("ds_a", "wl_a", "fast_big",         0.2, 50.0, 200ull * 1024 * 1024, 50.0, 100));
+			raw.push_back(makeRecord("ds_a", "wl_a", "balanced",         0.5, 20.0, 100ull * 1024 * 1024, 40.0, 60));
+			raw.push_back(makeRecord("ds_a", "wl_a", "tiny",             1.0,  5.0,  20ull * 1024 * 1024, 50.0, 60));
+			raw.push_back(makeRecord("ds_a", "wl_a", "dominated",        0.6, 25.0, 110ull * 1024 * 1024, 40.0, 64));
+			raw.push_back(makeRecord("ds_a", "wl_a", "matches_balanced", 0.5, 20.0, 100ull * 1024 * 1024, 40.0, 60));
+
+			// Group B: single non-dominated entry (only one candidate measured).
+			raw.push_back(makeRecord("ds_b", "wl_b", "lone",             0.3, 10.0, 50ull * 1024 * 1024, 30.0, 45));
+
+			const std::vector<Experiments::SchemaSearchRecord> front = Experiments::selectParetoRecords(raw);
+
+			size_t groupA = 0;
+			size_t groupB = 0;
+			bool sawDominated = false;
+			bool sawTiny = false;
+			bool sawFast = false;
+			bool sawBalanced = false;
+			bool sawCofront = false;
+			int previousLatencyRank = -1;
+			double previousLatency = -1.0;
+			for (const Experiments::SchemaSearchRecord& entry : front)
+			{
+				if (entry.datasetName == "ds_a")
+				{
+					++groupA;
+					expect(entry.paretoRank >= 0, "front entry carries non-negative paretoRank");
+					if (previousLatencyRank == -1 || entry.paretoRank == 0)
+					{
+						previousLatency = entry.queryMetrics.averageLatencyMs;
+						previousLatencyRank = entry.paretoRank;
+					}
+					else
+					{
+						expect(entry.queryMetrics.averageLatencyMs >= previousLatency,
+							"pareto front sorted by ascending latency within group");
+						previousLatency = entry.queryMetrics.averageLatencyMs;
+					}
+					if (entry.schemaName == "dominated")
+						sawDominated = true;
+					if (entry.schemaName == "tiny")
+						sawTiny = true;
+					if (entry.schemaName == "fast_big")
+						sawFast = true;
+					if (entry.schemaName == "balanced")
+						sawBalanced = true;
+					if (entry.schemaName == "matches_balanced")
+						sawCofront = true;
+				}
+				else if (entry.datasetName == "ds_b")
+				{
+					++groupB;
+					expect(entry.paretoRank == 0, "single-entry group ranks the lone candidate at 0");
+				}
+			}
+
+			expect(!sawDominated, "dominated candidate is filtered out of the Pareto front");
+			expect(sawFast && sawTiny && sawBalanced, "non-dominated trio survives the front");
+			expect(sawCofront, "candidate with identical metrics to the balanced one is co-front (no strict domination)");
+			expect(groupA == 4, "ds_a front contains 4 non-dominated rows (fast_big, balanced, matches_balanced, tiny)");
+			expect(groupB == 1, "ds_b front contains the single measured candidate");
+			expect(front.front().paretoRank == 0, "first row of returned front is rank 0");
+		}
+
+		// Candidates with no conditional levels short-circuit cleanly — no evaluations, score
+		// equals initial, candidate returned unchanged.
+		{
+			Experiments::SchemaCandidate flat;
+			flat.config.name = "octree_flat";
+			flat.config.levels.resize(1);
+			flat.config.levels[0].type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			flat.config.levels[0].typeName = "Octree";
+			flat.config.levels[0].numLevels = 6;
+			flat.config.levels[0].leafCapacity = 1024;
+
+			Experiments::ConditionDomain emptyDomain;
+			Experiments::ThresholdRefinementOptions refineOptions;
+			refineOptions.enabled = true;
+			refineOptions.maxEvaluations = 20;
+			refineOptions.outputDirectory.clear();
+
+			size_t evalCount = 0;
+			auto trackedScore = [&](const Experiments::SchemaCandidate&) {
+				++evalCount;
+				return 1.0;
+			};
+
+			const Experiments::ThresholdRefinementResult result =
+				Experiments::refineSchemaThresholds(flat, emptyDomain, refineOptions, trackedScore);
+			expect(result.dimensions == 0, "no active dims when no conditional levels exist");
+			expect(evalCount <= 1, "refiner does not waste evaluations on a flat candidate");
+			expect(result.refinedCandidate.config.name == flat.config.name,
+				"flat candidate is returned unchanged");
 		}
 	}
 }

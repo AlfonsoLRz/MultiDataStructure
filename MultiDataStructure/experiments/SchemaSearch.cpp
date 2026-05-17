@@ -15,6 +15,7 @@
 #include "../workloads/points/SyntheticPointClouds.h"
 #include "EvaluationCache.h"
 #include "SurrogateAcquisition.h"
+#include "ThresholdRefiner.h"
 
 #include <boost/json.hpp>
 #include <boost/system/error_code.hpp>
@@ -2284,6 +2285,56 @@ namespace
 		}
 	}
 
+	void writeParetoRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
+	{
+		if (csvPath.empty())
+			return;
+
+		const std::vector<Experiments::SchemaSearchRecord> front = Experiments::selectParetoRecords(records);
+		createParentDirectory(csvPath);
+		std::ofstream output(csvPath);
+		if (!output.is_open())
+			throw std::runtime_error("Unable to open schema-search Pareto CSV path: " + csvPath);
+
+		// Compact column set focused on the four Pareto objectives plus enough identity to replay
+		// the candidate. The full feature-rich layout stays in the `best` CSV; this one is meant
+		// for plotting the front, not training.
+		output
+			<< "dataset_name,workload_name,pareto_rank,schema_name,schema_path,score,"
+			<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
+			<< "p95_latency_ms,throughput_qps,backend,cuda_builder,is_baseline,"
+			<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction\n";
+		output << std::fixed << std::setprecision(6);
+		for (const Experiments::SchemaSearchRecord& record : front)
+		{
+			const double memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+			const double imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
+				? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+				: 0.0;
+			output
+				<< csvEscape(record.datasetName) << ','
+				<< csvEscape(record.workloadName) << ','
+				<< record.paretoRank << ','
+				<< csvEscape(record.schemaName) << ','
+				<< csvEscape(record.schemaPath) << ','
+				<< record.score << ','
+				<< record.queryMetrics.averageLatencyMs << ','
+				<< record.buildMetrics.buildTimeMs << ','
+				<< memoryMb << ','
+				<< record.buildMetrics.memoryEstimateBytes << ','
+				<< imbalancePenalty << ','
+				<< record.queryMetrics.p95LatencyMs << ','
+				<< record.queryMetrics.throughputQueriesPerSecond << ','
+				<< csvEscape(record.backend) << ','
+				<< csvEscape(record.cudaBuilder) << ','
+				<< (record.isBaseline ? 1 : 0) << ','
+				<< record.conditionalLevels << ','
+				<< record.conditionFields << ','
+				<< record.activeStructureTypes << ','
+				<< record.nestedActiveFraction << '\n';
+		}
+	}
+
 	std::string recordGroupKey(const Experiments::SchemaSearchRecord& record)
 	{
 		return record.datasetName + "\n" + record.workloadName;
@@ -3827,6 +3878,99 @@ namespace
 		if (!archive.empty())
 			std::cout << "  optimizer best aggregate: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
 
+		// Threshold refinement (Phase B1). Picks the top-K archive entries with conditional
+		// levels and runs a continuous-parameter (1+lambda)-ES on the active threshold vector.
+		// Each refiner evaluation uses the visit-proxy on the first dataset+workload (cheap and
+		// deterministic), and then the resulting refined candidate is measured at full fidelity
+		// so it lands in the records/CSV like any other candidate.
+		if (evolution.refineThresholds && !archive.empty() && !datasets.empty() && !workloads.empty())
+		{
+			const size_t topK = std::max<size_t>(1, evolution.refineThresholdsTopK);
+			const size_t available = std::min(topK, archive.size());
+			std::cout << "  threshold refinement: top-" << available
+				<< ", budget " << evolution.refineThresholdsEvaluations << " evals/candidate, sigma0 "
+				<< evolution.refineThresholdsSigma0 << '\n';
+
+			const Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front().dataset->cloud, options.autoConditions.proxyPointCap > 0 ? options.autoConditions.proxyPointCap : 262144);
+
+			Experiments::ThresholdRefinementOptions refinerOptions;
+			refinerOptions.enabled = true;
+			refinerOptions.topK = available;
+			refinerOptions.maxEvaluations = evolution.refineThresholdsEvaluations;
+			refinerOptions.sigma0 = evolution.refineThresholdsSigma0;
+			refinerOptions.seed = evolution.refineThresholdsSeed;
+			refinerOptions.outputDirectory = options.generation.outputDirectory.empty()
+				? std::string("results/refined_schemas")
+				: options.generation.outputDirectory + "/refined";
+
+			// Visit-proxy score function: builds the candidate against the first dataset's
+			// PreparedWorkload and returns the resulting `record.score`. Reuses
+			// `benchmarkSchemaCandidateCached` so cache hits between refinement iterations come
+			// for free. We force `weights.useVisitProxy = true` (cheap, deterministic) regardless
+			// of the user's measurement-level score weights.
+			Experiments::SchemaSearchOptions proxyOptions = options;
+			proxyOptions.weights.useVisitProxy = true;
+			if (proxyOptions.weights.visitProxyAlpha <= 0.0)
+				proxyOptions.weights.visitProxyAlpha = 0.1;
+
+			const DatasetContext& primary = datasets.front();
+			const Experiments::WorkloadProfile& primaryWorkload = workloads.front();
+			const Experiments::WorkloadFeatures primaryWorkloadFeatures = Experiments::extractWorkloadFeatures(primaryWorkload, proxyOptions.weights);
+
+			Experiments::ThresholdScoreFn scoreFn = [&](const Experiments::SchemaCandidate& trial) {
+				Experiments::SchemaSearchRecord trialRecord = benchmarkSchemaCandidateCached(
+					*primary.dataset,
+					primary.features,
+					primaryWorkload,
+					primaryWorkloadFeatures,
+					primary.preparedWorkloads.front(),
+					trial,
+					proxyOptions,
+					nullptr);
+				return trialRecord.score;
+			};
+
+			std::vector<Experiments::SchemaCandidate> refinedSurvivors;
+			refinedSurvivors.reserve(available);
+			for (size_t i = 0; i < available; ++i)
+			{
+				const EvaluatedCandidate& source = archive[i];
+				Experiments::ThresholdRefinementResult refinement = Experiments::refineSchemaThresholds(
+					source.candidate, domain, refinerOptions, scoreFn);
+
+				if (refinement.dimensions == 0)
+				{
+					std::cout << "    [" << (i + 1) << "/" << available << "] "
+						<< source.candidate.config.name << ": no active threshold dimensions, skipping\n";
+					continue;
+				}
+
+				std::cout << "    [" << (i + 1) << "/" << available << "] "
+					<< source.candidate.config.name
+					<< ": dims=" << refinement.dimensions
+					<< " evals=" << refinement.evaluationsUsed
+					<< " score " << refinement.initialScore << " -> " << refinement.refinedScore
+					<< (refinement.refinedScore < refinement.initialScore ? " (improved)" : " (no improvement)")
+					<< '\n';
+
+				if (refinement.refinedScore < refinement.initialScore)
+					refinedSurvivors.push_back(std::move(refinement.refinedCandidate));
+
+				++refinerOptions.seed; // decorrelate the ES across survivors so they don't all walk in lockstep
+			}
+
+			if (!refinedSurvivors.empty())
+			{
+				std::cout << "  threshold refinement: measuring " << refinedSurvivors.size()
+					<< " improved candidate(s) at full fidelity\n";
+				evaluateBatch(refinedSurvivors, "refined");
+			}
+			else
+			{
+				std::cout << "  threshold refinement: no candidate improved on its parent\n";
+			}
+		}
+
 		return records;
 	}
 }
@@ -4273,6 +4417,14 @@ int Experiments::runEvaluateOne(const SchemaSearchOptions& options)
 	return result;
 }
 
+Experiments::SchemaCandidate Experiments::materializeSchemaCandidate(
+	SchemaConfig schema,
+	const std::string& namePrefix,
+	const std::string& outputDirectory)
+{
+	return ::materializeGeneratedSchema(std::move(schema), namePrefix, outputDirectory);
+}
+
 double Experiments::computeSchemaSearchScore(
 	const BuildMetrics& buildMetrics,
 	const QueryMetrics& queryMetrics,
@@ -4315,6 +4467,101 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 	}
 
 	return best;
+}
+
+namespace
+{
+	struct ParetoMetrics
+	{
+		double avgLatencyMs = 0.0;
+		double buildTimeMs = 0.0;
+		double memoryMb = 0.0;
+		double imbalancePenalty = 0.0;
+	};
+
+	ParetoMetrics extractParetoMetrics(const Experiments::SchemaSearchRecord& record)
+	{
+		ParetoMetrics m;
+		m.avgLatencyMs = record.queryMetrics.averageLatencyMs;
+		m.buildTimeMs = record.buildMetrics.buildTimeMs;
+		// memoryEstimateBytes is always populated; scoreMemoryMb may be 0 when the record is
+		// loaded from the cache without recomputing computeSchemaSearchScore. Always derive
+		// directly from buildMetrics for consistency.
+		m.memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+		m.imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
+			? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+			: 0.0;
+		return m;
+	}
+
+	bool dominates(const ParetoMetrics& a, const ParetoMetrics& b)
+	{
+		const bool allLEq =
+			a.avgLatencyMs <= b.avgLatencyMs &&
+			a.buildTimeMs <= b.buildTimeMs &&
+			a.memoryMb <= b.memoryMb &&
+			a.imbalancePenalty <= b.imbalancePenalty;
+		if (!allLEq)
+			return false;
+		const bool anyStrict =
+			a.avgLatencyMs < b.avgLatencyMs ||
+			a.buildTimeMs < b.buildTimeMs ||
+			a.memoryMb < b.memoryMb ||
+			a.imbalancePenalty < b.imbalancePenalty;
+		return anyStrict;
+	}
+}
+
+std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(const std::vector<SchemaSearchRecord>& records)
+{
+	// Group by (dataset, workload). For each group we run O(n^2) non-domination filtering;
+	// schema-search batches stay well under a few thousand candidates so the quadratic cost is
+	// far cheaper than any single measurement. If that ever stops being true, switch to a
+	// Kung-style sweep — the API contract here doesn't change.
+	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
+	for (size_t i = 0; i < records.size(); ++i)
+		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
+
+	std::vector<SchemaSearchRecord> front;
+	for (const auto& [key, indices] : groups)
+	{
+		std::vector<size_t> nonDominated;
+		nonDominated.reserve(indices.size());
+		for (const size_t i : indices)
+		{
+			const ParetoMetrics mi = extractParetoMetrics(records[i]);
+			bool dominated = false;
+			for (const size_t j : indices)
+			{
+				if (i == j)
+					continue;
+				if (dominates(extractParetoMetrics(records[j]), mi))
+				{
+					dominated = true;
+					break;
+				}
+			}
+			if (!dominated)
+				nonDominated.push_back(i);
+		}
+
+		// Rank non-dominated entries by avgLatencyMs (then buildTimeMs as a stable tie-break) so
+		// the CSV reader can find the "fastest" front entry at rank 0 without re-sorting.
+		std::sort(nonDominated.begin(), nonDominated.end(), [&records](size_t a, size_t b) {
+			if (records[a].queryMetrics.averageLatencyMs != records[b].queryMetrics.averageLatencyMs)
+				return records[a].queryMetrics.averageLatencyMs < records[b].queryMetrics.averageLatencyMs;
+			return records[a].buildMetrics.buildTimeMs < records[b].buildMetrics.buildTimeMs;
+		});
+
+		for (size_t rank = 0; rank < nonDominated.size(); ++rank)
+		{
+			SchemaSearchRecord entry = records[nonDominated[rank]];
+			entry.paretoRank = static_cast<int>(rank);
+			front.push_back(std::move(entry));
+		}
+	}
+
+	return front;
 }
 
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
@@ -4503,12 +4750,19 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		reportDeepNestedOutcome(records);
 	writeSearchRows(resolvedOptions.csvPath, records);
 	writeBestRows(resolvedOptions.bestCsvPath, records);
+	writeParetoRows(resolvedOptions.paretoCsvPath, records);
 
 	std::cout << "  wrote rows: " << records.size() << '\n';
 	if (!resolvedOptions.csvPath.empty())
 		std::cout << "  csv: " << resolvedOptions.csvPath << '\n';
 	if (!resolvedOptions.bestCsvPath.empty())
 		std::cout << "  best csv: " << resolvedOptions.bestCsvPath << '\n';
+	if (!resolvedOptions.paretoCsvPath.empty())
+	{
+		const std::vector<SchemaSearchRecord> front = selectParetoRecords(records);
+		std::cout << "  pareto csv: " << resolvedOptions.paretoCsvPath
+			<< " (" << front.size() << " non-dominated rows)\n";
+	}
 
 	if (resolvedOptions.scoreCache != nullptr && resolvedOptions.scoreCache->enabled())
 	{

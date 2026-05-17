@@ -129,6 +129,9 @@
     <ClInclude Include="experiments\SurrogateAcquisition.h">
       <Filter>experiments</Filter>
     </ClInclude>
+    <ClInclude Include="experiments\ThresholdRefiner.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
     <ClInclude Include="experiments\FeatureExtraction.h">
       <Filter>experiments</Filter>
     </ClInclude>
@@ -310,6 +313,9 @@
       <Filter>experiments</Filter>
     </ClCompile>
     <ClCompile Include="experiments\SurrogateAcquisition.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\ThresholdRefiner.cpp">
       <Filter>experiments</Filter>
     </ClCompile>
     <ClCompile Include="experiments\FeatureExtraction.cpp">

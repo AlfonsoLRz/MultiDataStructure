@@ -138,6 +138,7 @@
     <ClInclude Include="experiments\SchemaSearch.h" />
     <ClInclude Include="experiments\SchemaSelector.h" />
     <ClInclude Include="experiments\SurrogateAcquisition.h" />
+    <ClInclude Include="experiments\ThresholdRefiner.h" />
     <ClInclude Include="CudaHelper.h" />
     <ClInclude Include="cuda_globals.cuh" />
     <ClInclude Include="GeometricUtilities.h" />
@@ -206,6 +207,7 @@
     <ClCompile Include="experiments\SchemaSearch.cpp" />
     <ClCompile Include="experiments\SchemaSelector.cpp" />
     <ClCompile Include="experiments\SurrogateAcquisition.cpp" />
+    <ClCompile Include="experiments\ThresholdRefiner.cpp" />
     <ClCompile Include="CudaHelper.cpp" />
     <ClCompile Include="GeometricUtilities.cpp" />
     <ClCompile Include="GPUStructs.cpp" />

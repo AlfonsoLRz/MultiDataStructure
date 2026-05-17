@@ -24,6 +24,7 @@ namespace AppDefaults
 	inline constexpr const char* SCHEMA_SEARCH_WORKLOAD_PATHS = "configs/workloads/volume_small_medium.json";
 	inline constexpr const char* SCHEMA_SEARCH_CSV_PATH = "results/schema_search.csv";
 	inline constexpr const char* SCHEMA_SEARCH_BEST_CSV_PATH = "results/schema_search_best.csv";
+	inline constexpr const char* SCHEMA_SEARCH_PARETO_CSV_PATH = "results/schema_search_pareto.csv";
 	inline constexpr size_t SCHEMA_SEARCH_SYNTHETIC_SCALE = 512;
 	inline constexpr size_t SCHEMA_SEARCH_QUERY_COUNT = 64;
 	inline constexpr const char* SCHEMA_SEARCH_RANK_MODEL_PATH = "models/schema_selector.json";

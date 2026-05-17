@@ -175,6 +175,7 @@ Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 	options.workloadPaths = splitPathList(AppDefaults::SCHEMA_SEARCH_WORKLOAD_PATHS);
 	options.csvPath = AppDefaults::SCHEMA_SEARCH_CSV_PATH;
 	options.bestCsvPath = AppDefaults::SCHEMA_SEARCH_BEST_CSV_PATH;
+	options.paretoCsvPath = AppDefaults::SCHEMA_SEARCH_PARETO_CSV_PATH;
 	options.syntheticScale = AppDefaults::SCHEMA_SEARCH_SYNTHETIC_SCALE;
 	options.queryCountOverride = AppDefaults::SCHEMA_SEARCH_QUERY_COUNT;
 	options.querySeed = AppDefaults::POINT_QUERY_SEED;
@@ -434,6 +435,26 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.evolution.rungSchedule.surrogateProposalsPerStep = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--refine-thresholds")
+		{
+			config.schemaSearchOptions.evolution.refineThresholds = true;
+		}
+		else if (arg == "--refine-thresholds-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.refineThresholdsTopK = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--refine-thresholds-evals" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.refineThresholdsEvaluations = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--refine-thresholds-sigma" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.refineThresholdsSigma0 = std::stod(argv[++i]);
+		}
+		else if (arg == "--refine-thresholds-seed" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.refineThresholdsSeed = static_cast<uint32_t>(std::stoul(argv[++i]));
+		}
 		else if (arg == "--evaluator" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.evaluator = argv[++i];
@@ -480,10 +501,15 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 			config.pointOptions.csvPath.clear();
 			config.schemaSearchOptions.csvPath.clear();
 			config.schemaSearchOptions.bestCsvPath.clear();
+			config.schemaSearchOptions.paretoCsvPath.clear();
 		}
 		else if (arg == "--best-csv" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.bestCsvPath = argv[++i];
+		}
+		else if (arg == "--pareto-csv" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.paretoCsvPath = argv[++i];
 		}
 		else if (arg == "--queries" && i + 1 < argc)
 		{
@@ -603,6 +629,12 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --rung-surrogate <path>     Exported selector JSON used to propose candidates each generation\n"
 		<< "  --rung-surrogate-pool <n>   Pool size sampled and scored by the surrogate per generation\n"
 		<< "  --rung-surrogate-top <n>    Top-K surrogate predictions injected as immigrants per generation\n"
+		<< "  --refine-thresholds         Run a continuous-parameter (1+lambda)-ES on the top-K archive survivors\n"
+		<< "                              with conditional levels. Visit-proxy scoring inside the inner loop.\n"
+		<< "  --refine-thresholds-top <n> Number of archive entries to refine, default 4\n"
+		<< "  --refine-thresholds-evals <n> Evaluation budget per candidate, default 60\n"
+		<< "  --refine-thresholds-sigma <v> Initial step size in normalised [0,1] threshold space, default 0.3\n"
+		<< "  --refine-thresholds-seed <s>  RNG seed for the refinement step, default 1337\n"
 		<< "  --optimizer-seed <seed>     Seed for optimizer parent choice and mutation\n"
 		<< "  --evaluator cpu|cuda        Benchmark backend for schema-search mode; default cuda with CPU fallback\n"
 		<< "  --cuda-device <id>          CUDA device id for --evaluator cuda; default 0\n"
@@ -620,6 +652,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
+		<< "  --pareto-csv <path>         Write Pareto front (non-dominated rows over latency/build/memory/imbalance)\n"
 		<< "  --no-csv                    Disable CSV summary output\n"
 		<< "  --queries <count>           Run generated query profile; 0 disables it\n"
 		<< "  --knn-k <count>             Neighbor count for generated KNN queries\n"
