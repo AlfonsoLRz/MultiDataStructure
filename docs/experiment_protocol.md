@@ -8,7 +8,7 @@ Schema-search output is the training table for the first schema selector. Each r
 - schema identity,
 - build metrics,
 - query metrics,
-- score components and final score.
+- score components, score provenance, and final score.
 
 ## Point-Cloud Features
 
@@ -50,6 +50,21 @@ Workload features are computed from the workload profile and score weights:
 | `build_weight`, `memory_weight` | Score weights used for build time and memory. |
 
 The best-schema CSV keeps these feature columns so it can be used directly for supervised learning labels.
+
+## Score Provenance
+
+Default score is query latency (`avg_latency_ms`). Build time, memory, and imbalance affect score only when their weights are nonzero. Proxy stages can instead use deterministic visit/test counters, so CSV rows append provenance columns:
+
+| Column | Meaning |
+|---|---|
+| `score_mode` | `latency` or `visit_proxy`. |
+| `score_stage` | Pipeline stage or final rung name, such as `final`, `confirmation`, or `confirm`. |
+| `score_is_final_latency` | `1` when the row is safe to compare as a final latency measurement. |
+| `effective_queries` | Number of measured queries used by the row. |
+| `score_uses_visit_proxy` | `1` when score uses visited nodes plus tested-point proxy. |
+| `visit_proxy_alpha` | Tested-point coefficient in the proxy score. |
+
+Use `scripts/audit_schema_scores.py` before interpreting GA versus non-GA score differences from separate CSV files.
 
 ## Schema Features
 

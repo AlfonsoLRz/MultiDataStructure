@@ -158,6 +158,9 @@ namespace
 		out["score"] = record.score;
 		out["scoreMemoryMb"] = record.scoreMemoryMb;
 		out["scoreImbalancePenalty"] = record.scoreImbalancePenalty;
+		out["scoreMode"] = record.scoreMode;
+		out["scoreStage"] = record.scoreStage;
+		out["scoreIsFinalLatency"] = record.scoreIsFinalLatency;
 		out["backend"] = record.backend;
 		out["cudaDevice"] = record.cudaDevice;
 		out["cudaBuilder"] = record.cudaBuilder;
@@ -192,6 +195,11 @@ namespace
 		out.score = asDouble(source, "score");
 		out.scoreMemoryMb = asDouble(source, "scoreMemoryMb");
 		out.scoreImbalancePenalty = asDouble(source, "scoreImbalancePenalty");
+		out.scoreMode = asString(source, "scoreMode", out.scoreMode);
+		out.scoreStage = asString(source, "scoreStage", out.scoreStage);
+		const boost::json::value* finalLatency = find(source, "scoreIsFinalLatency");
+		if (finalLatency && finalLatency->is_bool())
+			out.scoreIsFinalLatency = finalLatency->as_bool();
 		out.backend = asString(source, "backend", "cpu");
 		const boost::json::value* device = find(source, "cudaDevice");
 		if (device && device->is_int64())
@@ -326,6 +334,9 @@ namespace Experiments
 		const std::string schemaPath = std::move(outRecord.schemaPath);
 		const bool isBaseline = outRecord.isBaseline;
 		const ScoreWeights weights = outRecord.weights;
+		const std::string scoreMode = outRecord.scoreMode;
+		const std::string scoreStage = outRecord.scoreStage;
+		const bool scoreIsFinalLatency = outRecord.scoreIsFinalLatency;
 		const PointCloudFeatures pointFeatures = outRecord.pointFeatures;
 		const WorkloadFeatures workloadFeatures = outRecord.workloadFeatures;
 
@@ -344,6 +355,9 @@ namespace Experiments
 		outRecord.schemaPath = schemaPath;
 		outRecord.isBaseline = isBaseline;
 		outRecord.weights = weights;
+		outRecord.scoreMode = scoreMode;
+		outRecord.scoreStage = scoreStage;
+		outRecord.scoreIsFinalLatency = scoreIsFinalLatency;
 		outRecord.pointFeatures = pointFeatures;
 		outRecord.workloadFeatures = workloadFeatures;
 

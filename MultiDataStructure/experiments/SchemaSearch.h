@@ -35,6 +35,10 @@ namespace Experiments
 		double conditionalProbability = 0.35;
 		uint32_t seed = 1337;
 		std::string outputDirectory = "results/generated_schemas";
+		// "auto" resolves at schema-search startup: CPU discovery gets query_minimal_cpu,
+		// CUDA measurement gets cuda_query_full. Explicit values are query_minimal_cpu,
+		// cuda_query_full, and all.
+		std::string primitiveProfile = "auto";
 	};
 
 	struct ConditionDomain
@@ -208,6 +212,8 @@ namespace Experiments
 		SchemaGenerationOptions generation;
 		AutoConditionOptions autoConditions;
 		ScoreWeights weights;
+		std::string scoreStage = "final";
+		bool scoreIsFinalLatency = true;
 		EvolutionOptions evolution;
 		std::string evaluator = "cpu";
 		CudaEvaluationOptions cuda;
@@ -251,6 +257,9 @@ namespace Experiments
 		double scoreMemoryMb = 0.0;
 		double scoreImbalancePenalty = 0.0;
 		ScoreWeights weights;
+		std::string scoreMode = "latency";
+		std::string scoreStage = "final";
+		bool scoreIsFinalLatency = true;
 		PointCloudFeatures pointFeatures;
 		WorkloadFeatures workloadFeatures;
 		std::string backend = "cpu";
@@ -302,6 +311,7 @@ namespace Experiments
 		const std::string& requestedEvaluator,
 		bool cudaAvailable,
 		const std::string& cudaError = {});
+	std::string resolvePrimitiveProfile(const std::string& requestedProfile, bool cudaEvaluator);
 	WorkloadProfile parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName = {});
 	WorkloadProfile loadWorkloadProfile(const std::string& filename);
 	ConditionDomain estimateConditionDomain(const PointCloud& cloud, size_t maxSamplePoints = 262144);

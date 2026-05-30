@@ -400,7 +400,13 @@ Generated schema search:
 --generated-condition-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
+--primitive-profile <auto|query_minimal_cpu|cuda_query_full|all>
+--query-minimal-primitives
+--cuda-query-full-primitives
+--all-primitives
 ```
+
+CPU discovery defaults to `query_minimal_cpu`, which generates only `QuadTree`, `Octree`, `KDTree`, and `BVH` levels. Use `cuda_query_full` or `all` when the search itself should include CUDA-native aliases such as `KarrasOctree`, `BIH`, `LBVH`, `RegularGrid`, and `HGrid`.
 
 Auto-condition schema tuning:
 
@@ -459,6 +465,12 @@ score = avg_query_latency_ms
 ```
 
 Build time, memory, and imbalance are still logged, but they are not part of the default score.
+
+Raw/best/pareto CSVs append score provenance columns: `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. To compare GA and non-GA runs:
+
+```powershell
+python scripts\audit_schema_scores.py results\non_ga.csv results\ga.csv --left-label non_ga --right-label ga
+```
 
 ## Python Script Arguments
 

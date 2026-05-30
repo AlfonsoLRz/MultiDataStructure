@@ -42,6 +42,20 @@ FEATURE_COLUMNS = [
     "memory_weight",
 ]
 
+PROVENANCE_COLUMNS = [
+    "score_mode",
+    "score_stage",
+    "score_is_final_latency",
+    "effective_queries",
+    "score_uses_visit_proxy",
+    "visit_proxy_alpha",
+    "backend",
+    "cuda_builder",
+    "lambda_build",
+    "lambda_memory",
+    "lambda_imbalance",
+]
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract best schema rows from a schema-search CSV.")
@@ -68,6 +82,9 @@ def main() -> int:
     present_feature_columns = [
         column for column in FEATURE_COLUMNS if best_by_pair and column in next(iter(best_by_pair.values()))
     ]
+    present_provenance_columns = [
+        column for column in PROVENANCE_COLUMNS if best_by_pair and column in next(iter(best_by_pair.values()))
+    ]
 
     with output_path.open("w", newline="") as file:
         fieldnames = [
@@ -81,6 +98,7 @@ def main() -> int:
             "best_build_time_ms",
             "best_memory_estimate_bytes",
             "num_candidates",
+            *present_provenance_columns,
         ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
@@ -97,6 +115,7 @@ def main() -> int:
                     "best_build_time_ms": row["build_time_ms"],
                     "best_memory_estimate_bytes": row["memory_estimate_bytes"],
                     "num_candidates": candidate_counts[key],
+                    **{column: row.get(column, "") for column in present_provenance_columns},
                 }
             )
 

@@ -35,6 +35,10 @@ namespace
 		uint64_t memoryBytes = 0;
 		size_t candidates = 0;
 		std::string backend;
+		std::string scoreMode = "unknown";
+		std::string scoreStage = "unknown";
+		bool scoreIsFinalLatency = false;
+		size_t effectiveQueries = 0;
 	};
 
 	struct LiveRankingEntry
@@ -55,6 +59,10 @@ namespace
 		double averageVisitedNodes = 0.0;
 		double averageTestedPoints = 0.0;
 		uint64_t memoryBytes = 0;
+		std::string scoreMode = "latency";
+		std::string scoreStage = "final";
+		bool scoreIsFinalLatency = true;
+		size_t effectiveQueries = 0;
 	};
 
 	struct SchemaFileViewer
@@ -125,6 +133,7 @@ namespace
 		bool generateSchemas = true;
 		bool generatedOnly = true;
 		bool generatedConditional = true;
+		bool queryMinimalPrimitives = true;
 		bool useRankModel = false;
 		// Default-on: when the user disables auto-conditions, the GA path is the publication
 		// pipeline and Phase A+B1 (rungs + threshold refinement) ride on top of it.
@@ -795,6 +804,10 @@ namespace
 		const size_t backendIndex = columnIndex(header, "backend");
 		const size_t gpuBuildIndex = columnIndex(header, "gpu_build_ms");
 		const size_t gpuQueryIndex = columnIndex(header, "gpu_query_ms");
+		const size_t scoreModeIndex = columnIndex(header, "score_mode");
+		const size_t scoreStageIndex = columnIndex(header, "score_stage");
+		const size_t finalLatencyIndex = columnIndex(header, "score_is_final_latency");
+		const size_t effectiveQueriesIndex = columnIndex(header, "effective_queries");
 
 		std::string rowLine;
 		while (std::getline(input, rowLine))
@@ -816,6 +829,14 @@ namespace
 			result.memoryBytes = parseUint64(csvValue(row, memoryIndex));
 			result.candidates = static_cast<size_t>(parseUint64(csvValue(row, candidateIndex)));
 			result.backend = csvValue(row, backendIndex);
+			result.scoreMode = csvValue(row, scoreModeIndex);
+			if (result.scoreMode.empty())
+				result.scoreMode = "unknown";
+			result.scoreStage = csvValue(row, scoreStageIndex);
+			if (result.scoreStage.empty())
+				result.scoreStage = "unknown";
+			result.scoreIsFinalLatency = parseUint64(csvValue(row, finalLatencyIndex)) != 0;
+			result.effectiveQueries = static_cast<size_t>(parseUint64(csvValue(row, effectiveQueriesIndex)));
 			results.push_back(std::move(result));
 		}
 
@@ -841,6 +862,10 @@ namespace
 		entry.averageVisitedNodes = record.queryMetrics.averageVisitedNodes;
 		entry.averageTestedPoints = record.queryMetrics.averageTestedPoints;
 		entry.memoryBytes = static_cast<uint64_t>(record.buildMetrics.memoryEstimateBytes);
+		entry.scoreMode = record.scoreMode;
+		entry.scoreStage = record.scoreStage;
+		entry.scoreIsFinalLatency = record.scoreIsFinalLatency;
+		entry.effectiveQueries = record.queryMetrics.totalQueries;
 		return entry;
 	}
 
@@ -1244,6 +1269,9 @@ namespace
 			options.generation.conditionalProbability = static_cast<double>(state.generatedConditionProbability);
 			options.generation.seed = static_cast<uint32_t>(state.generatedSeed);
 			options.generation.outputDirectory = textValue(state.generatedSchemaDir);
+			options.generation.primitiveProfile = state.queryMinimalPrimitives
+				? std::string("query_minimal_cpu")
+				: (state.evaluator == 1 ? std::string("cuda_query_full") : std::string("all"));
 		}
 
 		if (state.generatedOnly && options.generation.count == 0)
@@ -1572,6 +1600,8 @@ namespace
 		ImGui::SameLine();
 		ImGui::Checkbox("Generated only", &state.generatedOnly);
 		drawHelpMarker("Ignores checked fixed schemas and searches only generated candidates. Turn this off to compare generated candidates against known baselines.");
+		ImGui::Checkbox("Query-minimal primitives", &state.queryMinimalPrimitives);
+		drawHelpMarker("Default publication search space for CPU discovery: generated schemas use QuadTree, Octree, KDTree, and BVH only. CUDA-only aliases such as KarrasOctree, LBVH, BIH, RegularGrid, and HGrid stay available for explicit CUDA/full runs.");
 
 		if (state.autoConditions)
 		{
@@ -1655,6 +1685,10 @@ namespace
 			drawHelpMarker("Random seed for schema sampling. Keep fixed for repeatability; change it to explore a different batch of candidates.");
 			ImGui::SliderFloat("Condition probability", &state.generatedConditionProbability, 0.0f, 1.0f, "%.2f");
 			drawHelpMarker("Probability that a generated block gets a local activation condition. Higher values make more branch-adaptive schemas.");
+			bool allPrimitiveVariants = !state.queryMinimalPrimitives;
+			if (ImGui::Checkbox("All CUDA primitive variants", &allPrimitiveVariants))
+				state.queryMinimalPrimitives = !allPrimitiveVariants;
+			drawHelpMarker("Expands generated schemas to include CUDA-native aliases and CPU-compatible variants. Use this for CUDA confirmation sweeps or exhaustive research, not for the default CPU discovery pass.");
 		}
 
 		if (ImGui::CollapsingHeader("Evolutionary optimizer"))
@@ -1773,6 +1807,10 @@ namespace
 		ImGui::EndDisabled();
 
 		drawSectionTitle("Score Weights");
+		if (state.optimizeSchemas && state.useRungSchedule)
+			ImGui::TextDisabled("GA proxy rungs only promote candidates; CSV/best tables use the final latency rung.");
+		else if (state.scoreBuildWeight == 0.0f && state.scoreMemoryWeight == 0.0f && state.scoreImbalanceWeight == 0.0f)
+			ImGui::TextDisabled("Score is query latency only.");
 		ImGui::Text("Build %.4f, memory %.4f, imbalance %.4f",
 			state.scoreBuildWeight,
 			state.scoreMemoryWeight,
@@ -1813,7 +1851,7 @@ namespace
 			ImGui::TextDisabled("(currently using CUDA: workers are ignored)");
 
 		ImGui::Checkbox("Include baseline data structures", &state.includeBaselineSchemas);
-		drawHelpMarker("Adds canonical single-block schemas (pure QuadTree, Octree, KDTree, BVH on CPU; also LBVH, KarrasOctree, RegularGrid, HGrid, BIH on CUDA) as controls. Baselines are force-promoted through the proxy/shortlist/confirmation stages so you can always see how the naive structures perform on the full cloud, even if their proxy rank is poor.");
+		drawHelpMarker("Adds canonical single-block controls. CPU discovery uses only distinct query families (QuadTree, Octree, KDTree, BVH); CUDA/full runs also include LBVH, KarrasOctree, RegularGrid, HGrid, and BIH.");
 	}
 
 	bool isCudaResult(const std::string& backend)
@@ -1829,12 +1867,13 @@ namespace
 			return;
 		}
 
-		if (ImGui::BeginTable("best-results", 12, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		if (ImGui::BeginTable("best-results", 13, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("Dataset");
 			ImGui::TableSetupColumn("Workload");
 			ImGui::TableSetupColumn("Best schema");
 			ImGui::TableSetupColumn("Backend", ImGuiTableColumnFlags_WidthFixed, 76.0f);
+			ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 92.0f);
 			ImGui::TableSetupColumn("Score", ImGuiTableColumnFlags_WidthFixed, 78.0f);
 			ImGui::TableSetupColumn("Avg ms", ImGuiTableColumnFlags_WidthFixed, 78.0f);
 			ImGui::TableSetupColumn("Build ms", ImGuiTableColumnFlags_WidthFixed, 84.0f);
@@ -1860,26 +1899,33 @@ namespace
 				ImGui::TableSetColumnIndex(3);
 				ImGui::TextUnformatted(result.backend.empty() ? "cpu" : result.backend.c_str());
 				ImGui::TableSetColumnIndex(4);
-				ImGui::Text("%.3f", result.score);
+				ImGui::Text("%s/%s", result.scoreMode.c_str(), result.scoreStage.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s score, %zu effective queries%s",
+						result.scoreMode.c_str(),
+						result.effectiveQueries,
+						result.scoreIsFinalLatency ? ", final latency" : ", not final latency");
 				ImGui::TableSetColumnIndex(5);
-				ImGui::Text("%.3f", result.averageLatencyMs);
+				ImGui::Text("%.3f", result.score);
 				ImGui::TableSetColumnIndex(6);
-				ImGui::Text("%.1f", result.buildTimeMs);
+				ImGui::Text("%.3f", result.averageLatencyMs);
 				ImGui::TableSetColumnIndex(7);
+				ImGui::Text("%.1f", result.buildTimeMs);
+				ImGui::TableSetColumnIndex(8);
 				if (isCudaResult(result.backend))
 					ImGui::Text("%.1f", result.gpuBuildMs);
 				else
 					ImGui::TextUnformatted("-");
-				ImGui::TableSetColumnIndex(8);
+				ImGui::TableSetColumnIndex(9);
 				if (isCudaResult(result.backend))
 					ImGui::Text("%.1f", result.gpuQueryMs);
 				else
 					ImGui::TextUnformatted("-");
-				ImGui::TableSetColumnIndex(9);
-				ImGui::Text("%.1f", static_cast<double>(result.memoryBytes) / (1024.0 * 1024.0));
 				ImGui::TableSetColumnIndex(10);
-				ImGui::Text("%zu", result.candidates);
+				ImGui::Text("%.1f", static_cast<double>(result.memoryBytes) / (1024.0 * 1024.0));
 				ImGui::TableSetColumnIndex(11);
+				ImGui::Text("%zu", result.candidates);
+				ImGui::TableSetColumnIndex(12);
 				ImGui::PushID(static_cast<int>(i));
 				drawSchemaActions(state, result.schemaPath);
 				ImGui::PopID();
@@ -2225,10 +2271,11 @@ namespace
 			return;
 		}
 
-		if (ImGui::BeginTable("live-ranking", 12, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		if (ImGui::BeginTable("live-ranking", 13, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
 		{
 			ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 34.0f);
 			ImGui::TableSetupColumn("Schema");
+			ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 92.0f);
 			ImGui::TableSetupColumn("Score", ImGuiTableColumnFlags_WidthFixed, 78.0f);
 			ImGui::TableSetupColumn("Avg", ImGuiTableColumnFlags_WidthFixed, 66.0f);
 			ImGui::TableSetupColumn("P95", ImGuiTableColumnFlags_WidthFixed, 66.0f);
@@ -2271,33 +2318,40 @@ namespace
 						entry.order);
 				}
 				ImGui::TableSetColumnIndex(2);
-				ImGui::Text("%.4f", entry.score);
+				ImGui::Text("%s/%s", entry.scoreMode.c_str(), entry.scoreStage.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s score, %zu effective queries%s",
+						entry.scoreMode.c_str(),
+						entry.effectiveQueries,
+						entry.scoreIsFinalLatency ? ", final latency" : ", not final latency");
 				ImGui::TableSetColumnIndex(3);
-				ImGui::Text("%.3f", entry.averageLatencyMs);
+				ImGui::Text("%.4f", entry.score);
 				ImGui::TableSetColumnIndex(4);
-				ImGui::Text("%.3f", entry.p95LatencyMs);
+				ImGui::Text("%.3f", entry.averageLatencyMs);
 				ImGui::TableSetColumnIndex(5);
-				ImGui::Text("%.0f", entry.averageTestedPoints);
+				ImGui::Text("%.3f", entry.p95LatencyMs);
 				ImGui::TableSetColumnIndex(6);
-				ImGui::Text("%.1f", entry.averageVisitedNodes);
+				ImGui::Text("%.0f", entry.averageTestedPoints);
 				ImGui::TableSetColumnIndex(7);
-				ImGui::Text("%.1f", entry.buildTimeMs);
+				ImGui::Text("%.1f", entry.averageVisitedNodes);
 				ImGui::TableSetColumnIndex(8);
+				ImGui::Text("%.1f", entry.buildTimeMs);
+				ImGui::TableSetColumnIndex(9);
 				if (isCudaResult(entry.backend))
 					ImGui::Text("%.1f", entry.gpuBuildMs);
 				else
 					ImGui::TextUnformatted("-");
-				ImGui::TableSetColumnIndex(9);
+				ImGui::TableSetColumnIndex(10);
 				if (isCudaResult(entry.backend))
 					ImGui::Text("%.1f", entry.gpuQueryMs);
 				else
 					ImGui::TextUnformatted("-");
-				ImGui::TableSetColumnIndex(10);
+				ImGui::TableSetColumnIndex(11);
 				if (!entry.cudaBuilder.empty())
 					ImGui::Text("%s/%s", entry.backend.c_str(), entry.cudaBuilder.c_str());
 				else
 					ImGui::TextUnformatted(entry.backend.empty() ? "cpu" : entry.backend.c_str());
-				ImGui::TableSetColumnIndex(11);
+				ImGui::TableSetColumnIndex(12);
 				ImGui::PushID(static_cast<int>(i));
 				drawSchemaActions(state, entry.schemaPath);
 				ImGui::PopID();

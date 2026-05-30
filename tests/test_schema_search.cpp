@@ -167,6 +167,44 @@ namespace BaselineTests
 		for (const Experiments::SchemaCandidate& candidate : nestedGenerated)
 			expect(candidate.config.levels.size() >= 2, "schema generator respects generated min blocks");
 
+		auto isCpuDuplicateName = [](const std::string& typeName) {
+			return typeName == "BIH" ||
+				typeName == "KarrasOctree" ||
+				typeName == "RegularGrid" ||
+				typeName == "HGrid" ||
+				typeName == "LBVH";
+		};
+		Experiments::SchemaGenerationOptions minimalGeneration = generation;
+		minimalGeneration.count = 48;
+		minimalGeneration.seed = 33;
+		minimalGeneration.outputDirectory.clear();
+		minimalGeneration.primitiveProfile = "query_minimal_cpu";
+		const std::vector<Experiments::SchemaCandidate> minimalGenerated =
+			Experiments::generateSchemaCandidates(minimalGeneration);
+		for (const Experiments::SchemaCandidate& candidate : minimalGenerated)
+		{
+			for (const SchemaLevelConfig& level : candidate.config.levels)
+				expect(!isCpuDuplicateName(level.typeName), "query-minimal primitive profile excludes CPU-equivalent aliases");
+		}
+
+		Experiments::SchemaGenerationOptions fullGeneration = minimalGeneration;
+		fullGeneration.count = 96;
+		fullGeneration.seed = 44;
+		fullGeneration.primitiveProfile = "cuda_query_full";
+		const std::vector<Experiments::SchemaCandidate> fullGenerated =
+			Experiments::generateSchemaCandidates(fullGeneration);
+		bool sawCudaVariant = false;
+		for (const Experiments::SchemaCandidate& candidate : fullGenerated)
+		{
+			for (const SchemaLevelConfig& level : candidate.config.levels)
+				sawCudaVariant = sawCudaVariant || isCpuDuplicateName(level.typeName);
+		}
+		expect(sawCudaVariant, "cuda-full primitive profile includes CUDA-native aliases");
+		expect(Experiments::resolvePrimitiveProfile("auto", false) == "query_minimal_cpu",
+			"primitive profile auto resolves to query-minimal on CPU");
+		expect(Experiments::resolvePrimitiveProfile("auto", true) == "cuda_query_full",
+			"primitive profile auto resolves to CUDA-full on CUDA");
+
 		const PointCloud flatCloud = SyntheticPointClouds::generateFlatTerrain(128, 80.0f, 80.0f, 0.02f, 7);
 		const PointCloud tallCloud = SyntheticPointClouds::generateFacade(128, 80.0f, 40.0f, 0.05f, 8);
 		const PointCloud sparseDenseCloud = SyntheticPointClouds::generateSparseDenseMixture(96, 96, 9);
@@ -274,17 +312,32 @@ namespace BaselineTests
 		const size_t knnQueriesColumn = columnIndex("knn_queries");
 		const size_t nestedFractionColumn = columnIndex("nested_active_fraction");
 		const size_t baselineSchemaColumn = columnIndex("best_baseline_schema");
+		const size_t scoreModeColumn = columnIndex("score_mode");
+		const size_t scoreStageColumn = columnIndex("score_stage");
+		const size_t finalLatencyColumn = columnIndex("score_is_final_latency");
+		const size_t effectiveQueriesColumn = columnIndex("effective_queries");
+		const size_t visitProxyColumn = columnIndex("score_uses_visit_proxy");
 		expect(totalQueriesColumn < values.size() && rangeQueriesColumn < values.size() &&
 			radiusQueriesColumn < values.size() && knnQueriesColumn < values.size(),
 			"schema search prepared-query CSV includes query count columns");
 		expect(nestedFractionColumn < values.size() && baselineSchemaColumn < values.size(),
 			"schema search CSV includes nested accounting and baseline-normalized columns");
+		expect(scoreModeColumn < values.size() && scoreStageColumn < values.size() &&
+			finalLatencyColumn < values.size() && effectiveQueriesColumn < values.size() &&
+			visitProxyColumn < values.size(),
+			"schema search CSV includes score provenance columns");
 		const size_t totalQueries = static_cast<size_t>(std::stoull(values[totalQueriesColumn]));
 		const size_t rangeQueries = static_cast<size_t>(std::stoull(values[rangeQueriesColumn]));
 		const size_t radiusQueries = static_cast<size_t>(std::stoull(values[radiusQueriesColumn]));
 		const size_t knnQueries = static_cast<size_t>(std::stoull(values[knnQueriesColumn]));
 		expect(totalQueries == 9, "schema search prepared workload keeps query override count");
 		expect(rangeQueries + radiusQueries + knnQueries == totalQueries, "schema search prepared CPU query counts match total");
+		expect(values[scoreModeColumn] == "latency", "schema search direct CSV marks latency score mode");
+		expect(values[scoreStageColumn] == "final", "schema search direct CSV marks final score stage");
+		expect(values[finalLatencyColumn] == "1", "schema search direct CSV marks final latency score");
+		expect(static_cast<size_t>(std::stoull(values[effectiveQueriesColumn])) == totalQueries,
+			"schema search CSV effective query count matches measured total");
+		expect(values[visitProxyColumn] == "0", "schema search direct CSV marks visit-proxy disabled");
 
 		const std::filesystem::path autoCsvPath = tempRoot / "auto_conditions.csv";
 		const std::filesystem::path autoBestCsvPath = tempRoot / "auto_conditions_best.csv";
@@ -326,6 +379,20 @@ namespace BaselineTests
 			autoHeader.find("condition_fields") != std::string::npos &&
 			autoHeader.find("condition_summary") != std::string::npos,
 			"auto-condition CSV appends condition summary columns");
+		{
+			const std::vector<std::string> autoColumns = splitCsv(autoHeader);
+			const std::vector<std::string> firstAutoValues = splitCsv(autoRows.front());
+			const auto foundStage = std::find(autoColumns.begin(), autoColumns.end(), "score_stage");
+			const auto foundMode = std::find(autoColumns.begin(), autoColumns.end(), "score_mode");
+			expect(foundStage != autoColumns.end() && foundMode != autoColumns.end(),
+				"auto-condition CSV includes score provenance");
+			const size_t stageIndex = static_cast<size_t>(std::distance(autoColumns.begin(), foundStage));
+			const size_t modeIndex = static_cast<size_t>(std::distance(autoColumns.begin(), foundMode));
+			expect(stageIndex < firstAutoValues.size() && firstAutoValues[stageIndex] == "confirmation",
+				"auto-condition CSV writes only confirmation-stage rows");
+			expect(modeIndex < firstAutoValues.size() && firstAutoValues[modeIndex] == "latency",
+				"auto-condition confirmation rows use latency score mode");
+		}
 		expect(std::filesystem::exists(autoOptions.autoConditions.selectorOutputPath),
 			"auto-condition tuning writes measured selector artifact");
 
@@ -442,6 +509,9 @@ namespace BaselineTests
 			record.queryMetrics.averageVisitedNodes = 12.5;
 			record.queryMetrics.totalQueries = 16;
 			record.backend = "cpu";
+			record.scoreMode = "latency";
+			record.scoreStage = "final";
+			record.scoreIsFinalLatency = true;
 			record.isBaseline = true;
 			record.activeStructureTypes = 2;
 			record.nestedActiveFraction = 0.25;
@@ -465,6 +535,9 @@ namespace BaselineTests
 				roundTrip.schemaName = "caller-set schema";
 				roundTrip.isBaseline = true;
 				roundTrip.weights.lambdaMemory = 0.5;
+				roundTrip.scoreMode = "latency";
+				roundTrip.scoreStage = "confirm";
+				roundTrip.scoreIsFinalLatency = true;
 				roundTrip.pointFeatures.numPoints = 999;
 				expect(cache.tryGet(key, roundTrip), "evaluation cache hit on identical key");
 				expect(nearlyEqual(roundTrip.score, 1.75), "cache restores score");
@@ -473,6 +546,9 @@ namespace BaselineTests
 				expect(nearlyEqual(roundTrip.queryMetrics.averageVisitedNodes, 12.5), "cache restores visit counts");
 				expect(roundTrip.backend == "cpu", "cache restores backend");
 				expect(roundTrip.isBaseline, "cache preserves caller baseline marker");
+				expect(roundTrip.scoreMode == "latency", "cache preserves caller score mode");
+				expect(roundTrip.scoreStage == "confirm", "cache preserves caller score stage");
+				expect(roundTrip.scoreIsFinalLatency, "cache preserves caller final-latency marker");
 				expect(roundTrip.activeStructureTypes == 2, "cache restores active structure type count");
 				expect(nearlyEqual(roundTrip.nestedActiveFraction, 0.25), "cache restores nested active fraction");
 				expect(roundTrip.activeStructureSummary.find("kd:nodes") != std::string::npos,
@@ -524,11 +600,7 @@ namespace BaselineTests
 			bool sawOctreeBaseline = false;
 			bool sawKdtreeBaseline = false;
 			bool sawBvhBaseline = false;
-			bool sawLbvhBaseline = false;
-			bool sawKarrasBaseline = false;
-			bool sawRegularGridBaseline = false;
-			bool sawHgridBaseline = false;
-			bool sawBihBaseline = false;
+			bool sawCpuDuplicateBaseline = false;
 			std::string baselineRow;
 			while (std::getline(baselineCsvStream, baselineRow))
 			{
@@ -536,21 +608,20 @@ namespace BaselineTests
 				if (baselineRow.find("octree_default") != std::string::npos) sawOctreeBaseline = true;
 				if (baselineRow.find("kdtree_default") != std::string::npos) sawKdtreeBaseline = true;
 				if (baselineRow.find("bvh_default") != std::string::npos) sawBvhBaseline = true;
-				if (baselineRow.find("lbvh_default") != std::string::npos) sawLbvhBaseline = true;
-				if (baselineRow.find("karras_octree_default") != std::string::npos) sawKarrasBaseline = true;
-				if (baselineRow.find("regular_grid_default") != std::string::npos) sawRegularGridBaseline = true;
-				if (baselineRow.find("hgrid_default") != std::string::npos) sawHgridBaseline = true;
-				if (baselineRow.find("bih_default") != std::string::npos) sawBihBaseline = true;
+				if (baselineRow.find("lbvh_default") != std::string::npos ||
+					baselineRow.find("karras_octree_default") != std::string::npos ||
+					baselineRow.find("regular_grid_default") != std::string::npos ||
+					baselineRow.find("hgrid_default") != std::string::npos ||
+					baselineRow.find("bih_default") != std::string::npos)
+				{
+					sawCpuDuplicateBaseline = true;
+				}
 			}
 			expect(sawQuadtreeBaseline, "baseline injection measures pure QuadTree as a control");
 			expect(sawOctreeBaseline, "baseline injection measures pure Octree as a control");
 			expect(sawKdtreeBaseline, "baseline injection measures pure KDTree as a control");
 			expect(sawBvhBaseline, "baseline injection measures pure BVH as a control");
-			expect(sawLbvhBaseline, "baseline injection measures pure LBVH as a control");
-			expect(sawKarrasBaseline, "baseline injection measures pure KarrasOctree as a control");
-			expect(sawRegularGridBaseline, "baseline injection measures pure RegularGrid as a control");
-			expect(sawHgridBaseline, "baseline injection measures pure HGrid as a control");
-			expect(sawBihBaseline, "baseline injection measures pure BIH as a control");
+			expect(!sawCpuDuplicateBaseline, "CPU baseline injection omits CPU-equivalent GPU aliases");
 
 			std::error_code rmError;
 			std::filesystem::remove_all(baselineRoot, rmError);

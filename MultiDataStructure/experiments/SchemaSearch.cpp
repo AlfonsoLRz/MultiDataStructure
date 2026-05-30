@@ -321,6 +321,57 @@ namespace
 		return evaluator == "cuda" || evaluator == "gpu";
 	}
 
+	enum class PrimitiveProfile
+	{
+		QueryMinimalCpu,
+		CudaQueryFull,
+		All,
+	};
+
+	PrimitiveProfile parsePrimitiveProfileInternal(const std::string& requestedProfile, bool cudaEvaluator)
+	{
+		std::string profile = lowerCopy(requestedProfile);
+		profile.erase(std::remove_if(profile.begin(), profile.end(), [](unsigned char c) {
+			return c == '_' || c == '-' || c == ' ';
+		}), profile.end());
+
+		if (profile.empty() || profile == "auto")
+			return cudaEvaluator ? PrimitiveProfile::CudaQueryFull : PrimitiveProfile::QueryMinimalCpu;
+		if (profile == "queryminimalcpu" || profile == "cpuminimal" || profile == "minimal" || profile == "queryminimal")
+			return PrimitiveProfile::QueryMinimalCpu;
+		if (profile == "cudaqueryfull" || profile == "cudafull" || profile == "fullcuda")
+			return PrimitiveProfile::CudaQueryFull;
+		if (profile == "all" || profile == "exhaustive")
+			return PrimitiveProfile::All;
+
+		std::cerr << "Warning: unknown primitive profile '" << requestedProfile
+			<< "'; using " << (cudaEvaluator ? "cuda_query_full" : "query_minimal_cpu") << '\n';
+		return cudaEvaluator ? PrimitiveProfile::CudaQueryFull : PrimitiveProfile::QueryMinimalCpu;
+	}
+
+	std::string primitiveProfileName(PrimitiveProfile profile)
+	{
+		switch (profile)
+		{
+		case PrimitiveProfile::CudaQueryFull:
+			return "cuda_query_full";
+		case PrimitiveProfile::All:
+			return "all";
+		default:
+			return "query_minimal_cpu";
+		}
+	}
+
+	bool queryMinimalPrimitiveProfile(const Experiments::SchemaGenerationOptions& options)
+	{
+		return parsePrimitiveProfileInternal(options.primitiveProfile, false) == PrimitiveProfile::QueryMinimalCpu;
+	}
+
+	std::string scoreModeForWeights(const Experiments::ScoreWeights& weights)
+	{
+		return weights.useVisitProxy ? "visit_proxy" : "latency";
+	}
+
 	bool isRegularGridBuilder(const std::string& builder)
 	{
 		return builder == "regular_grid" || builder == "regulargrid" || builder == "grid" || builder == "uniform_grid";
@@ -618,8 +669,14 @@ namespace
 		return level.typeName.empty() ? Config::dataStructureLevelName(level.type) : level.typeName;
 	}
 
-	std::string randomTypeNameForBase(MultiDataStructure::DataStructureLevel type, std::mt19937& rng)
+	std::string randomTypeNameForBase(
+		MultiDataStructure::DataStructureLevel type,
+		std::mt19937& rng,
+		const Experiments::SchemaGenerationOptions& options)
 	{
+		if (queryMinimalPrimitiveProfile(options))
+			return Config::dataStructureLevelName(type);
+
 		if (type == MultiDataStructure::KDTreeNode)
 		{
 			static const std::array<const char*, 2> names = { "KDTree", "BIH" };
@@ -1250,7 +1307,7 @@ namespace
 
 		SchemaLevelConfig level;
 		level.type = randomStructureType(rng, previousType);
-		level.typeName = randomTypeNameForBase(level.type, rng);
+		level.typeName = randomTypeNameForBase(level.type, rng, options);
 		level.numLevels = 1;
 		level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
@@ -1272,8 +1329,18 @@ namespace
 		return coin(rng) ? "round_robin" : "median_longest_axis";
 	}
 
-	void refreshLevelTypeName(SchemaLevelConfig& level)
+	void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::SchemaGenerationOptions& options)
 	{
+		if (queryMinimalPrimitiveProfile(options))
+		{
+			level.typeName = Config::dataStructureLevelName(level.type);
+			if (level.type != MultiDataStructure::KDTreeNode)
+				level.axisPolicy = "";
+			else if (level.axisPolicy.empty())
+				level.axisPolicy = "median_longest_axis";
+			return;
+		}
+
 		const bool compatibleBIH = level.type == MultiDataStructure::KDTreeNode && isBIHLevelName(level.typeName);
 		const bool compatibleKarras = level.type == MultiDataStructure::OctreeNode && isKarrasOctreeLevelName(level.typeName);
 		const bool compatibleLBVH = level.type == MultiDataStructure::BvhNode && isLBVHLevelName(level.typeName);
@@ -1312,7 +1379,7 @@ namespace
 			level.numLevels = std::max<size_t>(1, level.numLevels);
 			level.leafCapacity = clampPowerOfTwo(level.leafCapacity, minLeaf, maxLeaf);
 			level.minPrimitivesToSplit = std::clamp(level.minPrimitivesToSplit, static_cast<size_t>(2), std::max<size_t>(2, level.leafCapacity));
-			refreshLevelTypeName(level);
+			refreshLevelTypeName(level, options);
 			if (i == 0)
 				level.condition = {};
 		}
@@ -1536,7 +1603,7 @@ namespace
 			{
 			case 0:
 				level.type = randomStructureType(rng, std::nullopt);
-				level.typeName = randomTypeNameForBase(level.type, rng);
+				level.typeName = randomTypeNameForBase(level.type, rng, options);
 				level.axisPolicy = sampleAxisPolicy(rng, level.type);
 				if (levelIndex == 0)
 					level.condition = {};
@@ -1702,10 +1769,16 @@ namespace
 
 	const std::vector<std::string>& baselineSchemaPaths(bool cudaEvaluator)
 	{
-		(void)cudaEvaluator;
-		// Canonical single-block controls. The CPU evaluator treats GPU-flavoured names through
-		// their compatible CPU base families, while CUDA can dispatch them to native builders.
-		static const std::vector<std::string> paths = {
+		static const std::vector<std::string> cpuPaths = {
+			"configs/schemas/quadtree.json",
+			"configs/schemas/octree.json",
+			"configs/schemas/kdtree.json",
+			"configs/schemas/bvh.json",
+		};
+		// CUDA keeps the GPU-native single-block controls because the builders can differ in
+		// query behavior there; CPU discovery omits these aliases because they collapse to the
+		// compatible base families.
+		static const std::vector<std::string> cudaPaths = {
 			"configs/schemas/quadtree.json",
 			"configs/schemas/octree.json",
 			"configs/schemas/kdtree.json",
@@ -1716,7 +1789,7 @@ namespace
 			"configs/schemas/hgrid.json",
 			"configs/schemas/bih.json",
 		};
-		return paths;
+		return cudaEvaluator ? cudaPaths : cpuPaths;
 	}
 
 	void appendBaselineSchemas(std::vector<Experiments::SchemaCandidate>& schemas, bool cudaEvaluator)
@@ -2138,6 +2211,9 @@ namespace
 		record.radiusQueries = workloadRun.radiusQueries;
 		record.knnQueries = workloadRun.knnQueries;
 		record.weights = options.weights;
+		record.scoreMode = scoreModeForWeights(record.weights);
+		record.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
+		record.scoreIsFinalLatency = options.scoreIsFinalLatency && !record.weights.useVisitProxy;
 		record.score = Experiments::computeSchemaSearchScore(
 			record.buildMetrics,
 			record.queryMetrics,
@@ -2206,6 +2282,9 @@ namespace
 			cached.schemaName = schema.config.name;
 			cached.schemaPath = schema.path;
 			cached.weights = options.weights;
+			cached.scoreMode = scoreModeForWeights(cached.weights);
+			cached.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
+			cached.scoreIsFinalLatency = options.scoreIsFinalLatency && !cached.weights.useVisitProxy;
 			cached.pointFeatures = pointFeatures;
 			cached.workloadFeatures = workloadFeatures;
 			cached.isBaseline = schema.isBaseline;
@@ -2213,6 +2292,9 @@ namespace
 			if (cache->tryGet(key, cached))
 			{
 				cached.isBaseline = schema.isBaseline;
+				cached.scoreMode = scoreModeForWeights(options.weights);
+				cached.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
+				cached.scoreIsFinalLatency = options.scoreIsFinalLatency && !options.weights.useVisitProxy;
 				if (options.deepNestedSearch && !useCudaEvaluator(options) && cached.activeStructureTypes == 0)
 				{
 					Experiments::SchemaSearchRecord record = benchmarkSchemaCandidate(
@@ -2295,6 +2377,9 @@ namespace
 					failed.schemaName = candidate.config.name;
 					failed.schemaPath = candidate.path;
 					failed.weights = options.weights;
+					failed.scoreMode = scoreModeForWeights(failed.weights);
+					failed.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
+					failed.scoreIsFinalLatency = options.scoreIsFinalLatency && !failed.weights.useVisitProxy;
 					failed.pointFeatures = datasetContext.features;
 					failed.workloadFeatures = workloadFeatures;
 					failed.backend = useCudaEvaluator(options) ? "cuda_failed" : "cpu_failed";
@@ -2351,7 +2436,8 @@ namespace
 			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
-			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms\n";
+			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
+			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
 	}
 
 	void writeSearchRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
@@ -2465,7 +2551,13 @@ namespace
 				<< record.p95LatencyCiHigh << ','
 				<< record.gpuBuildMean << ','
 				<< record.gpuBuildCiLow << ','
-				<< record.gpuBuildCiHigh << '\n';
+				<< record.gpuBuildCiHigh << ','
+				<< csvEscape(record.scoreMode) << ','
+				<< csvEscape(record.scoreStage) << ','
+				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
+				<< record.queryMetrics.totalQueries << ','
+				<< (record.weights.useVisitProxy ? 1 : 0) << ','
+				<< record.weights.visitProxyAlpha << '\n';
 		}
 	}
 
@@ -2501,7 +2593,8 @@ namespace
 			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
-			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms\n";
+			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
+			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
 		{
@@ -2577,7 +2670,13 @@ namespace
 				<< record.p95LatencyCiHigh << ','
 				<< record.gpuBuildMean << ','
 				<< record.gpuBuildCiLow << ','
-				<< record.gpuBuildCiHigh << '\n';
+				<< record.gpuBuildCiHigh << ','
+				<< csvEscape(record.scoreMode) << ','
+				<< csvEscape(record.scoreStage) << ','
+				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
+				<< record.queryMetrics.totalQueries << ','
+				<< (record.weights.useVisitProxy ? 1 : 0) << ','
+				<< record.weights.visitProxyAlpha << '\n';
 		}
 	}
 
@@ -2602,7 +2701,8 @@ namespace
 			<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
-			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms\n";
+			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
+			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : front)
 		{
@@ -2640,7 +2740,13 @@ namespace
 				<< record.p95LatencyCiHigh << ','
 				<< record.gpuBuildMean << ','
 				<< record.gpuBuildCiLow << ','
-				<< record.gpuBuildCiHigh << '\n';
+				<< record.gpuBuildCiHigh << ','
+				<< csvEscape(record.scoreMode) << ','
+				<< csvEscape(record.scoreStage) << ','
+				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
+				<< record.queryMetrics.totalQueries << ','
+				<< (record.weights.useVisitProxy ? 1 : 0) << ','
+				<< record.weights.visitProxyAlpha << '\n';
 		}
 	}
 
@@ -3163,6 +3269,17 @@ namespace
 		return level;
 	}
 
+	bool deepTypeAllowedByProfile(const std::string& typeName, const Experiments::SchemaGenerationOptions& options)
+	{
+		if (!queryMinimalPrimitiveProfile(options))
+			return true;
+		return !isBIHLevelName(typeName) &&
+			!isKarrasOctreeLevelName(typeName) &&
+			!isLBVHLevelName(typeName) &&
+			!isRegularGridLevelName(typeName) &&
+			!isHGridLevelName(typeName);
+	}
+
 	bool isDeepNestedSchema(const SchemaConfig& schema)
 	{
 		if (schema.levels.size() < 2)
@@ -3250,8 +3367,12 @@ namespace
 		size_t variant = 0;
 		for (const DeepFamily& family : families)
 		{
+			if (!deepTypeAllowedByProfile(family.first, options))
+				continue;
 			for (const char* secondType : family.seconds)
 			{
+				if (!deepTypeAllowedByProfile(secondType, options))
+					continue;
 				for (const size_t firstDepth : firstDepths)
 				{
 					for (const size_t secondDepthSeed : secondDepthSeeds)
@@ -3882,6 +4003,9 @@ namespace
 		output << "    \"name\": \"" << jsonEscape(selected.schemaName) << "\",\n";
 		output << "    \"path\": \"" << jsonEscape(selected.schemaPath) << "\",\n";
 		output << "    \"score\": " << selected.score << ",\n";
+		output << "    \"score_mode\": \"" << jsonEscape(selected.scoreMode) << "\",\n";
+		output << "    \"score_stage\": \"" << jsonEscape(selected.scoreStage) << "\",\n";
+		output << "    \"score_is_final_latency\": " << (selected.scoreIsFinalLatency ? "true" : "false") << ",\n";
 		output << "    \"avg_latency_ms\": " << selected.queryMetrics.averageLatencyMs << ",\n";
 		output << "    \"build_time_ms\": " << selected.buildMetrics.buildTimeMs << ",\n";
 		output << "    \"memory_estimate_bytes\": " << selected.buildMetrics.memoryEstimateBytes << "\n";
@@ -3898,6 +4022,9 @@ namespace
 			output << "      \"name\": \"" << jsonEscape(record.schemaName) << "\",\n";
 			output << "      \"path\": \"" << jsonEscape(record.schemaPath) << "\",\n";
 			output << "      \"score\": " << record.score << ",\n";
+			output << "      \"score_mode\": \"" << jsonEscape(record.scoreMode) << "\",\n";
+			output << "      \"score_stage\": \"" << jsonEscape(record.scoreStage) << "\",\n";
+			output << "      \"score_is_final_latency\": " << (record.scoreIsFinalLatency ? "true" : "false") << ",\n";
 			output << "      \"avg_latency_ms\": " << record.queryMetrics.averageLatencyMs << ",\n";
 			output << "      \"build_time_ms\": " << record.buildMetrics.buildTimeMs << ",\n";
 			output << "      \"memory_estimate_bytes\": " << record.buildMetrics.memoryEstimateBytes << "\n";
@@ -4031,6 +4158,8 @@ namespace
 		// rather than wall-clock latency. The shortlist and confirmation stages fall back to latency.
 		Experiments::SchemaSearchOptions proxyOptions = discoveryOptions;
 		proxyOptions.weights.useVisitProxy = true;
+		proxyOptions.scoreStage = "proxy";
+		proxyOptions.scoreIsFinalLatency = false;
 		if (proxyOptions.weights.visitProxyAlpha <= 0.0)
 			proxyOptions.weights.visitProxyAlpha = 0.1;
 		// Without a build-time penalty, the visit-proxy can promote pathological schemas with
@@ -4056,23 +4185,29 @@ namespace
 			appendBaselineControls(shortlist, baselines);
 		const std::vector<Experiments::WorkloadProfile> shortWorkloads = withQueryCount(workloads, options.deepNestedSearch ? 32 : 16);
 		const std::vector<DatasetContext> shortContexts = makeDatasetContexts(datasets, shortWorkloads, cudaEvaluator);
+		Experiments::SchemaSearchOptions shortOptions = discoveryOptions;
+		shortOptions.scoreStage = "shortlist";
+		shortOptions.scoreIsFinalLatency = false;
 		std::vector<EvaluatedCandidate> shortEvaluations = evaluateAutoConditionStage(
 			"shortlist",
 			shortlist,
 			shortContexts,
 			shortWorkloads,
-			discoveryOptions);
+			shortOptions);
 
 		std::vector<Experiments::SchemaCandidate> confirmation = options.deepNestedSearch
 			? topDeepNestedCandidates(shortEvaluations, autoOptions.confirmationTopK, true)
 			: topCandidates(shortEvaluations, autoOptions.confirmationTopK);
 		const std::vector<DatasetContext> confirmationContexts = makeDatasetContexts(datasets, workloads, cudaEvaluator);
+		Experiments::SchemaSearchOptions confirmationOptions = discoveryOptions;
+		confirmationOptions.scoreStage = "confirmation";
+		confirmationOptions.scoreIsFinalLatency = !confirmationOptions.weights.useVisitProxy;
 		std::vector<EvaluatedCandidate> finalEvaluations = evaluateAutoConditionStage(
 			"confirmation",
 			confirmation,
 			confirmationContexts,
 			workloads,
-			discoveryOptions);
+			confirmationOptions);
 
 		std::vector<Experiments::SchemaSearchRecord> records;
 		for (const EvaluatedCandidate& evaluation : finalEvaluations)
@@ -4154,6 +4289,11 @@ namespace
 			rungOptions.weights.useVisitProxy = rung.useVisitProxy;
 			if (rung.useVisitProxy && rung.visitProxyAlpha > 0.0)
 				rungOptions.weights.visitProxyAlpha = rung.visitProxyAlpha;
+			const bool isFinalRung = (r + 1 == schedule.rungs.size());
+			rungOptions.scoreStage = rung.name.empty()
+				? std::string("rung_") + std::to_string(r)
+				: rung.name;
+			rungOptions.scoreIsFinalLatency = isFinalRung && !rungOptions.weights.useVisitProxy;
 
 			std::ostringstream label;
 			label << batchLabel << " " << rung.name << " ("
@@ -4165,7 +4305,6 @@ namespace
 
 			evaluations = evaluateAutoConditionStage(label.str(), current, rungContexts, rungWorkloads, rungOptions);
 
-			const bool isFinalRung = (r + 1 == schedule.rungs.size());
 			if (isFinalRung && finalRecordsOut != nullptr)
 			{
 				for (const EvaluatedCandidate& evaluation : evaluations)
@@ -4625,6 +4764,8 @@ namespace
 			// fidelity gives the final reported score.
 			Experiments::SchemaSearchOptions proxyOptions = options;
 			proxyOptions.weights.useVisitProxy = true;
+			proxyOptions.scoreStage = "refine_proxy";
+			proxyOptions.scoreIsFinalLatency = false;
 			if (proxyOptions.weights.visitProxyAlpha <= 0.0)
 				proxyOptions.weights.visitProxyAlpha = 0.1;
 
@@ -4864,6 +5005,11 @@ Experiments::EvaluatorResolution Experiments::resolveSchemaSearchEvaluator(
 	return resolution;
 }
 
+std::string Experiments::resolvePrimitiveProfile(const std::string& requestedProfile, bool cudaEvaluator)
+{
+	return primitiveProfileName(parsePrimitiveProfileInternal(requestedProfile, cudaEvaluator));
+}
+
 Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointCloud& cloud, size_t maxSamplePoints)
 {
 	ConditionDomain domain;
@@ -5081,7 +5227,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 
 			SchemaLevelConfig level;
 			level.type = randomStructureType(rng, previousType);
-			level.typeName = randomTypeNameForBase(level.type, rng);
+			level.typeName = randomTypeNameForBase(level.type, rng, options);
 			level.numLevels = levelDistribution(rng);
 			level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
@@ -5236,6 +5382,9 @@ namespace
 		out["score"] = record.score;
 		out["scoreMemoryMb"] = record.scoreMemoryMb;
 		out["scoreImbalancePenalty"] = record.scoreImbalancePenalty;
+		out["scoreMode"] = record.scoreMode;
+		out["scoreStage"] = record.scoreStage;
+		out["scoreIsFinalLatency"] = record.scoreIsFinalLatency;
 		out["backend"] = record.backend;
 		out["cudaDevice"] = record.cudaDevice;
 		out["cudaBuilder"] = record.cudaBuilder;
@@ -5507,6 +5656,11 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		cudaAvailable = PointGpu::MixedTree::isAvailable(&cudaError);
 	const EvaluatorResolution evaluatorResolution = resolveSchemaSearchEvaluator(options.evaluator, cudaAvailable, cudaError);
 	resolvedOptions.evaluator = evaluatorResolution.evaluator;
+	resolvedOptions.generation.primitiveProfile = resolvePrimitiveProfile(
+		resolvedOptions.generation.primitiveProfile,
+		evaluatorResolution.usingCuda);
+	if (resolvedOptions.deepNestedSearch)
+		resolvedOptions.generation.primitiveProfile = resolvePrimitiveProfile("query_minimal_cpu", false);
 
 	Experiments::EvaluationCache ownedScoreCache;
 	if (!resolvedOptions.scoreCachePath.empty() && resolvedOptions.scoreCache == nullptr)
@@ -5598,12 +5752,14 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	{
 		std::cout << "  deep nested candidate budget: " << resolvedOptions.autoConditions.proxyCandidateCount << " requested\n";
 		std::cout << "  generated min blocks: " << resolvedOptions.generation.minBlocks << '\n';
+		std::cout << "  primitive profile: " << resolvedOptions.generation.primitiveProfile << '\n';
 		if (resolvedOptions.generation.conditionalLevels)
 			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
 	}
 	else if (resolvedOptions.generation.count > 0)
 	{
 		std::cout << "  generated schemas: " << resolvedOptions.generation.count << " requested\n";
+		std::cout << "  primitive profile: " << resolvedOptions.generation.primitiveProfile << '\n';
 		if (resolvedOptions.generation.conditionalLevels)
 			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
 	}

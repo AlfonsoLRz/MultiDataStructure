@@ -356,6 +356,22 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.generation.outputDirectory = argv[++i];
 		}
+		else if (arg == "--primitive-profile" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.primitiveProfile = argv[++i];
+		}
+		else if (arg == "--query-minimal-primitives")
+		{
+			config.schemaSearchOptions.generation.primitiveProfile = "query_minimal_cpu";
+		}
+		else if (arg == "--cuda-query-full-primitives")
+		{
+			config.schemaSearchOptions.generation.primitiveProfile = "cuda_query_full";
+		}
+		else if (arg == "--all-primitives")
+		{
+			config.schemaSearchOptions.generation.primitiveProfile = "all";
+		}
 		else if (arg == "--auto-conditions")
 		{
 			config.schemaSearchOptions.autoConditions.enabled = true;
@@ -629,6 +645,10 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-condition-probability <v> Probability for generated conditional blocks\n"
 		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
 		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
+		<< "  --primitive-profile <auto|query_minimal_cpu|cuda_query_full|all> Generated primitive family profile\n"
+		<< "  --query-minimal-primitives  CPU query-first generation: QuadTree/Octree/KDTree/BVH only\n"
+		<< "  --cuda-query-full-primitives Include CUDA-native generated variants such as KarrasOctree/LBVH/BIH/Grid\n"
+		<< "  --all-primitives            Exhaustive generated primitive aliases, including CPU-equivalent variants\n"
 		<< "  --auto-conditions           Tune generated conditional schema thresholds for the current cloud/workload\n"
 		<< "  --condition-proxy-candidates <n> Candidates for auto-condition proxy stage; default 256\n"
 		<< "  --condition-proxy-points <n> Downsample cap for auto-condition proxy stage; default 262144\n"
@@ -669,7 +689,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --score-visit-proxy         Score by visited-nodes + alpha*tested-points (deterministic, GPU-free)\n"
 		<< "  --score-visit-alpha <v>     Weight for tested-points in visit-proxy score, default 0.1\n"
 		<< "  --parallel <n>              Number of concurrent CPU candidate workers in evolutionary mode (default 1; CUDA path stays serial)\n"
-		<< "  --no-baselines              Skip canonical single-block control schemas (pure quadtree/octree/kdtree/bvh, plus GPU-native variants)\n"
+		<< "  --no-baselines              Skip canonical single-block control schemas (CPU: quadtree/octree/kdtree/bvh; CUDA also includes GPU-native variants)\n"
 		<< "  --include-baselines         Force baseline schemas to be evaluated alongside generated candidates (default on)\n"
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
