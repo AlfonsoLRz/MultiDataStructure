@@ -1682,12 +1682,21 @@ namespace
 		return schemas;
 	}
 
-	void appendGeneratedSchemas(std::vector<Experiments::SchemaCandidate>& schemas, const Experiments::SchemaGenerationOptions& options)
+	void appendGeneratedSchemas(
+		std::vector<Experiments::SchemaCandidate>& schemas,
+		const Experiments::SchemaGenerationOptions& options,
+		const Experiments::ConditionDomain* domain = nullptr)
 	{
 		if (options.count == 0)
 			return;
 
-		std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(options);
+		// Pass the (optional) per-cloud condition domain through so the generator's conditional
+		// thresholds are calibrated to actual cloud statistics rather than the generic fallbacks.
+		// Without this, on a real LiDAR cloud the GA's initial population samples conditions like
+		// `minPoints >= 4096` that match basically every node, so conditional gates never fire and
+		// the optimizer wastes generations polishing decoration. The auto-conditions path already
+		// computes this domain at its top; runSchemaSearch now does the same and feeds it here.
+		std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(options, domain);
 		schemas.insert(schemas.end(), std::make_move_iterator(generated.begin()), std::make_move_iterator(generated.end()));
 	}
 
@@ -2929,8 +2938,30 @@ namespace
 		std::sort(evaluations.begin(), evaluations.end(), [](const EvaluatedCandidate& a, const EvaluatedCandidate& b) {
 			if (a.paretoFront != b.paretoFront)
 				return a.paretoFront < b.paretoFront;
-			return a.crowdingDistance > b.crowdingDistance;
+			if (a.crowdingDistance != b.crowdingDistance)
+				return a.crowdingDistance > b.crowdingDistance;
+			// Tie-break by scalar score. Critical when the Pareto front is near-1D (e.g. when
+			// lambdaBuild = lambdaMemory = lambdaImbalance = 0 so only avg_latency varies
+			// meaningfully): every front-edge candidate gets crowdingDistance = +inf, including
+			// the max-latency / max-build / max-memory candidates. Without this tie-break, the
+			// std::sort comparator gives undefined ordering among +inf candidates and the
+			// scalar-worst-but-edge candidate can land at archive[0], poisoning the elite pool.
+			// Children of that elite drag subsequent generations worse — the regression the
+			// user reported.
+			return a.aggregateScore < b.aggregateScore;
 		});
+
+		// Hard-guarantee elitism: archive[0] is the actual scalar champion. Even with the
+		// tie-break above, future ranking changes (or Pareto-front geometry that doesn't pin
+		// the scalar best to a +inf crowding cell) could put a non-champion at index 0. Run a
+		// final pass that swaps the scalar best into slot 0 — cost is one min_element, the
+		// rest of the archive ordering is preserved.
+		auto scalarBest = std::min_element(evaluations.begin(), evaluations.end(),
+			[](const EvaluatedCandidate& a, const EvaluatedCandidate& b) {
+				return a.aggregateScore < b.aggregateScore;
+			});
+		if (scalarBest != evaluations.end() && scalarBest != evaluations.begin())
+			std::iter_swap(evaluations.begin(), scalarBest);
 	}
 
 	std::vector<DatasetContext> makeDatasetContexts(
@@ -4205,7 +4236,8 @@ namespace
 		const Experiments::SchemaSearchOptions& options,
 		const std::vector<DatasetContext>& datasets,
 		const std::vector<Experiments::WorkloadProfile>& workloads,
-		const std::vector<Experiments::SchemaCandidate>& initialCandidates)
+		const std::vector<Experiments::SchemaCandidate>& initialCandidates,
+		const Experiments::ConditionDomain* conditionDomain = nullptr)
 	{
 		const Experiments::EvolutionOptions& evolution = options.evolution;
 		const size_t populationSize = std::max<size_t>(1, evolution.populationSize);
@@ -4394,7 +4426,7 @@ namespace
 				Experiments::SchemaGenerationOptions randomOptions = options.generation;
 				randomOptions.count = randomCount;
 				randomOptions.seed = rng();
-				std::vector<Experiments::SchemaCandidate> immigrants = Experiments::generateSchemaCandidates(randomOptions);
+				std::vector<Experiments::SchemaCandidate> immigrants = Experiments::generateSchemaCandidates(randomOptions, conditionDomain);
 				for (const Experiments::SchemaCandidate& immigrant : immigrants)
 				{
 					const std::string signature = schemaSignature(immigrant.config);
@@ -4454,12 +4486,19 @@ namespace
 				bool wasCrossover = false;
 				if (currentEliteCount >= 2 && useCrossover(rng))
 				{
-					const size_t aIdx = eliteDistribution(rng);
-					size_t bIdx = eliteDistribution(rng);
-					// Force two distinct parents so crossover actually combines two genomes;
-					// otherwise it degenerates into a no-op.
-					for (size_t attempt = 0; attempt < 4 && bIdx == aIdx; ++attempt)
-						bIdx = eliteDistribution(rng);
+					// Champion-anchored crossover: archive[0] is always one parent (it's the
+					// scalar champion after NSGA-II's tie-break + the post-sort iter_swap), the
+					// other is sampled from the remaining elites. This guarantees every
+					// crossover child inherits half its blocks from the current best-known
+					// schema and explores the other half. Without anchoring, random elite-elite
+					// splices often produce children worse than either parent because crossover
+					// has no signal about which blocks are good at which depths — and the user
+					// observed the baselines beating evolved candidates exactly because of
+					// this. Anchoring keeps the champion's DNA in every crossover child while
+					// the second parent provides the variation.
+					const size_t aIdx = 0;
+					std::uniform_int_distribution<size_t> partnerDistribution(1, currentEliteCount - 1);
+					const size_t bIdx = partnerDistribution(rng);
 					childSchema = crossoverSchemaConfigs(
 						archive[aIdx].candidate.config,
 						archive[bIdx].candidate.config,
@@ -4470,7 +4509,7 @@ namespace
 				else
 				{
 					const EvaluatedCandidate& parent = archive[eliteDistribution(rng)];
-					childSchema = mutateSchemaConfig(parent.candidate.config, rng, options.generation, evolution, nullptr);
+					childSchema = mutateSchemaConfig(parent.candidate.config, rng, options.generation, evolution, conditionDomain);
 				}
 				const std::string signature = schemaSignature(childSchema);
 				if (!seenSignatures.insert(signature).second)
@@ -4486,7 +4525,10 @@ namespace
 					++mutationAccepted;
 			}
 			if (crossoverAccepted + mutationAccepted > 0)
-				std::cout << "      generation " << generation << " children: "
+				std::cout << "      generation " << generation
+					<< " champion: " << archive[0].candidate.config.name
+					<< " (score " << archive[0].aggregateScore << ")\n"
+					<< "      generation " << generation << " children: "
 					<< crossoverAccepted << " crossover + "
 					<< mutationAccepted << " mutation\n";
 
@@ -4573,23 +4615,45 @@ namespace
 			// PreparedWorkload and returns the resulting `record.score`. Reuses
 			// `benchmarkSchemaCandidateCached` so cache hits between refinement iterations come
 			// for free. We force `weights.useVisitProxy = true` (cheap, deterministic) regardless
-			// of the user's measurement-level score weights.
+			// of the user's measurement-level score weights, AND clamp the workload to a small
+			// query count for refinement evaluations. The refiner does up to maxEvaluations
+			// (default 60) full-fidelity builds per candidate; with the user's full workload
+			// (often 64+ queries on a 100M-point cloud) each evaluation runs the full sweep and
+			// total refinement time balloons. Refinement only needs to navigate the threshold
+			// landscape, not produce a final number — 8 queries are enough to discriminate
+			// neighboring threshold vectors, and the post-refinement re-measurement at full
+			// fidelity gives the final reported score.
 			Experiments::SchemaSearchOptions proxyOptions = options;
 			proxyOptions.weights.useVisitProxy = true;
 			if (proxyOptions.weights.visitProxyAlpha <= 0.0)
 				proxyOptions.weights.visitProxyAlpha = 0.1;
 
 			const DatasetContext& primary = datasets.front();
-			const Experiments::WorkloadProfile& primaryWorkload = workloads.front();
-			const Experiments::WorkloadFeatures primaryWorkloadFeatures = Experiments::extractWorkloadFeatures(primaryWorkload, proxyOptions.weights);
+			const Experiments::WorkloadProfile fullWorkload = workloads.front();
+			Experiments::WorkloadProfile refinerWorkload = fullWorkload;
+			// 8 queries is the same query budget the auto-conditions proxy stage uses by default;
+			// the threshold refiner's job is qualitatively identical (cheap deterministic ranking
+			// of neighboring threshold vectors).
+			constexpr size_t kRefinerProxyQueryCount = 8;
+			if (refinerWorkload.numQueries > kRefinerProxyQueryCount)
+				refinerWorkload.numQueries = kRefinerProxyQueryCount;
+			const Experiments::WorkloadFeatures primaryWorkloadFeatures = Experiments::extractWorkloadFeatures(refinerWorkload, proxyOptions.weights);
+
+			// Prepare a separate PreparedWorkload for the trimmed query count so the cache
+			// fingerprint reflects the smaller workload and per-seed cache hits accumulate
+			// across refinement iterations.
+			const PreparedWorkload refinerPrepared = prepareWorkloadProfile(refinerWorkload, primary.dataset->cloud, useCudaEvaluator(proxyOptions));
+
+			std::cout << "  refinement workload: " << refinerWorkload.numQueries
+				<< " queries (vs " << fullWorkload.numQueries << " full)\n";
 
 			Experiments::ThresholdScoreFn scoreFn = [&](const Experiments::SchemaCandidate& trial) {
 				Experiments::SchemaSearchRecord trialRecord = benchmarkSchemaCandidateCached(
 					*primary.dataset,
 					primary.features,
-					primaryWorkload,
+					refinerWorkload,
 					primaryWorkloadFeatures,
-					primary.preparedWorkloads.front(),
+					refinerPrepared,
 					trial,
 					proxyOptions,
 					nullptr);
@@ -5466,11 +5530,32 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	}
 
 	const std::vector<SearchDataset> datasets = loadDatasets(resolvedOptions);
+
+	// Per-cloud condition domain — estimated once from the first dataset so the initial
+	// generator + the GA's mutation operator can sample conditional thresholds calibrated to
+	// actual cloud statistics. The auto-conditions path computes its own domain internally
+	// (and uses tighter sketch parameters), so this estimate is only consulted in the GA /
+	// flat measurement paths. Skipped on synthetic-only / empty-dataset runs.
+	std::optional<ConditionDomain> sharedConditionDomain;
+	if (!resolvedOptions.autoConditions.enabled && !datasets.empty() && !datasets.front().cloud.empty())
+	{
+		sharedConditionDomain = estimateConditionDomain(datasets.front().cloud,
+			resolvedOptions.autoConditions.proxyPointCap > 0
+				? resolvedOptions.autoConditions.proxyPointCap
+				: size_t(262144));
+		std::cout << "  condition domain from '" << datasets.front().name
+			<< "': " << sharedConditionDomain->pointThresholds.size() << " point, "
+			<< sharedConditionDomain->densityThresholds.size() << " density, "
+			<< sharedConditionDomain->heightRatioThresholds.size() << " height, "
+			<< sharedConditionDomain->anisotropyThresholds.size() << " anisotropy thresholds\n";
+	}
+
 	std::vector<SchemaCandidate> schemas = loadSchemas(resolvedOptions.schemaPaths, resolvedOptions.includeConfiguredSchemas);
 	if (resolvedOptions.includeBaselineSchemas)
 		appendBaselineSchemas(schemas, useCudaEvaluator(resolvedOptions));
 	if (!resolvedOptions.autoConditions.enabled)
-		appendGeneratedSchemas(schemas, resolvedOptions.generation);
+		appendGeneratedSchemas(schemas, resolvedOptions.generation,
+			sharedConditionDomain.has_value() ? &sharedConditionDomain.value() : nullptr);
 	if (schemas.empty())
 	{
 		if (!resolvedOptions.autoConditions.enabled || resolvedOptions.autoConditions.proxyCandidateCount == 0)
@@ -5552,7 +5637,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		std::vector<DatasetContext> datasetContexts = makeDatasetContexts(datasets, workloads, useCudaEvaluator(resolvedOptions));
 		if (resolvedOptions.evolution.enabled)
 		{
-			records = runEvolutionarySchemaSearch(resolvedOptions, datasetContexts, workloads, schemas);
+			records = runEvolutionarySchemaSearch(resolvedOptions, datasetContexts, workloads, schemas,
+				sharedConditionDomain.has_value() ? &sharedConditionDomain.value() : nullptr);
 		}
 		else
 		{

@@ -30,6 +30,7 @@
 #include <initializer_list>
 #include <limits>
 #include <limits.h>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <numeric>

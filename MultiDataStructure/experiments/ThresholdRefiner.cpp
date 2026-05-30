@@ -1,7 +1,9 @@
 #include "../stdafx.h"
 #include "ThresholdRefiner.h"
 
+#include <chrono>
 #include <cmath>
+#include <iostream>
 #include <random>
 
 namespace
@@ -296,6 +298,11 @@ namespace Experiments
 
 		std::vector<double> xCandidate(n, 0.0);
 		size_t generation = 0;
+		const auto refinementStart = std::chrono::steady_clock::now();
+		auto lastLogTime = refinementStart;
+		std::cout << "      refining " << options.maxEvaluations << "-eval budget, "
+			<< n << " active dim(s), lambda " << lambda
+			<< ", sigma0 " << options.sigma0 << '\n';
 		while (evaluationsUsed + lambda <= options.maxEvaluations)
 		{
 			++generation;
@@ -330,6 +337,24 @@ namespace Experiments
 			else
 			{
 				sigma = std::max(sigma * 0.8, options.sigmaMin);
+			}
+
+			// Per-generation progress line. The refiner does up to `maxEvaluations` evaluations,
+			// each one is a full build + full query workload on the underlying scoreFn, so a
+			// realistic budget on a 100M-point cloud is several seconds per generation. Without
+			// this log the GUI appears to hang at "[K/N] refining" for minutes. Throttled so a
+			// fast refiner doesn't flood the log.
+			const auto now = std::chrono::steady_clock::now();
+			const double sinceLastLog = std::chrono::duration<double>(now - lastLogTime).count();
+			if (sinceLastLog >= 2.0 || evaluationsUsed >= options.maxEvaluations)
+			{
+				const double elapsedSec = std::chrono::duration<double>(now - refinementStart).count();
+				std::cout << "        refine gen " << generation
+					<< " eval " << evaluationsUsed << "/" << options.maxEvaluations
+					<< " best " << bestScore
+					<< " sigma " << sigma
+					<< " (" << elapsedSec << " s elapsed)\n";
+				lastLogTime = now;
 			}
 		}
 

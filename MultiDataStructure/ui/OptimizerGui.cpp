@@ -1889,6 +1889,333 @@ namespace
 		}
 	}
 
+	// Lineage classification parsed from the generator's schema naming convention.
+	// `evolved_g<N>_i<K>_...` → mutation child of generation N
+	// `xover_g<N>_i<K>_...`   → crossover child of generation N
+	// `generated_...`         → random immigrant (or initial population) — gen 0
+	// `refined_g<N>_c<K>_...` → threshold-refiner inner-loop candidate (Phase B1, post-GA)
+	// `*_default`             → injected baseline control (gen 0)
+	// Anything else           → configured/manual schema (gen 0)
+	enum class LineageOperator
+	{
+		Baseline = 0,
+		Generated = 1,
+		Mutation = 2,
+		Crossover = 3,
+		Refined = 4,
+		Other = 5,
+	};
+
+	struct LineageInfo
+	{
+		LineageOperator op = LineageOperator::Other;
+		int generation = 0;   // -1 = not part of a generation (e.g. refiner inner loop)
+	};
+
+	const char* lineageOperatorLabel(LineageOperator op)
+	{
+		switch (op)
+		{
+		case LineageOperator::Baseline: return "baseline";
+		case LineageOperator::Generated: return "generated";
+		case LineageOperator::Mutation: return "mutation";
+		case LineageOperator::Crossover: return "crossover";
+		case LineageOperator::Refined: return "refined";
+		default: return "other";
+		}
+	}
+
+	ImU32 lineageOperatorColor(LineageOperator op)
+	{
+		switch (op)
+		{
+		case LineageOperator::Baseline:  return IM_COL32(150, 150, 150, 255);
+		case LineageOperator::Generated: return IM_COL32(120, 160, 200, 255);
+		case LineageOperator::Mutation:  return IM_COL32(120, 200, 130, 255);
+		case LineageOperator::Crossover: return IM_COL32(200, 140, 200, 255);
+		case LineageOperator::Refined:   return IM_COL32(220, 180, 100, 255);
+		default: return IM_COL32(180, 180, 180, 255);
+		}
+	}
+
+	LineageInfo parseLineage(const std::string& schemaName)
+	{
+		LineageInfo info;
+		auto startsWith = [&](const char* prefix) {
+			const size_t len = std::strlen(prefix);
+			return schemaName.size() >= len && schemaName.compare(0, len, prefix) == 0;
+		};
+		// Extract the generation index from a `..._g<N>_...` pattern. Returns -1 if absent.
+		auto extractGeneration = [&](const char* prefix) -> int {
+			const size_t prefixLen = std::strlen(prefix);
+			if (schemaName.size() <= prefixLen)
+				return -1;
+			size_t cursor = prefixLen;
+			int value = 0;
+			bool any = false;
+			while (cursor < schemaName.size() && std::isdigit(static_cast<unsigned char>(schemaName[cursor])))
+			{
+				value = value * 10 + (schemaName[cursor] - '0');
+				++cursor;
+				any = true;
+			}
+			return any ? value : -1;
+		};
+
+		if (startsWith("evolved_g"))
+		{
+			info.op = LineageOperator::Mutation;
+			info.generation = std::max(1, extractGeneration("evolved_g"));
+		}
+		else if (startsWith("xover_g"))
+		{
+			info.op = LineageOperator::Crossover;
+			info.generation = std::max(1, extractGeneration("xover_g"));
+		}
+		else if (startsWith("refined_g"))
+		{
+			info.op = LineageOperator::Refined;
+			info.generation = -1;   // threshold-refiner runs post-GA
+		}
+		else if (startsWith("generated_"))
+		{
+			info.op = LineageOperator::Generated;
+			info.generation = 0;
+		}
+		else if (schemaName.find("_default") != std::string::npos)
+		{
+			info.op = LineageOperator::Baseline;
+			info.generation = 0;
+		}
+		else
+		{
+			info.op = LineageOperator::Other;
+			info.generation = 0;
+		}
+		return info;
+	}
+
+	// Per-generation rollup of the live ranking. Counts each operator that contributed to the
+	// generation and tracks the best-scoring candidate in that generation. Computed on the fly
+	// from the live ranking so it stays in sync without any backend changes.
+	struct GenerationBucket
+	{
+		int generation = -1;
+		size_t total = 0;
+		std::array<size_t, 6> operatorCounts{};   // indexed by LineageOperator
+		const LiveRankingEntry* best = nullptr;
+		LineageOperator bestOp = LineageOperator::Other;
+	};
+
+	std::vector<GenerationBucket> bucketByGeneration(const std::vector<LiveRankingEntry>& ranking)
+	{
+		std::map<int, GenerationBucket> buckets;
+		for (const LiveRankingEntry& entry : ranking)
+		{
+			const LineageInfo info = parseLineage(entry.schemaName);
+			GenerationBucket& bucket = buckets[info.generation];
+			bucket.generation = info.generation;
+			++bucket.total;
+			++bucket.operatorCounts[static_cast<size_t>(info.op)];
+			if (!bucket.best || entry.score < bucket.best->score)
+			{
+				bucket.best = &entry;
+				bucket.bestOp = info.op;
+			}
+		}
+		std::vector<GenerationBucket> out;
+		out.reserve(buckets.size());
+		for (auto& [gen, bucket] : buckets)
+			out.push_back(std::move(bucket));
+		std::sort(out.begin(), out.end(), [](const GenerationBucket& a, const GenerationBucket& b) {
+			// Refiner candidates (-1) go last; otherwise ascending generation index.
+			if (a.generation == -1 && b.generation != -1) return false;
+			if (b.generation == -1 && a.generation != -1) return true;
+			return a.generation < b.generation;
+		});
+		return out;
+	}
+
+	// GA-progress panel rendered between the live ranking and the best-results table. Reads
+	// lineage out of schema names — no SchemaSearch changes required — so it works on any
+	// existing GA / auto-conditions / mixed run. Shows one row per generation with operator
+	// breakdown and the best schema name + score of that generation, highlighting it with the
+	// operator color so you can see at a glance whether crossover, mutation, or immigrants are
+	// driving progress.
+	void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
+	{
+		if (ranking.empty())
+		{
+			ImGui::TextUnformatted("Generation summary will appear after the first candidate finishes.");
+			return;
+		}
+		const std::vector<GenerationBucket> buckets = bucketByGeneration(ranking);
+		if (buckets.empty())
+			return;
+
+		// Track global-best across all generations so we can mark the row with a star.
+		const LiveRankingEntry* globalBest = nullptr;
+		for (const GenerationBucket& bucket : buckets)
+		{
+			if (bucket.best && (!globalBest || bucket.best->score < globalBest->score))
+				globalBest = bucket.best;
+		}
+
+		if (ImGui::BeginTable("ga-generation-summary", 6,
+			ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Gen", ImGuiTableColumnFlags_WidthFixed, 48.0f);
+			ImGui::TableSetupColumn("Population", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+			ImGui::TableSetupColumn("Mix");
+			ImGui::TableSetupColumn("Gen best", ImGuiTableColumnFlags_WidthFixed, 96.0f);
+			ImGui::TableSetupColumn("Best so far", ImGuiTableColumnFlags_WidthFixed, 96.0f);
+			ImGui::TableSetupColumn("Best-of-gen schema");
+			ImGui::TableHeadersRow();
+
+			// Cumulative best across all generations so far. Excludes the post-GA refiner bucket
+			// (generation == -1) from the running min — refinement is a separate stage and
+			// folding it into the "did the GA improve" trace would be misleading.
+			double cumulativeBest = std::numeric_limits<double>::infinity();
+
+			for (const GenerationBucket& bucket : buckets)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				if (bucket.generation == -1)
+					ImGui::TextUnformatted("refine");
+				else if (bucket.generation == 0)
+					ImGui::TextUnformatted("init");
+				else
+					ImGui::Text("g%d", bucket.generation);
+
+				ImGui::TableNextColumn();
+				ImGui::Text("%zu", bucket.total);
+
+				ImGui::TableNextColumn();
+				// Inline operator counts colored by LineageOperator, only non-zero ones.
+				bool firstChip = true;
+				for (size_t opIdx = 0; opIdx < bucket.operatorCounts.size(); ++opIdx)
+				{
+					const size_t count = bucket.operatorCounts[opIdx];
+					if (count == 0)
+						continue;
+					if (!firstChip)
+						ImGui::SameLine();
+					firstChip = false;
+					const ImU32 color = lineageOperatorColor(static_cast<LineageOperator>(opIdx));
+					ImGui::PushStyleColor(ImGuiCol_Text, color);
+					ImGui::Text("%s %zu",
+						lineageOperatorLabel(static_cast<LineageOperator>(opIdx)),
+						count);
+					ImGui::PopStyleColor();
+				}
+
+				// Gen best: what THIS generation's children achieved. Intrinsically noisy —
+				// most mutation/crossover children are perturbations of their elite parents and
+				// score worse, so this column is *not* expected to monotonically decrease.
+				ImGui::TableNextColumn();
+				if (bucket.best)
+				{
+					const bool isGlobal = (bucket.best == globalBest);
+					if (isGlobal)
+					{
+						ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 220, 120, 255));
+						ImGui::Text("* %.4f", bucket.best->score);
+						ImGui::PopStyleColor();
+					}
+					else
+					{
+						ImGui::Text("%.4f", bucket.best->score);
+					}
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("Best score among candidates first produced in this generation.\nNoisy — most children score worse than their elite parents; the optimizer improves when occasional children beat the elite.");
+				}
+				else
+				{
+					ImGui::TextUnformatted("--");
+				}
+
+				// Best so far: cumulative running min, excludes the refiner bucket so this shows
+				// the GA's actual progress. Monotonically non-increasing — flat rows mean no
+				// new global best was discovered that generation (still normal; just means
+				// existing elites weren't beaten).
+				ImGui::TableNextColumn();
+				if (bucket.generation != -1 && bucket.best)
+				{
+					cumulativeBest = std::min(cumulativeBest, bucket.best->score);
+					ImGui::Text("%.4f", cumulativeBest);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("Running min across this and all prior generations.\nThis is the metric that should be monotonically non-increasing.");
+				}
+				else if (bucket.generation == -1 && bucket.best)
+				{
+					// Show the refiner's own best, separated from the cumulative GA trace.
+					const double refinedDelta = cumulativeBest - bucket.best->score;
+					ImGui::Text("%.4f", bucket.best->score);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("Threshold refiner's best (post-GA).\nDelta vs. cumulative GA best: %+.4f",
+							-refinedDelta);
+				}
+				else
+				{
+					ImGui::TextUnformatted("--");
+				}
+
+				ImGui::TableNextColumn();
+				if (bucket.best)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Text, lineageOperatorColor(bucket.bestOp));
+					ImGui::TextUnformatted(bucket.best->schemaName.c_str());
+					ImGui::PopStyleColor();
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("Operator: %s\nLatency: %.4f ms\nBuild: %.4f ms",
+							lineageOperatorLabel(bucket.bestOp),
+							bucket.best->averageLatencyMs,
+							bucket.best->buildTimeMs);
+				}
+			}
+			ImGui::EndTable();
+		}
+
+		// Cumulative best progress trace — the one that should be monotone. If this flattens
+		// across multiple generations, the GA is stuck (consider raising mutation rate, random
+		// fraction, or population). If it keeps decreasing, the optimizer is genuinely working.
+		if (buckets.size() >= 2)
+		{
+			ImGui::Spacing();
+			ImGui::TextDisabled("Cumulative best (monotone — what to actually watch):");
+			std::string trace;
+			double running = std::numeric_limits<double>::infinity();
+			for (size_t i = 0; i < buckets.size(); ++i)
+			{
+				if (buckets[i].generation == -1 || !buckets[i].best)
+					continue;
+				running = std::min(running, buckets[i].best->score);
+				if (!trace.empty())
+					trace += " -> ";
+				char prefix[16];
+				if (buckets[i].generation == 0)
+					std::snprintf(prefix, sizeof(prefix), "init");
+				else
+					std::snprintf(prefix, sizeof(prefix), "g%d", buckets[i].generation);
+				char score[32];
+				std::snprintf(score, sizeof(score), "%.4f", running);
+				trace += std::string(prefix) + ":" + score;
+			}
+			// Append refiner bucket separately so its delta is visible without polluting the trace.
+			for (const GenerationBucket& bucket : buckets)
+			{
+				if (bucket.generation == -1 && bucket.best)
+				{
+					char score[32];
+					std::snprintf(score, sizeof(score), "%.4f", bucket.best->score);
+					trace += "  +  ref:" + std::string(score);
+				}
+			}
+			ImGui::TextWrapped("%s", trace.c_str());
+		}
+	}
+
 	void drawLiveRankingTable(const std::vector<LiveRankingEntry>& ranking, size_t evaluatedCandidates, int topN, GuiState& state)
 	{
 		ImGui::Text("Measured candidates: %zu", evaluatedCandidates);
@@ -2021,6 +2348,10 @@ namespace
 		ImGui::InputInt("Top N", &state.liveRankingTopN);
 		drawHelpMarker("Number of live leaderboard rows to display. The run still measures every candidate and writes every row to CSV.");
 		drawLiveRankingTable(liveRanking, evaluatedCandidates, state.liveRankingTopN, state);
+
+		drawSectionTitle("Generations");
+		drawHelpMarker("Per-generation rollup parsed from schema names. Shows population size, the mix of operators (baseline/generated/mutation/crossover/refined) that contributed, and the best-of-generation candidate. The global-best row is marked with *. Works on any optimizer run (GA, auto-conditions, or both) since the data comes from live ranking entries.");
+		drawGenerationSummary(liveRanking);
 
 		drawSectionTitle("Best Results");
 		drawResultsTable(results, state);
