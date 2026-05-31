@@ -18,7 +18,7 @@ Experimental nested spatial data structures for point-cloud indexing and schema 
 ## Point Benchmark
 
 ```powershell
-.\x64\Release\MultiDataStructure.exe --input C:\data\cloud.las --schema configs\schemas\octree.json --workloads configs\workloads\volume_small_medium.json --queries 64 --output results\point_benchmark.json --csv results\point_benchmark.csv --query-trace results\point_queries.csv --no-pause
+.\x64\Release\MultiDataStructure.exe --input C:\data\cloud.las --schema configs\schemas\octree.json --queries 64 --output results\point_benchmark.json --csv results\point_benchmark.csv --query-trace results\point_queries.csv --no-pause
 ```
 
 Supported point formats are `.las` (uncompressed), `.ply` (ASCII), `.xyz`, and `.csv`. LAS coordinates are stored internally in a local float frame with double-precision origin metadata.

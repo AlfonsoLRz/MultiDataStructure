@@ -510,6 +510,44 @@ namespace BaselineTests
 			expect(rejectedEntropyCondition,
 				"CUDA MixedTree rejects occupancy-entropy conditions instead of silently ignoring them");
 
+			const char* conditionalSkipJson = R"json(
+			{
+			  "name": "cuda_conditional_skip",
+			  "levels": [
+			    { "type": "QuadTree", "numLevels": 1, "leafCapacity": 1, "minPointsToSplit": 2 },
+			    {
+			      "type": "Octree",
+			      "numLevels": 2,
+			      "leafCapacity": 1,
+			      "minPointsToSplit": 2,
+			      "condition": { "minHeightRatio": 999.0 }
+			    },
+			    { "type": "KDTree", "numLevels": 2, "leafCapacity": 1, "minPointsToSplit": 2 }
+			  ],
+			  "buildPolicy": {
+			    "maxDepth": 5,
+			    "leafCapacity": 1,
+			    "minPointsToSplit": 2,
+			    "collapseSingleChild": false,
+			    "removeEmptyNodes": true,
+			    "allowOverlapDuplication": false
+			  }
+			}
+			)json";
+			PointGpu::MixedTree conditionalMixedTree;
+			PointGpu::Options conditionalMixedOptions;
+			conditionalMixedOptions.device = 0;
+			conditionalMixedOptions.builder = "mixed";
+			const PointCloud conditionalCloud = SyntheticPointClouds::generateUrbanMixed(64, 64, 4);
+			const PointGpu::BuildResult conditionalBuild = conditionalMixedTree.build(
+				conditionalCloud,
+				Config::parseSchemaConfig(conditionalSkipJson, "cuda_conditional_skip"),
+				conditionalMixedOptions);
+			expect(conditionalBuild.activeStructureSummary.find("KDTree") != std::string::npos,
+				"CUDA MixedTree skips failed conditional Octree block and enters KDTree block");
+			expect(conditionalBuild.activeStructureSummary.find("Octree") == std::string::npos,
+				"CUDA MixedTree does not count skipped Octree block as active");
+
 			const std::filesystem::path knnWorkloadPath = tempRoot / "cuda_knn_workload.json";
 			{
 				std::ofstream workload(knnWorkloadPath);

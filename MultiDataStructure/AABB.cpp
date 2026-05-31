@@ -155,14 +155,36 @@ bool AABB::collides(const glm::vec3& minPoint, const glm::vec3& maxPoint) const
 
 bool AABB::intersects(const Ray& ray, float& tFar) const
 {
-	glm::vec3 invDir = 1.0f / (ray._direction);
-	glm::vec3 t0 = (_min - ray._origin) * invDir;
-	glm::vec3 t1 = (_max - ray._origin) * invDir;
-	glm::vec3 tMin = glm::min(t0, t1);
-	glm::vec3 tMax = glm::max(t0, t1);
-	float tNear = std::max({tMin.x, tMin.y, tMin.z});
-	tFar = std::min({tMax.x, tMax.y, tMax.z});
-	return tNear < tFar && tFar > 0.0f;
+	constexpr float epsilon = 1.0e-8f;
+	float tNear = -std::numeric_limits<float>::infinity();
+	tFar = std::numeric_limits<float>::infinity();
+
+	for (int axis = 0; axis < 3; ++axis)
+	{
+		const float origin = ray._origin[axis];
+		const float direction = ray._direction[axis];
+		const float minValue = _min[axis];
+		const float maxValue = _max[axis];
+
+		if (std::abs(direction) < epsilon)
+		{
+			if (origin < minValue || origin > maxValue)
+				return false;
+			continue;
+		}
+
+		float t0 = (minValue - origin) / direction;
+		float t1 = (maxValue - origin) / direction;
+		if (t0 > t1)
+			std::swap(t0, t1);
+
+		tNear = std::max(tNear, t0);
+		tFar = std::min(tFar, t1);
+		if (tNear > tFar)
+			return false;
+	}
+
+	return tFar >= 0.0f;
 }
 
 bool AABB::intersects(const Ray& ray) const

@@ -124,6 +124,7 @@ namespace PointGpu
 		uint32_t pointCount;
 		uint32_t flags;
 		uint32_t depth;
+		uint32_t schemaDepth;
 	};
 
 	using LinearQuadTreeNode = LinearOctreeNode;

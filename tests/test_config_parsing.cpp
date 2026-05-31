@@ -83,6 +83,59 @@ namespace BaselineTests
 		expectPointBuildPreservesCounts(quadtree, cloud, "quadtree point build");
 		expectPointBuildPreservesCounts(hybrid, cloud, "hybrid point build");
 
+		const char* conditionalSkipJson = R"json(
+		{
+		  "name": "conditional_skip",
+		  "levels": [
+		    { "type": "QuadTree", "numLevels": 1, "leafCapacity": 1, "minPointsToSplit": 2 },
+		    {
+		      "type": "Octree",
+		      "numLevels": 2,
+		      "leafCapacity": 1,
+		      "minPointsToSplit": 2,
+		      "condition": { "minHeightRatio": 999.0 }
+		    },
+		    { "type": "KDTree", "numLevels": 2, "leafCapacity": 1, "minPointsToSplit": 2 }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 5,
+		    "leafCapacity": 1,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": true,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+		PointCloud conditionalCloud;
+		for (float x : { 0.0f, 10.0f })
+		{
+			for (float y : { 0.0f, 10.0f })
+			{
+				conditionalCloud.addPoint({ glm::vec3(x, y, 0.0f) });
+				conditionalCloud.addPoint({ glm::vec3(x + 0.1f, y + 0.1f, 0.1f) });
+			}
+		}
+		PointSpatialIndex conditionalIndex;
+		conditionalIndex.build(conditionalCloud, Config::parseSchemaConfig(conditionalSkipJson, "conditional_skip"));
+		const PointSpatialIndex::Node* conditionalRoot = conditionalIndex.root();
+		bool skippedOctreeEnteredKdTree = false;
+		if (conditionalRoot)
+		{
+			for (const std::unique_ptr<PointSpatialIndex::Node>& child : conditionalRoot->children)
+			{
+				if (child &&
+					child->schemaDepth == 3 &&
+					child->type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+				{
+					skippedOctreeEnteredKdTree = true;
+					break;
+				}
+			}
+		}
+		expect(skippedOctreeEnteredKdTree,
+			"conditional CPU schema skips failed Octree block and enters KDTree block");
+
 		PointCloud wideTerrain;
 		wideTerrain.addPoint({ glm::vec3(0.0f, 0.0f, 0.0f) });
 		wideTerrain.addPoint({ glm::vec3(100.0f, 0.0f, 0.1f) });

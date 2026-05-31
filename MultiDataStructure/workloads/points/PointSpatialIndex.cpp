@@ -763,7 +763,7 @@ void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& cente
 		return;
 
 	++result.stats.visitedNodes;
-	if (distanceSquaredToAABB(node->bounds, center) > radiusSquared)
+	if (distanceSquaredToAABB(node->tightBounds, center) > radiusSquared)
 		return;
 
 	if (node->isLeaf())

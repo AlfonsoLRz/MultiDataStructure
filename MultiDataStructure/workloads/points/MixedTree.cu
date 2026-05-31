@@ -191,7 +191,7 @@ namespace
 			if (node.pointCount == 0)
 				continue;
 
-			const std::string typeName = activeTypeNameForDepth(schema, node.depth);
+			const std::string typeName = activeTypeNameForDepth(schema, node.schemaDepth);
 			HostActiveTypeAccumulator& accumulator = byType[typeName];
 			++accumulator.nodes;
 			++totalNodes;
@@ -354,6 +354,27 @@ namespace
 		values.reserve(maxDepth);
 		for (size_t depth = 0; depth < maxDepth; ++depth)
 			values.push_back(makeDeviceCondition(schema.levelForDepth(depth).condition));
+		return values;
+	}
+
+	std::vector<uint32_t> schemaBlockEndDepthsForSchema(const SchemaConfig& schema, size_t maxDepth)
+	{
+		const size_t schemaDepthLimit = std::min(maxDepth, std::max<size_t>(1, schema.totalLevels()));
+		std::vector<uint32_t> values;
+		values.reserve(maxDepth);
+		for (size_t depth = 0; depth < maxDepth; ++depth)
+		{
+			size_t cumulative = 0;
+			for (const SchemaLevelConfig& level : schema.levels)
+			{
+				cumulative += level.numLevels;
+				if (depth < cumulative)
+					break;
+			}
+			if (cumulative == 0)
+				cumulative = schemaDepthLimit;
+			values.push_back(static_cast<uint32_t>(std::min(cumulative, schemaDepthLimit)));
+		}
 		return values;
 	}
 
@@ -604,6 +625,25 @@ namespace
 		return true;
 	}
 
+	__device__ uint32_t activeSchemaDepthForNode(
+		const LinearMixedTreeNode& node,
+		uint32_t schemaDepthLimit,
+		const DeviceLevelCondition* conditions,
+		const uint32_t* schemaBlockEndDepths)
+	{
+		uint32_t schemaDepth = node.schemaDepth;
+		while (schemaDepth < schemaDepthLimit)
+		{
+			if (matchesCondition(node, conditions[schemaDepth]))
+				return schemaDepth;
+
+			const uint32_t nextDepth = schemaBlockEndDepths[schemaDepth];
+			schemaDepth = nextDepth > schemaDepth ? nextDepth : schemaDepth + 1;
+		}
+
+		return schemaDepthLimit;
+	}
+
 	__device__ int longestAxisForNode(const LinearMixedTreeNode& node)
 	{
 		const float extentX = node.maxX - node.minX;
@@ -691,7 +731,8 @@ namespace
 		uint32_t offset,
 		uint32_t count,
 		int parentIndex,
-		int splitType)
+		int splitType,
+		uint32_t childSchemaDepth)
 	{
 		const float midX = (parent.minX + parent.maxX) * 0.5f;
 		const float midY = (parent.minY + parent.maxY) * 0.5f;
@@ -806,6 +847,7 @@ namespace
 		node.pointCount = count;
 		node.flags = count > 0 ? 1u : 0u;
 		node.depth = parent.depth + 1;
+		node.schemaDepth = childSchemaDepth;
 		return node;
 	}
 
@@ -876,6 +918,7 @@ namespace
 		root.pointCount = static_cast<uint32_t>(pointCount);
 		root.flags = 1;
 		root.depth = 0;
+		root.schemaDepth = 0;
 		nodes[0] = root;
 		*nodeCounter = 1;
 	}
@@ -891,6 +934,8 @@ namespace
 		const uint32_t* leafCapacities,
 		const uint32_t* minSplits,
 		const DeviceLevelCondition* conditions,
+		const uint32_t* schemaBlockEndDepths,
+		uint32_t schemaDepthLimit,
 		uint32_t childSlotStride,
 		uint32_t* childCounts)
 	{
@@ -900,16 +945,17 @@ namespace
 
 		const size_t nodeIndex = levelStart + localNode;
 		LinearMixedTreeNode node = nodes[nodeIndex];
-		const uint32_t depth = node.depth < maxDepth ? node.depth : maxDepth - 1;
-		const int splitType = splitTypes[depth];
-		const uint32_t leafCapacity = leafCapacities[depth];
-		const uint32_t minSplit = minSplits[depth];
+		const uint32_t schemaDepth = activeSchemaDepthForNode(node, schemaDepthLimit, conditions, schemaBlockEndDepths);
+		const bool hasActiveSchemaLevel = schemaDepth < schemaDepthLimit;
+		const int splitType = hasActiveSchemaLevel ? splitTypes[schemaDepth] : SplitOctree;
+		const uint32_t leafCapacity = hasActiveSchemaLevel ? leafCapacities[schemaDepth] : UINT_MAX;
+		const uint32_t minSplit = hasActiveSchemaLevel ? minSplits[schemaDepth] : UINT_MAX;
 		const uint32_t childSlots = childCountForNode(node, splitType);
 		if (node.pointCount == 0 ||
 			node.pointCount <= leafCapacity ||
 			node.pointCount < minSplit ||
 			node.depth >= maxDepth ||
-			!matchesCondition(node, conditions[depth]))
+			!hasActiveSchemaLevel)
 		{
 			if (threadIdx.x == 0)
 			{
@@ -919,6 +965,9 @@ namespace
 			}
 			return;
 		}
+
+		if (threadIdx.x == 0)
+			nodes[nodeIndex].schemaDepth = schemaDepth;
 
 		uint32_t localCounts[MaxChildCount] = {};
 		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
@@ -942,6 +991,7 @@ namespace
 		size_t nodeCapacity,
 		uint32_t maxDepth,
 		const int* splitTypes,
+		uint32_t schemaDepthLimit,
 		const uint32_t* childCounts,
 		uint32_t childSlotStride,
 		uint32_t* writeCursors,
@@ -957,8 +1007,8 @@ namespace
 		if (node.pointCount == 0)
 			return;
 
-		const uint32_t depth = node.depth < maxDepth ? node.depth : maxDepth - 1;
-		const int splitType = splitTypes[depth];
+		const uint32_t schemaDepth = node.schemaDepth < schemaDepthLimit ? node.schemaDepth : schemaDepthLimit - 1;
+		const int splitType = splitTypes[schemaDepth];
 		const uint32_t childSlots = childCountForNode(node, splitType);
 		uint32_t nonEmptyChildren = 0;
 		uint32_t childMask = 0;
@@ -997,7 +1047,14 @@ namespace
 		for (uint32_t child = 0; child < childSlots; ++child)
 		{
 			const uint32_t count = childCounts[localNode * childSlotStride + child];
-			nodes[childBase + child] = makeChildNode(node, child, runningOffset, count, static_cast<int>(nodeIndex), splitType);
+			nodes[childBase + child] = makeChildNode(
+				node,
+				child,
+				runningOffset,
+				count,
+				static_cast<int>(nodeIndex),
+				splitType,
+				node.schemaDepth + 1u < schemaDepthLimit ? node.schemaDepth + 1u : schemaDepthLimit);
 			writeCursors[localNode * childSlotStride + child] = runningOffset;
 			runningOffset += count;
 		}
@@ -1012,6 +1069,7 @@ namespace
 		size_t levelCount,
 		uint32_t maxDepth,
 		const int* splitTypes,
+		uint32_t schemaDepthLimit,
 		uint32_t childSlotStride,
 		uint32_t* writeCursors)
 	{
@@ -1024,8 +1082,8 @@ namespace
 		if (node.pointCount == 0 || node.childBase < 0)
 			return;
 
-		const uint32_t depth = node.depth < maxDepth ? node.depth : maxDepth - 1;
-		const int splitType = splitTypes[depth];
+		const uint32_t schemaDepth = node.schemaDepth < schemaDepthLimit ? node.schemaDepth : schemaDepthLimit - 1;
+		const int splitType = splitTypes[schemaDepth];
 		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
 		{
 			const uint32_t pointIndex = indices[node.pointOffset + offset];
@@ -1040,7 +1098,9 @@ namespace
 		const uint32_t* indices,
 		LinearMixedTreeNode* nodes,
 		size_t nodeStart,
-		size_t nodeCount)
+		size_t nodeCount,
+		const int* splitTypes,
+		uint32_t schemaDepthLimit)
 	{
 		const size_t localNode = static_cast<size_t>(blockIdx.x);
 		if (localNode >= nodeCount)
@@ -1049,6 +1109,18 @@ namespace
 		const size_t nodeIndex = nodeStart + localNode;
 		const LinearMixedTreeNode node = nodes[nodeIndex];
 		if (node.pointCount == 0)
+			return;
+
+		const uint32_t parentSchemaDepth = node.schemaDepth > 0 ? node.schemaDepth - 1u : 0u;
+		if (parentSchemaDepth >= schemaDepthLimit)
+			return;
+
+		const int parentSplitType = splitTypes[parentSchemaDepth];
+		if (parentSplitType != SplitBIH &&
+			parentSplitType != SplitKarrasOctree &&
+			parentSplitType != SplitLBVH &&
+			parentSplitType != SplitRegularGrid &&
+			parentSplitType != SplitHGrid)
 			return;
 
 		float minX = 3.402823466e+38F;
@@ -1206,6 +1278,7 @@ struct PointGpu::MixedTree::DeviceState
 	uint32_t* leafCapacities = nullptr;
 	uint32_t* minSplits = nullptr;
 	DeviceLevelCondition* conditions = nullptr;
+	uint32_t* schemaBlockEndDepths = nullptr;
 	uint32_t* nodeCounter = nullptr;
 	uint32_t* overflowFlag = nullptr;
 	DeviceQuery* queryBuffer = nullptr;
@@ -1218,6 +1291,7 @@ struct PointGpu::MixedTree::DeviceState
 	size_t leafCapacity = 1;
 	size_t minSplit = 2;
 	size_t maxDepth = 0;
+	size_t schemaDepthLimit = 0;
 	size_t childSlotStride = 2;
 	size_t levelScratchNodeCapacity = 0;
 	size_t queryCapacity = 0;
@@ -1305,6 +1379,7 @@ void PointGpu::MixedTree::releaseTree()
 	cudaFree(_state->leafCapacities);
 	cudaFree(_state->minSplits);
 	cudaFree(_state->conditions);
+	cudaFree(_state->schemaBlockEndDepths);
 	cudaFree(_state->nodeCounter);
 	cudaFree(_state->overflowFlag);
 	_state->nodes = nullptr;
@@ -1314,12 +1389,14 @@ void PointGpu::MixedTree::releaseTree()
 	_state->leafCapacities = nullptr;
 	_state->minSplits = nullptr;
 	_state->conditions = nullptr;
+	_state->schemaBlockEndDepths = nullptr;
 	_state->nodeCounter = nullptr;
 	_state->overflowFlag = nullptr;
 	_state->nodeCapacity = 0;
 	_state->allocatedNodes = 0;
 	_state->actualNodes = 0;
 	_state->actualLeaves = 0;
+	_state->schemaDepthLimit = 0;
 	_state->childSlotStride = 2;
 	_state->levelScratchNodeCapacity = 0;
 	_state->memoryBytes = _state->baseMemoryBytes;
@@ -1401,6 +1478,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 	_state->leafCapacity = leafCapacityForSchema(schema);
 	_state->minSplit = minSplitForSchema(schema);
 	_state->maxDepth = maxDepthForSchema(schema);
+	_state->schemaDepthLimit = std::min(_state->maxDepth, std::max<size_t>(1, schema.totalLevels()));
 	_state->device = device;
 	_state->cloud = &cloud;
 
@@ -1415,6 +1493,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 	const std::vector<uint32_t> hostLeafCapacities = leafCapacitiesForSchema(schema, _state->maxDepth);
 	const std::vector<uint32_t> hostMinSplits = minSplitsForSchema(schema, _state->maxDepth);
 	const std::vector<DeviceLevelCondition> hostConditions = conditionsForSchema(schema, _state->maxDepth);
+	const std::vector<uint32_t> hostSchemaBlockEndDepths = schemaBlockEndDepthsForSchema(schema, _state->maxDepth);
 	_state->childSlotStride = maxChildSlotsForSchema(hostSplitTypes);
 	_state->leafCapacity = *std::min_element(hostLeafCapacities.begin(), hostLeafCapacities.end());
 	const glm::vec3 boundsMin = cloud.bounds().min();
@@ -1450,7 +1529,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		sizeof(LinearMixedTreeNode) * _state->nodeCapacity +
 		sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride * 2 +
 		sizeof(int) * _state->maxDepth +
-		sizeof(uint32_t) * _state->maxDepth * 2 +
+		sizeof(uint32_t) * _state->maxDepth * 3 +
 		sizeof(DeviceLevelCondition) * _state->maxDepth +
 		sizeof(uint32_t) * 2;
 	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
@@ -1462,12 +1541,14 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->leafCapacities), sizeof(uint32_t) * _state->maxDepth));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->minSplits), sizeof(uint32_t) * _state->maxDepth));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->conditions), sizeof(DeviceLevelCondition) * _state->maxDepth));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->schemaBlockEndDepths), sizeof(uint32_t) * _state->maxDepth));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodeCounter), sizeof(uint32_t)));
 	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->overflowFlag), sizeof(uint32_t)));
 	CudaHelper::checkError(cudaMemcpy(_state->splitTypes, hostSplitTypes.data(), sizeof(int) * _state->maxDepth, cudaMemcpyHostToDevice));
 	CudaHelper::checkError(cudaMemcpy(_state->leafCapacities, hostLeafCapacities.data(), sizeof(uint32_t) * _state->maxDepth, cudaMemcpyHostToDevice));
 	CudaHelper::checkError(cudaMemcpy(_state->minSplits, hostMinSplits.data(), sizeof(uint32_t) * _state->maxDepth, cudaMemcpyHostToDevice));
 	CudaHelper::checkError(cudaMemcpy(_state->conditions, hostConditions.data(), sizeof(DeviceLevelCondition) * _state->maxDepth, cudaMemcpyHostToDevice));
+	CudaHelper::checkError(cudaMemcpy(_state->schemaBlockEndDepths, hostSchemaBlockEndDepths.data(), sizeof(uint32_t) * _state->maxDepth, cudaMemcpyHostToDevice));
 
 	cudaEvent_t buildBegin = nullptr;
 	cudaEvent_t buildEnd = nullptr;
@@ -1515,6 +1596,8 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 			_state->leafCapacities,
 			_state->minSplits,
 			_state->conditions,
+			_state->schemaBlockEndDepths,
+			static_cast<uint32_t>(_state->schemaDepthLimit),
 			static_cast<uint32_t>(_state->childSlotStride),
 			_state->childCounts);
 		CudaHelper::synchronize("countMixedTreeChildBucketsKernel");
@@ -1528,6 +1611,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 			_state->nodeCapacity,
 			static_cast<uint32_t>(_state->maxDepth),
 			_state->splitTypes,
+			static_cast<uint32_t>(_state->schemaDepthLimit),
 			_state->childCounts,
 			static_cast<uint32_t>(_state->childSlotStride),
 			_state->writeCursors,
@@ -1555,6 +1639,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 			levelCount,
 			static_cast<uint32_t>(_state->maxDepth),
 			_state->splitTypes,
+			static_cast<uint32_t>(_state->schemaDepthLimit),
 			static_cast<uint32_t>(_state->childSlotStride),
 			_state->writeCursors);
 		CudaHelper::synchronize("partitionMixedTreeIndicesKernel");
@@ -1563,20 +1648,16 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		uint32_t nextNodeCount = 0;
 		CudaHelper::checkError(cudaMemcpy(&nextNodeCount, _state->nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
 		currentNodeCount = nextNodeCount;
-		const int levelSplitType = hostSplitTypes[std::min(depth, hostSplitTypes.size() - 1)];
-		if ((levelSplitType == SplitBIH ||
-			levelSplitType == SplitKarrasOctree ||
-			levelSplitType == SplitLBVH ||
-			levelSplitType == SplitRegularGrid ||
-			levelSplitType == SplitHGrid) &&
-			nextNodeCount > previousNodeCount)
+		if (nextNodeCount > previousNodeCount)
 		{
 			refitNodeBoundsKernel<<<static_cast<unsigned int>(nextNodeCount - previousNodeCount), ThreadsPerBlock>>>(
 				_state->points,
 				_state->indices,
 				_state->nodes,
 				previousNodeCount,
-				static_cast<size_t>(nextNodeCount - previousNodeCount));
+				static_cast<size_t>(nextNodeCount - previousNodeCount),
+				_state->splitTypes,
+				static_cast<uint32_t>(_state->schemaDepthLimit));
 			CudaHelper::synchronize("refitMixedTreeNodeBoundsKernel");
 		}
 		levelStart = previousNodeCount;
