@@ -506,14 +506,17 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--score-build-weight" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.lambdaBuild = std::stod(argv[++i]);
+			config.schemaSearchOptions.scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-memory-weight" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.lambdaMemory = std::stod(argv[++i]);
+			config.schemaSearchOptions.scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-imbalance-weight" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.lambdaImbalance = std::stod(argv[++i]);
+			config.schemaSearchOptions.scoreWeightsOverride = true;
 		}
 		else if (arg == "--output" && i + 1 < argc)
 		{
@@ -523,6 +526,11 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.pointOptions.csvPath = argv[++i];
 			config.schemaSearchOptions.csvPath = config.pointOptions.csvPath;
+		}
+		else if (arg == "--query-trace" && i + 1 < argc)
+		{
+			config.pointOptions.queryTracePath = argv[++i];
+			config.schemaSearchOptions.queryTracePath = config.pointOptions.queryTracePath;
 		}
 		else if (arg == "--no-csv")
 		{
@@ -570,10 +578,12 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--score-visit-proxy")
 		{
 			config.schemaSearchOptions.weights.useVisitProxy = true;
+			config.schemaSearchOptions.scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-visit-alpha" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.visitProxyAlpha = std::stod(argv[++i]);
+			config.schemaSearchOptions.scoreWeightsOverride = true;
 		}
 		else if (arg == "--parallel" && i + 1 < argc)
 		{
@@ -686,6 +696,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
 		<< "  --score-memory-weight <v>   Memory score weight, default 0\n"
 		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0\n"
+		<< "                              These override optional workload JSON scoreWeights.\n"
 		<< "  --score-visit-proxy         Score by visited-nodes + alpha*tested-points (deterministic, GPU-free)\n"
 		<< "  --score-visit-alpha <v>     Weight for tested-points in visit-proxy score, default 0.1\n"
 		<< "  --parallel <n>              Number of concurrent CPU candidate workers in evolutionary mode (default 1; CUDA path stays serial)\n"
@@ -693,6 +704,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --include-baselines         Force baseline schemas to be evaluated alongside generated candidates (default on)\n"
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
+		<< "  --query-trace <path>        Write optional per-query CSV traces for point/schema runs\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
 		<< "  --pareto-csv <path>         Write Pareto front (non-dominated rows over latency/build/memory/imbalance)\n"
 		<< "  --confirm-seeds <n>         After the main run, re-measure the top-K with N distinct query seeds and\n"

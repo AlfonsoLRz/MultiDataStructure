@@ -8,6 +8,7 @@ class ExternalBvh
 {
 private:
 	tinybvh::BVH _bvh;
+	std::vector<tinybvh::bvhvec4> _bvhVertices;
 
 public:
 	ExternalBvh(const VertexGPU* vertices, const glm::u32* indices, glm::uint numVertices, glm::uint numTriangle);

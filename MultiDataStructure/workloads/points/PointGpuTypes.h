@@ -60,6 +60,9 @@ namespace PointGpu
 		size_t gpuMemoryBytes = 0;
 		int device = 0;
 		std::string builder = "lbvh";
+		size_t activeStructureTypes = 0;
+		double nestedActiveFraction = 0.0;
+		std::string activeStructureSummary;
 	};
 
 	struct QueryResult

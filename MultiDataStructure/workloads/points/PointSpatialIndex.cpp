@@ -24,6 +24,17 @@ namespace
 			   point.z >= min.z && point.z <= max.z;
 	}
 
+	bool containsAABB(const AABB& outer, const AABB& inner)
+	{
+		const glm::vec3 outerMin = outer.min();
+		const glm::vec3 outerMax = outer.max();
+		const glm::vec3 innerMin = inner.min();
+		const glm::vec3 innerMax = inner.max();
+		return innerMin.x >= outerMin.x && innerMax.x <= outerMax.x &&
+			   innerMin.y >= outerMin.y && innerMax.y <= outerMax.y &&
+			   innerMin.z >= outerMin.z && innerMax.z <= outerMax.z;
+	}
+
 	float distanceSquaredToAABB(const AABB& bounds, const glm::vec3& point)
 	{
 		const glm::vec3 min = bounds.min();
@@ -72,6 +83,55 @@ namespace
 	{
 		return maxValue.has_value() && value > maxValue.value();
 	}
+
+	SchemaPrimitiveKind primitiveKindForLevel(const SchemaLevelConfig& levelConfig)
+	{
+		try
+		{
+			if (!levelConfig.typeName.empty())
+				return Config::parseSchemaPrimitiveKind(levelConfig.typeName);
+		}
+		catch (const std::exception&)
+		{
+		}
+
+		return levelConfig.primitiveKind;
+	}
+
+	glm::uvec3 gridSubdivisionsForLevel(const SchemaLevelConfig& levelConfig)
+	{
+		const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
+		if (kind == SchemaPrimitiveKind::HGrid)
+			return glm::uvec3(4, 4, 4);
+		return glm::uvec3(3, 3, 3);
+	}
+
+	bool isGridPrimitive(const SchemaLevelConfig& levelConfig)
+	{
+		const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
+		return kind == SchemaPrimitiveKind::RegularGrid || kind == SchemaPrimitiveKind::HGrid;
+	}
+
+	size_t gridChildIndex(const glm::vec3& point, const AABB& bounds, const glm::uvec3& subdivisions)
+	{
+		const glm::vec3 minBound = bounds.min();
+		const glm::vec3 extent = bounds.size();
+		glm::uvec3 coordinates(0);
+		for (glm::uint axis = 0; axis < 3; ++axis)
+		{
+			const uint32_t cells = subdivisions[axis];
+			if (cells <= 1 || extent[axis] <= 0.0f)
+				continue;
+
+			const float normalized = (point[axis] - minBound[axis]) / extent[axis];
+			const int raw = static_cast<int>(std::floor(normalized * static_cast<float>(cells)));
+			coordinates[axis] = static_cast<glm::uint>(std::clamp(raw, 0, static_cast<int>(cells) - 1));
+		}
+
+		return coordinates.x * subdivisions.y * subdivisions.z +
+			coordinates.y * subdivisions.z +
+			coordinates.z;
+	}
 }
 
 void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schema)
@@ -81,16 +141,20 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 
 	_cloud = &cloud;
 	_schema = schema;
+	_pointOrder.resize(cloud.size());
+	std::iota(_pointOrder.begin(), _pointOrder.end(), 0u);
 
 	_root = std::make_unique<Node>();
 	_root->bounds = cloud.bounds();
 	_root->depth = 0;
 	_root->schemaDepth = 0;
-	_root->pointIndices.resize(cloud.size());
-	std::iota(_root->pointIndices.begin(), _root->pointIndices.end(), 0u);
+	_root->pointOffset = 0;
+	_root->pointCount = cloud.size();
 
 	if (!cloud.empty())
 		buildNode(_root);
+
+	computeNodeAggregates(_root.get());
 }
 
 PointSpatialIndex::Stats PointSpatialIndex::stats() const
@@ -142,10 +206,78 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 	const auto start = std::chrono::steady_clock::now();
 	QueryResult result;
 
-	if (_root && k > 0)
+	if (_root && _cloud && k > 0 && _root->subtreePointCount > 0)
 	{
+		struct NodeCandidate
+		{
+			float distance = 0.0f;
+			size_t sequence = 0;
+			const Node* node = nullptr;
+		};
+
+		struct NodeCandidateGreater
+		{
+			bool operator()(const NodeCandidate& left, const NodeCandidate& right) const
+			{
+				if (left.distance == right.distance)
+					return left.sequence > right.sequence;
+				return left.distance > right.distance;
+			}
+		};
+
 		std::priority_queue<std::pair<float, size_t>> best;
-		knnQueryNode(_root.get(), center, k, best, result.stats);
+		std::priority_queue<NodeCandidate, std::vector<NodeCandidate>, NodeCandidateGreater> pending;
+		size_t sequence = 0;
+		pending.push({ distanceSquaredToAABB(_root->tightBounds, center), sequence++, _root.get() });
+
+		while (!pending.empty())
+		{
+			const NodeCandidate candidate = pending.top();
+			pending.pop();
+			const Node* node = candidate.node;
+			if (!node || node->subtreePointCount == 0)
+				continue;
+
+			++result.stats.visitedNodes;
+			if (best.size() == k && candidate.distance > best.top().first)
+				continue;
+
+			if (node->isLeaf())
+			{
+				for (size_t i = 0; i < node->pointCount; ++i)
+				{
+					const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
+					++result.stats.testedPoints;
+					const glm::vec3& position = _cloud->points()[pointIndex].position;
+					const float distance = glm::length2(position - center);
+					if (best.size() < k)
+					{
+						best.push({ distance, pointIndex });
+						continue;
+					}
+
+					const std::pair<float, size_t>& worst = best.top();
+					if (distance < worst.first || (distance == worst.first && pointIndex < worst.second))
+					{
+						best.pop();
+						best.push({ distance, pointIndex });
+					}
+				}
+				continue;
+			}
+
+			for (const std::unique_ptr<Node>& child : node->children)
+			{
+				if (!child || child->subtreePointCount == 0)
+					continue;
+
+				const float childDistance = distanceSquaredToAABB(child->tightBounds, center);
+				if (best.size() == k && childDistance > best.top().first)
+					continue;
+
+				pending.push({ childDistance, sequence++, child.get() });
+			}
+		}
 
 		std::vector<std::pair<float, size_t>> ordered;
 		ordered.reserve(best.size());
@@ -189,26 +321,32 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 	const std::vector<AABB> bounds = childBounds(*node, levelConfig, splitValue, splitAxis);
 	std::vector<std::vector<uint32_t>> childPoints(bounds.size());
 
-	for (const uint32_t pointIndex : node->pointIndices)
+	for (size_t i = 0; i < node->pointCount; ++i)
 	{
+		const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
 		const glm::vec3& position = _cloud->points()[pointIndex].position;
 		const size_t childIndex = locateChild(position, levelConfig, *node, splitValue, splitAxis, bounds.size());
 		childPoints[childIndex].push_back(pointIndex);
 	}
 
 	size_t nonEmptyChildren = 0;
-	size_t onlyNonEmptyChild = 0;
 	for (size_t childIndex = 0; childIndex < childPoints.size(); ++childIndex)
 	{
 		if (!childPoints[childIndex].empty())
-		{
 			++nonEmptyChildren;
-			onlyNonEmptyChild = childIndex;
-		}
 	}
 
 	if (nonEmptyChildren == 0)
 		return;
+
+	std::vector<size_t> childOffsets(childPoints.size(), node->pointOffset);
+	size_t writeOffset = node->pointOffset;
+	for (size_t childIndex = 0; childIndex < childPoints.size(); ++childIndex)
+	{
+		childOffsets[childIndex] = writeOffset;
+		for (const uint32_t pointIndex : childPoints[childIndex])
+			_pointOrder[writeOffset++] = pointIndex;
+	}
 
 	std::vector<std::unique_ptr<Node>> children;
 	children.reserve(bounds.size());
@@ -222,7 +360,8 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 		child->type = levelConfig.type;
 		child->depth = node->depth + 1;
 		child->schemaDepth = activeLevel->schemaDepth + 1;
-		child->pointIndices = std::move(childPoints[childIndex]);
+		child->pointOffset = childOffsets[childIndex];
+		child->pointCount = childPoints[childIndex].size();
 		buildNode(child);
 		children.push_back(std::move(child));
 	}
@@ -231,7 +370,7 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 	{
 		for (std::unique_ptr<Node>& child : children)
 		{
-			if (!child->pointIndices.empty() || !child->children.empty())
+			if (child->pointCount > 0 || !child->children.empty())
 			{
 				node = std::move(child);
 				return;
@@ -239,8 +378,43 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node)
 		}
 	}
 
-	node->pointIndices.clear();
 	node->children = std::move(children);
+}
+
+void PointSpatialIndex::computeNodeAggregates(Node* node)
+{
+	if (!node || !_cloud)
+		return;
+
+	node->tightBounds = AABB();
+	node->subtreePointCount = 0;
+
+	if (node->isLeaf())
+	{
+		node->subtreePointCount = node->pointCount;
+		for (size_t i = 0; i < node->pointCount; ++i)
+		{
+			const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
+			node->tightBounds.update(_cloud->points()[pointIndex].position);
+		}
+
+		if (node->subtreePointCount == 0)
+			node->tightBounds = node->bounds;
+		return;
+	}
+
+	for (const std::unique_ptr<Node>& child : node->children)
+	{
+		computeNodeAggregates(child.get());
+		if (!child || child->subtreePointCount == 0)
+			continue;
+
+		node->subtreePointCount += child->subtreePointCount;
+		node->tightBounds.update(child->tightBounds);
+	}
+
+	if (node->subtreePointCount == 0)
+		node->tightBounds = node->bounds;
 }
 
 std::optional<PointSpatialIndex::ActiveLevel> PointSpatialIndex::activeLevelForNode(const Node& node) const
@@ -265,7 +439,7 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 	if (condition.empty())
 		return true;
 
-	const size_t pointCount = node.pointIndices.size();
+	const size_t pointCount = node.pointCount;
 	if (belowMin(pointCount, condition.minPoints) || aboveMax(pointCount, condition.maxPoints))
 		return false;
 
@@ -320,8 +494,9 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 			constexpr int kCellCount = kDivisions * kDivisions * kDivisions;
 			std::array<size_t, kCellCount> cells{};
 			const glm::vec3 minBound = node.bounds.min();
-			for (const uint32_t pointIndex : node.pointIndices)
+			for (size_t i = 0; i < node.pointCount; ++i)
 			{
+				const uint32_t pointIndex = _pointOrder[node.pointOffset + i];
 				const glm::vec3& position = _cloud->points()[pointIndex].position;
 				int cx = static_cast<int>((static_cast<double>(position.x - minBound.x) / extentX) * kDivisions);
 				int cy = static_cast<int>((static_cast<double>(position.y - minBound.y) / extentY) * kDivisions);
@@ -358,11 +533,20 @@ bool PointSpatialIndex::shouldSplit(const Node& node, const SchemaLevelConfig& l
 	const size_t leafCapacity = levelConfig.leafCapacity > 0 ? levelConfig.leafCapacity : _schema.buildPolicy.leafCapacity;
 	const size_t minPointsToSplit = levelConfig.minPrimitivesToSplit > 0 ? levelConfig.minPrimitivesToSplit : _schema.buildPolicy.minPrimitivesToSplit;
 
-	return node.pointIndices.size() > leafCapacity && node.pointIndices.size() >= minPointsToSplit;
+	return node.pointCount > leafCapacity && node.pointCount >= minPointsToSplit;
 }
 
 std::vector<AABB> PointSpatialIndex::childBounds(const Node& node, const SchemaLevelConfig& levelConfig, float& splitValue, glm::uint& splitAxis) const
 {
+	if (isGridPrimitive(levelConfig))
+	{
+		const glm::uvec3 subdivisions = gridSubdivisionsForLevel(levelConfig);
+		const size_t childCount = static_cast<size_t>(subdivisions.x) * subdivisions.y * subdivisions.z;
+		std::vector<AABB> children(childCount);
+		node.bounds.split3D(subdivisions, children.data());
+		return children;
+	}
+
 	if (levelConfig.type == MultiDataStructure::DataStructureLevel::OctreeNode)
 	{
 		AABB children[8];
@@ -381,12 +565,15 @@ std::vector<AABB> PointSpatialIndex::childBounds(const Node& node, const SchemaL
 
 	splitAxis = longestAxis(node.bounds);
 	splitValue = node.bounds.center()[splitAxis];
-	if (levelConfig.type == MultiDataStructure::DataStructureLevel::KDTreeNode && !node.pointIndices.empty())
+	if (levelConfig.type == MultiDataStructure::DataStructureLevel::KDTreeNode && node.pointCount > 0)
 	{
 		std::vector<float> coordinates;
-		coordinates.reserve(node.pointIndices.size());
-		for (const uint32_t pointIndex : node.pointIndices)
+		coordinates.reserve(node.pointCount);
+		for (size_t i = 0; i < node.pointCount; ++i)
+		{
+			const uint32_t pointIndex = _pointOrder[node.pointOffset + i];
 			coordinates.push_back(_cloud->points()[pointIndex].position[splitAxis]);
+		}
 
 		const size_t median = coordinates.size() / 2;
 		std::nth_element(coordinates.begin(), coordinates.begin() + median, coordinates.end());
@@ -400,6 +587,9 @@ std::vector<AABB> PointSpatialIndex::childBounds(const Node& node, const SchemaL
 
 size_t PointSpatialIndex::locateChild(const glm::vec3& point, const SchemaLevelConfig& levelConfig, const Node& node, float splitValue, glm::uint splitAxis, size_t numChildren) const
 {
+	if (isGridPrimitive(levelConfig))
+		return std::min(gridChildIndex(point, node.bounds, gridSubdivisionsForLevel(levelConfig)), numChildren - 1);
+
 	if (levelConfig.type == MultiDataStructure::DataStructureLevel::OctreeNode)
 	{
 		const glm::vec3 center = node.bounds.center();
@@ -445,12 +635,29 @@ void PointSpatialIndex::collectStats(const Node* node, Stats& stats) const
 	if (node->children.empty())
 	{
 		++stats.numLeaves;
-		stats.numPoints += node->pointIndices.size();
+		stats.numPoints += node->pointCount;
 		return;
 	}
 
 	for (const std::unique_ptr<Node>& child : node->children)
 		collectStats(child.get(), stats);
+}
+
+void PointSpatialIndex::appendSubtreePoints(const Node* node, std::vector<size_t>& pointIndices) const
+{
+	if (!node)
+		return;
+
+	if (node->isLeaf())
+	{
+		pointIndices.reserve(pointIndices.size() + node->pointCount);
+		for (size_t i = 0; i < node->pointCount; ++i)
+			pointIndices.push_back(_pointOrder[node->pointOffset + i]);
+		return;
+	}
+
+	for (const std::unique_ptr<Node>& child : node->children)
+		appendSubtreePoints(child.get(), pointIndices);
 }
 
 void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const
@@ -459,13 +666,21 @@ void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, Que
 		return;
 
 	++result.stats.visitedNodes;
-	if (!node->bounds.collides(bounds))
+	if (node->subtreePointCount == 0 || !node->tightBounds.collides(bounds))
 		return;
+
+	if (containsAABB(bounds, node->tightBounds))
+	{
+		++result.stats.fullyContainedNodes;
+		appendSubtreePoints(node, result.pointIndices);
+		return;
+	}
 
 	if (node->isLeaf())
 	{
-		for (const uint32_t pointIndex : node->pointIndices)
+		for (size_t i = 0; i < node->pointCount; ++i)
 		{
+			const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
 			++result.stats.testedPoints;
 			if (containsPoint(bounds, _cloud->points()[pointIndex].position))
 				result.pointIndices.push_back(pointIndex);
@@ -483,13 +698,21 @@ void PointSpatialIndex::countRangeNode(const Node* node, const AABB& bounds, Cou
 		return;
 
 	++result.stats.visitedNodes;
-	if (!node->bounds.collides(bounds))
+	if (node->subtreePointCount == 0 || !node->tightBounds.collides(bounds))
 		return;
+
+	if (containsAABB(bounds, node->tightBounds))
+	{
+		++result.stats.fullyContainedNodes;
+		result.count += node->subtreePointCount;
+		return;
+	}
 
 	if (node->isLeaf())
 	{
-		for (const uint32_t pointIndex : node->pointIndices)
+		for (size_t i = 0; i < node->pointCount; ++i)
 		{
+			const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
 			++result.stats.testedPoints;
 			if (containsPoint(bounds, _cloud->points()[pointIndex].position))
 				++result.count;
@@ -512,8 +735,9 @@ void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& cente
 
 	if (node->isLeaf())
 	{
-		for (const uint32_t pointIndex : node->pointIndices)
+		for (size_t i = 0; i < node->pointCount; ++i)
 		{
+			const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
 			++result.stats.testedPoints;
 			const glm::vec3& position = _cloud->points()[pointIndex].position;
 			if (glm::length2(position - center) <= radiusSquared)
@@ -524,58 +748,4 @@ void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& cente
 
 	for (const std::unique_ptr<Node>& child : node->children)
 		radiusQueryNode(child.get(), center, radiusSquared, result);
-}
-
-void PointSpatialIndex::knnQueryNode(const Node* node, const glm::vec3& center, size_t k, std::priority_queue<std::pair<float, size_t>>& best, QueryStats& stats) const
-{
-	if (!node || !_cloud || k == 0)
-		return;
-
-	++stats.visitedNodes;
-	const float nodeDistance = distanceSquaredToAABB(node->bounds, center);
-	if (best.size() == k && nodeDistance > best.top().first)
-		return;
-
-	if (node->isLeaf())
-	{
-		for (const uint32_t pointIndex : node->pointIndices)
-		{
-			++stats.testedPoints;
-			const glm::vec3& position = _cloud->points()[pointIndex].position;
-			const float distance = glm::length2(position - center);
-			if (best.size() < k)
-			{
-				best.push({ distance, pointIndex });
-				continue;
-			}
-
-			const std::pair<float, size_t>& worst = best.top();
-			if (distance < worst.first || (distance == worst.first && pointIndex < worst.second))
-			{
-				best.pop();
-				best.push({ distance, pointIndex });
-			}
-		}
-		return;
-	}
-
-	std::vector<std::pair<float, const Node*>> children;
-	children.reserve(node->children.size());
-	for (const std::unique_ptr<Node>& child : node->children)
-	{
-		if (child)
-			children.push_back({ distanceSquaredToAABB(child->bounds, center), child.get() });
-	}
-
-	std::sort(children.begin(), children.end(), [](const auto& left, const auto& right) {
-		return left.first < right.first;
-	});
-
-	for (const auto& child : children)
-	{
-		if (best.size() == k && child.first > best.top().first)
-			break;
-
-		knnQueryNode(child.second, center, k, best, stats);
-	}
 }

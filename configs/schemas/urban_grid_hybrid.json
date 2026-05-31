@@ -1,0 +1,36 @@
+{
+  "name": "urban_grid_hybrid",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 2,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 32768
+    },
+    {
+      "type": "RegularGrid",
+      "numLevels": 2,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 16384,
+      "condition": {
+        "minDensity": 0.02,
+        "minPoints": 8192
+      }
+    },
+    {
+      "type": "BIH",
+      "numLevels": 4,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 4096,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": false,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

@@ -30,4 +30,15 @@ Supported `type` values at this stage:
 - `RegularGrid`
 - `HGrid`
 
+`numLevels` is the number of node-depth levels assigned to that schema block. For example:
+
+```json
+[
+  { "type": "Octree", "numLevels": 1 },
+  { "type": "BVH", "numLevels": 3 }
+]
+```
+
+maps depth `0` to `Octree`, then depths `1`, `2`, and `3` to `BVH`. Depths beyond the configured total reuse the final block only as a defensive fallback; normal builds stop at the configured total or `buildPolicy.maxDepth`.
+
 `KarrasOctree`, `BIH`, `LBVH`, `RegularGrid`, and `HGrid` are GPU-flavored schema names that preserve the base Octree, KDTree, and BVH families for CPU fallback while letting the CUDA MixedTree builder pick the more specific split behavior. Inside a mixed schema, `RegularGrid` and `HGrid` are recursive per-node grid split levels; the standalone CUDA `regular_grid` and `hgrid` evaluators still use their own global cell-bin implementations. Point-cloud builds use single-child assignment and should keep `allowOverlapDuplication` set to `false`.

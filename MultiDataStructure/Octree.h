@@ -7,7 +7,7 @@ class OctreeNode : public MultiDataStructure::SpatialDSNode
 public:
 	OctreeNode(const AABB& aabb = AABB());
 
-	virtual OctreeNode* copy(const AABB& aabb) const override;
+	virtual std::unique_ptr<MultiDataStructure::SpatialDSNode> copy(const AABB& aabb) const override;
 	virtual void split(MultiDataStructure::DataStructureLevel nodeType) override;
 };
 
@@ -19,6 +19,6 @@ private:
 public:
 	BvhNode(const AABB& aabb = AABB());
 
-	virtual BvhNode* copy(const AABB& aabb) const override;
+	virtual std::unique_ptr<MultiDataStructure::SpatialDSNode> copy(const AABB& aabb) const override;
 	virtual void split(MultiDataStructure::DataStructureLevel nodeType) override;
 };

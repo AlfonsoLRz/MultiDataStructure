@@ -33,7 +33,6 @@ MultiDataStructure::MultiDataStructure(const std::vector<LevelConfig>& levels, c
 
 MultiDataStructure::~MultiDataStructure()
 {
-	delete _rootNode;
 }
 
 //void MultiDataStructure::build(DataStructureLevel nodeType, glm::uint maxLevels, const Node* nodes, size_t numNodes, const AABB& aabb)
@@ -50,16 +49,6 @@ MultiDataStructure::~MultiDataStructure()
 //	}
 //}
 //
-//void MultiDataStructure::check(DataStructureLevel nodeType, glm::uint maxLevels)
-//{
-//	_maxLevels += maxLevels;
-//
-//	if (!_rootNode)
-//		throw std::runtime_error("MultiDataStructure not built yet!");
-//
-//	this->check(nodeType, _rootNode, 0);
-//}
-
 void MultiDataStructure::build(const Node* nodes, size_t numNodes, const AABB& aabb)
 {
 	_numPrimitives = numNodes;
@@ -70,7 +59,7 @@ void MultiDataStructure::build(const Node* nodes, size_t numNodes, const AABB& a
 	for (size_t i = 0; i < numNodes; ++i)
 	{
 		if (_rootNode->in(&nodes[i]))
-			this->insert(_rootNode, &nodes[i], 0);
+			this->insert(_rootNode.get(), &nodes[i], 0);
 	}
 }
 
@@ -80,7 +69,7 @@ void MultiDataStructure::removeEmptyNodes(glm::uint& deletedNodes)
 	if (!_rootNode)
 		return;
 
-	this->removeEmptyNodes(_rootNode, 0, deletedNodes);
+	this->removeEmptyNodes(_rootNode.get(), 0, deletedNodes);
 }
 
 void MultiDataStructure::applyConfiguredCleanup()
@@ -112,7 +101,7 @@ void MultiDataStructure::resolveRayQueries(
 		hitInfo._t = FLT_MAX;
 
 		if (_rootNode->_aabb.intersects(rays[rayIdx], tFar))
-			resolveRayQuery(_rootNode, rays[rayIdx], hitInfo, vertices, indices);
+			resolveRayQuery(_rootNode.get(), rays[rayIdx], hitInfo, vertices, indices);
 
 		depth[rayIdx] = hitInfo._hit == 1 ? hitInfo._t : FLT_MAX;
 	}
@@ -143,7 +132,7 @@ void MultiDataStructure::resolveRayQueriesBruteForce(
 bool MultiDataStructure::exportNodes(const std::string& filename)
 {
 	std::vector<AABB> nodes;
-	this->collectNodes(_rootNode, nodes);
+	this->collectNodes(_rootNode.get(), nodes);
 
 	// Export as obj
 	std::ofstream file(filename);
@@ -174,10 +163,10 @@ MultiDataStructure::Stats MultiDataStructure::getStats() const
 
 	float sum = 0.0f;
 	glm::uint leafPrimitiveSamples = 0;
-	this->getNumLeaves(_rootNode, stats.numLeaves);
-	this->getNumNodes(_rootNode, stats.numNodes);
-	this->getNumPrimitives(_rootNode, stats.numPrimitives);
-	this->getAverageLeafPrimitives(_rootNode, sum, leafPrimitiveSamples);
+	this->getNumLeaves(_rootNode.get(), stats.numLeaves);
+	this->getNumNodes(_rootNode.get(), stats.numNodes);
+	this->getNumPrimitives(_rootNode.get(), stats.numPrimitives);
+	this->getAverageLeafPrimitives(_rootNode.get(), sum, leafPrimitiveSamples);
 	stats.averageLeafPrimitives = leafPrimitiveSamples > 0 ? sum / static_cast<float>(leafPrimitiveSamples) : 0.0f;
 
 	return stats;
@@ -205,41 +194,6 @@ bool MultiDataStructure::SpatialDSNode::intersects(const Ray& ray)
 	return _aabb.intersects(ray);
 }
 
-void MultiDataStructure::check(SpatialDSNode* dsNode, glm::uint level)
-{
-	DataStructureLevel nodeType = this->getNodeType(level);
-
-	if (dsNode->_children.empty())
-	{
-		if (level < _maxLevels)
-		{
-			dsNode->split(nodeType);
-
-			for (auto& child : dsNode->_children)
-			{
-				for (auto& primitive : dsNode->_primitives)
-					if (child->in(primitive))
-						this->insert(child, primitive, level + 1);
-			}
-
-			dsNode->_primitives.clear();
-		}
-		else
-		{
-			for (auto& primitive : dsNode->_primitives)
-			{
-				if (dsNode->in(primitive))
-					dsNode->_primitives.push_back(primitive);
-			}
-		}
-	}
-	else
-	{
-		for (auto& child : dsNode->_children)
-			this->check(child, level + 1);
-	}
-}
-
 void MultiDataStructure::insert(SpatialDSNode* dsNode, const Node* node, glm::uint level)
 {
 	if (dsNode->in(node))
@@ -258,7 +212,7 @@ void MultiDataStructure::insert(SpatialDSNode* dsNode, const Node* node, glm::ui
 				{
 					for (auto& primitive : dsNode->_primitives)
 						if (child->in(primitive))
-							this->insert(child, primitive, level + 1);
+							this->insert(child.get(), primitive, level + 1);
 				}
 
 				dsNode->_primitives.clear();
@@ -267,7 +221,7 @@ void MultiDataStructure::insert(SpatialDSNode* dsNode, const Node* node, glm::ui
 		else
 		{
 			for (auto& child : dsNode->_children)
-				this->insert(child, node, level + 1);
+				this->insert(child.get(), node, level + 1);
 		}
 	}
 	//if (level < _maxLevels)
@@ -293,7 +247,7 @@ void MultiDataStructure::collectNodes(const SpatialDSNode* node, std::vector<AAB
 	nodes.push_back(node->_aabb);
 
 	for (auto& child : node->_children)
-		this->collectNodes(child, nodes);
+		this->collectNodes(child.get(), nodes);
 }
 
 void MultiDataStructure::checkSanity(const SpatialDSNode* dsNode, glm::uint level)
@@ -303,16 +257,15 @@ void MultiDataStructure::checkSanity(const SpatialDSNode* dsNode, glm::uint leve
 	assert(level <= _maxLevels);
 
 	for (auto& child : dsNode->_children)
-		this->checkSanity(child, level + 1);
+		this->checkSanity(child.get(), level + 1);
 }
 
-void MultiDataStructure::collapseNodes(SpatialDSNode*& dsNode, glm::uint level)
+void MultiDataStructure::collapseNodes(std::unique_ptr<SpatialDSNode>& dsNode, glm::uint level)
 {
 	if (dsNode->_children.size() == 1)
 	{
-		SpatialDSNode* child = dsNode->_children.front();
-		delete dsNode;
-		dsNode = child;
+		std::unique_ptr<SpatialDSNode> child = std::move(dsNode->_children.front());
+		dsNode = std::move(child);
 	}
 	else
 	{
@@ -327,7 +280,6 @@ void MultiDataStructure::removeEmptyNodes(SpatialDSNode* dsNode, glm::uint level
 	{
 		if ((*it)->_primitives.empty() == (*it)->_children.empty())
 		{
-			delete* it;
 			it = dsNode->_children.erase(it);
 			++deletedNodes;
 		}
@@ -336,7 +288,7 @@ void MultiDataStructure::removeEmptyNodes(SpatialDSNode* dsNode, glm::uint level
 	}
 
 	for (auto& child : dsNode->_children)
-		this->removeEmptyNodes(child, level + 1, deletedNodes);
+		this->removeEmptyNodes(child.get(), level + 1, deletedNodes);
 
 	//if (dsNode->_children.size() == 1)
 	//{
@@ -379,7 +331,7 @@ const MultiDataStructure::LevelConfig& MultiDataStructure::getLevelConfig(const 
 {
 	glm::uint idx = 0;
 
-	while (idx + 1 < _levelCDF.size() && _levelCDF[idx] < level)
+	while (idx + 1 < _levelCDF.size() && level >= _levelCDF[idx])
 		++idx;
 
 	return _levels[idx];
@@ -407,7 +359,7 @@ void MultiDataStructure::getAverageLeafPrimitives(
 	else
 	{
 		for (const auto& child : dsNode->_children)
-			this->getAverageLeafPrimitives(child, sum, count);
+			this->getAverageLeafPrimitives(child.get(), sum, count);
 	}
 }
 
@@ -420,7 +372,7 @@ void MultiDataStructure::getNumLeaves(const SpatialDSNode* dsNode, glm::uint& nu
 	else
 	{
 		for (const auto& child : dsNode->_children)
-			this->getNumLeaves(child, numLeaves);
+			this->getNumLeaves(child.get(), numLeaves);
 	}
 }
 
@@ -428,7 +380,7 @@ void MultiDataStructure::getNumNodes(const SpatialDSNode* dsNode, glm::uint& num
 {
 	++numNodes;
 	for (const auto& child : dsNode->_children)
-		this->getNumNodes(child, numNodes);
+		this->getNumNodes(child.get(), numNodes);
 }
 
 void MultiDataStructure::getNumPrimitives(const SpatialDSNode* dsNode, glm::uint& numPrimitives) const
@@ -440,7 +392,7 @@ void MultiDataStructure::getNumPrimitives(const SpatialDSNode* dsNode, glm::uint
 	else
 	{
 		for (const auto& child : dsNode->_children)
-			this->getNumPrimitives(child, numPrimitives);
+			this->getNumPrimitives(child.get(), numPrimitives);
 	}
 }
 
@@ -518,7 +470,7 @@ void MultiDataStructure::resolveRayQuery(
 			{
 				glm::uint idx = (minDistanceIdx + i) % node->_children.size();
 				if (tReservoir[idx] < hitInfo._t)
-					this->resolveRayQuery(node->_children[idx], ray, hitInfo, vertices, indices);
+					this->resolveRayQuery(node->_children[idx].get(), ray, hitInfo, vertices, indices);
 			}
 
 			//for (auto& child : node->_children)

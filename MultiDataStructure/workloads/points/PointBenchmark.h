@@ -13,6 +13,7 @@ namespace PointBenchmark
 		std::vector<std::string> schemaPaths;
 		std::string outputPath;
 		std::string csvPath;
+		std::string queryTracePath;
 		std::string modelPath;
 		std::string workloadProfilePath;
 		bool useBinaryCache = true;

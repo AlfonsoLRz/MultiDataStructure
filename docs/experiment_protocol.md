@@ -53,11 +53,13 @@ The best-schema CSV keeps these feature columns so it can be used directly for s
 
 ## Score Provenance
 
-Default score is query latency (`avg_latency_ms`). Build time, memory, and imbalance affect score only when their weights are nonzero. Proxy stages can instead use deterministic visit/test counters, so CSV rows append provenance columns:
+Default score is query latency (`avg_latency_ms`). Workload JSON files can carry a `scoreWeights` object so the scoring protocol is reproducible with the workload; explicit CLI score flags override those workload-local weights. Build time, memory, and imbalance affect score only when their weights are nonzero. Proxy stages can instead use deterministic visit/test counters, so CSV rows append provenance columns:
 
 | Column | Meaning |
 |---|---|
-| `score_mode` | `latency` or `visit_proxy`. |
+| `lambda_latency` | Weight applied to average latency in non-proxy score mode. |
+| `lambda_build`, `lambda_memory`, `lambda_imbalance` | Weights applied to build time, memory MB, and leaf-imbalance penalty. |
+| `score_mode` | `latency`, `weighted_latency`, or `visit_proxy`. |
 | `score_stage` | Pipeline stage or final rung name, such as `final`, `confirmation`, or `confirm`. |
 | `score_is_final_latency` | `1` when the row is safe to compare as a final latency measurement. |
 | `effective_queries` | Number of measured queries used by the row. |

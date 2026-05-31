@@ -182,31 +182,31 @@ Evolutionary schema optimization. This evaluates an initial population, keeps th
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generate-schemas 128 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --optimizer-mutation-rate 0.65 --optimizer-random-fraction 0.20 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_evolution.csv --best-csv results/alhambra_evolution_best.csv --no-pause
 ```
 
-LBVH GPU evaluator. This keeps the optimizer and candidate loop on CPU, but builds LBVH and measures range/count/radius/KNN queries on the selected CUDA device:
+LBVH GPU evaluator. This keeps the optimizer and candidate loop on CPU, but builds LBVH and measures range/count/radius/KNN queries on the selected CUDA device. CUDA KNN is reported as `knn_backend=bruteforce_gpu_scan` because it scans the GPU point buffer rather than traversing the structure:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder lbvh --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_lbvh_search.csv --best-csv results/alhambra_cuda_lbvh_best.csv --no-pause
 ```
 
-RegularGrid GPU evaluator. This uses CUDA cell binning plus exact range/count/radius query kernels and parallel GPU point-buffer KNN:
+RegularGrid GPU evaluator. This uses CUDA cell binning plus exact range/count/radius query kernels and brute-force parallel GPU point-buffer KNN:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder regular_grid --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_regular_grid_search.csv --best-csv results/alhambra_cuda_regular_grid_best.csv --no-pause
 ```
 
-KDTree GPU evaluator. This builds a spatial-median KD tree on CUDA and measures exact range/count/radius queries plus parallel GPU point-buffer KNN:
+KDTree GPU evaluator. This builds a spatial-median KD tree on CUDA and measures exact range/count/radius queries plus brute-force parallel GPU point-buffer KNN:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder kdtree --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_kdtree_search.csv --best-csv results/alhambra_cuda_kdtree_best.csv --no-pause
 ```
 
-BIH GPU evaluator. This builds a binary interval hierarchy on CUDA, refits tight child bounds after partitioning, and measures exact range/count/radius queries plus parallel GPU point-buffer KNN:
+BIH GPU evaluator. This builds a binary interval hierarchy on CUDA, refits tight child bounds after partitioning, and measures exact range/count/radius queries plus brute-force parallel GPU point-buffer KNN:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder bih --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_bih_search.csv --best-csv results/alhambra_cuda_bih_best.csv --no-pause
 ```
 
-Octree GPU evaluator. This builds a midpoint octree on CUDA and measures exact range/count/radius queries plus parallel GPU point-buffer KNN:
+Octree GPU evaluator. This builds a midpoint octree on CUDA and measures exact range/count/radius queries plus brute-force parallel GPU point-buffer KNN:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder octree --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_octree_search.csv --best-csv results/alhambra_cuda_octree_best.csv --no-pause
@@ -218,7 +218,7 @@ KarrasOctree GPU evaluator. This builds an octree from a Morton-sorted point ord
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder karras_octree --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_karras_octree_search.csv --best-csv results/alhambra_cuda_karras_octree_best.csv --no-pause
 ```
 
-QuadTree GPU evaluator. This builds a midpoint XY quadtree on CUDA and measures exact range/count/radius queries plus parallel GPU point-buffer KNN:
+QuadTree GPU evaluator. This builds a midpoint XY quadtree on CUDA and measures exact range/count/radius queries plus brute-force parallel GPU point-buffer KNN:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder quadtree --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_quadtree_search.csv --best-csv results/alhambra_cuda_quadtree_best.csv --no-pause
@@ -466,7 +466,7 @@ score = avg_query_latency_ms
 
 Build time, memory, and imbalance are still logged, but they are not part of the default score.
 
-Raw/best/pareto CSVs append score provenance columns: `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. To compare GA and non-GA runs:
+Raw/best/pareto CSVs append score provenance columns: `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. Workload JSON files may also define a `scoreWeights` object; explicit CLI score flags override those workload-local weights. To compare GA and non-GA runs:
 
 ```powershell
 python scripts\audit_schema_scores.py results\non_ga.csv results\ga.csv --left-label non_ga --right-label ga

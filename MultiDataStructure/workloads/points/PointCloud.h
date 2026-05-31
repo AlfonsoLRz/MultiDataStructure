@@ -7,6 +7,12 @@
 class PointCloud
 {
 public:
+	struct CoordinateFrame
+	{
+		glm::dvec3 origin = glm::dvec3(0.0);
+		glm::dvec3 scale = glm::dvec3(1.0);
+	};
+
 	struct LoadOptions
 	{
 		bool useBinaryCache = true;
@@ -20,6 +26,10 @@ public:
 	bool empty() const;
 	const std::vector<PointPrimitive>& points() const;
 
+	const CoordinateFrame& coordinateFrame() const;
+	glm::dvec3 toWorldPosition(const glm::vec3& localPosition) const;
+	glm::vec3 toLocalPosition(const glm::dvec3& worldPosition) const;
+	// Bounds are expressed in the local coordinate frame used by hot query paths.
 	AABB bounds() const;
 	glm::vec3 coordinateRange() const;
 	float approximateDensity() const;
@@ -42,6 +52,7 @@ private:
 	};
 
 	std::vector<PointPrimitive> _points;
+	CoordinateFrame _coordinateFrame;
 	Stats _stats;
 	std::string _sourcePath;
 	std::string _cachePath;

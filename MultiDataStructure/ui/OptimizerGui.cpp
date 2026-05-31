@@ -118,6 +118,7 @@ namespace
 		std::array<char, TextBufferSize> csvPath{};
 		std::array<char, TextBufferSize> bestCsvPath{};
 		std::array<char, TextBufferSize> paretoCsvPath{};
+		std::array<char, TextBufferSize> queryTracePath{};
 		std::array<char, TextBufferSize> generatedSchemaDir{};
 		std::array<char, TextBufferSize> autoConditionSchemaDir{};
 		std::array<char, TextBufferSize> selectorOutputPath{};
@@ -153,6 +154,7 @@ namespace
 		int syntheticScale = 512;
 		int generatedCount = 256;
 		int benchmarkTopK = 32;
+		int generatedMinBlocks = 2;
 		int generatedMaxBlocks = 3;
 		int generatedMaxDepth = 12;
 		int generatedMinLeaf = 32;
@@ -1078,6 +1080,7 @@ namespace
 		state.querySeed = 1337;
 		state.generatedCount = 256;
 		state.benchmarkTopK = 32;
+		state.generatedMinBlocks = 2;
 		state.generatedMaxBlocks = 3;
 		state.generatedMaxDepth = 12;
 		state.generatedMinLeaf = 32;
@@ -1105,6 +1108,7 @@ namespace
 		setText(state.csvPath, projectPath("results/gui_schema_search.csv"));
 		setText(state.bestCsvPath, projectPath("results/gui_schema_search_best.csv"));
 		setText(state.paretoCsvPath, projectPath("results/gui_schema_search_pareto.csv"));
+		setText(state.queryTracePath, "");
 		setText(state.generatedSchemaDir, projectPath("results/generated_schemas"));
 		setText(state.autoConditionSchemaDir, projectPath("results/auto_conditions"));
 		setText(state.selectorOutputPath, projectPath("models/local_schema_selector.json"));
@@ -1192,8 +1196,9 @@ namespace
 		state.syntheticScale = std::max(1, state.syntheticScale);
 		state.generatedCount = std::max(0, state.generatedCount);
 		state.benchmarkTopK = std::max(0, state.benchmarkTopK);
-		state.generatedMaxBlocks = std::max(1, state.generatedMaxBlocks);
-		state.generatedMaxDepth = std::max(1, state.generatedMaxDepth);
+		state.generatedMinBlocks = std::max(1, state.generatedMinBlocks);
+		state.generatedMaxBlocks = std::max(state.generatedMinBlocks, state.generatedMaxBlocks);
+		state.generatedMaxDepth = std::max(state.generatedMinBlocks, state.generatedMaxDepth);
 		state.generatedMinLeaf = std::max(1, state.generatedMinLeaf);
 		state.generatedMaxLeaf = std::max(state.generatedMinLeaf, state.generatedMaxLeaf);
 		state.optimizerGenerations = std::max(0, state.optimizerGenerations);
@@ -1235,6 +1240,7 @@ namespace
 		options.csvPath = textValue(state.csvPath);
 		options.bestCsvPath = textValue(state.bestCsvPath);
 		options.paretoCsvPath = textValue(state.paretoCsvPath);
+		options.queryTracePath = textValue(state.queryTracePath);
 
 		const std::string inputPath = resolvePath(textValue(state.inputPath));
 		if (!inputPath.empty())
@@ -1261,6 +1267,7 @@ namespace
 		if (state.generateSchemas)
 		{
 			options.generation.count = static_cast<size_t>(state.generatedCount);
+			options.generation.minBlocks = static_cast<size_t>(state.generatedMinBlocks);
 			options.generation.maxBlocks = static_cast<size_t>(state.generatedMaxBlocks);
 			options.generation.maxDepth = static_cast<size_t>(state.generatedMaxDepth);
 			options.generation.minLeafCapacity = static_cast<size_t>(state.generatedMinLeaf);
@@ -1303,6 +1310,10 @@ namespace
 		options.weights.lambdaBuild = state.scoreBuildWeight;
 		options.weights.lambdaMemory = state.scoreMemoryWeight;
 		options.weights.lambdaImbalance = state.scoreImbalanceWeight;
+		options.scoreWeightsOverride =
+			options.weights.lambdaBuild > 0.0 ||
+			options.weights.lambdaMemory > 0.0 ||
+			options.weights.lambdaImbalance > 0.0;
 		if (state.scoreCacheEnabled)
 		{
 			options.scoreCachePath = textValue(state.scoreCachePath);
@@ -1673,6 +1684,8 @@ namespace
 
 		if (ImGui::CollapsingHeader("Advanced generated bounds"))
 		{
+			ImGui::InputInt("Min blocks", &state.generatedMinBlocks);
+			drawHelpMarker("Minimum number of structure blocks in generated schemas. Keep this at 2 for nested/mixed discovery; pure baselines are still included separately as controls.");
 			ImGui::InputInt("Max blocks", &state.generatedMaxBlocks);
 			drawHelpMarker("Maximum number of nested structure blocks per generated schema, for example quadtree then octree then kdtree.");
 			ImGui::InputInt("Max depth", &state.generatedMaxDepth);
@@ -1829,6 +1842,7 @@ namespace
 		drawPathInput("CSV", state.csvPath, "Full measured result table, with one row per dataset/workload/schema candidate.");
 		drawPathInput("Best CSV", state.bestCsvPath, "Compact winner table. This is what the GUI reads back to populate Best Results.");
 		drawPathInput("Pareto CSV", state.paretoCsvPath, "Non-dominated front over (avg latency, build time, memory, imbalance) per (dataset, workload). Empty path disables.");
+		drawPathInput("Query trace", state.queryTracePath, "Optional per-query CSV trace. Leave empty for normal runs; enable for noisy/outlier audits. Score-cache hits are bypassed while tracing.");
 
 		drawSectionTitle("Speed-ups");
 		ImGui::TextWrapped(

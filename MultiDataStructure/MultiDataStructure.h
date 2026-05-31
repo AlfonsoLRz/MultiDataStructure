@@ -38,12 +38,12 @@ public:
 	public:
 		AABB _aabb;
 		std::vector<const Node*> _primitives;
-		std::vector<SpatialDSNode*> _children;
+		std::vector<std::unique_ptr<SpatialDSNode>> _children;
 
 		SpatialDSNode(const AABB& aabb = AABB()) : _aabb(aabb) {}
 		virtual ~SpatialDSNode() = default;
 
-		virtual SpatialDSNode* copy(const AABB& aabb) const = 0;
+		virtual std::unique_ptr<SpatialDSNode> copy(const AABB& aabb) const = 0;
 		virtual bool in(const Node* node) const;
 		virtual bool intersects(const Ray& ray);
 		virtual void split(DataStructureLevel nodeType) = 0;
@@ -53,7 +53,7 @@ public:
 
 private:
 	glm::uint					_maxLevels;
-	SpatialDSNode*				_rootNode;
+	std::unique_ptr<SpatialDSNode> _rootNode;
 	glm::uint					_numPrimitives;
 	BuildPolicy					_buildPolicy;
 
@@ -62,14 +62,13 @@ private:
 	std::vector<glm::uint> 	    _levelCDF;
 
 private:
-	void check(SpatialDSNode* dsNode, glm::uint level);
 	void insert(SpatialDSNode* dsNode, const Node* node, glm::uint level);
 
 	void collectNodes(const SpatialDSNode* node, std::vector<AABB>& nodes);
 
 	void checkSanity(const SpatialDSNode* dsNode, glm::uint level);
 
-	void collapseNodes(SpatialDSNode*& dsNode, glm::uint level);
+	void collapseNodes(std::unique_ptr<SpatialDSNode>& dsNode, glm::uint level);
 	void removeEmptyNodes(SpatialDSNode* dsNode, glm::uint level, glm::uint& deletedNodes);
 
 	DataStructureLevel getNodeType(const glm::uint level) const;
@@ -96,7 +95,7 @@ public:
 
 	void build(const Node* nodes, size_t numNodes, const AABB& aabb);
 
-	void checkSanity() { this->checkSanity(_rootNode, 0); }
+	void checkSanity() { this->checkSanity(_rootNode.get(), 0); }
 	void collapseNodes() { this->collapseNodes(_rootNode, 0); }
 	void removeEmptyNodes(glm::uint& deletedNodes);
 	void applyConfiguredCleanup();
@@ -133,7 +132,7 @@ public:
 	}
 
 	// Create an instance from enum
-	static MultiDataStructure::SpatialDSNode* create(MultiDataStructure::DataStructureLevel type, const AABB& aabb)
+	static std::unique_ptr<MultiDataStructure::SpatialDSNode> create(MultiDataStructure::DataStructureLevel type, const AABB& aabb)
 	{
 		auto it = _creators.find(type);
 		if (it == _creators.end())

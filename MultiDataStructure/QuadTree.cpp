@@ -9,9 +9,9 @@ QuadTreeNode::QuadTreeNode(const AABB& aabb) : SpatialDSNode(aabb), _planarAxis(
 				  _aabb.size().y > _aabb.size().z ? 1 : 2;
 }
 
-QuadTreeNode* QuadTreeNode::copy(const AABB& aabb) const
+std::unique_ptr<MultiDataStructure::SpatialDSNode> QuadTreeNode::copy(const AABB& aabb) const
 {
-	return new QuadTreeNode(aabb);
+	return std::make_unique<QuadTreeNode>(aabb);
 }
 
 //bool QuadTreeNode::intersects(const Ray& ray)
@@ -29,7 +29,6 @@ void QuadTreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 
 	for (const auto& aabb : aabbs)
 	{
-		MultiDataStructure::SpatialDSNode* newNode = NodeFactory::create(nodeType, aabb);
-		_children.push_back(newNode);
+		_children.push_back(NodeFactory::create(nodeType, aabb));
 	}
 }

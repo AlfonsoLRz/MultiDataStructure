@@ -4,6 +4,20 @@
 #include "../MultiDataStructure.h"
 #include "BuildPolicy.h"
 
+enum class SchemaPrimitiveKind
+{
+	QuadTree,
+	Octree,
+	KDTree,
+	BVH,
+	LBVH,
+	BIH,
+	KarrasOctree,
+	RegularGrid,
+	HGrid,
+	Mixed
+};
+
 struct SchemaLevelCondition
 {
 	std::optional<size_t> minPoints;
@@ -37,6 +51,10 @@ struct SchemaLevelCondition
 
 struct SchemaLevelConfig
 {
+	SchemaPrimitiveKind primitiveKind = SchemaPrimitiveKind::Octree;
+	MultiDataStructure::DataStructureLevel cpuFallbackType = MultiDataStructure::DataStructureLevel::OctreeNode;
+	// Compatibility alias for older CPU/build code. New code should prefer primitiveKind for
+	// schema semantics and cpuFallbackType when it intentionally needs the legacy CPU enum.
 	MultiDataStructure::DataStructureLevel type = MultiDataStructure::DataStructureLevel::OctreeNode;
 	std::string typeName = "Octree";
 	size_t numLevels = 1;
@@ -61,6 +79,9 @@ namespace Config
 {
 	SchemaConfig loadSchemaConfig(const std::string& filename);
 	SchemaConfig parseSchemaConfig(const std::string& jsonText, const std::string& sourceName = {});
+	SchemaPrimitiveKind parseSchemaPrimitiveKind(const std::string& value);
+	std::string schemaPrimitiveKindName(SchemaPrimitiveKind kind);
+	MultiDataStructure::DataStructureLevel cpuFallbackForPrimitiveKind(SchemaPrimitiveKind kind);
 	MultiDataStructure::DataStructureLevel parseDataStructureLevel(const std::string& value);
 	std::string dataStructureLevelName(MultiDataStructure::DataStructureLevel level);
 }

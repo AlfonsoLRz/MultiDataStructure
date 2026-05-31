@@ -39,6 +39,12 @@ namespace BaselineTests
 		      "min": 0.03,
 		      "max": 0.12
 		    }
+		  },
+		  "scoreWeights": {
+		    "latency": 1.0,
+		    "buildTime": 0.25,
+		    "memory": 0.5,
+		    "imbalance": 0.75
 		  }
 		}
 		)json";
@@ -55,6 +61,25 @@ namespace BaselineTests
 		expect(nearlyEqual(profile.rangeScaleMax, 0.25), "schema search parses range scale max");
 		expect(nearlyEqual(profile.radiusScaleMin, 0.03), "schema search parses radius scale min");
 		expect(nearlyEqual(profile.radiusScaleMax, 0.12), "schema search parses radius scale max");
+		expect(profile.hasScoreWeights, "schema search parses workload-local score weights");
+		expect(nearlyEqual(profile.scoreWeights.lambdaLatency, 1.0), "schema search parses workload latency score weight");
+		expect(nearlyEqual(profile.scoreWeights.lambdaBuild, 0.25), "schema search parses workload build score weight");
+		expect(nearlyEqual(profile.scoreWeights.lambdaMemory, 0.5), "schema search parses workload memory score weight");
+		expect(nearlyEqual(profile.scoreWeights.lambdaImbalance, 0.75), "schema search parses workload imbalance score weight");
+
+		const Experiments::WorkloadProfile proxyProfile = Experiments::parseWorkloadProfile(R"json(
+		{
+		  "name": "proxy_weighted",
+		  "scoreWeights": {
+		    "visitedNodes": 1.0,
+		    "testedPoints": 0.25
+		  }
+		}
+		)json", "proxy_weighted");
+		expect(proxyProfile.hasScoreWeights && proxyProfile.scoreWeights.useVisitProxy,
+			"schema search workload score weights can request visit-proxy scoring");
+		expect(nearlyEqual(proxyProfile.scoreWeights.visitProxyAlpha, 0.25),
+			"schema search parses tested-points proxy weight as visit-proxy alpha");
 
 		Experiments::BuildMetrics buildMetrics;
 		buildMetrics.buildTimeMs = 10.0;
@@ -81,6 +106,18 @@ namespace BaselineTests
 		expect(nearlyEqual(memoryMb, 2.0), "schema search score computes memory MB");
 		expect(nearlyEqual(imbalancePenalty, 3.0), "schema search score computes imbalance penalty");
 		expect(nearlyEqual(score, 2.06), "schema search score combines latency, build, memory, and imbalance");
+
+		Experiments::ScoreWeights latencyScaleWeights;
+		latencyScaleWeights.lambdaLatency = 0.5;
+		double scaledMemoryMb = 0.0;
+		double scaledImbalancePenalty = 0.0;
+		const double scaledScore = Experiments::computeSchemaSearchScore(
+			buildMetrics,
+			queryMetrics,
+			latencyScaleWeights,
+			scaledMemoryMb,
+			scaledImbalancePenalty);
+		expect(nearlyEqual(scaledScore, 1.0), "schema search score applies latency weight from workload JSON");
 
 		double defaultMemoryMb = 0.0;
 		double defaultImbalancePenalty = 0.0;
@@ -128,6 +165,20 @@ namespace BaselineTests
 		expect(best.size() == 2, "schema search picks one best record per dataset/workload");
 		expect(best[0].schemaName == "fast", "schema search keeps lowest score as best schema");
 		expect(best[1].schemaName == "only", "schema search keeps independent dataset/workload groups");
+
+		records[0].schemaName = "single_seed_lucky";
+		records[0].score = 1.0;
+		records[0].queryMetrics.averageLatencyMs = 1.0;
+		records[0].confirmSeedsUsed = 5;
+		records[0].latencyMean = 4.0;
+		records[1].schemaName = "confirmed_fast";
+		records[1].score = 2.0;
+		records[1].queryMetrics.averageLatencyMs = 2.0;
+		records[1].confirmSeedsUsed = 5;
+		records[1].latencyMean = 1.5;
+		const std::vector<Experiments::SchemaSearchRecord> confirmedBest = Experiments::selectBestRecords(records);
+		expect(confirmedBest[0].schemaName == "confirmed_fast",
+			"schema search best selection prefers multi-seed confirmed latency over lucky single-seed score");
 
 		const Experiments::EvaluatorResolution cudaResolution = Experiments::resolveSchemaSearchEvaluator("cuda", true);
 		expect(cudaResolution.usingCuda, "schema search resolver keeps available CUDA");
@@ -459,12 +510,15 @@ namespace BaselineTests
 			};
 			const size_t cudaTotalQueriesColumn = cudaColumnIndex("total_queries");
 			const size_t cudaKnnQueriesColumn = cudaColumnIndex("knn_queries");
+			const size_t cudaKnnBackendColumn = cudaColumnIndex("knn_backend");
 			expect(cudaTotalQueriesColumn < cudaValues.size() && cudaKnnQueriesColumn < cudaValues.size(),
 				"schema search CUDA KNN CSV includes query count columns");
 			expect(static_cast<size_t>(std::stoull(cudaValues[cudaTotalQueriesColumn])) == 5,
 				"schema search CUDA KNN workload keeps query override count");
 			expect(static_cast<size_t>(std::stoull(cudaValues[cudaKnnQueriesColumn])) == 5,
 				"schema search CUDA KNN workload measures KNN on GPU");
+			expect(cudaKnnBackendColumn < cudaValues.size() && cudaValues[cudaKnnBackendColumn] == "bruteforce_gpu_scan",
+				"schema search CUDA KNN CSV labels brute-force GPU scan backend");
 		}
 		else
 		{

@@ -146,7 +146,10 @@ namespace
 	{
 		SchemaLevelConfig level;
 		level.typeName = asString(object, "type", level.typeName);
-		level.type = Config::parseDataStructureLevel(level.typeName);
+		level.primitiveKind = Config::parseSchemaPrimitiveKind(level.typeName);
+		level.typeName = Config::schemaPrimitiveKindName(level.primitiveKind);
+		level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level.primitiveKind);
+		level.type = level.cpuFallbackType;
 		level.numLevels = asSize(object, "numLevels", level.numLevels);
 		level.leafCapacity = asSize(object, "leafCapacity", level.leafCapacity);
 		level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
@@ -208,7 +211,7 @@ std::vector<MultiDataStructure::LevelConfig> SchemaConfig::toLevelConfigs() cons
 	for (const SchemaLevelConfig& level : levels)
 	{
 		MultiDataStructure::LevelConfig converted;
-		converted._levelType = level.type;
+		converted._levelType = level.cpuFallbackType;
 		converted._numLevels = static_cast<glm::uint>(level.numLevels);
 		converted._leafCapacity = level.leafCapacity;
 		converted._minPrimitivesToSplit = level.minPrimitivesToSplit;
@@ -290,27 +293,85 @@ SchemaConfig Config::parseSchemaConfig(const std::string& jsonText, const std::s
 
 MultiDataStructure::DataStructureLevel Config::parseDataStructureLevel(const std::string& value)
 {
+	return cpuFallbackForPrimitiveKind(parseSchemaPrimitiveKind(value));
+}
+
+SchemaPrimitiveKind Config::parseSchemaPrimitiveKind(const std::string& value)
+{
 	const std::string normalized = normalizeTypeName(value);
 	if (normalized == "quadtree" || normalized == "quadtreenode")
-		return MultiDataStructure::DataStructureLevel::QuadTreeNode;
+		return SchemaPrimitiveKind::QuadTree;
 	if (normalized == "kdtree" || normalized == "kdtreenode")
-		return MultiDataStructure::DataStructureLevel::KDTreeNode;
+		return SchemaPrimitiveKind::KDTree;
 	if (normalized == "bih" || normalized == "binaryintervalhierarchy" || normalized == "intervalhierarchy")
-		return MultiDataStructure::DataStructureLevel::KDTreeNode;
+		return SchemaPrimitiveKind::BIH;
 	if (normalized == "octree" || normalized == "octreenode")
-		return MultiDataStructure::DataStructureLevel::OctreeNode;
+		return SchemaPrimitiveKind::Octree;
 	if (normalized == "karrasoctree" || normalized == "mortonoctree" || normalized == "octreekarras" || normalized == "octreemorton")
-		return MultiDataStructure::DataStructureLevel::OctreeNode;
+		return SchemaPrimitiveKind::KarrasOctree;
 	if (normalized == "regulargrid" || normalized == "uniformgrid" || normalized == "grid" || normalized == "grid3d")
-		return MultiDataStructure::DataStructureLevel::OctreeNode;
+		return SchemaPrimitiveKind::RegularGrid;
 	if (normalized == "hgrid" || normalized == "hierarchicalgrid" || normalized == "hierarchicalgrid3d")
-		return MultiDataStructure::DataStructureLevel::OctreeNode;
+		return SchemaPrimitiveKind::HGrid;
 	if (normalized == "bvh" || normalized == "bvhnode")
-		return MultiDataStructure::DataStructureLevel::BvhNode;
+		return SchemaPrimitiveKind::BVH;
 	if (normalized == "lbvh" || normalized == "linearbvh")
-		return MultiDataStructure::DataStructureLevel::BvhNode;
+		return SchemaPrimitiveKind::LBVH;
+	if (normalized == "mixed" || normalized == "mixedtree")
+		return SchemaPrimitiveKind::Mixed;
 
 	throw std::runtime_error("Unsupported spatial structure type: " + value);
+}
+
+std::string Config::schemaPrimitiveKindName(SchemaPrimitiveKind kind)
+{
+	switch (kind)
+	{
+	case SchemaPrimitiveKind::QuadTree:
+		return "QuadTree";
+	case SchemaPrimitiveKind::Octree:
+		return "Octree";
+	case SchemaPrimitiveKind::KDTree:
+		return "KDTree";
+	case SchemaPrimitiveKind::BVH:
+		return "BVH";
+	case SchemaPrimitiveKind::LBVH:
+		return "LBVH";
+	case SchemaPrimitiveKind::BIH:
+		return "BIH";
+	case SchemaPrimitiveKind::KarrasOctree:
+		return "KarrasOctree";
+	case SchemaPrimitiveKind::RegularGrid:
+		return "RegularGrid";
+	case SchemaPrimitiveKind::HGrid:
+		return "HGrid";
+	case SchemaPrimitiveKind::Mixed:
+		return "Mixed";
+	default:
+		return "Octree";
+	}
+}
+
+MultiDataStructure::DataStructureLevel Config::cpuFallbackForPrimitiveKind(SchemaPrimitiveKind kind)
+{
+	switch (kind)
+	{
+	case SchemaPrimitiveKind::QuadTree:
+		return MultiDataStructure::DataStructureLevel::QuadTreeNode;
+	case SchemaPrimitiveKind::KDTree:
+	case SchemaPrimitiveKind::BIH:
+		return MultiDataStructure::DataStructureLevel::KDTreeNode;
+	case SchemaPrimitiveKind::BVH:
+	case SchemaPrimitiveKind::LBVH:
+		return MultiDataStructure::DataStructureLevel::BvhNode;
+	case SchemaPrimitiveKind::Octree:
+	case SchemaPrimitiveKind::KarrasOctree:
+	case SchemaPrimitiveKind::RegularGrid:
+	case SchemaPrimitiveKind::HGrid:
+	case SchemaPrimitiveKind::Mixed:
+	default:
+		return MultiDataStructure::DataStructureLevel::OctreeNode;
+	}
 }
 
 std::string Config::dataStructureLevelName(MultiDataStructure::DataStructureLevel level)

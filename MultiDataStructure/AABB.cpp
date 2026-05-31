@@ -20,7 +20,22 @@ AABB& AABB::operator=(const AABB& aabb)
 
 AABB AABB::dot(const glm::mat4& matrix) const
 {
-	return { matrix * glm::vec4(_min, 1.0f), matrix * glm::vec4(_max, 1.0f) };
+	AABB transformed;
+	for (int x = 0; x < 2; ++x)
+	{
+		for (int y = 0; y < 2; ++y)
+		{
+			for (int z = 0; z < 2; ++z)
+			{
+				const glm::vec3 corner(
+					x == 0 ? _min.x : _max.x,
+					y == 0 ? _min.y : _max.y,
+					z == 0 ? _min.z : _max.z);
+				transformed.update(glm::vec3(matrix * glm::vec4(corner, 1.0f)));
+			}
+		}
+	}
+	return transformed;
 }
 
 void AABB::update(const AABB& aabb)

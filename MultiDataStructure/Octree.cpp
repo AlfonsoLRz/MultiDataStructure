@@ -5,9 +5,9 @@ OctreeNode::OctreeNode(const AABB& aabb) : MultiDataStructure::SpatialDSNode(aab
 {
 }
 
-OctreeNode* OctreeNode::copy(const AABB& aabb) const
+std::unique_ptr<MultiDataStructure::SpatialDSNode> OctreeNode::copy(const AABB& aabb) const
 {
-	return new OctreeNode(aabb);
+	return std::make_unique<OctreeNode>(aabb);
 }
 
 void OctreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
@@ -17,8 +17,7 @@ void OctreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 
 	for (const auto& aabb : aabbs)
 	{
-		MultiDataStructure::SpatialDSNode* newNode = NodeFactory::create(nodeType, aabb);
-		_children.push_back(newNode);
+		_children.push_back(NodeFactory::create(nodeType, aabb));
 	}
 }
 
@@ -28,9 +27,9 @@ BvhNode::BvhNode(const AABB& aabb) : MultiDataStructure::SpatialDSNode(aabb)
 				 _aabb.size().y > _aabb.size().z ? 1 : 2;
 }
 
-BvhNode* BvhNode::copy(const AABB& aabb) const
+std::unique_ptr<MultiDataStructure::SpatialDSNode> BvhNode::copy(const AABB& aabb) const
 {
-	return new BvhNode(aabb);
+	return std::make_unique<BvhNode>(aabb);
 }
 
 void BvhNode::split(MultiDataStructure::DataStructureLevel nodeType)

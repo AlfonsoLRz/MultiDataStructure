@@ -457,11 +457,25 @@ std::vector<double> Experiments::schemaFeatureVector(const SchemaConfig& schema)
 	double minLeafCapacity = std::numeric_limits<double>::max();
 	for (const SchemaLevelConfig& level : schema.levels)
 	{
-		if (level.type == MultiDataStructure::QuadTreeNode)
+		SchemaPrimitiveKind kind = level.primitiveKind;
+		try
+		{
+			if (!level.typeName.empty())
+				kind = Config::parseSchemaPrimitiveKind(level.typeName);
+		}
+		catch (const std::exception&)
+		{
+			kind = level.primitiveKind;
+		}
+		if (kind == SchemaPrimitiveKind::QuadTree)
 			features[0] = 1.0;
-		else if (level.type == MultiDataStructure::OctreeNode)
+		else if (kind == SchemaPrimitiveKind::Octree ||
+				 kind == SchemaPrimitiveKind::KarrasOctree ||
+				 kind == SchemaPrimitiveKind::RegularGrid ||
+				 kind == SchemaPrimitiveKind::HGrid ||
+				 kind == SchemaPrimitiveKind::Mixed)
 			features[1] = 1.0;
-		else if (level.type == MultiDataStructure::KDTreeNode)
+		else if (kind == SchemaPrimitiveKind::KDTree || kind == SchemaPrimitiveKind::BIH)
 			features[2] = 1.0;
 
 		if (level.leafCapacity > 0)
@@ -525,7 +539,9 @@ std::vector<Experiments::CandidatePrediction> Experiments::scoreSchemaCandidates
 		throw std::runtime_error("measured_best_schema cannot score arbitrary generated schema candidates");
 
 	const PointCloudFeatures pointFeatures = extractPointCloudFeatures(cloud);
-	const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, ScoreWeights{});
+	const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(
+		workload,
+		workload.hasScoreWeights ? workload.scoreWeights : ScoreWeights{});
 
 #if MDSPC_ONNX_AVAILABLE
 	std::unique_ptr<OnnxScoreRanker> onnxRanker;

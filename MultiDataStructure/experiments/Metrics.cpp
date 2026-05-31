@@ -10,7 +10,7 @@ namespace
 
 		if (node->isLeaf())
 		{
-			occupancies.push_back(node->pointIndices.size());
+			occupancies.push_back(node->pointCount);
 			return;
 		}
 
@@ -70,6 +70,7 @@ Experiments::QueryMetrics Experiments::summarizeQueryStats(const std::vector<Poi
 		metrics.totalVisitedNodes += sample.visitedNodes;
 		metrics.totalTestedPoints += sample.testedPoints;
 		metrics.totalReturnedPoints += sample.returnedPoints;
+		metrics.totalFullyContainedNodes += sample.fullyContainedNodes;
 	}
 
 	const double queryCount = static_cast<double>(metrics.totalQueries);
@@ -82,5 +83,6 @@ Experiments::QueryMetrics Experiments::summarizeQueryStats(const std::vector<Poi
 	metrics.averageVisitedNodes = static_cast<double>(metrics.totalVisitedNodes) / queryCount;
 	metrics.averageTestedPoints = static_cast<double>(metrics.totalTestedPoints) / queryCount;
 	metrics.averageReturnedPoints = static_cast<double>(metrics.totalReturnedPoints) / queryCount;
+	metrics.averageFullyContainedNodes = static_cast<double>(metrics.totalFullyContainedNodes) / queryCount;
 	return metrics;
 }

@@ -7,18 +7,16 @@
 
 ExternalBvh::ExternalBvh(const VertexGPU* vertices, const glm::u32* indices, glm::uint numVertices, glm::uint numTriangles)
 {
-	tinybvh::bvhvec4* bvhVertices = new tinybvh::bvhvec4[numVertices];
+	_bvhVertices.resize(numVertices);
 	for (glm::uint i = 0; i < numVertices; i++)
 	{
-		bvhVertices[i].x = vertices[i]._position.x;
-		bvhVertices[i].y = vertices[i]._position.y;
-		bvhVertices[i].z = vertices[i]._position.z;
-		bvhVertices[i].w = 1.0f;
+		_bvhVertices[i].x = vertices[i]._position.x;
+		_bvhVertices[i].y = vertices[i]._position.y;
+		_bvhVertices[i].z = vertices[i]._position.z;
+		_bvhVertices[i].w = 1.0f;
 	}
 
-	_bvh.BuildHQ(bvhVertices, indices, numTriangles);
-
-	//delete[] bvhVertices;
+	_bvh.BuildHQ(_bvhVertices.data(), indices, numTriangles);
 }
 
 ExternalBvh::~ExternalBvh() = default;

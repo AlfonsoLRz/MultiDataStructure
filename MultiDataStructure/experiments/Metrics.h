@@ -28,9 +28,11 @@ namespace Experiments
 		double averageVisitedNodes = 0.0;
 		double averageTestedPoints = 0.0;
 		double averageReturnedPoints = 0.0;
+		double averageFullyContainedNodes = 0.0;
 		size_t totalVisitedNodes = 0;
 		size_t totalTestedPoints = 0;
 		size_t totalReturnedPoints = 0;
+		size_t totalFullyContainedNodes = 0;
 	};
 
 	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs);

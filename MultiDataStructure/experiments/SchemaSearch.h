@@ -75,6 +75,20 @@ namespace Experiments
 		std::string selectorOutputPath = "models/local_schema_selector.json";
 	};
 
+	struct ScoreWeights
+	{
+		double lambdaLatency = 1.0;
+		double lambdaBuild = 0.0;
+		double lambdaMemory = 0.0;
+		double lambdaImbalance = 0.0;
+		// When useVisitProxy is set, the score is computed from cheap deterministic kernel counters
+		// (averageVisitedNodes + visitProxyAlpha * averageTestedPoints) instead of wall-clock query
+		// latency. Useful for screening stages where many candidates must be ranked without
+		// committing to a noisy latency measurement.
+		bool useVisitProxy = false;
+		double visitProxyAlpha = 0.1;
+	};
+
 	struct WorkloadProfile
 	{
 		std::string name = "mixed";
@@ -88,19 +102,8 @@ namespace Experiments
 		size_t numQueries = 1000;
 		size_t knnK = 16;
 		uint32_t querySeed = 1337;
-	};
-
-	struct ScoreWeights
-	{
-		double lambdaBuild = 0.0;
-		double lambdaMemory = 0.0;
-		double lambdaImbalance = 0.0;
-		// When useVisitProxy is set, the score is computed from cheap deterministic kernel counters
-		// (averageVisitedNodes + visitProxyAlpha * averageTestedPoints) instead of wall-clock query
-		// latency. Useful for screening stages where many candidates must be ranked without
-		// committing to a noisy latency measurement.
-		bool useVisitProxy = false;
-		double visitProxyAlpha = 0.1;
+		bool hasScoreWeights = false;
+		ScoreWeights scoreWeights;
 	};
 
 	// One rung in a successive-halving / multi-fidelity schedule. The batch flows R0 -> R1 -> ... ;
@@ -190,6 +193,9 @@ namespace Experiments
 		// Optional Phase C1 Pareto-front CSV. One row per non-dominated candidate per
 		// (dataset, workload) group with the `pareto_rank` column. Empty = skip.
 		std::string paretoCsvPath;
+		// Optional per-query CSV trace. Empty = disabled. When enabled, cached score rows are
+		// bypassed so the trace reflects queries actually executed in this run.
+		std::string queryTracePath;
 		// Phase C2 multi-seed confirmation. When >= 2, the top-K candidates per (dataset, workload)
 		// are re-measured with N distinct query seeds and their record fields are updated with
 		// mean ± 95% bootstrap CI on (avgLatencyMs, p95LatencyMs, gpuBuildMs). The Pareto
@@ -212,6 +218,7 @@ namespace Experiments
 		SchemaGenerationOptions generation;
 		AutoConditionOptions autoConditions;
 		ScoreWeights weights;
+		bool scoreWeightsOverride = false;
 		std::string scoreStage = "final";
 		bool scoreIsFinalLatency = true;
 		EvolutionOptions evolution;
@@ -263,6 +270,7 @@ namespace Experiments
 		PointCloudFeatures pointFeatures;
 		WorkloadFeatures workloadFeatures;
 		std::string backend = "cpu";
+		std::string knnBackend = "none";
 		int cudaDevice = -1;
 		std::string cudaBuilder;
 		double gpuUploadMs = 0.0;

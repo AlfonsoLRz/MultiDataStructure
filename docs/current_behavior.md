@@ -83,6 +83,7 @@ Point mode:
 
 - loads the point cloud,
 - reads or writes a sibling `.mdspc` binary cache next to the source point cloud,
+- stores LAS positions as local `float3` coordinates relative to a double-precision coordinate-frame origin,
 - loads a schema JSON,
 - builds the CPU point index,
 - optionally runs generated AABB range, count-range, radius, and KNN query profiles,
@@ -92,7 +93,7 @@ Point mode:
 
 The JSON document includes:
 
-- `run_id`, dataset, cache, schema, and workload metadata,
+- `run_id`, dataset, local bounds, coordinate-frame, cache, schema, and workload metadata,
 - schema/point load timings,
 - build metrics: build time, node/leaf/depth counts, leaf occupancy, indexed points, memory estimate,
 - query metrics for mixed/range/count/radius/KNN workloads: total queries, average/median/p95 latency, throughput, visited nodes, tested points, returned points.
@@ -159,9 +160,9 @@ Schema levels may include a `condition` object. Conditions are evaluated per nod
 }
 ```
 
-Supported condition fields are `minPoints`, `maxPoints`, `minDensity`, `maxDensity`, `minHeightRatio`, `maxHeightRatio`, and per-axis extent bounds (`minExtentX`, `maxExtentX`, etc.). `configs/schemas/adaptive_quadtree_octree.json` is a hand-authored example. Generated search can sample conditions with `--generated-conditional`.
+Supported condition fields are `minPoints`, `maxPoints`, `minDensity`, `maxDensity`, `minHeightRatio`, `maxHeightRatio`, and per-axis extent bounds (`minExtentX`, `maxExtentX`, etc.). `configs/schemas/adaptive_quadtree_octree.json` is a hand-authored example. Generated search can sample conditions with `--generated-conditional`. Schema parsing keeps the original primitive kind (`RegularGrid`, `HGrid`, `KarrasOctree`, `LBVH`, `BIH`, etc.) separately from its current CPU fallback enum so CPU discovery and CUDA replay do not erase schema intent.
 
-Per-cloud condition tuning is available with `--auto-conditions`. This path estimates a deterministic shallow feature sketch from the target cloud, builds condition-threshold domains from occupancy, density, height-ratio, and extent quantiles, then writes generated schemas with concrete numeric thresholds. It evaluates many candidates with a small proxy workload and downsampled cloud, shortlists a few on the full cloud, and confirms the best candidates with the requested query count. The raw/best CSV formats keep all existing columns and append condition-summary, runtime nesting, baseline-normalized, and score-provenance columns. The provenance columns include `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`.
+Per-cloud condition tuning is available with `--auto-conditions`. This path estimates a deterministic shallow feature sketch from the target cloud, builds condition-threshold domains from occupancy, density, height-ratio, and extent quantiles, then writes generated schemas with concrete numeric thresholds. It evaluates many candidates with a small proxy workload and downsampled cloud, shortlists a few on the full cloud, and confirms the best candidates with the requested query count. The raw/best CSV formats keep all existing columns and append condition-summary, runtime nesting, baseline-normalized, and score-provenance columns. The provenance columns include `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. Workload JSON files can define `scoreWeights`; explicit CLI score flags take precedence.
 
 Example local threshold tuning:
 
@@ -199,7 +200,7 @@ avg_query_latency_ms + 0.0 * build_time_ms + 0.0 * memory_mb + 0.0 * imbalance_p
 
 where `imbalance_penalty = max_leaf_occupancy / max(1, avg_leaf_occupancy)`. Build time, memory, and imbalance are logged but ignored by default because schemas can be built offline and reused. Raw metrics and score components are also stored so later milestones can recompute labels.
 
-With `--evaluator cuda`, schema search uploads each point cloud to the GPU and measures range/count-range/radius/KNN query batches through the selected CUDA builder. Workload queries are prepared once per dataset/workload, CUDA query buffers are reused across candidate measurements, and repeated CUDA builds on the same cloud/device reuse uploaded point buffers where the builder supports it. `lbvh` uses a Morton-sorted point order, `kdtree` and `bih` use binary linear nodes, `octree` and `quadtree` use midpoint child buckets, `karras_octree` uses Morton sorting plus prefix child ranges, `regular_grid` and `hgrid` use grid cell bins, and `mixed` follows the schema's per-depth schedule. Mixed CUDA schemas can name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid` as recursive split levels. In mixed schemas, `RegularGrid` and `HGrid` are per-node grid split flavors rather than the standalone global sorted-cell evaluators. CUDA KNN currently reports benchmark statistics without neighbor ids and uses a parallel GPU point-buffer scan; the default CUDA workload still avoids KNN to keep measured search light.
+With `--evaluator cuda`, schema search uploads each point cloud to the GPU and measures range/count-range/radius/KNN query batches through the selected CUDA builder. Workload queries are prepared once per dataset/workload, CUDA query buffers are reused across candidate measurements, and repeated CUDA builds on the same cloud/device reuse uploaded point buffers where the builder supports it. `lbvh` uses a Morton-sorted point order, `kdtree` and `bih` use binary linear nodes, `octree` and `quadtree` use midpoint child buckets, `karras_octree` uses Morton sorting plus prefix child ranges, `regular_grid` and `hgrid` use grid cell bins, and `mixed` follows the schema's per-depth schedule. Mixed CUDA schemas can name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid` as recursive split levels. In mixed schemas, `RegularGrid` and `HGrid` are per-node grid split flavors rather than the standalone global sorted-cell evaluators. CUDA KNN rows are labeled with `knn_backend=bruteforce_gpu_scan`: they report benchmark statistics without neighbor ids and use a parallel GPU point-buffer scan, not structure-accelerated traversal. The default CUDA workload still avoids KNN to keep measured search light.
 
 To compare GA and non-GA outputs, run `python scripts\audit_schema_scores.py non_ga.csv ga.csv`. The audit reports best-by-score versus best-by-latency and flags mismatched score mode, stage, query count, evaluator, CUDA builder, score weights, and proxy alpha.
 
@@ -273,6 +274,7 @@ The executable no longer exposes the triangle/ray benchmark, and `TriangleBenchm
 - Schema-search labels currently use synthetic datasets and placeholder score weights.
 - The built-in PLY reader supports ASCII PLY only.
 - The built-in LAS reader supports uncompressed LAS records, not LAZ.
-- The `.mdspc` cache is invalidated using the source file size and last-write timestamp.
+- `PointCloud::bounds()` and generated query coordinates are local-space. Use `PointCloud::toWorldPosition()` or the JSON `dataset.coordinate_frame` metadata to reconstruct LAS/world coordinates.
+- The `.mdspc` cache stores local positions plus coordinate-frame metadata and is invalidated using the source file size and last-write timestamp.
 - JSON logging is intentionally lightweight and hand-written.
 - Some generic core files still expose legacy triangle/ray APIs from the original prototype.

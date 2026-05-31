@@ -1,0 +1,31 @@
+{
+  "name": "grid2d_quadtree_grid3d_octree",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 2,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 16384
+    },
+    {
+      "type": "RegularGrid",
+      "numLevels": 2,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 8192
+    },
+    {
+      "type": "Octree",
+      "numLevels": 4,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 4096
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": false,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

@@ -33,6 +33,8 @@ namespace BaselineTests
 		expect(octree.levels.size() == 1, "octree schema has one level block");
 		expect(octree.totalLevels() == 8, "octree schema total levels parsed");
 		expect(octree.levels[0].type == MultiDataStructure::DataStructureLevel::OctreeNode, "octree type parsed");
+		expect(octree.levels[0].primitiveKind == SchemaPrimitiveKind::Octree, "octree primitive kind parsed");
+		expect(octree.levels[0].cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "octree CPU fallback parsed");
 		expect(octree.buildPolicy.allowOverlapDuplication == false, "point schema disables overlap duplication");
 
 		const SchemaConfig quadtree = loadSchema("quadtree");
@@ -78,14 +80,34 @@ namespace BaselineTests
 		)json";
 		const SchemaConfig gpuFlavors = Config::parseSchemaConfig(gpuFlavorJson, "gpu_flavors");
 		expect(gpuFlavors.levels[0].type == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH parses as KD-compatible family");
+		expect(gpuFlavors.levels[0].primitiveKind == SchemaPrimitiveKind::BIH, "BIH primitive kind is preserved");
+		expect(gpuFlavors.levels[0].cpuFallbackType == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH CPU fallback is explicit");
 		expect(gpuFlavors.levels[0].typeName == "BIH", "BIH schema name is preserved");
 		expect(gpuFlavors.levels[1].type == MultiDataStructure::DataStructureLevel::OctreeNode, "KarrasOctree parses as Octree-compatible family");
+		expect(gpuFlavors.levels[1].primitiveKind == SchemaPrimitiveKind::KarrasOctree, "KarrasOctree primitive kind is preserved");
 		expect(gpuFlavors.levels[1].typeName == "KarrasOctree", "KarrasOctree schema name is preserved");
 		expect(gpuFlavors.levels[2].type == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH parses as BVH-compatible family");
+		expect(gpuFlavors.levels[2].primitiveKind == SchemaPrimitiveKind::LBVH, "LBVH primitive kind is preserved");
+		expect(gpuFlavors.levels[2].cpuFallbackType == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH CPU fallback is explicit");
 		expect(gpuFlavors.levels[3].type == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid parses as Octree-compatible family");
+		expect(gpuFlavors.levels[3].primitiveKind == SchemaPrimitiveKind::RegularGrid, "RegularGrid primitive kind is preserved");
+		expect(gpuFlavors.levels[3].cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid CPU fallback is explicit");
 		expect(gpuFlavors.levels[3].typeName == "RegularGrid", "RegularGrid schema name is preserved");
 		expect(gpuFlavors.levels[4].type == MultiDataStructure::DataStructureLevel::OctreeNode, "HGrid parses as Octree-compatible family");
+		expect(gpuFlavors.levels[4].primitiveKind == SchemaPrimitiveKind::HGrid, "HGrid primitive kind is preserved");
 		expect(gpuFlavors.levels[4].typeName == "HGrid", "HGrid schema name is preserved");
+
+		const char* mixedJson = R"json(
+		{
+		  "name": "mixed_primitive",
+		  "levels": [
+		    { "type": "Mixed", "numLevels": 1, "leafCapacity": 16, "minPointsToSplit": 4 }
+		  ]
+		}
+		)json";
+		const SchemaConfig mixedPrimitive = Config::parseSchemaConfig(mixedJson, "mixed_primitive");
+		expect(mixedPrimitive.levels[0].primitiveKind == SchemaPrimitiveKind::Mixed, "Mixed primitive kind is parsed");
+		expect(mixedPrimitive.levels[0].cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "Mixed CPU fallback is explicit");
 
 		const char* noSplitJson = R"json(
 		{

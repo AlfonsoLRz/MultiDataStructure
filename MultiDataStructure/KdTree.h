@@ -10,7 +10,7 @@ private:
 public:
 	KdTreeNode(const AABB& aabb = AABB());
 
-	virtual KdTreeNode* copy(const AABB& aabb) const override;
+	virtual std::unique_ptr<MultiDataStructure::SpatialDSNode> copy(const AABB& aabb) const override;
 	virtual void split(MultiDataStructure::DataStructureLevel nodeType) override;
 };
 

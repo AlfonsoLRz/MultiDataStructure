@@ -50,6 +50,11 @@ namespace
 		stream << '[' << value.x << ", " << value.y << ", " << value.z << ']';
 	}
 
+	void writeDVec3Json(std::ostream& stream, const glm::dvec3& value)
+	{
+		stream << '[' << value.x << ", " << value.y << ", " << value.z << ']';
+	}
+
 	struct QueryProfileSection
 	{
 		std::vector<PointSpatialIndex::QueryStats> samples;
@@ -66,6 +71,19 @@ namespace
 		}
 	};
 
+	struct QueryTraceSample
+	{
+		size_t queryId = 0;
+		std::string queryType;
+		bool hasBounds = false;
+		AABB bounds;
+		bool hasCenter = false;
+		glm::vec3 center = glm::vec3(0.0f);
+		float radius = 0.0f;
+		size_t k = 0;
+		PointSpatialIndex::QueryStats stats;
+	};
+
 	struct QueryProfileSummary
 	{
 		size_t queryCount = 0;
@@ -76,6 +94,7 @@ namespace
 		QueryProfileSection radius;
 		QueryProfileSection knn;
 		Experiments::QueryMetrics mixed;
+		std::vector<QueryTraceSample> traces;
 
 		size_t totalQueries() const
 		{
@@ -158,18 +177,28 @@ namespace
 			return summary;
 
 		std::mt19937 rng(options.querySeed);
+		size_t traceId = 0;
 		for (size_t i = 0; i < options.queryCount; ++i)
 		{
 			const AABB rangeBounds = randomQueryBox(rng, cloud);
-			summary.range.add(index.rangeQuery(rangeBounds).stats);
-			summary.countRange.add(index.countRange(rangeBounds).stats);
+			const PointSpatialIndex::QueryStats rangeStats = index.rangeQuery(rangeBounds).stats;
+			summary.range.add(rangeStats);
+			summary.traces.push_back({ traceId++, "range", true, rangeBounds, false, {}, 0.0f, 0, rangeStats });
+
+			const PointSpatialIndex::QueryStats countStats = index.countRange(rangeBounds).stats;
+			summary.countRange.add(countStats);
+			summary.traces.push_back({ traceId++, "count_range", true, rangeBounds, false, {}, 0.0f, 0, countStats });
 
 			const glm::vec3 radiusCenter = randomPointInBounds(rng, cloud.bounds());
 			const float radius = randomQueryRadius(rng, cloud);
-			summary.radius.add(index.radiusQuery(radiusCenter, radius).stats);
+			const PointSpatialIndex::QueryStats radiusStats = index.radiusQuery(radiusCenter, radius).stats;
+			summary.radius.add(radiusStats);
+			summary.traces.push_back({ traceId++, "radius", false, {}, true, radiusCenter, radius, 0, radiusStats });
 
 			const glm::vec3 knnCenter = randomPointInBounds(rng, cloud.bounds());
-			summary.knn.add(index.knnQuery(knnCenter, options.queryK).stats);
+			const PointSpatialIndex::QueryStats knnStats = index.knnQuery(knnCenter, options.queryK).stats;
+			summary.knn.add(knnStats);
+			summary.traces.push_back({ traceId++, "knn", false, {}, true, knnCenter, 0.0f, options.queryK, knnStats });
 		}
 
 		summary.finalize();
@@ -254,9 +283,11 @@ namespace
 		stream << "      \"avg_visited_nodes\": " << metrics.averageVisitedNodes << ",\n";
 		stream << "      \"avg_tested_points\": " << metrics.averageTestedPoints << ",\n";
 		stream << "      \"avg_returned_points\": " << metrics.averageReturnedPoints << ",\n";
+		stream << "      \"avg_fully_contained_nodes\": " << metrics.averageFullyContainedNodes << ",\n";
 		stream << "      \"total_visited_nodes\": " << metrics.totalVisitedNodes << ",\n";
 		stream << "      \"total_tested_points\": " << metrics.totalTestedPoints << ",\n";
-		stream << "      \"total_returned_points\": " << metrics.totalReturnedPoints << "\n";
+		stream << "      \"total_returned_points\": " << metrics.totalReturnedPoints << ",\n";
+		stream << "      \"total_fully_contained_nodes\": " << metrics.totalFullyContainedNodes << "\n";
 		stream << "    }" << (trailingComma ? "," : "") << "\n";
 	}
 
@@ -324,7 +355,16 @@ namespace
 		output << ",\n";
 		output << "    \"coordinate_range\": ";
 		writeVec3Json(output, cloud.coordinateRange());
+		output << ",\n";
+		output << "    \"coordinate_space\": \"local\",\n";
+		output << "    \"coordinate_frame\": {\n";
+		output << "      \"origin\": ";
+		writeDVec3Json(output, cloud.coordinateFrame().origin);
+		output << ",\n";
+		output << "      \"scale\": ";
+		writeDVec3Json(output, cloud.coordinateFrame().scale);
 		output << "\n";
+		output << "    }\n";
 		output << "  },\n";
 		output << "  \"cache\": {\n";
 		output << "    \"enabled\": " << (options.useBinaryCache ? "true" : "false") << ",\n";
@@ -363,6 +403,7 @@ namespace
 		output << "    \"queries_per_type\": " << queryProfile.queryCount << ",\n";
 		output << "    \"total_queries\": " << queryProfile.totalQueries() << ",\n";
 		output << "    \"knn_k\": " << queryProfile.queryK << ",\n";
+		output << "    \"knn_backend\": \"" << (queryProfile.knn.metrics.totalQueries > 0 ? "cpu_tree_knn" : "none") << "\",\n";
 		output << "    \"seed\": " << queryProfile.seed << "\n";
 		output << "  },\n";
 		output << "  \"timings\": {\n";
@@ -390,6 +431,7 @@ namespace
 		output << "  \"outputs\": {\n";
 		output << "    \"json_path\": \"" << jsonEscape(outputPath.string()) << "\",\n";
 		output << "    \"csv_path\": \"" << jsonEscape(options.csvPath) << "\",\n";
+		output << "    \"query_trace_path\": \"" << jsonEscape(options.queryTracePath) << "\",\n";
 		output << "    \"multiple_schemas\": " << (multipleSchemas ? "true" : "false") << "\n";
 		output << "  }\n";
 		output << "}\n";
@@ -401,7 +443,7 @@ namespace
 			<< "run_id,dataset_name,dataset_path,num_points,schema_name,schema_path,workload_name,queries_per_type,total_queries,knn_k,query_seed,"
 			<< "schema_load_time_ms,point_load_time_ms,build_time_ms,num_nodes,num_leaves,max_depth,avg_leaf_occupancy,max_leaf_occupancy,memory_estimate_bytes,"
 			<< "mixed_avg_latency_ms,mixed_median_latency_ms,mixed_p95_latency_ms,mixed_throughput_qps,mixed_avg_visited_nodes,mixed_avg_tested_points,mixed_avg_returned_points,"
-			<< "range_avg_latency_ms,range_p95_latency_ms,count_range_avg_latency_ms,count_range_p95_latency_ms,radius_avg_latency_ms,radius_p95_latency_ms,knn_avg_latency_ms,knn_p95_latency_ms\n";
+			<< "range_avg_latency_ms,range_p95_latency_ms,count_range_avg_latency_ms,count_range_p95_latency_ms,radius_avg_latency_ms,radius_p95_latency_ms,knn_avg_latency_ms,knn_p95_latency_ms,knn_backend\n";
 	}
 
 	void appendCsvSummary(
@@ -466,7 +508,92 @@ namespace
 			<< queryProfile.radius.metrics.averageLatencyMs << ','
 			<< queryProfile.radius.metrics.p95LatencyMs << ','
 			<< queryProfile.knn.metrics.averageLatencyMs << ','
-			<< queryProfile.knn.metrics.p95LatencyMs << '\n';
+			<< queryProfile.knn.metrics.p95LatencyMs << ','
+			<< (queryProfile.knn.metrics.totalQueries > 0 ? "cpu_tree_knn" : "none") << '\n';
+	}
+
+	void writeQueryTraceHeader(std::ostream& output)
+	{
+		output
+			<< "run_id,dataset_name,dataset_path,schema_name,schema_path,workload_name,"
+			<< "query_id,query_type,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
+			<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,"
+			<< "fully_contained_nodes,backend,query_seed\n";
+	}
+
+	void appendPointQueryTrace(
+		const std::string& tracePath,
+		const std::string& runId,
+		const PointBenchmark::Options& options,
+		const std::string& schemaPath,
+		const SchemaConfig& schema,
+		const QueryProfileSummary& queryProfile)
+	{
+		if (tracePath.empty() || queryProfile.traces.empty())
+			return;
+
+		const std::filesystem::path path(tracePath);
+		if (path.has_parent_path())
+			std::filesystem::create_directories(path.parent_path());
+
+		const bool writeHeader = isEmptyFile(path);
+		std::ofstream output(path, std::ios::app);
+		if (!output.is_open())
+			throw std::runtime_error("Unable to open point query trace path: " + tracePath);
+		if (writeHeader)
+			writeQueryTraceHeader(output);
+
+		output << std::fixed << std::setprecision(6);
+		for (const QueryTraceSample& trace : queryProfile.traces)
+		{
+			output
+				<< csvEscape(runId) << ','
+				<< csvEscape(datasetName(options.inputPath)) << ','
+				<< csvEscape(options.inputPath) << ','
+				<< csvEscape(schema.name) << ','
+				<< csvEscape(schemaPath) << ','
+				<< "generated_mixed" << ','
+				<< trace.queryId << ','
+				<< csvEscape(trace.queryType) << ',';
+
+			if (trace.hasBounds)
+			{
+				output
+					<< trace.bounds.min().x << ','
+					<< trace.bounds.min().y << ','
+					<< trace.bounds.min().z << ','
+					<< trace.bounds.max().x << ','
+					<< trace.bounds.max().y << ','
+					<< trace.bounds.max().z << ',';
+			}
+			else
+			{
+				output << ",,,,,,";
+			}
+
+			if (trace.hasCenter)
+			{
+				output
+					<< trace.center.x << ','
+					<< trace.center.y << ','
+					<< trace.center.z << ',';
+			}
+			else
+			{
+				output << ",,,";
+			}
+
+			output
+				<< trace.radius << ','
+				<< trace.k << ','
+				<< trace.stats.elapsedMs << ','
+				<< trace.stats.visitedNodes << ','
+				<< trace.stats.testedPoints << ','
+				<< trace.stats.returnedPoints << ','
+				<< trace.stats.fullyContainedNodes << ','
+				<< "cpu" << ','
+				<< queryProfile.seed << '\n';
+		}
 	}
 }
 
@@ -613,6 +740,13 @@ int PointBenchmark::run(const Options& options)
 			queryProfile,
 			loadedSchema.schemaLoadMs,
 			loadMs);
+		appendPointQueryTrace(
+			options.queryTracePath,
+			runId,
+			options,
+			loadedSchema.path,
+			schema,
+			queryProfile);
 	}
 
 	if (options.pauseAtEnd)

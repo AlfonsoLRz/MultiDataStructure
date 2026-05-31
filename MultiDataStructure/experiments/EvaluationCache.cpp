@@ -123,9 +123,11 @@ namespace
 		out["averageVisitedNodes"] = metrics.averageVisitedNodes;
 		out["averageTestedPoints"] = metrics.averageTestedPoints;
 		out["averageReturnedPoints"] = metrics.averageReturnedPoints;
+		out["averageFullyContainedNodes"] = metrics.averageFullyContainedNodes;
 		out["totalVisitedNodes"] = metrics.totalVisitedNodes;
 		out["totalTestedPoints"] = metrics.totalTestedPoints;
 		out["totalReturnedPoints"] = metrics.totalReturnedPoints;
+		out["totalFullyContainedNodes"] = metrics.totalFullyContainedNodes;
 		return out;
 	}
 
@@ -140,9 +142,11 @@ namespace
 		out.averageVisitedNodes = asDouble(source, "averageVisitedNodes");
 		out.averageTestedPoints = asDouble(source, "averageTestedPoints");
 		out.averageReturnedPoints = asDouble(source, "averageReturnedPoints");
+		out.averageFullyContainedNodes = asDouble(source, "averageFullyContainedNodes");
 		out.totalVisitedNodes = asSize(source, "totalVisitedNodes");
 		out.totalTestedPoints = asSize(source, "totalTestedPoints");
 		out.totalReturnedPoints = asSize(source, "totalReturnedPoints");
+		out.totalFullyContainedNodes = asSize(source, "totalFullyContainedNodes");
 	}
 
 	boost::json::object encodeRecord(const std::string& canonicalKey, const Experiments::SchemaSearchRecord& record)
@@ -162,6 +166,7 @@ namespace
 		out["scoreStage"] = record.scoreStage;
 		out["scoreIsFinalLatency"] = record.scoreIsFinalLatency;
 		out["backend"] = record.backend;
+		out["knnBackend"] = record.knnBackend;
 		out["cudaDevice"] = record.cudaDevice;
 		out["cudaBuilder"] = record.cudaBuilder;
 		out["gpuUploadMs"] = record.gpuUploadMs;
@@ -201,6 +206,7 @@ namespace
 		if (finalLatency && finalLatency->is_bool())
 			out.scoreIsFinalLatency = finalLatency->as_bool();
 		out.backend = asString(source, "backend", "cpu");
+		out.knnBackend = asString(source, "knnBackend", out.knnBackend);
 		const boost::json::value* device = find(source, "cudaDevice");
 		if (device && device->is_int64())
 			out.cudaDevice = static_cast<int>(device->as_int64());
@@ -428,7 +434,8 @@ namespace Experiments
 		evaluatorText << evaluatorBackend;
 		if (evaluatorBackend == "cuda" && !cudaBuilder.empty())
 			evaluatorText << ":" << cudaBuilder;
-		evaluatorText << "|lb=" << formatDouble(weights.lambdaBuild, 6)
+		evaluatorText << "|ll=" << formatDouble(weights.lambdaLatency, 6)
+			<< "|lb=" << formatDouble(weights.lambdaBuild, 6)
 			<< "|lm=" << formatDouble(weights.lambdaMemory, 6)
 			<< "|li=" << formatDouble(weights.lambdaImbalance, 6);
 		// Visit-proxy and latency are different scoring functions over the same kernel counters,

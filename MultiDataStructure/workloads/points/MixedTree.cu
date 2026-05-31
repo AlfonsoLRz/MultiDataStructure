@@ -61,6 +61,12 @@ namespace
 		float maxExtentZ = 0.0f;
 	};
 
+	struct HostActiveTypeAccumulator
+	{
+		size_t nodes = 0;
+		size_t leafPoints = 0;
+	};
+
 	size_t divUp(size_t value, size_t divisor)
 	{
 		return (value + divisor - 1) / divisor;
@@ -121,6 +127,77 @@ namespace
 		if (typeName == "hgrid" || typeName == "hierarchicalgrid" || typeName == "hierarchicalgrid3d")
 			return SplitHGrid;
 		return static_cast<int>(level.type);
+	}
+
+	std::string activeTypeNameForDepth(const SchemaConfig& schema, size_t depth)
+	{
+		if (schema.levels.empty())
+			return "unknown";
+
+		const SchemaLevelConfig& level = schema.levelForDepth(depth);
+		return level.typeName.empty()
+			? Config::dataStructureLevelName(level.type)
+			: level.typeName;
+	}
+
+	void fillActiveStructureStats(
+		PointGpu::BuildResult& result,
+		const SchemaConfig& schema,
+		const std::vector<LinearMixedTreeNode>& hostNodes)
+	{
+		if (schema.levels.empty() || hostNodes.empty())
+			return;
+
+		std::map<std::string, HostActiveTypeAccumulator> byType;
+		size_t totalNodes = 0;
+		size_t totalLeafPoints = 0;
+		for (const LinearMixedTreeNode& node : hostNodes)
+		{
+			if (node.pointCount == 0)
+				continue;
+
+			const std::string typeName = activeTypeNameForDepth(schema, node.depth);
+			HostActiveTypeAccumulator& accumulator = byType[typeName];
+			++accumulator.nodes;
+			++totalNodes;
+			if (node.childBase < 0)
+			{
+				accumulator.leafPoints += node.pointCount;
+				totalLeafPoints += node.pointCount;
+			}
+		}
+
+		result.activeStructureTypes = byType.size();
+		if (byType.empty())
+			return;
+
+		const std::string primaryType = activeTypeNameForDepth(schema, 0);
+		size_t nonPrimaryNodes = 0;
+		size_t nonPrimaryLeafPoints = 0;
+		std::ostringstream summary;
+		bool first = true;
+		for (const auto& [typeName, accumulator] : byType)
+		{
+			if (!first)
+				summary << ';';
+			first = false;
+			summary << typeName << ":nodes=" << accumulator.nodes << "|points=" << accumulator.leafPoints;
+
+			if (typeName != primaryType)
+			{
+				nonPrimaryNodes += accumulator.nodes;
+				nonPrimaryLeafPoints += accumulator.leafPoints;
+			}
+		}
+
+		const double pointFraction = totalLeafPoints > 0
+			? static_cast<double>(nonPrimaryLeafPoints) / static_cast<double>(totalLeafPoints)
+			: 0.0;
+		const double nodeFraction = totalNodes > 0
+			? static_cast<double>(nonPrimaryNodes) / static_cast<double>(totalNodes)
+			: 0.0;
+		result.nestedActiveFraction = std::max(pointFraction, nodeFraction);
+		result.activeStructureSummary = summary.str();
 	}
 
 	size_t hostChildSlotCountForSplitType(int splitType)
@@ -1422,6 +1499,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		: 0.0;
 	result.metrics.maxLeafOccupancy = maxLeafOccupancy;
 	result.metrics.memoryEstimateBytes = _state->memoryBytes;
+	fillActiveStructureStats(result, schema, hostNodes);
 	return result;
 }
 

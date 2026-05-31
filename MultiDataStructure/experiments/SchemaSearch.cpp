@@ -59,6 +59,7 @@ namespace
 	struct WorkloadRun
 	{
 		Experiments::QueryMetrics metrics;
+		std::vector<PointSpatialIndex::QueryStats> samples;
 		size_t rangeQueries = 0;
 		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
@@ -90,6 +91,9 @@ namespace
 		size_t radiusQueries = 0;
 		size_t knnQueries = 0;
 	};
+
+	std::string csvEscape(const std::string& value);
+	void createParentDirectory(const std::string& filename);
 
 	struct DatasetContext
 	{
@@ -225,6 +229,21 @@ namespace
 		return fallback;
 	}
 
+	bool asBool(const boost::json::object& object, const char* key, bool fallback)
+	{
+		if (const boost::json::value* value = object.if_contains(key))
+		{
+			if (value->is_bool())
+				return value->as_bool();
+			if (value->is_int64())
+				return value->as_int64() != 0;
+			if (value->is_uint64())
+				return value->as_uint64() != 0;
+		}
+
+		return fallback;
+	}
+
 	std::string asString(const boost::json::object& object, const char* key, const std::string& fallback = {})
 	{
 		if (const boost::json::value* value = object.if_contains(key))
@@ -234,6 +253,28 @@ namespace
 		}
 
 		return fallback;
+	}
+
+	bool scoreWeightsAreDefault(const Experiments::ScoreWeights& weights)
+	{
+		constexpr double epsilon = 1e-12;
+		return std::abs(weights.lambdaLatency - 1.0) <= epsilon &&
+			std::abs(weights.lambdaBuild) <= epsilon &&
+			std::abs(weights.lambdaMemory) <= epsilon &&
+			std::abs(weights.lambdaImbalance) <= epsilon &&
+			!weights.useVisitProxy &&
+			std::abs(weights.visitProxyAlpha - 0.1) <= epsilon;
+	}
+
+	Experiments::ScoreWeights effectiveScoreWeights(
+		const Experiments::WorkloadProfile& workload,
+		const Experiments::SchemaSearchOptions& options)
+	{
+		if (options.scoreWeightsOverride || !scoreWeightsAreDefault(options.weights))
+			return options.weights;
+		if (workload.hasScoreWeights)
+			return workload.scoreWeights;
+		return options.weights;
 	}
 
 	double elapsedMilliseconds(std::chrono::steady_clock::time_point begin, std::chrono::steady_clock::time_point end)
@@ -279,6 +320,41 @@ namespace
 		const boost::json::object& range = value->as_object();
 		minScale = asDouble(range, "min", minScale);
 		maxScale = asDouble(range, "max", maxScale);
+	}
+
+	Experiments::ScoreWeights parseScoreWeightsObject(const boost::json::object& object)
+	{
+		Experiments::ScoreWeights weights;
+		weights.lambdaLatency = asDouble(object, "latency", weights.lambdaLatency);
+		weights.lambdaLatency = asDouble(object, "lambdaLatency", weights.lambdaLatency);
+		weights.lambdaBuild = asDouble(object, "buildTime", weights.lambdaBuild);
+		weights.lambdaBuild = asDouble(object, "build", weights.lambdaBuild);
+		weights.lambdaBuild = asDouble(object, "lambdaBuild", weights.lambdaBuild);
+		weights.lambdaMemory = asDouble(object, "memory", weights.lambdaMemory);
+		weights.lambdaMemory = asDouble(object, "lambdaMemory", weights.lambdaMemory);
+		weights.lambdaImbalance = asDouble(object, "imbalance", weights.lambdaImbalance);
+		weights.lambdaImbalance = asDouble(object, "lambdaImbalance", weights.lambdaImbalance);
+		weights.useVisitProxy = asBool(object, "useVisitProxy", weights.useVisitProxy);
+		weights.useVisitProxy = asBool(object, "visitProxy", weights.useVisitProxy);
+		weights.visitProxyAlpha = asDouble(object, "visitProxyAlpha", weights.visitProxyAlpha);
+
+		const double visitedNodes = asDouble(object, "visitedNodes", 0.0);
+		const double testedPoints = asDouble(object, "testedPoints", 0.0);
+		if (visitedNodes > 0.0 || testedPoints > 0.0)
+		{
+			weights.useVisitProxy = true;
+			if (visitedNodes > 0.0)
+				weights.visitProxyAlpha = std::max(0.0, testedPoints) / visitedNodes;
+			else if (testedPoints > 0.0)
+				weights.visitProxyAlpha = testedPoints;
+		}
+
+		weights.lambdaLatency = std::max(0.0, weights.lambdaLatency);
+		weights.lambdaBuild = std::max(0.0, weights.lambdaBuild);
+		weights.lambdaMemory = std::max(0.0, weights.lambdaMemory);
+		weights.lambdaImbalance = std::max(0.0, weights.lambdaImbalance);
+		weights.visitProxyAlpha = std::max(0.0, weights.visitProxyAlpha);
+		return weights;
 	}
 
 	AABB randomQueryBox(std::mt19937& rng, const PointCloud& cloud, const Experiments::WorkloadProfile& profile)
@@ -369,7 +445,9 @@ namespace
 
 	std::string scoreModeForWeights(const Experiments::ScoreWeights& weights)
 	{
-		return weights.useVisitProxy ? "visit_proxy" : "latency";
+		if (weights.useVisitProxy)
+			return "visit_proxy";
+		return scoreWeightsAreDefault(weights) ? "latency" : "weighted_latency";
 	}
 
 	bool isRegularGridBuilder(const std::string& builder)
@@ -1015,8 +1093,8 @@ namespace
 		++totalNodes;
 		if (node->isLeaf())
 		{
-			accumulator.leafPoints += node->pointIndices.size();
-			totalLeafPoints += node->pointIndices.size();
+			accumulator.leafPoints += node->pointCount;
+			totalLeafPoints += node->pointCount;
 		}
 
 		for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->children)
@@ -1994,6 +2072,184 @@ namespace
 		return prepared;
 	}
 
+	std::string queryKindName(PreparedQueryKind kind)
+	{
+		switch (kind)
+		{
+		case PreparedQueryKind::Radius:
+			return "radius";
+		case PreparedQueryKind::Knn:
+			return "knn";
+		default:
+			return "range";
+		}
+	}
+
+	std::string queryKindName(PointGpu::QueryType kind)
+	{
+		switch (kind)
+		{
+		case PointGpu::QueryType::CountRange:
+			return "count_range";
+		case PointGpu::QueryType::Radius:
+			return "radius";
+		case PointGpu::QueryType::Knn:
+			return "knn";
+		default:
+			return "range";
+		}
+	}
+
+	bool shouldWriteCsvHeader(const std::filesystem::path& path)
+	{
+		std::error_code error;
+		return !std::filesystem::exists(path, error) || std::filesystem::file_size(path, error) == 0;
+	}
+
+	void writeQueryTraceHeader(std::ostream& output)
+	{
+		output
+			<< "dataset_name,dataset_source,schema_name,schema_path,workload_name,score_stage,"
+			<< "query_id,query_type,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
+			<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,"
+			<< "fully_contained_nodes,backend,query_seed\n";
+	}
+
+	void appendQueryTraceRow(
+		std::ostream& output,
+		const SearchDataset& dataset,
+		const Experiments::SchemaCandidate& schema,
+		const Experiments::WorkloadProfile& workload,
+		const std::string& scoreStage,
+		size_t queryId,
+		const std::string& queryType,
+		const AABB* bounds,
+		const glm::vec3* center,
+		float radius,
+		size_t k,
+		const PointSpatialIndex::QueryStats& stats,
+		const std::string& backend)
+	{
+		output << std::fixed << std::setprecision(6)
+			<< csvEscape(dataset.name) << ','
+			<< csvEscape(dataset.source) << ','
+			<< csvEscape(schema.config.name) << ','
+			<< csvEscape(schema.path) << ','
+			<< csvEscape(workload.name) << ','
+			<< csvEscape(scoreStage) << ','
+			<< queryId << ','
+			<< csvEscape(queryType) << ',';
+
+		if (bounds)
+		{
+			output
+				<< bounds->min().x << ','
+				<< bounds->min().y << ','
+				<< bounds->min().z << ','
+				<< bounds->max().x << ','
+				<< bounds->max().y << ','
+				<< bounds->max().z << ',';
+		}
+		else
+		{
+			output << ",,,,,,";
+		}
+
+		if (center)
+		{
+			output
+				<< center->x << ','
+				<< center->y << ','
+				<< center->z << ',';
+		}
+		else
+		{
+			output << ",,,";
+		}
+
+		output
+			<< radius << ','
+			<< k << ','
+			<< stats.elapsedMs << ','
+			<< stats.visitedNodes << ','
+			<< stats.testedPoints << ','
+			<< stats.returnedPoints << ','
+			<< stats.fullyContainedNodes << ','
+			<< csvEscape(backend) << ','
+			<< workload.querySeed << '\n';
+	}
+
+	void appendSchemaQueryTrace(
+		const std::string& tracePath,
+		const SearchDataset& dataset,
+		const Experiments::SchemaCandidate& schema,
+		const Experiments::WorkloadProfile& workload,
+		const PreparedWorkload& prepared,
+		const WorkloadRun& run,
+		const std::string& backend,
+		const std::string& scoreStage)
+	{
+		if (tracePath.empty() || run.samples.empty())
+			return;
+
+		createParentDirectory(tracePath);
+		const std::filesystem::path path(tracePath);
+		const bool writeHeader = shouldWriteCsvHeader(path);
+		std::ofstream output(path, std::ios::app);
+		if (!output.is_open())
+			throw std::runtime_error("Unable to open query trace path: " + tracePath);
+		if (writeHeader)
+			writeQueryTraceHeader(output);
+
+		if (!prepared.cpuQueries.empty())
+		{
+			const size_t count = std::min(prepared.cpuQueries.size(), run.samples.size());
+			for (size_t i = 0; i < count; ++i)
+			{
+				const PreparedCpuQuery& query = prepared.cpuQueries[i];
+				const bool hasBounds = query.kind == PreparedQueryKind::Range;
+				const bool hasCenter = query.kind == PreparedQueryKind::Radius || query.kind == PreparedQueryKind::Knn;
+				appendQueryTraceRow(
+					output,
+					dataset,
+					schema,
+					workload,
+					scoreStage,
+					i,
+					queryKindName(query.kind),
+					hasBounds ? &query.bounds : nullptr,
+					hasCenter ? &query.center : nullptr,
+					query.kind == PreparedQueryKind::Radius ? query.radius : 0.0f,
+					query.kind == PreparedQueryKind::Knn ? workload.knnK : size_t(0),
+					run.samples[i],
+					backend);
+			}
+			return;
+		}
+
+		const size_t count = std::min(prepared.cudaQueries.size(), run.samples.size());
+		for (size_t i = 0; i < count; ++i)
+		{
+			const PointGpu::Query& query = prepared.cudaQueries[i];
+			const bool hasBounds = query.type == PointGpu::QueryType::Range || query.type == PointGpu::QueryType::CountRange;
+			const bool hasCenter = query.type == PointGpu::QueryType::Radius || query.type == PointGpu::QueryType::Knn;
+			appendQueryTraceRow(
+				output,
+				dataset,
+				schema,
+				workload,
+				scoreStage,
+				i,
+				queryKindName(query.type),
+				hasBounds ? &query.bounds : nullptr,
+				hasCenter ? &query.center : nullptr,
+				query.type == PointGpu::QueryType::Radius ? query.radius : 0.0f,
+				query.type == PointGpu::QueryType::Knn ? query.k : size_t(0),
+				run.samples[i],
+				backend);
+		}
+	}
+
 	WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index)
 	{
 		WorkloadRun result;
@@ -2023,6 +2279,7 @@ namespace
 			++result.knnQueries;
 		}
 
+		result.samples = samples;
 		result.metrics = Experiments::summarizeQueryStats(samples);
 		return result;
 	}
@@ -2040,6 +2297,16 @@ namespace
 		const PointGpu::QueryResult queryResult = index.query(prepared.cudaQueries, cudaOptions);
 		result.metrics = queryResult.metrics;
 		result.gpuQueryMs = queryResult.gpuQueryTimeMs;
+		result.samples.reserve(queryResult.samples.size());
+		for (const PointGpu::QuerySample& sample : queryResult.samples)
+		{
+			PointSpatialIndex::QueryStats stats;
+			stats.visitedNodes = sample.visitedNodes;
+			stats.testedPoints = sample.testedPoints;
+			stats.returnedPoints = sample.returnedPoints;
+			stats.elapsedMs = sample.elapsedMs;
+			result.samples.push_back(stats);
+		}
 		result.rangeQueries = queryResult.rangeQueries;
 		result.countRangeQueries = queryResult.countRangeQueries;
 		result.radiusQueries = queryResult.radiusQueries;
@@ -2080,6 +2347,12 @@ namespace
 				gpuUploadMs = build.uploadTimeMs;
 				gpuBuildMs = build.gpuBuildTimeMs;
 				gpuMemoryBytes = build.gpuMemoryBytes;
+				if (build.activeStructureTypes > 0)
+				{
+					activeStats.activeStructureTypes = build.activeStructureTypes;
+					activeStats.nestedActiveFraction = build.nestedActiveFraction;
+					activeStats.summary = build.activeStructureSummary;
+				}
 			};
 
 			if (isBIHBuilder(cudaOptions.builder))
@@ -2191,6 +2464,16 @@ namespace
 			workloadRun = runWorkloadProfile(preparedWorkload, workload.knnK, index);
 		}
 
+		appendSchemaQueryTrace(
+			options.queryTracePath,
+			dataset,
+			schema,
+			workload,
+			preparedWorkload,
+			workloadRun,
+			backend,
+			options.scoreStage.empty() ? std::string("final") : options.scoreStage);
+
 		Experiments::SchemaSearchRecord record;
 		record.datasetName = dataset.name;
 		record.datasetSource = dataset.source;
@@ -2210,10 +2493,10 @@ namespace
 		record.countRangeQueries = workloadRun.countRangeQueries;
 		record.radiusQueries = workloadRun.radiusQueries;
 		record.knnQueries = workloadRun.knnQueries;
-		record.weights = options.weights;
+		record.weights = effectiveScoreWeights(workload, options);
 		record.scoreMode = scoreModeForWeights(record.weights);
 		record.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-		record.scoreIsFinalLatency = options.scoreIsFinalLatency && !record.weights.useVisitProxy;
+		record.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(record.weights);
 		record.score = Experiments::computeSchemaSearchScore(
 			record.buildMetrics,
 			record.queryMetrics,
@@ -2223,6 +2506,9 @@ namespace
 		record.pointFeatures = pointFeatures;
 		record.workloadFeatures = workloadFeatures;
 		record.backend = backend;
+		record.knnBackend = record.knnQueries == 0
+			? "none"
+			: (backend == "cuda" ? "bruteforce_gpu_scan" : "cpu_tree_knn");
 		record.cudaDevice = cudaDevice;
 		record.cudaBuilder = cudaBuilder;
 		record.gpuUploadMs = gpuUploadMs;
@@ -2250,7 +2536,7 @@ namespace
 		CudaIndexCacheEntry* cudaCacheEntry = nullptr)
 	{
 		Experiments::EvaluationCache* cache = options.scoreCache;
-		if (cache && cache->enabled() && !options.rebuildScoreCache)
+		if (cache && cache->enabled() && !options.rebuildScoreCache && options.queryTracePath.empty())
 		{
 			const std::string backendName = useCudaEvaluator(options) ? "cuda" : "cpu";
 			std::string cudaBuilder;
@@ -2266,7 +2552,7 @@ namespace
 				workload,
 				backendName,
 				cudaBuilder,
-				options.weights);
+				effectiveScoreWeights(workload, options));
 
 			Experiments::SchemaSearchRecord cached;
 			cached.datasetName = dataset.name;
@@ -2281,10 +2567,10 @@ namespace
 			cached.querySeed = workload.querySeed;
 			cached.schemaName = schema.config.name;
 			cached.schemaPath = schema.path;
-			cached.weights = options.weights;
+			cached.weights = effectiveScoreWeights(workload, options);
 			cached.scoreMode = scoreModeForWeights(cached.weights);
 			cached.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-			cached.scoreIsFinalLatency = options.scoreIsFinalLatency && !cached.weights.useVisitProxy;
+			cached.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(cached.weights);
 			cached.pointFeatures = pointFeatures;
 			cached.workloadFeatures = workloadFeatures;
 			cached.isBaseline = schema.isBaseline;
@@ -2292,9 +2578,9 @@ namespace
 			if (cache->tryGet(key, cached))
 			{
 				cached.isBaseline = schema.isBaseline;
-				cached.scoreMode = scoreModeForWeights(options.weights);
+				cached.scoreMode = scoreModeForWeights(effectiveScoreWeights(workload, options));
 				cached.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-				cached.scoreIsFinalLatency = options.scoreIsFinalLatency && !options.weights.useVisitProxy;
+				cached.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(effectiveScoreWeights(workload, options));
 				if (options.deepNestedSearch && !useCudaEvaluator(options) && cached.activeStructureTypes == 0)
 				{
 					Experiments::SchemaSearchRecord record = benchmarkSchemaCandidate(
@@ -2333,7 +2619,8 @@ namespace
 			for (size_t workloadIndex = 0; workloadIndex < workloads.size(); ++workloadIndex)
 			{
 				const Experiments::WorkloadProfile& workload = workloads[workloadIndex];
-				const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, options.weights);
+				const Experiments::ScoreWeights weights = effectiveScoreWeights(workload, options);
+				const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
 				CudaIndexCacheEntry* cudaEntry = cudaCache && useCudaEvaluator(options)
 					? &(*cudaCache)[datasetContext.dataset]
 					: nullptr;
@@ -2376,13 +2663,16 @@ namespace
 					failed.querySeed = workload.querySeed;
 					failed.schemaName = candidate.config.name;
 					failed.schemaPath = candidate.path;
-					failed.weights = options.weights;
+					failed.weights = weights;
 					failed.scoreMode = scoreModeForWeights(failed.weights);
 					failed.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-					failed.scoreIsFinalLatency = options.scoreIsFinalLatency && !failed.weights.useVisitProxy;
+					failed.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(failed.weights);
 					failed.pointFeatures = datasetContext.features;
 					failed.workloadFeatures = workloadFeatures;
 					failed.backend = useCudaEvaluator(options) ? "cuda_failed" : "cpu_failed";
+					failed.knnBackend = workload.knnWeight > 0.0
+						? (useCudaEvaluator(options) ? "bruteforce_gpu_scan" : "cpu_tree_knn")
+						: "none";
 					failed.score = std::numeric_limits<double>::infinity();
 					failed.isBaseline = candidate.isBaseline;
 					evaluation.records.push_back(std::move(failed));
@@ -2430,8 +2720,8 @@ namespace
 			<< "w_range,w_radius,w_knn,query_scale_mean,query_scale_std,build_weight,memory_weight,"
 			<< "schema_name,schema_path,build_time_ms,num_nodes,num_leaves,max_depth,avg_leaf_occupancy,max_leaf_occupancy,memory_estimate_bytes,"
 			<< "total_queries,avg_latency_ms,median_latency_ms,p95_latency_ms,throughput_qps,avg_visited_nodes,avg_tested_points,avg_returned_points,"
-			<< "range_queries,radius_queries,knn_queries,score,score_memory_mb,score_imbalance_penalty,lambda_build,lambda_memory,lambda_imbalance,"
-			<< "backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries,"
+			<< "range_queries,radius_queries,knn_queries,score,score_memory_mb,score_imbalance_penalty,lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
+			<< "backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries,"
 			<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
 			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
@@ -2521,10 +2811,12 @@ namespace
 				<< record.score << ','
 				<< record.scoreMemoryMb << ','
 				<< record.scoreImbalancePenalty << ','
+				<< record.weights.lambdaLatency << ','
 				<< record.weights.lambdaBuild << ','
 				<< record.weights.lambdaMemory << ','
 				<< record.weights.lambdaImbalance << ','
 				<< csvEscape(record.backend) << ','
+				<< csvEscape(record.knnBackend) << ','
 				<< record.cudaDevice << ','
 				<< csvEscape(record.cudaBuilder) << ','
 				<< record.gpuUploadMs << ','
@@ -2588,12 +2880,13 @@ namespace
 			<< "height_mean,height_std,height_range,cov_eig_0,cov_eig_1,cov_eig_2,linearity,planarity,scattering,occupancy_ratio_8,"
 			<< "occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,w_range,w_radius,w_knn,knn_k,num_queries,"
 			<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
-			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates,backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
+			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates,backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
 			<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
 			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
+			<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
@@ -2645,6 +2938,7 @@ namespace
 				<< record.buildMetrics.memoryEstimateBytes << ','
 				<< countCandidatesForBest(records, record) << ','
 				<< csvEscape(record.backend) << ','
+				<< csvEscape(record.knnBackend) << ','
 				<< record.cudaDevice << ','
 				<< csvEscape(record.cudaBuilder) << ','
 				<< record.gpuUploadMs << ','
@@ -2671,6 +2965,10 @@ namespace
 				<< record.gpuBuildMean << ','
 				<< record.gpuBuildCiLow << ','
 				<< record.gpuBuildCiHigh << ','
+				<< record.weights.lambdaLatency << ','
+				<< record.weights.lambdaBuild << ','
+				<< record.weights.lambdaMemory << ','
+				<< record.weights.lambdaImbalance << ','
 				<< csvEscape(record.scoreMode) << ','
 				<< csvEscape(record.scoreStage) << ','
 				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
@@ -2697,11 +2995,12 @@ namespace
 		output
 			<< "dataset_name,workload_name,pareto_rank,schema_name,schema_path,score,"
 			<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
-			<< "p95_latency_ms,throughput_qps,backend,cuda_builder,is_baseline,"
+			<< "p95_latency_ms,throughput_qps,backend,knn_backend,cuda_builder,is_baseline,"
 			<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
+			<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : front)
@@ -2725,6 +3024,7 @@ namespace
 				<< record.queryMetrics.p95LatencyMs << ','
 				<< record.queryMetrics.throughputQueriesPerSecond << ','
 				<< csvEscape(record.backend) << ','
+				<< csvEscape(record.knnBackend) << ','
 				<< csvEscape(record.cudaBuilder) << ','
 				<< (record.isBaseline ? 1 : 0) << ','
 				<< record.conditionalLevels << ','
@@ -2741,6 +3041,10 @@ namespace
 				<< record.gpuBuildMean << ','
 				<< record.gpuBuildCiLow << ','
 				<< record.gpuBuildCiHigh << ','
+				<< record.weights.lambdaLatency << ','
+				<< record.weights.lambdaBuild << ','
+				<< record.weights.lambdaMemory << ','
+				<< record.weights.lambdaImbalance << ','
 				<< csvEscape(record.scoreMode) << ','
 				<< csvEscape(record.scoreStage) << ','
 				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
@@ -2753,6 +3057,99 @@ namespace
 	std::string recordGroupKey(const Experiments::SchemaSearchRecord& record)
 	{
 		return record.datasetName + "\n" + record.workloadName;
+	}
+
+	double reportLatencyMs(const Experiments::SchemaSearchRecord& record)
+	{
+		return record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
+			? record.latencyMean
+			: record.queryMetrics.averageLatencyMs;
+	}
+
+	double reportBuildMs(const Experiments::SchemaSearchRecord& record)
+	{
+		return record.confirmSeedsUsed > 0 && record.gpuBuildMean > 0.0
+			? record.gpuBuildMean
+			: record.buildMetrics.buildTimeMs;
+	}
+
+	double reportMemoryMb(const Experiments::SchemaSearchRecord& record)
+	{
+		return static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+	}
+
+	const Experiments::SchemaSearchRecord* bestRecordBy(
+		const std::vector<const Experiments::SchemaSearchRecord*>& group,
+		const std::function<double(const Experiments::SchemaSearchRecord&)>& metric)
+	{
+		const Experiments::SchemaSearchRecord* best = nullptr;
+		double bestValue = std::numeric_limits<double>::infinity();
+		for (const Experiments::SchemaSearchRecord* record : group)
+		{
+			const double value = metric(*record);
+			if (std::isfinite(value) && (!best || value < bestValue))
+			{
+				best = record;
+				bestValue = value;
+			}
+		}
+		return best;
+	}
+
+	void printMetricWinner(
+		const char* label,
+		const Experiments::SchemaSearchRecord* record,
+		const std::function<double(const Experiments::SchemaSearchRecord&)>& metric,
+		const char* unit)
+	{
+		if (!record)
+		{
+			std::cout << "    " << label << ": n/a\n";
+			return;
+		}
+
+		std::cout << "    " << label << ": " << record->schemaName
+			<< " (" << metric(*record) << ' ' << unit
+			<< ", score " << record->score
+			<< ", " << record->scoreMode << ")\n";
+	}
+
+	void reportMetricSummaries(
+		const std::vector<Experiments::SchemaSearchRecord>& records,
+		const Experiments::SchemaSearchOptions& options)
+	{
+		if (records.empty())
+			return;
+
+		std::map<std::string, std::vector<const Experiments::SchemaSearchRecord*>> groups;
+		for (const Experiments::SchemaSearchRecord& record : records)
+			groups[recordGroupKey(record)].push_back(&record);
+
+		std::cout << "  metric winners:\n";
+		const double memoryBudgetMb = options.cuda.memoryBudgetMb > 0
+			? static_cast<double>(options.cuda.memoryBudgetMb)
+			: 0.0;
+		for (const auto& [key, group] : groups)
+		{
+			const size_t separator = key.find('\n');
+			const std::string dataset = separator == std::string::npos ? key : key.substr(0, separator);
+			const std::string workload = separator == std::string::npos ? std::string() : key.substr(separator + 1);
+			std::cout << "  [" << dataset << " / " << workload << "]\n";
+
+			printMetricWinner("best latency", bestRecordBy(group, reportLatencyMs), reportLatencyMs, "ms");
+			printMetricWinner("best build", bestRecordBy(group, reportBuildMs), reportBuildMs, "ms");
+			printMetricWinner("best memory", bestRecordBy(group, reportMemoryMb), reportMemoryMb, "MB");
+			if (memoryBudgetMb > 0.0)
+			{
+				std::vector<const Experiments::SchemaSearchRecord*> underBudget;
+				for (const Experiments::SchemaSearchRecord* record : group)
+				{
+					if (reportMemoryMb(*record) <= memoryBudgetMb)
+						underBudget.push_back(record);
+				}
+				printMetricWinner("best latency under memory budget", bestRecordBy(underBudget, reportLatencyMs), reportLatencyMs, "ms");
+			}
+		}
 	}
 
 	bool recordCountsAsNested(const Experiments::SchemaSearchRecord& record);
@@ -3525,6 +3922,30 @@ namespace
 		return result;
 	}
 
+	void appendBaselineControls(
+		std::vector<Experiments::SchemaCandidate>& candidates,
+		const std::vector<Experiments::SchemaCandidate>& baselines);
+
+	std::vector<Experiments::SchemaCandidate> topSearchCandidatesWithBaselineControls(
+		const std::vector<EvaluatedCandidate>& evaluations,
+		size_t count,
+		const std::vector<Experiments::SchemaCandidate>& baselines)
+	{
+		std::vector<EvaluatedCandidate> searchEvaluations;
+		searchEvaluations.reserve(evaluations.size());
+		for (const EvaluatedCandidate& evaluation : evaluations)
+		{
+			if (!evaluation.candidate.isBaseline)
+				searchEvaluations.push_back(evaluation);
+		}
+
+		std::vector<Experiments::SchemaCandidate> result = searchEvaluations.empty()
+			? topCandidates(evaluations, count)
+			: topCandidates(searchEvaluations, count);
+		appendBaselineControls(result, baselines);
+		return result;
+	}
+
 	bool recordCountsAsNested(const Experiments::SchemaSearchRecord& record)
 	{
 		return !record.isBaseline &&
@@ -4180,7 +4601,7 @@ namespace
 
 		std::vector<Experiments::SchemaCandidate> shortlist = options.deepNestedSearch
 			? topDeepNestedCandidates(proxyEvaluations, autoOptions.finalTopK, false)
-			: topCandidates(proxyEvaluations, autoOptions.finalTopK);
+			: topSearchCandidatesWithBaselineControls(proxyEvaluations, autoOptions.finalTopK, baselines);
 		if (options.deepNestedSearch)
 			appendBaselineControls(shortlist, baselines);
 		const std::vector<Experiments::WorkloadProfile> shortWorkloads = withQueryCount(workloads, options.deepNestedSearch ? 32 : 16);
@@ -4197,7 +4618,7 @@ namespace
 
 		std::vector<Experiments::SchemaCandidate> confirmation = options.deepNestedSearch
 			? topDeepNestedCandidates(shortEvaluations, autoOptions.confirmationTopK, true)
-			: topCandidates(shortEvaluations, autoOptions.confirmationTopK);
+			: topSearchCandidatesWithBaselineControls(shortEvaluations, autoOptions.confirmationTopK, baselines);
 		const std::vector<DatasetContext> confirmationContexts = makeDatasetContexts(datasets, workloads, cudaEvaluator);
 		Experiments::SchemaSearchOptions confirmationOptions = discoveryOptions;
 		confirmationOptions.scoreStage = "confirmation";
@@ -4900,7 +5321,8 @@ namespace
 				indices.resize(topK);
 
 			const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset->cloud);
-			const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(*workload, options.weights);
+			const Experiments::ScoreWeights weights = effectiveScoreWeights(*workload, options);
+			const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(*workload, weights);
 
 			for (const size_t recordIndex : indices)
 			{
@@ -5303,6 +5725,15 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 		parseScaleRange(scales, "radius", profile.radiusScaleMin, profile.radiusScaleMax);
 	}
 
+	if (const boost::json::value* scoreWeights = root.if_contains("scoreWeights"))
+	{
+		if (!scoreWeights->is_object())
+			throw std::runtime_error("Workload scoreWeights must be an object");
+
+		profile.scoreWeights = parseScoreWeightsObject(scoreWeights->as_object());
+		profile.hasScoreWeights = true;
+	}
+
 	normalizeScaleRange(profile.rangeScaleMin, profile.rangeScaleMax);
 	normalizeScaleRange(profile.radiusScaleMin, profile.radiusScaleMax);
 
@@ -5352,9 +5783,11 @@ namespace
 		out["averageVisitedNodes"] = metrics.averageVisitedNodes;
 		out["averageTestedPoints"] = metrics.averageTestedPoints;
 		out["averageReturnedPoints"] = metrics.averageReturnedPoints;
+		out["averageFullyContainedNodes"] = metrics.averageFullyContainedNodes;
 		out["totalVisitedNodes"] = metrics.totalVisitedNodes;
 		out["totalTestedPoints"] = metrics.totalTestedPoints;
 		out["totalReturnedPoints"] = metrics.totalReturnedPoints;
+		out["totalFullyContainedNodes"] = metrics.totalFullyContainedNodes;
 		return out;
 	}
 
@@ -5386,6 +5819,7 @@ namespace
 		out["scoreStage"] = record.scoreStage;
 		out["scoreIsFinalLatency"] = record.scoreIsFinalLatency;
 		out["backend"] = record.backend;
+		out["knnBackend"] = record.knnBackend;
 		out["cudaDevice"] = record.cudaDevice;
 		out["cudaBuilder"] = record.cudaBuilder;
 		out["gpuUploadMs"] = record.gpuUploadMs;
@@ -5404,6 +5838,7 @@ namespace
 		out["relativeSpeedupVsBaseline"] = record.relativeSpeedupVsBaseline;
 
 		boost::json::object weights;
+		weights["lambdaLatency"] = record.weights.lambdaLatency;
 		weights["lambdaBuild"] = record.weights.lambdaBuild;
 		weights["lambdaMemory"] = record.weights.lambdaMemory;
 		weights["lambdaImbalance"] = record.weights.lambdaImbalance;
@@ -5476,12 +5911,40 @@ double Experiments::computeSchemaSearchScore(
 
 	const double primary = weights.useVisitProxy
 		? queryMetrics.averageVisitedNodes + weights.visitProxyAlpha * queryMetrics.averageTestedPoints
-		: queryMetrics.averageLatencyMs;
+		: weights.lambdaLatency * queryMetrics.averageLatencyMs;
 
 	return primary +
 		weights.lambdaBuild * buildMetrics.buildTimeMs +
 		weights.lambdaMemory * memoryMb +
 		weights.lambdaImbalance * imbalancePenalty;
+}
+
+namespace
+{
+	double bestSelectionScore(const Experiments::SchemaSearchRecord& record)
+	{
+		if (record.weights.useVisitProxy)
+			return record.score;
+
+		if (record.confirmSeedsUsed == 0 && record.queryMetrics.averageLatencyMs <= 0.0)
+			return record.score;
+
+		const double primary = record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
+			? record.latencyMean
+			: record.queryMetrics.averageLatencyMs;
+		const double buildMs = record.confirmSeedsUsed > 0 && record.gpuBuildMean > 0.0
+			? record.gpuBuildMean
+			: record.buildMetrics.buildTimeMs;
+		const double memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+		const double imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
+			? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+			: 0.0;
+
+		return record.weights.lambdaLatency * primary +
+			record.weights.lambdaBuild * buildMs +
+			record.weights.lambdaMemory * memoryMb +
+			record.weights.lambdaImbalance * imbalancePenalty;
+	}
 }
 
 std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(const std::vector<SchemaSearchRecord>& records)
@@ -5499,7 +5962,7 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 			continue;
 		}
 
-		if (record.score < existing->score)
+		if (bestSelectionScore(record) < bestSelectionScore(*existing))
 			*existing = record;
 	}
 
@@ -5807,7 +6270,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 				for (size_t workloadIndex = 0; workloadIndex < workloads.size(); ++workloadIndex)
 				{
 					const WorkloadProfile& workload = workloads[workloadIndex];
-					const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, resolvedOptions.weights);
+					const ScoreWeights weights = effectiveScoreWeights(workload, resolvedOptions);
+					const WorkloadFeatures workloadFeatures = extractWorkloadFeatures(workload, weights);
 					const std::vector<SchemaCandidate> benchmarkSchemas = selectBenchmarkSchemas(
 						resolvedOptions,
 						dataset,
@@ -5856,6 +6320,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	annotateBaselineComparisons(records);
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);
+	reportMetricSummaries(records, resolvedOptions);
 	writeSearchRows(resolvedOptions.csvPath, records);
 	writeBestRows(resolvedOptions.bestCsvPath, records);
 	writeParetoRows(resolvedOptions.paretoCsvPath, records);

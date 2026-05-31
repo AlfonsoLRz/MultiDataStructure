@@ -27,14 +27,35 @@ namespace BaselineTests
 	void runQuadTreeTests();
 	void runRegularGridTests();
 
+	bool nearlyEqual(float left, float right, float epsilon = 1e-5f)
+	{
+		return std::abs(left - right) <= epsilon;
+	}
+
+	void runAABBTests()
+	{
+		const AABB box(glm::vec3(-1.0f, -2.0f, -3.0f), glm::vec3(2.0f, 1.0f, 4.0f));
+		const glm::mat4 transform =
+			glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, -3.0f, 2.0f)) *
+			glm::rotate(glm::mat4(1.0f), glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+
+		const AABB transformed = box.dot(transform);
+		expect(nearlyEqual(transformed.min().x, 4.0f), "transformed AABB min x includes all rotated corners");
+		expect(nearlyEqual(transformed.max().x, 7.0f), "transformed AABB max x includes all rotated corners");
+		expect(nearlyEqual(transformed.min().y, -4.0f), "transformed AABB min y includes all rotated corners");
+		expect(nearlyEqual(transformed.max().y, -1.0f), "transformed AABB max y includes all rotated corners");
+		expect(nearlyEqual(transformed.min().z, -1.0f), "transformed AABB min z includes translation");
+		expect(nearlyEqual(transformed.max().z, 6.0f), "transformed AABB max z includes translation");
+	}
+
 	class TestBinaryNode final : public MultiDataStructure::SpatialDSNode
 	{
 	public:
 		TestBinaryNode(const AABB& aabb = AABB()) : SpatialDSNode(aabb) {}
 
-		TestBinaryNode* copy(const AABB& aabb) const override
+		std::unique_ptr<MultiDataStructure::SpatialDSNode> copy(const AABB& aabb) const override
 		{
-			return new TestBinaryNode(aabb);
+			return std::make_unique<TestBinaryNode>(aabb);
 		}
 
 		void split(MultiDataStructure::DataStructureLevel nodeType) override
@@ -100,6 +121,7 @@ int runBaselineTests()
 	{
 		BaselineTests::runLevelScheduleTests();
 		BaselineTests::runTreeCleanupTests();
+		BaselineTests::runAABBTests();
 		BaselineTests::runPointCloudTests();
 		BaselineTests::runPointQueryTests();
 		BaselineTests::runMetricsTests();
