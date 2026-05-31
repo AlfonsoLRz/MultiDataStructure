@@ -41,4 +41,6 @@ Supported `type` values at this stage:
 
 maps depth `0` to `Octree`, then depths `1`, `2`, and `3` to `BVH`. Depths beyond the configured total reuse the final block only as a defensive fallback; normal builds stop at the configured total or `buildPolicy.maxDepth`.
 
-`KarrasOctree`, `BIH`, `LBVH`, `RegularGrid`, and `HGrid` are GPU-flavored schema names that preserve the base Octree, KDTree, and BVH families for CPU fallback while letting the CUDA MixedTree builder pick the more specific split behavior. Inside a mixed schema, `RegularGrid` and `HGrid` are recursive per-node grid split levels; the standalone CUDA `regular_grid` and `hgrid` evaluators still use their own global cell-bin implementations. Point-cloud builds use single-child assignment and should keep `allowOverlapDuplication` set to `false`.
+`QuadTree` levels support an optional `axisPolicy`. Point-cloud schemas default to `xy`, which splits X/Y and leaves Z unsplit. Explicit values are `xy`, `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, and `ignore_z`.
+
+`KarrasOctree`, `BIH`, and `LBVH` are GPU-flavored schema names that preserve base Octree, KDTree, and BVH CPU fallback families while letting CUDA builders pick more specific split behavior. `RegularGrid` and `HGrid` are implemented by the CPU point index as recursive grid split levels and by CUDA as both MixedTree split levels and standalone global cell-bin evaluators. Point-cloud builds use single-child assignment and should keep `allowOverlapDuplication` set to `false`.

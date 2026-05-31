@@ -1258,12 +1258,26 @@ namespace
 			// differ only in policy land under distinct cache keys and seenSignatures slots. We
 			// only emit the suffix when the policy meaningfully changes behavior — empty or the
 			// long-standing default is treated as "no suffix" to keep legacy signatures stable.
-			if (!level.axisPolicy.empty() && level.axisPolicy != "median_longest_axis")
+			if (!level.axisPolicy.empty() &&
+				level.axisPolicy != "median_longest_axis" &&
+				level.axisPolicy != "xy")
 			{
 				if (level.axisPolicy == "round_robin")
 					output << "ap=rr";
 				else if (level.axisPolicy == "center_longest_axis")
 					output << "ap=cl";
+				else if (level.axisPolicy == "xz")
+					output << "ap=xz";
+				else if (level.axisPolicy == "yz")
+					output << "ap=yz";
+				else if (level.axisPolicy == "ignore_shortest")
+					output << "ap=is";
+				else if (level.axisPolicy == "ignore_x")
+					output << "ap=ix";
+				else if (level.axisPolicy == "ignore_y")
+					output << "ap=iy";
+				else if (level.axisPolicy == "ignore_z")
+					output << "ap=iz";
 				else
 					output << "ap=other";
 			}
@@ -1389,9 +1403,10 @@ namespace
 		level.numLevels = 1;
 		level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
-		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode
-			? (std::bernoulli_distribution(0.5)(rng) ? "round_robin" : "median_longest_axis")
-			: std::string();
+		if (level.type == MultiDataStructure::QuadTreeNode)
+			level.axisPolicy = "xy";
+		else if (level.type == MultiDataStructure::KDTreeNode)
+			level.axisPolicy = std::bernoulli_distribution(0.5)(rng) ? "round_robin" : "median_longest_axis";
 		return level;
 	}
 
@@ -1401,6 +1416,8 @@ namespace
 	// without exploding the search space.
 	std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataStructureLevel type)
 	{
+		if (type == MultiDataStructure::QuadTreeNode)
+			return "xy";
 		if (type != MultiDataStructure::KDTreeNode)
 			return "";
 		std::bernoulli_distribution coin(0.5);
@@ -1412,7 +1429,12 @@ namespace
 		if (queryMinimalPrimitiveProfile(options))
 		{
 			level.typeName = Config::dataStructureLevelName(level.type);
-			if (level.type != MultiDataStructure::KDTreeNode)
+			if (level.type == MultiDataStructure::QuadTreeNode)
+			{
+				if (level.axisPolicy.empty())
+					level.axisPolicy = "xy";
+			}
+			else if (level.type != MultiDataStructure::KDTreeNode)
 				level.axisPolicy = "";
 			else if (level.axisPolicy.empty())
 				level.axisPolicy = "median_longest_axis";
@@ -1429,7 +1451,12 @@ namespace
 		// Preserve axisPolicy if it's already set to a recognized value; only reset when the
 		// type is not KDTree-family. Lets crossover/mutation children inherit their parent's
 		// sampled policy instead of being clobbered back to median_longest_axis.
-		if (level.type != MultiDataStructure::KDTreeNode)
+		if (level.type == MultiDataStructure::QuadTreeNode)
+		{
+			if (level.axisPolicy.empty())
+				level.axisPolicy = "xy";
+		}
+		else if (level.type != MultiDataStructure::KDTreeNode)
 			level.axisPolicy = "";
 		else if (level.axisPolicy.empty())
 			level.axisPolicy = "median_longest_axis";
@@ -3662,7 +3689,10 @@ namespace
 		level.numLevels = std::max<size_t>(1, numLevels);
 		level.leafCapacity = std::max<size_t>(2, leafCapacity);
 		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
-		level.axisPolicy = level.type == MultiDataStructure::KDTreeNode ? "median_longest_axis" : "";
+		if (level.type == MultiDataStructure::QuadTreeNode)
+			level.axisPolicy = "xy";
+		else if (level.type == MultiDataStructure::KDTreeNode)
+			level.axisPolicy = "median_longest_axis";
 		return level;
 	}
 

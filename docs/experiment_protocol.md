@@ -77,8 +77,8 @@ The Python training pipeline augments raw rows with schema-composition features 
 | `schema_has_quadtree` | Candidate includes at least one QuadTree block. |
 | `schema_has_octree` | Candidate includes at least one Octree block. |
 | `schema_has_kdtree` | Candidate includes at least one KDTree block. |
-| `schema_has_grid2d` | Candidate includes at least one Grid2D block. |
-| `schema_has_grid3d` | Candidate includes at least one Grid3D block. |
+| `schema_has_grid2d` | Legacy feature name for candidates with a 2D/grid-like block. |
+| `schema_has_grid3d` | Legacy feature name for candidates with a `RegularGrid` or `HGrid` block. |
 | `schema_num_blocks` | Number of configured structure blocks. |
 | `schema_total_levels` | Total scheduled levels across blocks. |
 | `schema_max_leaf_capacity` | Maximum leaf capacity across blocks. |

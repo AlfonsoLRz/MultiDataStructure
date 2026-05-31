@@ -92,6 +92,10 @@ void MultiDataStructure::resolveRayQueries(
 	const VertexGPU* vertices, const glm::u32* indices
 )
 {
+	depth.assign(rays.size(), FLT_MAX);
+	if (!_rootNode)
+		return;
+
 	#pragma omp parallel for
 	for (int rayIdx = 0; rayIdx < static_cast<int>(rays.size()); ++rayIdx)
 	{
@@ -407,8 +411,17 @@ void MultiDataStructure::resolveNodeCollisions(
 		const glm::vec3 b = vertices[indices[node->_triangleIndex * 3 + 1]]._position;
 		const glm::vec3 c = vertices[indices[node->_triangleIndex * 3 + 2]]._position;
 
-		const glm::vec3 normal = glm::normalize(cross(b - a, c - a));
-		const float t = -(dot(normal, ray._origin) + -glm::dot(normal, a)) / dot(normal, ray._direction);
+		constexpr float epsilon = 1.0e-8f;
+		const glm::vec3 crossProduct = cross(b - a, c - a);
+		if (glm::length2(crossProduct) < epsilon)
+			return;
+
+		const glm::vec3 normal = glm::normalize(crossProduct);
+		const float denominator = dot(normal, ray._direction);
+		if (std::abs(denominator) < epsilon)
+			return;
+
+		const float t = -(dot(normal, ray._origin) + -glm::dot(normal, a)) / denominator;
 		if (t >= 0.0f)
 		{
 			const glm::vec3 p = ray._origin + t * ray._direction;
@@ -420,7 +433,10 @@ void MultiDataStructure::resolveNodeCollisions(
 			const float dot02 = glm::dot(v0, v2);
 			const float dot11 = glm::dot(v1, v1);
 			const float dot12 = glm::dot(v1, v2);
-			const float inverseDenominator = 1.0f / (dot00 * dot11 - dot01 * dot01);
+			const float barycentricDenominator = dot00 * dot11 - dot01 * dot01;
+			if (std::abs(barycentricDenominator) < epsilon)
+				return;
+			const float inverseDenominator = 1.0f / barycentricDenominator;
 			const float u = (dot11 * dot02 - dot01 * dot12) * inverseDenominator;
 			const float v = (dot00 * dot12 - dot01 * dot02) * inverseDenominator;
 

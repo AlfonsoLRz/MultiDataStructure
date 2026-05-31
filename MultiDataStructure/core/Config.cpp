@@ -88,6 +88,72 @@ namespace
 		return value;
 	}
 
+	std::string normalizeAxisPolicy(std::string value)
+	{
+		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+			return std::isspace(c) || c == '_' || c == '-';
+			}), value.end());
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+			return static_cast<char>(std::tolower(c));
+		});
+		if (value == "xy")
+			return "xy";
+		if (value == "xz")
+			return "xz";
+		if (value == "yz")
+			return "yz";
+		if (value == "ignoreshortest" || value == "shortest")
+			return "ignore_shortest";
+		if (value == "ignorex" || value == "x")
+			return "ignore_x";
+		if (value == "ignorey" || value == "y")
+			return "ignore_y";
+		if (value == "ignorez" || value == "z")
+			return "ignore_z";
+		if (value == "medianlongestaxis" || value == "longestaxis" || value == "longestextent")
+			return "median_longest_axis";
+		if (value == "roundrobin")
+			return "round_robin";
+		if (value == "centerlongestaxis")
+			return "center_longest_axis";
+		return value;
+	}
+
+	void normalizeLevelAxisPolicy(SchemaLevelConfig& level)
+	{
+		level.axisPolicy = normalizeAxisPolicy(level.axisPolicy);
+		if (level.primitiveKind == SchemaPrimitiveKind::QuadTree)
+		{
+			if (level.axisPolicy.empty())
+			{
+				level.axisPolicy = "xy";
+				return;
+			}
+			if (level.axisPolicy == "xy" ||
+				level.axisPolicy == "xz" ||
+				level.axisPolicy == "yz" ||
+				level.axisPolicy == "ignore_shortest" ||
+				level.axisPolicy == "ignore_x" ||
+				level.axisPolicy == "ignore_y" ||
+				level.axisPolicy == "ignore_z")
+				return;
+
+			throw std::runtime_error("Unsupported QuadTree axisPolicy: " + level.axisPolicy);
+		}
+
+		if (level.type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+		{
+			if (level.axisPolicy.empty())
+				level.axisPolicy = "median_longest_axis";
+			if (level.axisPolicy == "median_longest_axis" ||
+				level.axisPolicy == "round_robin" ||
+				level.axisPolicy == "center_longest_axis")
+				return;
+
+			throw std::runtime_error("Unsupported KDTree/BIH axisPolicy: " + level.axisPolicy);
+		}
+	}
+
 	bool pathExists(const std::filesystem::path& path)
 	{
 		std::error_code error;
@@ -155,6 +221,7 @@ namespace
 		level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
 		level.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level.minPrimitivesToSplit);
 		level.axisPolicy = asString(object, "axisPolicy", level.axisPolicy);
+		normalizeLevelAxisPolicy(level);
 		if (const boost::json::value* conditionValue = object.if_contains("condition"))
 		{
 			if (!conditionValue->is_object())

@@ -15,6 +15,39 @@ namespace
 		return 2;
 	}
 
+	glm::uint shortestAxis(const AABB& bounds)
+	{
+		const glm::vec3 size = bounds.size();
+		if (size.x <= size.y && size.x <= size.z)
+			return 0;
+		if (size.y <= size.z)
+			return 1;
+		return 2;
+	}
+
+	std::string normalizedAxisPolicy(std::string value)
+	{
+		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+			return std::isspace(c) || c == '_' || c == '-';
+		}), value.end());
+		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+			return static_cast<char>(std::tolower(c));
+		});
+		return value;
+	}
+
+	glm::uint ignoredQuadTreeAxis(const SchemaLevelConfig& levelConfig, const AABB& bounds)
+	{
+		const std::string policy = normalizedAxisPolicy(levelConfig.axisPolicy.empty() ? std::string("xy") : levelConfig.axisPolicy);
+		if (policy == "yz" || policy == "ignorex" || policy == "x")
+			return 0;
+		if (policy == "xz" || policy == "ignorey" || policy == "y")
+			return 1;
+		if (policy == "ignoreshortest" || policy == "shortest")
+			return shortestAxis(bounds);
+		return 2;
+	}
+
 	bool containsPoint(const AABB& bounds, const glm::vec3& point)
 	{
 		const glm::vec3 min = bounds.min();
@@ -558,7 +591,7 @@ std::vector<AABB> PointSpatialIndex::childBounds(const Node& node, const SchemaL
 	{
 		AABB children[4];
 		glm::uvec3 subdivisions(2, 2, 2);
-		subdivisions[longestAxis(node.bounds)] = 1;
+		subdivisions[ignoredQuadTreeAxis(levelConfig, node.bounds)] = 1;
 		node.bounds.split3D(subdivisions, children);
 		return std::vector<AABB>(std::begin(children), std::end(children));
 	}
@@ -601,7 +634,7 @@ size_t PointSpatialIndex::locateChild(const glm::vec3& point, const SchemaLevelC
 
 	if (levelConfig.type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
 	{
-		const glm::uint planarAxis = longestAxis(node.bounds);
+		const glm::uint planarAxis = ignoredQuadTreeAxis(levelConfig, node.bounds);
 		const glm::vec3 center = node.bounds.center();
 		glm::uvec3 subdivisions(2, 2, 2);
 		subdivisions[planarAxis] = 1;

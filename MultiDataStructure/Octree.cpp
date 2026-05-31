@@ -12,8 +12,8 @@ std::unique_ptr<MultiDataStructure::SpatialDSNode> OctreeNode::copy(const AABB& 
 
 void OctreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 {
-	static AABB aabbs[8];
-	_aabb.split3D({2, 2, 2}, aabbs);
+	std::array<AABB, 8> aabbs;
+	_aabb.split3D({ 2, 2, 2 }, aabbs.data());
 
 	for (const auto& aabb : aabbs)
 	{
@@ -34,8 +34,8 @@ std::unique_ptr<MultiDataStructure::SpatialDSNode> BvhNode::copy(const AABB& aab
 
 void BvhNode::split(MultiDataStructure::DataStructureLevel nodeType)
 {
-	static AABB aabbs[2];
-	_aabb.split2D(_splitAxis, aabbs);
+	std::array<AABB, 2> aabbs;
+	_aabb.split2D(_splitAxis, aabbs.data());
 
 	_children.resize(2);
 	_children[0] = NodeFactory::create(nodeType, aabbs[0]);

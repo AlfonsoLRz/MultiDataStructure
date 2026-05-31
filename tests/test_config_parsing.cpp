@@ -9,6 +9,11 @@ namespace BaselineTests
 
 	namespace
 	{
+		bool nearlyEqual(float left, float right, float epsilon = 0.0001f)
+		{
+			return std::abs(left - right) <= epsilon;
+		}
+
 		SchemaConfig loadSchema(const std::string& name)
 		{
 			return Config::loadSchemaConfig("configs/schemas/" + name + ".json");
@@ -39,6 +44,26 @@ namespace BaselineTests
 
 		const SchemaConfig quadtree = loadSchema("quadtree");
 		expect(quadtree.levels[0].type == MultiDataStructure::DataStructureLevel::QuadTreeNode, "quadtree type parsed");
+		expect(quadtree.levels[0].axisPolicy == "xy", "quadtree defaults to XY axis policy");
+
+		const char* quadtreeXzJson = R"json(
+		{
+		  "name": "quadtree_xz",
+		  "levels": [
+		    { "type": "QuadTree", "axisPolicy": "xz", "numLevels": 1, "leafCapacity": 1, "minPointsToSplit": 2 }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 1,
+		    "leafCapacity": 1,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": false,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+		const SchemaConfig quadtreeXz = Config::parseSchemaConfig(quadtreeXzJson, "quadtree_xz");
+		expect(quadtreeXz.levels[0].axisPolicy == "xz", "quadtree parses explicit XZ axis policy");
 
 		const SchemaConfig kdtree = loadSchema("kdtree");
 		expect(kdtree.levels[0].type == MultiDataStructure::DataStructureLevel::KDTreeNode, "kd-tree type parsed");
@@ -57,6 +82,42 @@ namespace BaselineTests
 		expectPointBuildPreservesCounts(octree, cloud, "octree point build");
 		expectPointBuildPreservesCounts(quadtree, cloud, "quadtree point build");
 		expectPointBuildPreservesCounts(hybrid, cloud, "hybrid point build");
+
+		PointCloud wideTerrain;
+		wideTerrain.addPoint({ glm::vec3(0.0f, 0.0f, 0.0f) });
+		wideTerrain.addPoint({ glm::vec3(100.0f, 0.0f, 0.1f) });
+		wideTerrain.addPoint({ glm::vec3(0.0f, 10.0f, 0.2f) });
+		wideTerrain.addPoint({ glm::vec3(100.0f, 10.0f, 0.3f) });
+		wideTerrain.addPoint({ glm::vec3(50.0f, 5.0f, 0.4f) });
+		const char* quadtreeSplitJson = R"json(
+		{
+		  "name": "quadtree_xy_split",
+		  "levels": [
+		    { "type": "QuadTree", "numLevels": 1, "leafCapacity": 1, "minPointsToSplit": 2 }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 1,
+		    "leafCapacity": 1,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": false,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+		PointSpatialIndex wideIndex;
+		wideIndex.build(wideTerrain, Config::parseSchemaConfig(quadtreeSplitJson, "quadtree_xy_split"));
+		const PointSpatialIndex::Node* wideRoot = wideIndex.root();
+		expect(wideRoot != nullptr && wideRoot->children.size() == 4, "quadtree XY split creates four root children");
+		if (wideRoot && !wideRoot->children.empty())
+		{
+			const glm::vec3 rootSize = wideRoot->bounds.size();
+			const glm::vec3 childSize = wideRoot->children.front()->bounds.size();
+			expect(childSize.x < rootSize.x && childSize.y < rootSize.y,
+				"quadtree default splits X and Y for terrain-shaped clouds");
+			expect(nearlyEqual(childSize.z, rootSize.z),
+				"quadtree default leaves Z unsplit");
+		}
 
 		const char* gpuFlavorJson = R"json(
 		{

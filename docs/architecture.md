@@ -90,7 +90,7 @@ The current generic spatial-index pieces are still physically in the project roo
 - `BuildPolicy`
 - `SchemaConfig`
 
-`core/Config.*` parses JSON schema files into `SchemaConfig`. The parser currently supports `QuadTree`, `Octree`, `KDTree`, and `BVH` blocks. `Grid2D` and `Grid3D` remain future node types.
+`core/Config.*` parses JSON schema files into `SchemaConfig`. The parser supports `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, `HGrid`, and `Mixed` schema names. GPU-specific aliases keep their primitive identity for CUDA replay while carrying an explicit CPU fallback family. `QuadTree` levels can set `axisPolicy` to `xy`, `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, or `ignore_z`; point-cloud schemas default to `xy`.
 
 Some root-level core APIs still carry triangle/ray concepts from the original prototype. New work should prefer the point workload boundary unless a legacy API is being deliberately retired or generalized.
 

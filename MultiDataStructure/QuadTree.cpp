@@ -3,10 +3,8 @@
 
 //
 
-QuadTreeNode::QuadTreeNode(const AABB& aabb) : SpatialDSNode(aabb), _planarAxis(-1)
+QuadTreeNode::QuadTreeNode(const AABB& aabb) : SpatialDSNode(aabb), _planarAxis(2)
 {
-	_planarAxis = _aabb.size().x > _aabb.size().y and _aabb.size().x > _aabb.size().z ? 0 :
-				  _aabb.size().y > _aabb.size().z ? 1 : 2;
 }
 
 std::unique_ptr<MultiDataStructure::SpatialDSNode> QuadTreeNode::copy(const AABB& aabb) const
@@ -21,11 +19,11 @@ std::unique_ptr<MultiDataStructure::SpatialDSNode> QuadTreeNode::copy(const AABB
 
 void QuadTreeNode::split(MultiDataStructure::DataStructureLevel nodeType)
 {
-	static AABB aabbs[4];
+	std::array<AABB, 4> aabbs;
 
 	glm::uvec3 subdivisions{ 2, 2, 2 };
 	subdivisions[_planarAxis] = 1;
-	_aabb.split3D(subdivisions, aabbs);
+	_aabb.split3D(subdivisions, aabbs.data());
 
 	for (const auto& aabb : aabbs)
 	{

@@ -26,6 +26,9 @@ namespace
 		SplitLBVH = 102,
 		SplitRegularGrid = 103,
 		SplitHGrid = 104,
+		SplitQuadTreeXZ = 105,
+		SplitQuadTreeYZ = 106,
+		SplitQuadTreeIgnoreShortest = 107,
 	};
 
 	enum ConditionFlag : uint32_t
@@ -42,6 +45,8 @@ namespace
 		HasMaxExtentY = 1u << 9,
 		HasMinExtentZ = 1u << 10,
 		HasMaxExtentZ = 1u << 11,
+		HasMinAnisotropy = 1u << 12,
+		HasMaxAnisotropy = 1u << 13,
 	};
 
 	struct DeviceLevelCondition
@@ -59,6 +64,8 @@ namespace
 		float maxExtentY = 0.0f;
 		float minExtentZ = 0.0f;
 		float maxExtentZ = 0.0f;
+		float minAnisotropy = 0.0f;
+		float maxAnisotropy = 0.0f;
 	};
 
 	struct HostActiveTypeAccumulator
@@ -116,6 +123,17 @@ namespace
 	int splitTypeForLevel(const SchemaLevelConfig& level)
 	{
 		const std::string typeName = normalizedTypeName(level.typeName);
+		if (typeName == "quadtree" || typeName == "quadtreenode")
+		{
+			const std::string policy = normalizedTypeName(level.axisPolicy.empty() ? std::string("xy") : level.axisPolicy);
+			if (policy == "xz" || policy == "ignorey" || policy == "y")
+				return SplitQuadTreeXZ;
+			if (policy == "yz" || policy == "ignorex" || policy == "x")
+				return SplitQuadTreeYZ;
+			if (policy == "ignoreshortest" || policy == "shortest")
+				return SplitQuadTreeIgnoreShortest;
+			return SplitQuadTree;
+		}
 		if (typeName == "bih" || typeName == "binaryintervalhierarchy" || typeName == "intervalhierarchy")
 			return SplitBIH;
 		if (typeName == "karrasoctree" || typeName == "mortonoctree" || typeName == "octreekarras" || typeName == "octreemorton")
@@ -127,6 +145,23 @@ namespace
 		if (typeName == "hgrid" || typeName == "hierarchicalgrid" || typeName == "hierarchicalgrid3d")
 			return SplitHGrid;
 		return static_cast<int>(level.type);
+	}
+
+	bool hasUnsupportedMixedCondition(const SchemaLevelCondition& condition)
+	{
+		return condition.minOccupancyEntropy.has_value() ||
+			condition.maxOccupancyEntropy.has_value();
+	}
+
+	void validateMixedTreeConditions(const SchemaConfig& schema)
+	{
+		for (const SchemaLevelConfig& level : schema.levels)
+		{
+			if (hasUnsupportedMixedCondition(level.condition))
+				throw std::runtime_error(
+					"CUDA MixedTree does not currently support occupancy-entropy conditions; "
+					"remove minOccupancyEntropy/maxOccupancyEntropy or use the CPU evaluator.");
+		}
 	}
 
 	std::string activeTypeNameForDepth(const SchemaConfig& schema, size_t depth)
@@ -206,7 +241,10 @@ namespace
 			return 27;
 		if (splitType == SplitOctree || splitType == SplitKarrasOctree)
 			return 8;
-		if (splitType == SplitQuadTree)
+		if (splitType == SplitQuadTree ||
+			splitType == SplitQuadTreeXZ ||
+			splitType == SplitQuadTreeYZ ||
+			splitType == SplitQuadTreeIgnoreShortest)
 			return 4;
 		return 2;
 	}
@@ -296,6 +334,16 @@ namespace
 		{
 			result.flags |= HasMaxExtentZ;
 			result.maxExtentZ = static_cast<float>(condition.maxExtentZ.value());
+		}
+		if (condition.minAnisotropy)
+		{
+			result.flags |= HasMinAnisotropy;
+			result.minAnisotropy = static_cast<float>(condition.minAnisotropy.value());
+		}
+		if (condition.maxAnisotropy)
+		{
+			result.flags |= HasMaxAnisotropy;
+			result.maxAnisotropy = static_cast<float>(condition.maxAnisotropy.value());
 		}
 		return result;
 	}
@@ -457,7 +505,10 @@ namespace
 	{
 		if (splitType == SplitOctree || splitType == SplitKarrasOctree)
 			return 8;
-		if (splitType == SplitQuadTree)
+		if (splitType == SplitQuadTree ||
+			splitType == SplitQuadTreeXZ ||
+			splitType == SplitQuadTreeYZ ||
+			splitType == SplitQuadTreeIgnoreShortest)
 			return 4;
 		if (splitType == SplitRegularGrid || splitType == SplitHGrid)
 		{
@@ -468,6 +519,32 @@ namespace
 			return dimX * dimY * dimZ;
 		}
 		return 2;
+	}
+
+	__device__ int ignoredAxisForQuadTree(const LinearMixedTreeNode& node, int splitType)
+	{
+		if (splitType == SplitQuadTreeYZ)
+			return 0;
+		if (splitType == SplitQuadTreeXZ)
+			return 1;
+		if (splitType == SplitQuadTreeIgnoreShortest)
+		{
+			const float extentX = node.maxX - node.minX;
+			const float extentY = node.maxY - node.minY;
+			const float extentZ = node.maxZ - node.minZ;
+			if (extentX <= extentY && extentX <= extentZ)
+				return 0;
+			if (extentY <= extentZ)
+				return 1;
+		}
+		return 2;
+	}
+
+	__device__ void quadTreeActiveAxes(const LinearMixedTreeNode& node, int splitType, int& firstAxis, int& secondAxis)
+	{
+		const int ignoredAxis = ignoredAxisForQuadTree(node, splitType);
+		firstAxis = ignoredAxis == 0 ? 1 : 0;
+		secondAxis = ignoredAxis == 2 ? 1 : 2;
 	}
 
 	__device__ bool matchesCondition(const LinearMixedTreeNode& node, const DeviceLevelCondition& condition)
@@ -509,6 +586,20 @@ namespace
 			return false;
 		if ((condition.flags & HasMaxExtentZ) && extentZ > condition.maxExtentZ)
 			return false;
+
+		if (condition.flags & (HasMinAnisotropy | HasMaxAnisotropy))
+		{
+			const float longExtent = fmaxf(fmaxf(extentX, extentY), extentZ);
+			const float shortExtent = fminf(fminf(extentX, extentY), extentZ);
+			if (longExtent > 1.0e-9f)
+			{
+				const float anisotropy = 1.0f - (shortExtent / longExtent);
+				if ((condition.flags & HasMinAnisotropy) && anisotropy < condition.minAnisotropy)
+					return false;
+				if ((condition.flags & HasMaxAnisotropy) && anisotropy > condition.maxAnisotropy)
+					return false;
+			}
+		}
 
 		return true;
 	}
@@ -559,10 +650,16 @@ namespace
 		const float midY = (node.minY + node.maxY) * 0.5f;
 		const float midZ = (node.minZ + node.maxZ) * 0.5f;
 
-		if (splitType == SplitQuadTree)
+		if (splitType == SplitQuadTree ||
+			splitType == SplitQuadTreeXZ ||
+			splitType == SplitQuadTreeYZ ||
+			splitType == SplitQuadTreeIgnoreShortest)
 		{
-			return (point.x > midX ? 1u : 0u) |
-				(point.y > midY ? 2u : 0u);
+			int firstAxis = 0;
+			int secondAxis = 1;
+			quadTreeActiveAxes(node, splitType, firstAxis, secondAxis);
+			return (coordinateForAxis(point, firstAxis) > midpointForAxis(node, firstAxis) ? 1u : 0u) |
+				(coordinateForAxis(point, secondAxis) > midpointForAxis(node, secondAxis) ? 2u : 0u);
 		}
 
 		if (splitType == SplitKDTree || splitType == SplitBVH || splitType == SplitBIH || splitType == SplitLBVH)
@@ -601,14 +698,46 @@ namespace
 		const float midZ = (parent.minZ + parent.maxZ) * 0.5f;
 
 		LinearMixedTreeNode node{};
-		if (splitType == SplitQuadTree)
+		if (splitType == SplitQuadTree ||
+			splitType == SplitQuadTreeXZ ||
+			splitType == SplitQuadTreeYZ ||
+			splitType == SplitQuadTreeIgnoreShortest)
 		{
-			node.minX = (child & 1u) ? midX : parent.minX;
-			node.maxX = (child & 1u) ? parent.maxX : midX;
-			node.minY = (child & 2u) ? midY : parent.minY;
-			node.maxY = (child & 2u) ? parent.maxY : midY;
+			node.minX = parent.minX;
+			node.maxX = parent.maxX;
+			node.minY = parent.minY;
+			node.maxY = parent.maxY;
 			node.minZ = parent.minZ;
 			node.maxZ = parent.maxZ;
+			int firstAxis = 0;
+			int secondAxis = 1;
+			quadTreeActiveAxes(parent, splitType, firstAxis, secondAxis);
+			const float firstPlane = midpointForAxis(parent, firstAxis);
+			const float secondPlane = midpointForAxis(parent, secondAxis);
+			if (firstAxis == 0)
+			{
+				if (child & 1u) node.minX = firstPlane; else node.maxX = firstPlane;
+			}
+			else if (firstAxis == 1)
+			{
+				if (child & 1u) node.minY = firstPlane; else node.maxY = firstPlane;
+			}
+			else
+			{
+				if (child & 1u) node.minZ = firstPlane; else node.maxZ = firstPlane;
+			}
+			if (secondAxis == 0)
+			{
+				if (child & 2u) node.minX = secondPlane; else node.maxX = secondPlane;
+			}
+			else if (secondAxis == 1)
+			{
+				if (child & 2u) node.minY = secondPlane; else node.maxY = secondPlane;
+			}
+			else
+			{
+				if (child & 2u) node.minZ = secondPlane; else node.maxZ = secondPlane;
+			}
 		}
 		else if (splitType == SplitKDTree || splitType == SplitBVH || splitType == SplitBIH || splitType == SplitLBVH)
 		{
@@ -1234,6 +1363,7 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		throw std::runtime_error("MixedTree evaluator supports --cuda-builder mixed or hybrid.");
 	if (cloud.size() > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
 		throw std::runtime_error("MixedTree currently supports up to 2^32 - 1 points.");
+	validateMixedTreeConditions(schema);
 
 	std::string availabilityError;
 	if (!isAvailable(&availabilityError))

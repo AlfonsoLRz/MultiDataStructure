@@ -230,7 +230,7 @@ HGrid GPU evaluator. This builds several CUDA RegularGrid levels and chooses a l
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder hgrid --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_hgrid_search.csv --best-csv results/alhambra_cuda_hgrid_best.csv --no-pause
 ```
 
-MixedTree GPU evaluator. This follows each schema's per-depth structure schedule, so static mixes such as QuadTree -> RegularGrid -> HGrid -> KarrasOctree -> BIH -> KDTree -> LBVH are built and queried on CUDA. Conditional generated levels are honored as split gates. In mixed schemas, `RegularGrid` and `HGrid` act as per-node grid split levels; the standalone CUDA builders still use their global grid implementations:
+MixedTree GPU evaluator. This follows each schema's per-depth structure schedule, so static mixes such as QuadTree -> RegularGrid -> HGrid -> KarrasOctree -> BIH -> KDTree -> LBVH are built and queried on CUDA. Conditional generated levels are honored as split gates. Bbox anisotropy gates are supported; occupancy-entropy gates are rejected for CUDA/Mixed until implemented. In mixed schemas, `RegularGrid` and `HGrid` act as per-node grid split levels; the standalone CUDA builders still use their global grid implementations:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder mixed --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_mixed_search.csv --best-csv results/alhambra_cuda_mixed_best.csv --no-pause
@@ -452,6 +452,8 @@ CUDA schema-search evaluator:
 ```
 
 `lbvh`, `kdtree`, `bih`, `octree`, `karras_octree`, `quadtree`, `regular_grid`, `hgrid`, and static `mixed` schemas are implemented now. `karras_octree` uses Morton sorting plus prefix child ranges, `bih` is a binary interval hierarchy with tight child bounds, `hgrid` builds multiple CUDA grid levels and chooses one per query, and `mixed` follows the schema's per-depth structure schedule and treats conditional levels as GPU split gates. Mixed schema levels can currently name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid`.
+
+`QuadTree` schema levels default to `axisPolicy: "xy"` for point clouds. Other supported policies are `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, and `ignore_z`.
 
 Schema-search defaults to `--evaluator cuda --cuda-device 0 --cuda-builder mixed`; the resolver checks CUDA once and falls back to CPU with a warning when CUDA is unavailable.
 

@@ -464,6 +464,52 @@ namespace BaselineTests
 			cudaOptions.pauseAtEnd = false;
 			expect(Experiments::runSchemaSearch(cudaOptions) == 0, "schema search CUDA mixed smoke run succeeds");
 
+			const char* entropyConditionJson = R"json(
+			{
+			  "name": "cuda_entropy_rejected",
+			  "levels": [
+			    { "type": "QuadTree", "numLevels": 1, "leafCapacity": 8, "minPointsToSplit": 2 },
+			    {
+			      "type": "Octree",
+			      "numLevels": 1,
+			      "leafCapacity": 8,
+			      "minPointsToSplit": 2,
+			      "condition": {
+			        "minOccupancyEntropy": 0.2
+			      }
+			    }
+			  ],
+			  "buildPolicy": {
+			    "maxDepth": 2,
+			    "leafCapacity": 8,
+			    "minPointsToSplit": 2,
+			    "collapseSingleChild": false,
+			    "removeEmptyNodes": true,
+			    "allowOverlapDuplication": false
+			  }
+			}
+			)json";
+			bool rejectedEntropyCondition = false;
+			try
+			{
+				PointGpu::MixedTree mixedTree;
+				PointGpu::Options mixedOptions;
+				mixedOptions.device = 0;
+				mixedOptions.builder = "mixed";
+				const PointCloud entropyCloud = SyntheticPointClouds::generateUrbanMixed(64, 64, 4);
+				mixedTree.build(
+					entropyCloud,
+					Config::parseSchemaConfig(entropyConditionJson, "cuda_entropy_rejected"),
+					mixedOptions);
+			}
+			catch (const std::runtime_error& exception)
+			{
+				rejectedEntropyCondition =
+					std::string(exception.what()).find("occupancy-entropy") != std::string::npos;
+			}
+			expect(rejectedEntropyCondition,
+				"CUDA MixedTree rejects occupancy-entropy conditions instead of silently ignoring them");
+
 			const std::filesystem::path knnWorkloadPath = tempRoot / "cuda_knn_workload.json";
 			{
 				std::ofstream workload(knnWorkloadPath);

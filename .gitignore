@@ -47,6 +47,10 @@ x86/
 # PyCharm
 .idea/
 .venv/
+__pycache__/
+*.py[cod]
+*.joblib
+*.pkl
 
 # Outputs
 output/
