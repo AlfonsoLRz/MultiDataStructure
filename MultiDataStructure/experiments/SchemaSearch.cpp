@@ -3961,7 +3961,7 @@ namespace
 		// the candidate. The full feature-rich layout stays in the `best` CSV; this one is meant
 		// for plotting the front, not training.
 		output
-			<< "dataset_name,workload_name,query_strata_summary,pareto_rank,schema_name,schema_path,score,"
+			<< "dataset_name,workload_name,query_strata_summary,pareto_rank,is_knee,schema_name,schema_path,score,"
 			<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
 			<< "leaf_occupancy_p90,empty_child_ratio,mean_tight_bounds_volume_ratio,micro_indexed_leaves,micro_indexed_points,"
 			<< "p95_latency_ms,throughput_qps,backend,knn_backend,cuda_builder,is_baseline,"
@@ -3975,7 +3975,9 @@ namespace
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : front)
 		{
-			const double memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+			const double memoryMb = (record.backend == "cuda" && record.gpuMemoryBytes > 0)
+				? static_cast<double>(record.gpuMemoryBytes) / (1024.0 * 1024.0)
+				: static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
 			const double imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
 				? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
 				: 0.0;
@@ -3984,6 +3986,7 @@ namespace
 				<< csvEscape(record.workloadName) << ','
 				<< csvEscape(record.queryStrataSummary) << ','
 				<< record.paretoRank << ','
+				<< (record.paretoKnee ? 1 : 0) << ','
 				<< csvEscape(record.schemaName) << ','
 				<< csvEscape(record.schemaPath) << ','
 				<< record.score << ','
@@ -7368,6 +7371,17 @@ double Experiments::computeSchemaSearchScore(
 
 namespace
 {
+	// Memory footprint in MB, preferring the measured GPU allocation for CUDA records and falling
+	// back to the crude CPU-side estimate otherwise. Keeps the memory objective honest for GPU runs
+	// instead of ranking a measured value against a closed-form estimate.
+	double recordMemoryMb(const Experiments::SchemaSearchRecord& record)
+	{
+		const size_t bytes = (record.backend == "cuda" && record.gpuMemoryBytes > 0)
+			? record.gpuMemoryBytes
+			: record.buildMetrics.memoryEstimateBytes;
+		return static_cast<double>(bytes) / (1024.0 * 1024.0);
+	}
+
 	double bestSelectionScore(const Experiments::SchemaSearchRecord& record)
 	{
 		if (record.weights.useVisitProxy)
@@ -7382,7 +7396,7 @@ namespace
 		const double buildMs = record.confirmSeedsUsed > 0 && record.gpuBuildMean > 0.0
 			? record.gpuBuildMean
 			: record.buildMetrics.buildTimeMs;
-		const double memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+		const double memoryMb = recordMemoryMb(record);
 		const double imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
 			? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
 			: 0.0;
@@ -7617,10 +7631,9 @@ namespace
 			? record.latencyMean
 			: record.queryMetrics.averageLatencyMs;
 		m.buildTimeMs = record.buildMetrics.buildTimeMs;
-		// memoryEstimateBytes is always populated; scoreMemoryMb may be 0 when the record is
-		// loaded from the cache without recomputing computeSchemaSearchScore. Always derive
-		// directly from buildMetrics for consistency.
-		m.memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+		// Prefer the measured GPU footprint (recordMemoryMb); fall back to the closed-form CPU
+		// estimate. scoreMemoryMb may be 0 when a record is loaded from the cache, so derive here.
+		m.memoryMb = recordMemoryMb(record);
 		m.imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
 			? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
 			: 0.0;
@@ -7686,15 +7699,108 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 			return records[a].buildMetrics.buildTimeMs < records[b].buildMetrics.buildTimeMs;
 		});
 
+		// Knee = front entry closest to the normalized ideal across the four objectives. Equal
+		// weighting yields the balanced compromise independent of the scalar score weights; a
+		// single-entry front is its own knee.
+		size_t kneeRank = 0;
+		if (!nonDominated.empty())
+		{
+			std::vector<ParetoMetrics> objectives;
+			objectives.reserve(nonDominated.size());
+			for (const size_t idx : nonDominated)
+				objectives.push_back(extractParetoMetrics(records[idx]));
+
+			auto axisRange = [&objectives](double ParetoMetrics::* axis) {
+				double lo = objectives.front().*axis;
+				double hi = lo;
+				for (const ParetoMetrics& o : objectives)
+				{
+					lo = std::min(lo, o.*axis);
+					hi = std::max(hi, o.*axis);
+				}
+				return std::make_pair(lo, hi);
+			};
+			const auto [loL, hiL] = axisRange(&ParetoMetrics::avgLatencyMs);
+			const auto [loB, hiB] = axisRange(&ParetoMetrics::buildTimeMs);
+			const auto [loM, hiM] = axisRange(&ParetoMetrics::memoryMb);
+			const auto [loI, hiI] = axisRange(&ParetoMetrics::imbalancePenalty);
+			auto norm = [](double v, double lo, double hi) { return hi > lo ? (v - lo) / (hi - lo) : 0.0; };
+
+			double bestDist = std::numeric_limits<double>::max();
+			for (size_t r = 0; r < objectives.size(); ++r)
+			{
+				const ParetoMetrics& o = objectives[r];
+				const double nl = norm(o.avgLatencyMs, loL, hiL);
+				const double nb = norm(o.buildTimeMs, loB, hiB);
+				const double nm = norm(o.memoryMb, loM, hiM);
+				const double ni = norm(o.imbalancePenalty, loI, hiI);
+				const double dist = nl * nl + nb * nb + nm * nm + ni * ni;
+				if (dist < bestDist)
+				{
+					bestDist = dist;
+					kneeRank = r;
+				}
+			}
+		}
+
 		for (size_t rank = 0; rank < nonDominated.size(); ++rank)
 		{
 			SchemaSearchRecord entry = records[nonDominated[rank]];
 			entry.paretoRank = static_cast<int>(rank);
+			entry.paretoKnee = (rank == kneeRank);
 			front.push_back(std::move(entry));
 		}
 	}
 
 	return front;
+}
+
+void Experiments::reportParetoKnee(const std::vector<SchemaSearchRecord>& records)
+{
+	const std::vector<SchemaSearchRecord> front = selectParetoRecords(records);
+	if (front.empty())
+		return;
+
+	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
+	for (size_t i = 0; i < front.size(); ++i)
+		groups[{ front[i].datasetName, front[i].workloadName }].push_back(i);
+
+	std::cout << "  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):\n";
+	const auto describe = [](const SchemaSearchRecord& r) {
+		const double latency = r.confirmSeedsUsed > 0 ? r.latencyMean : r.queryMetrics.averageLatencyMs;
+		const double memoryMb = (r.backend == "cuda" && r.gpuMemoryBytes > 0)
+			? static_cast<double>(r.gpuMemoryBytes) / (1024.0 * 1024.0)
+			: static_cast<double>(r.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+		const double imbalance = r.buildMetrics.averageLeafOccupancy > 0.0
+			? static_cast<double>(r.buildMetrics.maxLeafOccupancy) / r.buildMetrics.averageLeafOccupancy
+			: 0.0;
+		std::ostringstream out;
+		out << std::fixed << std::setprecision(4)
+			<< "latency=" << latency << "ms build=" << r.buildMetrics.buildTimeMs
+			<< "ms mem=" << std::setprecision(2) << memoryMb << "MB imbalance="
+			<< std::setprecision(2) << imbalance;
+		return out.str();
+	};
+
+	for (const auto& [key, indices] : groups)
+	{
+		size_t fastestIdx = indices.front();
+		size_t kneeIdx = indices.front();
+		for (const size_t i : indices)
+		{
+			if (front[i].paretoRank == 0)
+				fastestIdx = i;
+			if (front[i].paretoKnee)
+				kneeIdx = i;
+		}
+
+		std::cout << "    [" << key.first << " / " << key.second << "] front size " << indices.size() << "\n";
+		std::cout << "      fastest: " << front[fastestIdx].schemaName << "  " << describe(front[fastestIdx]) << "\n";
+		if (kneeIdx == fastestIdx)
+			std::cout << "      knee:    (same as fastest)\n";
+		else
+			std::cout << "      knee:    " << front[kneeIdx].schemaName << "  " << describe(front[kneeIdx]) << "\n";
+	}
 }
 
 std::tuple<double, double, double> Experiments::bootstrapMeanCI(
@@ -8103,6 +8209,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	annotateBaselineComparisons(records);
 	annotateRankingConfidence(records);
 	reportProxyLatencyCorrelation(records, resolvedOptions.proxyCorrelationCsvPath);
+	reportParetoKnee(records);
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);
 	reportMetricSummaries(records, resolvedOptions);

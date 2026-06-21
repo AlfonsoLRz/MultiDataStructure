@@ -345,6 +345,11 @@ namespace Experiments
 		// --measure-repeats and no --confirm-seeds) confidence cannot be established, which is the
 		// honest answer and nudges the operator toward repeated measurement.
 		bool rankingConfident = false;
+		// True for the Pareto-front knee of this record's (dataset, workload) group: the entry
+		// closest to the normalized ideal across (latency, build, memory, imbalance). Set by
+		// selectParetoRecords; it is the recommended balanced compromise when no single objective
+		// dominates the decision.
+		bool paretoKnee = false;
 	};
 
 	struct SchemaRepairDiagnostics
@@ -441,6 +446,12 @@ namespace Experiments
 	// strict definition: a dominates b iff a is component-wise <= b on all four and < on at least
 	// one. Records that share all four metrics get distinct ranks but neither dominates the other.
 	std::vector<SchemaSearchRecord> selectParetoRecords(const std::vector<SchemaSearchRecord>& records);
+
+	// Prints, per (dataset, workload), the Pareto knee (balanced compromise) alongside the
+	// latency-optimal entry with a per-objective breakdown (latency / build / memory / imbalance),
+	// so the operator sees *why* a schema was recommended rather than just a scalar score. Memory
+	// uses the measured GPU footprint when available.
+	void reportParetoKnee(const std::vector<SchemaSearchRecord>& records);
 
 	// Bootstrap mean and 95% percentile-CI from a sample vector. Returns {mean, ciLow, ciHigh}.
 	// Empty input yields zeros; single-element input collapses CI to the point value. Uses a

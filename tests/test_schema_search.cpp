@@ -1411,5 +1411,38 @@ namespace BaselineTests
 			expect(nearlyEqual(Experiments::spearmanRankCorrelation({ 5.0, 5.0, 5.0 }, { 1.0, 2.0, 3.0 }), 0.0),
 				"spearman returns 0 for a zero-variance series");
 		}
+
+		// Pareto knee selection: among a latency/build tradeoff front, the balanced entry is the knee.
+		{
+			auto mk = [](const std::string& name, double latency, double build) {
+				Experiments::SchemaSearchRecord r;
+				r.datasetName = "ds";
+				r.workloadName = "wl";
+				r.schemaName = name;
+				r.queryMetrics.averageLatencyMs = latency;
+				r.buildMetrics.buildTimeMs = build;
+				r.buildMetrics.memoryEstimateBytes = 1000; // equal memory + imbalance across all
+				return r;
+			};
+
+			// fast: low latency, slow build; slow: high latency, fast build; balanced: middle of both.
+			std::vector<Experiments::SchemaSearchRecord> recs = {
+				mk("fast", 1.0, 10.0), mk("balanced", 2.0, 2.0), mk("slow", 10.0, 1.0)
+			};
+			const std::vector<Experiments::SchemaSearchRecord> frontRecords = Experiments::selectParetoRecords(recs);
+			expect(frontRecords.size() == 3, "all three tradeoff candidates are non-dominated");
+
+			std::string knee;
+			std::string fastest;
+			for (const Experiments::SchemaSearchRecord& r : frontRecords)
+			{
+				if (r.paretoKnee)
+					knee = r.schemaName;
+				if (r.paretoRank == 0)
+					fastest = r.schemaName;
+			}
+			expect(knee == "balanced", "pareto knee is the balanced compromise");
+			expect(fastest == "fast", "pareto rank 0 is the lowest-latency entry");
+		}
 	}
 }
