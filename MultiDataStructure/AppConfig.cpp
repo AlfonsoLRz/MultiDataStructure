@@ -604,6 +604,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.verifyParity = true;
 		}
+		else if (arg == "--estimate-prefilter")
+		{
+			config.schemaSearchOptions.estimatePrefilter = true;
+		}
 		else if (arg == "--queries" && i + 1 < argc)
 		{
 			config.pointOptions.queryCount = static_cast<size_t>(std::stoull(argv[++i]));
@@ -783,6 +787,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
 		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
 		<< "                              counts (results/parity_report.csv). Requires CUDA; skipped otherwise.\n"
+		<< "  --estimate-prefilter        With --benchmark-top and no rank model, keep the K cheapest candidates\n"
+		<< "                              by the zero-build cost estimate instead of an arbitrary first-K prefix.\n"
 		<< "  --no-csv                    Disable CSV summary output\n"
 		<< "  --queries <count>           Run generated query profile; 0 disables it\n"
 		<< "  --knn-k <count>             Neighbor count for generated KNN queries\n"

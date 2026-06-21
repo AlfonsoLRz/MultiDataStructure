@@ -2487,7 +2487,31 @@ namespace
 			return schemas;
 
 		if (!rankModel.has_value())
-			return std::vector<Experiments::SchemaCandidate>(schemas.begin(), schemas.begin() + options.benchmarkTopK);
+		{
+			if (!options.estimatePrefilter)
+				return std::vector<Experiments::SchemaCandidate>(schemas.begin(), schemas.begin() + options.benchmarkTopK);
+
+			// Model-free cheap pre-filter: rank by the zero-build query-cost estimate (no index built)
+			// and keep the cheapest K, instead of an arbitrary first-K prefix.
+			const Experiments::ScoreWeights weights = effectiveScoreWeights(workload, options);
+			const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset.cloud);
+			const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
+
+			std::vector<size_t> order(schemas.size());
+			std::iota(order.begin(), order.end(), size_t(0));
+			std::vector<double> cost(schemas.size());
+			for (size_t i = 0; i < schemas.size(); ++i)
+				cost[i] = Experiments::estimateSchemaQueryCost(schemas[i].config, features, workloadFeatures, weights.visitProxyAlpha);
+			std::stable_sort(order.begin(), order.end(), [&cost](size_t a, size_t b) { return cost[a] < cost[b]; });
+
+			std::vector<Experiments::SchemaCandidate> selected;
+			selected.reserve(options.benchmarkTopK);
+			for (size_t k = 0; k < options.benchmarkTopK && k < order.size(); ++k)
+				selected.push_back(schemas[order[k]]);
+			std::cout << "  estimate pre-filter: kept " << selected.size() << " of " << schemas.size()
+				<< " candidates by zero-build cost on '" << dataset.name << "'\n";
+			return selected;
+		}
 
 		const std::vector<Experiments::CandidatePrediction> predictions = Experiments::scoreSchemaCandidates(
 			rankModel.value(),

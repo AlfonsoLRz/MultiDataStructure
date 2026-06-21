@@ -262,6 +262,10 @@ namespace Experiments
 		// Optional sidecar CSV for the proxy/latency rank-correlation report (one row per
 		// dataset/workload). Empty = stdout summary only. The report is always printed to stdout.
 		std::string proxyCorrelationCsvPath;
+		// When true and --benchmark-top is set without a rank model, pick the K candidates to measure
+		// by the zero-build estimateSchemaQueryCost (cheapest predicted first) instead of an arbitrary
+		// first-K prefix. A model-free cheap pre-filter; validate trust via reportEstimatedCostCorrelation.
+		bool estimatePrefilter = false;
 		// When true (and CUDA is available), after the search build canonical schemas on both the CPU
 		// index and the GPU MixedTree and compare per-query returned-point counts on a deterministic
 		// range/radius sample. Surfaces CPU<->GPU disagreement that the separate evaluators would
