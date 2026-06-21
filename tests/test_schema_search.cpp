@@ -149,8 +149,7 @@ namespace BaselineTests
 			visitImbalance);
 		expect(nearlyEqual(visitScore, 45.0), "visit-proxy score combines visited nodes and tested points");
 
-		// Diagnostic-guided repair mutations classify measured failure modes and emit targeted
-		// schema edits instead of another random perturbation.
+		// Diagnostic-guided repair mutations emit targeted schema edits from measured failure modes.
 		{
 			Experiments::SchemaCandidate parent;
 			parent.config.name = "repair_parent";
@@ -913,9 +912,7 @@ namespace BaselineTests
 			std::filesystem::remove_all(cacheRoot, rmError);
 		}
 
-		// Baseline injection: when includeBaselineSchemas is on (the default), the canonical
-		// single-block schemas appear in the measured records even when the user asked for
-		// generated-only mode.
+		// Baseline injection: canonical single-block schemas appear in records even in generated-only mode.
 		{
 			const std::filesystem::path baselineRoot = std::filesystem::temp_directory_path() / "mdspc_baseline_test";
 			std::filesystem::create_directories(baselineRoot);
@@ -969,10 +966,7 @@ namespace BaselineTests
 			std::filesystem::remove_all(baselineRoot, rmError);
 		}
 
-		// Multi-fidelity cache dedup: the visit-proxy rung and the latency rung evaluate the same
-		// (schema, dataset, workload) tuple but compute different scores from different counters.
-		// Cache fingerprints must distinguish them so a cheap proxy hit cannot satisfy a latency
-		// query (and vice versa).
+		// Multi-fidelity cache dedup: fingerprints must distinguish visit-proxy and latency rungs for the same tuple.
 		{
 			Experiments::WorkloadProfile workload;
 			workload.name = "rung_workload";
@@ -1009,8 +1003,7 @@ namespace BaselineTests
 			expect(otherAlphaKey.evaluatorFingerprint != proxyKey.evaluatorFingerprint,
 				"cache fingerprint distinguishes visit-proxy alpha values");
 
-			// And query count overrides (rung A: 4 queries; rung B: 64 queries) must produce
-			// distinct cache entries even at the same fidelity mode.
+			// Query count overrides must produce distinct cache entries at the same fidelity mode.
 			Experiments::WorkloadProfile longWorkload = workload;
 			longWorkload.numQueries = 64;
 			const Experiments::EvaluationCacheKey shortKey = Experiments::makeEvaluationCacheKey(
@@ -1021,8 +1014,7 @@ namespace BaselineTests
 				"cache fingerprint distinguishes rungs by effective query count");
 		}
 
-		// RungSchedule plumbs through SchemaSearchOptions. An empty schedule means the GA stays
-		// on its flat path; a non-empty schedule must survive struct copy/move.
+		// RungSchedule plumbs through SchemaSearchOptions and survives struct copy/move.
 		{
 			Experiments::SchemaSearchOptions options;
 			expect(options.evolution.rungSchedule.rungs.empty(),
@@ -1058,12 +1050,7 @@ namespace BaselineTests
 				"surrogate proposal count round-trips");
 		}
 
-		// Phase B1: ThresholdRefiner. Builds a candidate whose level has a numeric minPoints
-		// threshold, sets up a synthetic ConditionDomain bounding it, and runs the refiner with
-		// a synthetic score function that has a known minimum. Verifies that:
-		//   (a) collectRefinementDimensions discovers exactly the dims the candidate set
-		//   (b) the (1+lambda)-ES drives the score below the initial value
-		//   (c) the final candidate has minPoints inside the searched range
+		// ThresholdRefiner: dims are discovered, the (1+lambda)-ES lowers the score, and minPoints stays in range.
 		{
 			Experiments::SchemaCandidate seed;
 			seed.config.name = "ot_with_conditional_kd";
@@ -1114,8 +1101,7 @@ namespace BaselineTests
 			expect(foundPoints && foundHeight,
 				"refiner reports both minPoints and minHeightRatio as active dims");
 
-			// Synthetic objective: minimised when minPoints ~ 1024 and minHeightRatio ~ 0.4.
-			// Quadratic bowl in encoded threshold space; the refiner must drive the score down.
+			// Synthetic quadratic bowl minimised at minPoints ~ 1024 and minHeightRatio ~ 0.4.
 			auto syntheticScore = [&](const Experiments::SchemaCandidate& candidate) {
 				if (candidate.config.levels.size() < 2)
 					return 1.0e9;
@@ -1161,8 +1147,7 @@ namespace BaselineTests
 				"refinement does not change level counts");
 		}
 
-		// Phase C1: Pareto front. Build a synthetic record table with a known structure and
-		// assert selectParetoRecords returns exactly the non-dominated set, ranked by latency.
+		// Pareto front: selectParetoRecords returns exactly the non-dominated set, ranked by latency.
 		{
 			auto makeRecord = [](const std::string& dataset, const std::string& workload,
 				const std::string& schemaName, double latencyMs, double buildMs,
@@ -1180,12 +1165,7 @@ namespace BaselineTests
 				return record;
 			};
 
-			// Group A: latency-tradeoff front, three should survive.
-			//   fast_big       0.2 ms / 50 ms build / 200 MB / imbalance 2.0   (cheapest latency)
-			//   balanced       0.5 ms / 20 ms build / 100 MB / imbalance 1.5   (balanced)
-			//   tiny           1.0 ms /  5 ms build /  20 MB / imbalance 1.2   (cheapest build/mem)
-			//   dominated      0.6 ms / 25 ms build / 110 MB / imbalance 1.6   (worse than balanced on all)
-			//   matches_balanced 0.5 / 20 / 100 / 1.5  (identical to balanced; co-front, both kept)
+			// Group A: latency-tradeoff front where fast_big, balanced, tiny, and matches_balanced survive but dominated does not.
 			std::vector<Experiments::SchemaSearchRecord> raw;
 			raw.push_back(makeRecord("ds_a", "wl_a", "fast_big",         0.2, 50.0, 200ull * 1024 * 1024, 50.0, 100));
 			raw.push_back(makeRecord("ds_a", "wl_a", "balanced",         0.5, 20.0, 100ull * 1024 * 1024, 40.0, 60));
@@ -1250,7 +1230,7 @@ namespace BaselineTests
 			expect(front.front().paretoRank == 0, "first row of returned front is rank 0");
 		}
 
-		// Phase C2: bootstrap mean + 95% CI helper.
+		// Bootstrap mean + 95% CI helper.
 		{
 			// Deterministic samples: mean is exactly 5.0, CI should bracket it tightly.
 			const std::vector<double> samples = { 4.0, 4.5, 5.0, 5.5, 6.0 };
@@ -1280,9 +1260,7 @@ namespace BaselineTests
 				"bootstrap CI is reproducible for a fixed seed");
 		}
 
-		// Phase C2: Pareto dominance uses latencyMean when the record came out of multi-seed
-		// confirmation. A noisy record with a lucky low single-seed latency must not Pareto-dominate
-		// a stable record whose mean is genuinely better.
+		// Pareto dominance uses latencyMean after multi-seed confirmation, so a lucky single-seed record cannot dominate a better mean.
 		{
 			auto makeRecord = [](const std::string& schemaName, double latencyMs, double buildMs,
 				size_t memoryBytes, double avgOccupancy, size_t maxOccupancy,
@@ -1305,8 +1283,7 @@ namespace BaselineTests
 			std::vector<Experiments::SchemaSearchRecord> raw;
 			// A: noisy single-seed point estimate is 0.1 ms but the confirmed mean across 5 seeds is 1.0 ms.
 			raw.push_back(makeRecord("noisy_lucky", 0.1, 10.0, 50ull * 1024 * 1024, 40.0, 60, 5, 1.0));
-			// B: confirmed mean of 0.5 ms — better than A's confirmed mean, but worse than A's
-			// single-seed point estimate.
+			// B: confirmed mean of 0.5 ms beats A's confirmed mean but not A's single-seed estimate.
 			raw.push_back(makeRecord("stable",       0.6, 10.0, 50ull * 1024 * 1024, 40.0, 60, 5, 0.5));
 
 			const std::vector<Experiments::SchemaSearchRecord> front = Experiments::selectParetoRecords(raw);
@@ -1321,8 +1298,7 @@ namespace BaselineTests
 			expect(!sawNoisy, "noisy single-seed lucky candidate is dominated by the confirmed mean");
 		}
 
-		// Candidates with no conditional levels short-circuit cleanly — no evaluations, score
-		// equals initial, candidate returned unchanged.
+		// Candidates with no conditional levels short-circuit: no evaluations, candidate unchanged.
 		{
 			Experiments::SchemaCandidate flat;
 			flat.config.name = "octree_flat";
@@ -1352,8 +1328,7 @@ namespace BaselineTests
 				"flat candidate is returned unchanged");
 		}
 
-		// Measurement-reliability: confidentlyBetter + annotateRankingConfidence. Default ScoreWeights
-		// (lambdaLatency = 1, no proxy) make bestSelectionScore equal average latency.
+		// Measurement-reliability: confidentlyBetter and annotateRankingConfidence with default ScoreWeights (score equals average latency).
 		{
 			auto makeRecord = [](const std::string& schema, double avgLatency, size_t repeats,
 				double ciLow, double ciHigh) {
@@ -1445,8 +1420,7 @@ namespace BaselineTests
 			expect(fastest == "fast", "pareto rank 0 is the lowest-latency entry");
 		}
 
-		// Zero-build query-cost estimate: coarser leaves test more points per query, so they cost
-		// more even though they visit fewer nodes; a structureless schema estimates a full scan.
+		// Zero-build query-cost estimate: coarser leaves cost more despite fewer nodes; a structureless schema estimates a full scan.
 		{
 			Experiments::PointCloudFeatures features;
 			features.numPoints = 1000000;

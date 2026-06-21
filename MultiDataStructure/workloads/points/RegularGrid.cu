@@ -44,10 +44,7 @@ namespace
 		return static_cast<size_t>(product);
 	}
 
-	// Hard cap that fires even when the user runs with memoryBudgetMb = 0 (unlimited). A grid
-	// past this point is practically unusable for query latency and a near-certain GPU OOM on
-	// any consumer-grade card. 256M cells * 8 bytes (cellStarts + cellEnds) = 2 GB just for the
-	// cell tables, before any point or scratch allocations.
+	// Hard cap (applies even with unlimited budget); 256M cells is ~2 GB of cell tables alone.
 	constexpr size_t MaxCellsPerLevel = 256ull * 1024 * 1024;
 
 	GridShape chooseGridShape(size_t pointCount, size_t leafCapacity, const glm::vec3& coordinateRange)

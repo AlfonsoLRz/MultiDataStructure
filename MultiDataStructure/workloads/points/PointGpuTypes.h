@@ -16,10 +16,7 @@ namespace PointGpu
 		Knn = 3,
 	};
 
-	// Phase B2 split-axis policy for KDTree/BIH. Generators sample over this enum so the same
-	// topology can express both extent-driven and depth-driven partitioning, which produces
-	// genuinely different trees on anisotropic clouds. The CPU build path falls back to
-	// longest-extent regardless; CUDA KDTree/BIH honor the policy.
+	// Split-axis policy for KDTree/BIH; CPU build falls back to longest-extent, CUDA honors it.
 	enum class KdAxisPolicy
 	{
 		LongestExtent = 0,
@@ -33,8 +30,7 @@ namespace PointGpu
 		size_t queryBatchSize = 0;
 		size_t memoryBudgetMb = 0;
 		KdAxisPolicy kdAxisPolicy = KdAxisPolicy::LongestExtent;
-		// "auto" picks the structure's native choice. KDTree/BIH use gpu_tree_knn for
-		// K <= MaxTrackedKnnK; other builders currently use gpu_bruteforce_knn.
+		// "auto" picks the native backend: KDTree/BIH use gpu_tree_knn for K <= MaxTrackedKnnK, else bruteforce.
 		std::string knnBackend = "auto";
 	};
 
@@ -104,14 +100,7 @@ namespace PointGpu
 		int parent;
 		uint32_t pointOffset;
 		uint32_t pointCount;
-		// flags bit layout (KDTree/BIH builders):
-		//   bit  0       : 1 = leaf, 0 = internal (existing semantics)
-		//   bits 1..2    : stored split axis (0 = X, 1 = Y, 2 = Z) — only valid when bit 3 is set
-		//   bit  3       : 1 = the split axis is explicitly stored in bits 1..2;
-		//                  0 = derive axis from node extents at query time (longest-extent policy)
-		//   bits 4..11   : node depth from root (0..255). Lets round-robin queries compute
-		//                  axis = depth % 3 without recursing parents; also useful for diagnostics.
-		//   bits 12..31  : reserved
+		// flags (KDTree/BIH): bit0 leaf; bits1..2 split axis (valid if bit3); bit3 axis stored; bits4..11 depth; bits12..31 reserved.
 		uint32_t flags;
 	};
 

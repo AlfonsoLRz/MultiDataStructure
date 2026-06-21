@@ -23,9 +23,7 @@ namespace Experiments
 		EvaluationCache& operator=(const EvaluationCache&) = delete;
 		~EvaluationCache();
 
-		// Opens (creating if missing) a JSONL-backed cache at the given path. When readOnly is
-		// true, lookups still work but writes are silently dropped. Returns false if the file
-		// could not be opened for writing (read-only stays usable).
+		// Opens (creating if missing) a JSONL-backed cache; readOnly keeps lookups working but drops writes. Returns false if the file could not be opened for writing.
 		bool open(const std::string& filePath, bool readOnly = false);
 		void close();
 
@@ -33,10 +31,7 @@ namespace Experiments
 		bool readOnly() const { return readOnly_; }
 		const std::string& filePath() const { return filePath_; }
 
-		// On hit, copies the cached record into outRecord and returns true. The caller is
-		// responsible for filling fields not persisted by the cache (datasetName / datasetSource /
-		// schemaName / schemaPath / weights / numPoints / workload weights), which depend on the
-		// surrounding run context.
+		// On hit, copies the cached record into outRecord and returns true; the caller fills run-context fields the cache doesn't persist (dataset/schema names, paths, weights, point counts).
 		bool tryGet(const EvaluationCacheKey& key, SchemaSearchRecord& outRecord) const;
 
 		// Appends a record under the given key. No-op when the cache is not open or is read-only.
@@ -64,10 +59,7 @@ namespace Experiments
 		mutable std::atomic<size_t> misses_{0};
 	};
 
-	// Builds a cache key from the live evaluation context. The dataset fingerprint summarises the
-	// cloud identity (name + point count + bounds) so that the same cloud opened from a different
-	// path or rebuilt from the same synthetic seed produces the same key. The schema signature is
-	// supplied by the caller (computed via the existing schemaSignature() helper).
+	// Builds a cache key from the live evaluation context; the dataset fingerprint (name + point count + bounds) keeps the key stable across paths/seeds, and the caller supplies the schema signature.
 	EvaluationCacheKey makeEvaluationCacheKey(
 		const std::string& schemaSignature,
 		const std::string& datasetName,

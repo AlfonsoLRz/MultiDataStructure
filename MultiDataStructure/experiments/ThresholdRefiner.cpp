@@ -68,9 +68,7 @@ static double decodeLog(double x, double lo, double hi)
 	return std::pow(2.0, logLo + clamp01(x) * (logHi - logLo));
 }
 
-// Adds an active threshold dimension if both (a) the candidate has it set and (b) the domain
-// has a non-degenerate bound for it. The plan keeps refinement non-destructive: thresholds
-// the candidate did not set stay unset.
+// Adds a threshold dimension only when the candidate has it set and the domain has a non-degenerate bound, keeping refinement non-destructive.
 template <typename TGetter, typename TBoundProvider>
 static void addDimensionIfActive(
 	std::vector<Experiments::RefinementDimension>& outDims,
@@ -96,8 +94,7 @@ static void addDimensionIfActive(
 	dim.lo = bound.lo;
 	dim.hi = bound.hi;
 	dim.current = static_cast<double>(optional.value());
-	// Snap a current value that falls outside the (possibly tightened) domain back into range
-	// so the initial mean encoding lands in [0,1].
+	// Snap a current value outside the tightened domain back into range so the initial encoding lands in [0,1].
 	dim.current = std::clamp(dim.current, dim.lo, dim.hi);
 	outDims.push_back(dim);
 }
@@ -327,8 +324,7 @@ namespace Experiments
 				bestScore = bestChildScore;
 				bestX = bestChildX;
 				result.refinedCandidate = std::move(bestChildCandidate);
-				// 1/5-rule heuristic for batched ES: expand search when at least one offspring
-				// improved on the parent, contract otherwise.
+				// 1/5-rule heuristic: expand sigma when an offspring improved on the parent, contract otherwise.
 				sigma = std::min(sigma * 1.5, options.sigmaMax);
 			}
 			else
@@ -336,11 +332,7 @@ namespace Experiments
 				sigma = std::max(sigma * 0.8, options.sigmaMin);
 			}
 
-			// Per-generation progress line. The refiner does up to `maxEvaluations` evaluations,
-			// each one is a full build + full query workload on the underlying scoreFn, so a
-			// realistic budget on a 100M-point cloud is several seconds per generation. Without
-			// this log the GUI appears to hang at "[K/N] refining" for minutes. Throttled so a
-			// fast refiner doesn't flood the log.
+			// Throttled per-generation progress line so the GUI doesn't appear to hang during the refiner's expensive full-build evaluations.
 			const auto now = std::chrono::steady_clock::now();
 			const double sinceLastLog = std::chrono::duration<double>(now - lastLogTime).count();
 			if (sinceLastLog >= 2.0 || evaluationsUsed >= options.maxEvaluations)

@@ -49,10 +49,7 @@ namespace
 		return maxDepth;
 	}
 
-	// Reads the first KDTree/BIH level's axisPolicy string. Recognized policy names are
-	// "round_robin" / "round-robin" (Phase B2 new) and the existing extent-driven variants
-	// ("longest_extent", "median_longest_axis", "center_longest_axis"). Anything else falls
-	// back to LongestExtent so unknown / blank policies keep today's behavior.
+	// Reads the first level's axisPolicy; "round_robin" else LongestExtent (also for blank/unknown).
 	PointGpu::KdAxisPolicy axisPolicyFromSchema(const SchemaConfig& schema)
 	{
 		for (const SchemaLevelConfig& level : schema.levels)
@@ -125,8 +122,7 @@ namespace
 		return Experiments::summarizeQueryStats(cpuSamples);
 	}
 
-	// Flag bit layout matches the comment on LinearNode in PointGpuTypes.h:
-	//   bit 0   = leaf, bits 1..2 = stored axis, bit 3 = axis-stored flag, bits 4..11 = depth.
+	// Flag bit layout matches LinearNode in PointGpuTypes.h: bit0 leaf, bits1..2 axis, bit3 axis-stored, bits4..11 depth.
 	constexpr uint32_t kLeafFlagBit = 0x1u;
 	constexpr uint32_t kAxisMask = 0x6u;       // bits 1..2
 	constexpr int kAxisShift = 1;
@@ -282,8 +278,7 @@ namespace
 		root.parent = -1;
 		root.pointOffset = 0;
 		root.pointCount = static_cast<uint32_t>(pointCount);
-		// Root depth 0. For round-robin the root's axis is X; the split kernel rewrites this
-		// when the root actually splits (so leaf-only trees keep flags clean).
+		// Root depth 0; round-robin root axis is X, rewritten by the split kernel when it splits.
 		const bool storeAxis = axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin);
 		root.flags = encodeNodeFlags(true /*temporarily leaf*/, 0, storeAxis, 0u);
 		nodes[0] = root;
@@ -358,9 +353,7 @@ namespace
 			return;
 		}
 
-		// Pick the split axis. Round-robin uses depth%3 so traversal can reproduce the same
-		// axis without re-reading parent metadata at query time. Longest-extent leaves the bit
-		// clear so splitAxisForNode falls back to the extent computation.
+		// Pick the split axis: round-robin uses depth%3; longest-extent leaves the bit clear.
 		int axis = 0;
 		if (axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin))
 			axis = static_cast<int>(depth % 3u);
@@ -1070,10 +1063,7 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 	initializeNodesKernel<<<nodeBlocks, ThreadsPerBlock>>>(_state->nodes, _state->nodeCapacity);
 	CudaHelper::synchronize("initializeKdNodesKernel");
 
-	// Schema's per-level axisPolicy takes precedence over the global options default, so the
-	// generator can request round_robin on a per-candidate basis without round-tripping through
-	// PointGpu::Options. axisPolicyFromSchema returns LongestExtent when the schema policy
-	// string is empty or unrecognized, so this is safe for legacy schema JSONs too.
+	// Schema per-level axisPolicy wins over the options default; falls back to LongestExtent.
 	const PointGpu::KdAxisPolicy resolvedPolicy = axisPolicyFromSchema(schema);
 	const int axisPolicy = static_cast<int>(resolvedPolicy);
 	initializeRootKernel<<<1, 1>>>(

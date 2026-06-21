@@ -10,8 +10,7 @@ namespace Experiments
 		bool enabled = false;
 		// How many candidates from the optimizer archive get refined. 0 keeps the GA's behavior.
 		size_t topK = 4;
-		// Total evaluation budget per candidate (visit-proxy calls inside the inner loop).
-		// 40-80 is the publication-target range; the plan settled on ~60.
+		// Total evaluation budget per candidate (visit-proxy calls in the inner loop); ~60 is the publication target.
 		size_t maxEvaluations = 60;
 		// Population size lambda for the (1+lambda)-ES. 0 = pick automatically (max(4, 4 + 3*ln(n))).
 		size_t populationLambda = 0;
@@ -25,9 +24,7 @@ namespace Experiments
 		std::string outputDirectory = "results/refined_schemas";
 	};
 
-	// Each entry is the *current* value of one threshold field on one schema level. The refiner
-	// optimises the vector of these values. `hi` > `lo` is enforced; degenerate dimensions are
-	// dropped before optimization starts.
+	// One threshold field on one schema level (its current value); the refiner optimises the vector of these, dropping degenerate dimensions before starting.
 	struct RefinementDimension
 	{
 		size_t levelIndex = 0;
@@ -39,16 +36,12 @@ namespace Experiments
 		double current = 0.0;       // value already present on the candidate, used to seed the search
 	};
 
-	// Discovers the active threshold dimensions on `candidate` and clips their bounds against
-	// `domain`. Returns an empty vector when the candidate has no conditional levels or when no
-	// domain bound is available for any active field. Pure function, useful for tests.
+	// Discovers the active threshold dimensions on candidate, clipping bounds against domain; returns empty when there are no conditional levels or no usable bounds. Pure function.
 	std::vector<RefinementDimension> collectRefinementDimensions(
 		const SchemaCandidate& candidate,
 		const ConditionDomain& domain);
 
-	// Applies a decoded threshold vector back onto a fresh copy of the candidate's schema. Returns
-	// the new schema (caller-side wraps it in a fresh SchemaCandidate via the existing
-	// materialise path so it gets a unique signature and JSON file).
+	// Applies a decoded threshold vector onto a fresh copy of the candidate's schema; the caller wraps the result via the materialise path for a unique signature and JSON file.
 	SchemaConfig applyRefinementVector(
 		const SchemaConfig& base,
 		const std::vector<RefinementDimension>& dimensions,
@@ -65,10 +58,7 @@ namespace Experiments
 		size_t dimensions = 0;
 	};
 
-	// (1+lambda)-evolution strategy with adaptive sigma. Picked over full CMA-ES because for
-	// dimensions <= 6 with only ~60 evaluations there is not enough budget to learn a useful
-	// covariance; the cheap sigma-adapted ES converges as fast in practice and is ~3x less code.
-	// Returns the candidate unchanged when there are no active threshold dimensions.
+	// (1+lambda)-ES with adaptive sigma, chosen over CMA-ES since ~60 evaluations can't learn a useful covariance; returns the candidate unchanged when no threshold dimensions are active.
 	ThresholdRefinementResult refineSchemaThresholds(
 		const SchemaCandidate& candidate,
 		const ConditionDomain& domain,

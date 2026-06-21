@@ -4,10 +4,7 @@
 #include "PointSpatialIndex.h"
 #include "RegularGrid.h"
 
-// Upper bound on cells in a single RegularGrid level, derived the same way
-// `chooseGridShape` derives `targetCells`: divUp(pointCount, leafCapacity). The actual cell
-// count after `chooseGridShape` rounds up may exceed this by at most a small factor (one
-// extra cell per active axis), so we add a 1.25x safety margin.
+// Upper bound on cells per RegularGrid level: divUp(pointCount, leafCapacity) plus a 1.25x margin.
 static size_t estimateCellsForLevel(size_t pointCount, size_t leafCapacity)
 {
 	if (pointCount == 0 || leafCapacity == 0)
@@ -26,11 +23,7 @@ static size_t leafCapacityForSchema(const SchemaConfig& schema)
 	return std::max<size_t>(1, leafCapacity);
 }
 
-// Was clamped to 4 historically to keep memory bounded on cards we couldn't measure. With
-// the VRAM auto-detection + aggregate memory pre-check now in place, the build path throws
-// early when a schema would exceed the budget, so the cap can be relaxed. 12 lets `hg6` /
-// `hg9` / `hg12` schemas actually realize their requested level count (previously they
-// silently truncated to 4 and the schema name lied about reality).
+// Max HGrid levels; memory pre-check guards the budget so this cap can stay high.
 static constexpr size_t MaxHGridLevels = 12;
 
 static size_t hgridLevelCountForSchema(const SchemaConfig& schema)
@@ -267,15 +260,10 @@ PointGpu::BuildResult PointGpu::HGrid::build(const PointCloud& cloud, const Sche
 	if (cloud.empty())
 		return result;
 
-	// Aggregate memory pre-check. Each sub-level RegularGrid checks `options.memoryBudgetMb` on
-	// its own, so configurations where each level fits the budget but the *sum* of all levels
-	// exceeds it slip through and fill GPU memory one allocation at a time. Estimate the total
-	// here so pathological cases throw immediately instead of taking minutes / hanging the GPU.
+	// Aggregate memory pre-check: per-level budget checks miss cases where the level sum overflows.
 	if (options.memoryBudgetMb > 0)
 	{
-		// Per-point overhead in the RegularGrid base buffers (DevicePoint + 4 uint32 keys/indices
-		// + radix-sort scratch buffer). The scratch is dataset-dependent so we approximate it
-		// with 1.5x the point buffer size, which matches CUB's worst case for 100M-point sorts.
+		// Per-point RegularGrid overhead (point + 4 uint32 keys/indices); scratch approximated as 1.5x.
 		const size_t basePerPointBytes = sizeof(float) * 3 + sizeof(uint32_t) * 4;
 		const size_t basePerLevelBytes = static_cast<size_t>(cloud.size()) *
 			(basePerPointBytes + sizeof(uint32_t) * 6 / 4);

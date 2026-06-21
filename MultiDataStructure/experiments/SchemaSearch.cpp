@@ -113,10 +113,7 @@ struct EvaluatedCandidate
 	Experiments::SchemaCandidate candidate;
 	std::vector<Experiments::SchemaSearchRecord> records;
 	double aggregateScore = std::numeric_limits<double>::infinity();
-	// Phase B4 NSGA-II tagging. -1 = not ranked yet; otherwise 0 = current Pareto front,
-	// 1 = next front after removing rank 0, etc. crowdingDistance is the sum of normalized
-	// objective gaps to neighbors within the same front (used to break ties; larger = more
-	// isolated, i.e. more diverse).
+	// NSGA-II tagging: paretoFront -1 = unranked, 0 = current front; crowdingDistance sums normalized objective gaps to same-front neighbors (larger = more isolated).
 	int paretoFront = -1;
 	double crowdingDistance = 0.0;
 };
@@ -669,9 +666,7 @@ static double warmUpCudaDevice(const PointGpu::Options& cudaOptions)
 	return elapsedMilliseconds(begin, end);
 }
 
-// Queries total VRAM on the selected (or default) CUDA device. Returns 0 if CUDA is
-// unavailable or the device cannot be queried. Used both for the schema-search header line
-// and to auto-default `memoryBudgetMb` when the caller leaves it at 0.
+// Total VRAM on the selected CUDA device, or 0 if unavailable; used for the header line and to auto-default memoryBudgetMb.
 static size_t cudaTotalVramMb(int deviceHint)
 {
 	int count = 0;
@@ -698,10 +693,7 @@ static PointGpu::Options cudaOptionsFrom(const Experiments::SchemaSearchOptions&
 	cudaOptions.queryBatchSize = options.cuda.queryBatchSize;
 	cudaOptions.memoryBudgetMb = options.cuda.memoryBudgetMb;
 	cudaOptions.knnBackend = options.cuda.knnBackend;
-	// Auto-default the budget to 75% of total VRAM when the caller leaves it at 0. The
-	// HGrid aggregate pre-check and the RegularGrid per-level cap both consult this value,
-	// so a sensible default protects users who haven't manually set it without preventing
-	// the rest of the GPU stack from grabbing the remaining headroom.
+	// Auto-default the budget to 75% of total VRAM when the caller leaves it at 0, leaving headroom for the rest of the GPU stack.
 	if (cudaOptions.memoryBudgetMb == 0)
 	{
 		const size_t totalMb = cudaTotalVramMb(cudaOptions.device);
@@ -1151,9 +1143,7 @@ static bool schemaUsesAdaptiveLeafCapacity(const SchemaConfig& schema)
 	});
 }
 
-// Features the CUDA MixedTree evaluator cannot honor: adaptive leaf capacity and occupancy-
-// entropy conditions. Both are CPU-native, so such schemas can be evaluated on the CPU instead
-// of being dropped from a CUDA-default search.
+// Features the CUDA MixedTree cannot honor (adaptive leaf capacity, occupancy-entropy conditions); these schemas fall back to the CPU evaluator rather than being dropped.
 static bool schemaUsesGpuUnsupportedFeature(const SchemaConfig& schema)
 {
 	if (schemaUsesAdaptiveLeafCapacity(schema))
@@ -1352,9 +1342,7 @@ static SchemaLevelCondition randomLevelCondition(
 			fallbackHeightRatioThresholds());
 	}
 
-	// Phase B3: opportunistically add an anisotropy gate when the domain has one. Sampled
-	// with probability 0.5 to keep half the generated candidates anisotropy-free, so the
-	// optimizer can compare branches that gate on shape vs. branches that don't.
+	// Add an anisotropy gate with probability 0.5 so the optimizer can compare shape-gated branches against ungated ones.
 	if (domain && !domain->anisotropyThresholds.empty())
 	{
 		std::bernoulli_distribution coin(0.5);
@@ -1368,9 +1356,7 @@ static SchemaLevelCondition randomLevelCondition(
 		}
 	}
 
-	// Same pattern for occupancy entropy: 0.5 chance to gate, 0.5 between min/max. Cheap to
-	// add and gives the GA another shape-vs-uniform discriminator without ballooning the
-	// search space (the matchesCondition fast-path skips entropy when no threshold is set).
+	// Same pattern for occupancy entropy: 0.5 chance to gate, then 0.5 between min/max.
 	if (domain && !domain->occupancyEntropyThresholds.empty())
 	{
 		std::bernoulli_distribution coin(0.5);
@@ -1416,10 +1402,7 @@ static std::string schemaSignature(const SchemaConfig& schema)
 				<< "q"
 				<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.queryMixFactor * 100.0));
 		}
-		// Phase B2: include the axis policy in the signature so two KDTree/BIH genomes that
-		// differ only in policy land under distinct cache keys and seenSignatures slots. We
-		// only emit the suffix when the policy meaningfully changes behavior — empty or the
-		// long-standing default is treated as "no suffix" to keep legacy signatures stable.
+		// Fold the axis policy into the signature so policy-only KDTree/BIH variants get distinct keys; default/empty policies emit no suffix to keep legacy signatures stable.
 		if (!level.axisPolicy.empty() &&
 			level.axisPolicy != "median_longest_axis" &&
 			level.axisPolicy != "xy")
@@ -1448,10 +1431,7 @@ static std::string schemaSignature(const SchemaConfig& schema)
 	return output.str();
 }
 
-// Coarser key than schemaSignature: only the level-type sequence. Two schemas with the same
-// topology hash differ only in numeric details (leaf caps, depths, conditions). Used by the
-// diversity audit so we can ask "how many qualitatively distinct shapes did the optimizer
-// actually try, regardless of how many leaf-cap variants of each one it stamped out?".
+// Coarse key: just the level-type sequence, ignoring numeric details. Used by the diversity audit to count qualitatively distinct shapes.
 static std::string schemaTopologyKey(const SchemaConfig& schema)
 {
 	std::ostringstream output;
@@ -1587,10 +1567,7 @@ static SchemaLevelConfig randomLevelConfig(
 	return level;
 }
 
-// Phase B2: KDTree/BIH levels (both share KDTreeNode under the hood) sample over the axis
-// policy. round_robin alternates X/Y/Z by depth; median_longest_axis is the legacy
-// extent-driven default. Coin-flip selection gives the optimizer both variants per topology
-// without exploding the search space.
+// Coin-flips the axis policy for KDTree/BIH levels: round_robin alternates X/Y/Z by depth, median_longest_axis is the legacy extent-driven default.
 static std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataStructureLevel type)
 {
 	if (type == MultiDataStructure::QuadTreeNode)
@@ -1625,9 +1602,7 @@ static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::Sc
 	const bool compatibleHGrid = level.type == MultiDataStructure::OctreeNode && isHGridLevelName(level.typeName);
 	if (!compatibleBIH && !compatibleKarras && !compatibleLBVH && !compatibleRegularGrid && !compatibleHGrid)
 		level.typeName = Config::dataStructureLevelName(level.type);
-	// Preserve axisPolicy if it's already set to a recognized value; only reset when the
-	// type is not KDTree-family. Lets crossover/mutation children inherit their parent's
-	// sampled policy instead of being clobbered back to median_longest_axis.
+	// Preserve a recognized axisPolicy, resetting only for non-KDTree-family types, so children inherit their parent's sampled policy.
 	if (level.type == MultiDataStructure::QuadTreeNode)
 	{
 		if (level.axisPolicy.empty())
@@ -1762,7 +1737,7 @@ static void mutateLevelCondition(
 		}
 		break;
 	case 6:
-		// Phase B3 anisotropy edit: toggle a min/max anisotropy threshold from the domain.
+		// Toggle a min/max anisotropy threshold from the domain.
 		if (domain && !domain->anisotropyThresholds.empty())
 		{
 			std::bernoulli_distribution minOrMax(0.5);
@@ -1860,11 +1835,7 @@ static void mutateAdaptiveLeafCapacity(
 	normalizeAdaptiveLeafCapacity(level);
 }
 
-// Single-point crossover on the level list. Splices the first `splitA` levels from parent A
-// with the tail of parent B starting at `splitB`. Lets the search reach topology combinations
-// neither parent had — e.g. parent A is "QuadTree -> Octree" and parent B is "BIH -> LBVH",
-// crossover can produce "QuadTree -> LBVH" which mutation alone would never reach because
-// it requires two simultaneous local edits in a narrow window.
+// Single-point crossover on the level list: first splitA levels of parent A spliced with parent B's tail from splitB, reaching topology combinations neither parent had.
 static SchemaConfig crossoverSchemaConfigs(
 	const SchemaConfig& parentA,
 	const SchemaConfig& parentB,
@@ -1879,8 +1850,7 @@ static SchemaConfig crossoverSchemaConfigs(
 	size_t splitA = cutADist(rng);
 	size_t splitB = cutBDist(rng);
 
-	// Reject the degenerate case "take all of A or all of B" — that just returns a parent
-	// untouched and burns a child slot for nothing.
+	// Reject the degenerate "all of A or all of B" case, which just returns a parent untouched.
 	if (splitA == 0 && splitB == 0)
 		splitA = 1;
 	else if (splitA == parentA.levels.size() && splitB == parentB.levels.size())
@@ -1894,8 +1864,7 @@ static SchemaConfig crossoverSchemaConfigs(
 	for (size_t i = splitB; i < parentB.levels.size(); ++i)
 		child.levels.push_back(parentB.levels[i]);
 
-	// Hand off to the same normalization the mutation operator uses so depth caps, leaf-cap
-	// monotonicity, and root-level condition stripping match the rest of the population.
+	// Reuse the mutation operator's normalization so depth caps, leaf-cap monotonicity, and root-condition stripping match the rest of the population.
 	normalizeSchemaForGeneration(child, options);
 	return child;
 }
@@ -2003,8 +1972,7 @@ static SchemaConfig mutateSchemaConfig(
 			}
 			break;
 		case 8:
-			// Phase B2 axis-policy flip. Only meaningful for KDTree/BIH levels — for others
-			// it's a no-op so the slot doesn't waste mutation budget.
+			// Axis-policy flip; meaningful only for KDTree/BIH levels, a no-op elsewhere.
 			if (level.type == MultiDataStructure::KDTreeNode)
 			{
 				level.axisPolicy = (level.axisPolicy == "round_robin")
@@ -2401,12 +2369,7 @@ static void appendGeneratedSchemas(
 	if (options.count == 0)
 		return;
 
-	// Pass the (optional) per-cloud condition domain through so the generator's conditional
-	// thresholds are calibrated to actual cloud statistics rather than the generic fallbacks.
-	// Without this, on a real LiDAR cloud the GA's initial population samples conditions like
-	// `minPoints >= 4096` that match basically every node, so conditional gates never fire and
-	// the optimizer wastes generations polishing decoration. The auto-conditions path already
-	// computes this domain at its top; runSchemaSearch now does the same and feeds it here.
+	// Pass the per-cloud condition domain so the generator calibrates conditional thresholds to actual cloud statistics instead of generic fallbacks that never fire.
 	std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(options, domain);
 	schemas.insert(schemas.end(), std::make_move_iterator(generated.begin()), std::make_move_iterator(generated.end()));
 }
@@ -2419,9 +2382,7 @@ static const std::vector<std::string>& baselineSchemaPaths(bool cudaEvaluator)
 		"configs/schemas/kdtree.json",
 		"configs/schemas/bvh.json",
 	};
-	// CUDA keeps the GPU-native single-block controls because the builders can differ in
-	// query behavior there; CPU discovery omits these aliases because they collapse to the
-	// compatible base families.
+	// CUDA keeps the GPU-native single-block controls (builders differ in query behavior); CPU discovery omits these aliases since they collapse to the base families.
 	static const std::vector<std::string> cudaPaths = {
 		"configs/schemas/quadtree.json",
 		"configs/schemas/octree.json",
@@ -2495,8 +2456,7 @@ static std::vector<Experiments::SchemaCandidate> selectBenchmarkSchemas(
 		if (!options.estimatePrefilter)
 			return std::vector<Experiments::SchemaCandidate>(schemas.begin(), schemas.begin() + options.benchmarkTopK);
 
-		// Model-free cheap pre-filter: rank by the zero-build query-cost estimate (no index built)
-		// and keep the cheapest K, instead of an arbitrary first-K prefix.
+		// Cheap model-free pre-filter: rank by the zero-build query-cost estimate and keep the cheapest K rather than an arbitrary first-K prefix.
 		const Experiments::ScoreWeights weights = effectiveScoreWeights(workload, options);
 		const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset.cloud);
 		const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
@@ -3066,9 +3026,7 @@ static void appendSchemaQueryTrace(
 	}
 }
 
-// Summarize run-to-run timing noise from a set of per-repeat batch-average latencies into the
-// reliability fields on a QueryMetrics. Deterministic (fixed bootstrap seed) so cached/replayed
-// runs are reproducible. With a single repeat the CI degenerates to the point estimate.
+// Summarizes per-repeat latency noise into QueryMetrics reliability fields, deterministically (fixed bootstrap seed); a single repeat degenerates the CI to the point estimate.
 static void fillLatencyReliability(Experiments::QueryMetrics& metrics, const std::vector<double>& repeatMeanLatencies)
 {
 	if (repeatMeanLatencies.empty())
@@ -3287,9 +3245,7 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	ActiveStructureStats activeStats;
 	const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
 
-	// CUDA cannot honor adaptive leaf capacity or occupancy-entropy conditions. Rather than drop
-	// such candidates from a CUDA-default search, fall back to the CPU evaluator (these features
-	// are CPU-native). The record keeps backend = "cpu" so the fallback is visible in the output.
+	// CUDA can't honor adaptive leaf capacity or occupancy-entropy conditions, so fall back to the CPU evaluator; the record keeps backend = "cpu" to make the fallback visible.
 	const bool cpuFallbackForGpuFeature = useCudaEvaluator(options) && schemaUsesGpuUnsupportedFeature(effectiveConfig);
 
 	if (useCudaEvaluator(options) && !cpuFallbackForGpuFeature)
@@ -3591,11 +3547,7 @@ static EvaluatedCandidate evaluateCandidate(
 				? &(*cudaCache)[datasetContext.dataset]
 				: nullptr;
 
-			// Wrap the per-(dataset, workload) evaluation so a single failed candidate (e.g.
-			// HGrid configurations that blow the memory budget, KDTree builds that hit a
-			// CUDA OOM, malformed schema JSONs) cannot kill the whole optimizer run. The
-			// failed candidate gets a sentinel record with infinite score and the GA moves
-			// on to the next one.
+			// Wrap each per-(dataset, workload) evaluation so a single failed candidate gets a sentinel infinite-score record instead of killing the whole optimizer run.
 			try
 			{
 				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidateCached(
@@ -4003,9 +3955,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 	if (!output.is_open())
 		throw std::runtime_error("Unable to open schema-search Pareto CSV path: " + csvPath);
 
-	// Compact column set focused on the four Pareto objectives plus enough identity to replay
-	// the candidate. The full feature-rich layout stays in the `best` CSV; this one is meant
-	// for plotting the front, not training.
+	// Compact column set: the four Pareto objectives plus enough identity to replay the candidate, meant for plotting the front (the full layout stays in the best CSV).
 	output
 		<< "dataset_name,workload_name,query_strata_summary,pareto_rank,is_knee,schema_name,schema_path,score,"
 		<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
@@ -4674,10 +4624,7 @@ struct CandidateObjectives
 	double imbalancePenalty = 0.0;
 };
 
-// Averages the four Pareto objectives across an EvaluatedCandidate's records (one per
-// (dataset, workload)). For single-dataset / single-workload runs — the publication target —
-// this is the record's metrics verbatim. For multi-dataset sweeps, averaging treats all
-// datasets equally, which matches how `aggregateScore` already combines per-record scores.
+// Averages the four Pareto objectives across a candidate's per-(dataset, workload) records, weighting all datasets equally like aggregateScore does.
 static CandidateObjectives objectivesOf(const EvaluatedCandidate& evaluation)
 {
 	CandidateObjectives obj;
@@ -4685,9 +4632,7 @@ static CandidateObjectives objectivesOf(const EvaluatedCandidate& evaluation)
 		return obj;
 	for (const Experiments::SchemaSearchRecord& record : evaluation.records)
 	{
-		// Use the seed-averaged mean when multi-seed confirmation was run, otherwise the
-		// single-seed point estimate. Mirrors the Pareto step in selectParetoRecords so the
-		// optimizer and the CSV agree on what "latency" means.
+		// Seed-averaged mean when multi-seed confirmation ran, else the single-seed estimate; mirrors selectParetoRecords so optimizer and CSV agree on "latency".
 		const double latency = record.confirmSeedsUsed > 0
 			? record.latencyMean
 			: record.queryMetrics.averageLatencyMs;
@@ -4724,12 +4669,7 @@ static bool dominatesCandidate(const CandidateObjectives& a, const CandidateObje
 		a.imbalancePenalty < b.imbalancePenalty;
 }
 
-// Standard NSGA-II fast non-dominated sort + crowding distance. After this call, each
-// EvaluatedCandidate has its `paretoFront` (0 = best, higher = worse) and `crowdingDistance`
-// fields populated, and the vector is sorted: smaller paretoFront first, ties broken by
-// larger crowdingDistance (more isolated = preferred). Lets the GA pick elites that are not
-// only good but spread across the front, which directly addresses the "one corridor" failure
-// mode of scalar-score elite selection.
+// NSGA-II fast non-dominated sort + crowding distance: populates paretoFront (0 = best) and crowdingDistance, sorting by front then larger crowding so elites stay spread across the front.
 static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 {
 	const size_t n = evaluations.size();
@@ -4788,8 +4728,7 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 		currentFront = std::move(nextFront);
 	}
 
-	// Crowding distance per front. The candidate at each objective's extreme gets +inf so the
-	// edges of the front are always preserved when elites are picked.
+	// Crowding distance per front; each objective's extreme candidate gets +inf so front edges are always preserved.
 	std::map<int, std::vector<size_t>> fronts;
 	for (size_t i = 0; i < n; ++i)
 		fronts[evaluations[i].paretoFront].push_back(i);
@@ -4840,22 +4779,11 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 			return a.paretoFront < b.paretoFront;
 		if (a.crowdingDistance != b.crowdingDistance)
 			return a.crowdingDistance > b.crowdingDistance;
-		// Tie-break by scalar score. Critical when the Pareto front is near-1D (e.g. when
-		// lambdaBuild = lambdaMemory = lambdaImbalance = 0 so only avg_latency varies
-		// meaningfully): every front-edge candidate gets crowdingDistance = +inf, including
-		// the max-latency / max-build / max-memory candidates. Without this tie-break, the
-		// std::sort comparator gives undefined ordering among +inf candidates and the
-		// scalar-worst-but-edge candidate can land at archive[0], poisoning the elite pool.
-		// Children of that elite drag subsequent generations worse — the regression the
-		// user reported.
+		// Tie-break by scalar score: on a near-1D front every edge candidate gets +inf crowding, so without this the worst-but-edge one could land at archive[0] and poison the elite pool.
 		return a.aggregateScore < b.aggregateScore;
 	});
 
-	// Hard-guarantee elitism: archive[0] is the actual scalar champion. Even with the
-	// tie-break above, future ranking changes (or Pareto-front geometry that doesn't pin
-	// the scalar best to a +inf crowding cell) could put a non-champion at index 0. Run a
-	// final pass that swaps the scalar best into slot 0 — cost is one min_element, the
-	// rest of the archive ordering is preserved.
+	// Hard-guarantee elitism: a final pass swaps the scalar champion into archive[0], since ranking or front geometry could otherwise leave a non-champion there.
 	auto scalarBest = std::min_element(evaluations.begin(), evaluations.end(),
 		[](const EvaluatedCandidate& a, const EvaluatedCandidate& b) {
 			return a.aggregateScore < b.aggregateScore;
@@ -5248,11 +5176,7 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 	return candidates;
 }
 
-// Returns a key identifying the candidate's primary block type — what sits at the root of
-// its tree. Used to guarantee primary-block diversity when advancing top-K between rungs.
-// Two candidates that both start with Octree (regardless of their nested blocks) share a
-// key; this lets the diversifier preserve "at least one Octree-rooted survivor" even when
-// the score-sort is dominated by a different family.
+// Key for the candidate's root (primary) block type, so the diversifier can keep at least one survivor per family when advancing top-K between rungs.
 static std::string primaryBlockKey(const SchemaConfig& schema)
 {
 	if (schema.levels.empty())
@@ -5264,13 +5188,7 @@ static std::vector<Experiments::SchemaCandidate> topCandidates(
 	const std::vector<EvaluatedCandidate>& evaluations,
 	size_t count)
 {
-	// Score-sorted advancement, but with a per-primary-block diversity pass first. The
-	// motivation is the proxy-rung asymmetry: visit-proxy scoring underestimates HGrid's
-	// real wall-clock cost, so HGrid candidates sweep the top of R0's score-sort and the
-	// shortlist becomes mono-cultural. By guaranteeing one survivor per primary block type
-	// before filling the rest by score, the latency rung gets to compare apples to apples
-	// (an Octree-rooted candidate vs. a HGrid-rooted candidate) instead of comparing HGrid
-	// variants to each other.
+	// Score-sorted advancement with a per-primary-block diversity pass first, so visit-proxy bias toward HGrid can't make the shortlist mono-cultural.
 	std::vector<Experiments::SchemaCandidate> result;
 	const size_t limit = count == 0 ? evaluations.size() : std::min(count, evaluations.size());
 	result.reserve(limit);
@@ -5307,8 +5225,7 @@ static std::vector<Experiments::SchemaCandidate> topCandidates(
 	if (diverseCount > 1 && diverseCount < result.size())
 		std::cout << "    + advanced " << diverseCount << " distinct primary-block type(s) into next rung\n";
 
-	// Force-promote any baseline candidate that wasn't already in the top-K so the operator
-	// always sees how naive single-block structures perform at the next stage.
+	// Force-promote any baseline not already in the top-K so naive single-block structures are always compared at the next stage.
 	size_t baselinesAdded = 0;
 	for (const EvaluatedCandidate& evaluation : evaluations)
 	{
@@ -5706,9 +5623,7 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 	std::vector<EvaluatedCandidate> evaluations(candidates.size());
 	if (parallelWorkers > 1)
 	{
-		// CPU-only parallel dispatch. The CUDA per-builder cache is not thread-safe so the
-		// CUDA path stays serial; only the score cache (Phase 1) survives concurrency here,
-		// and it is internally locked.
+		// CPU-only parallel dispatch; the CUDA per-builder cache isn't thread-safe so CUDA stays serial, and only the internally-locked score cache is shared here.
 		std::atomic<size_t> nextIndex{0};
 		std::vector<std::thread> workers;
 		workers.reserve(parallelWorkers);
@@ -5980,18 +5895,14 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 	const std::vector<SearchDataset> proxyDatasets = makeProxyDatasets(datasets, autoOptions.proxyPointCap);
 	const std::vector<Experiments::WorkloadProfile> proxyWorkloads = withQueryCount(workloads, autoOptions.proxyQueryCount);
 	const std::vector<DatasetContext> proxyContexts = makeDatasetContexts(proxyDatasets, proxyWorkloads, cudaEvaluator);
-	// Proxy stage ranks candidates by deterministic visit-count surrogate (cheap, noise-free)
-	// rather than wall-clock latency. The shortlist and confirmation stages fall back to latency.
+	// Proxy stage ranks by a deterministic visit-count surrogate (cheap, noise-free); shortlist and confirmation stages fall back to latency.
 	Experiments::SchemaSearchOptions proxyOptions = discoveryOptions;
 	proxyOptions.weights.useVisitProxy = true;
 	proxyOptions.scoreStage = "proxy";
 	proxyOptions.scoreIsFinalLatency = false;
 	if (proxyOptions.weights.visitProxyAlpha <= 0.0)
 		proxyOptions.weights.visitProxyAlpha = 0.1;
-	// Without a build-time penalty, the visit-proxy can promote pathological schemas with
-	// low per-query visit counts but catastrophic build cost (deep hierarchical grids, etc.).
-	// They look great on the downsampled proxy cloud and then stall the shortlist when rebuilt
-	// on the full cloud. A small lambdaBuild keeps build time honest in the proxy ranking.
+	// A small lambdaBuild keeps build time honest in the proxy ranking, so schemas with low visit counts but catastrophic build cost can't sweep the proxy cloud and stall the shortlist.
 	if (proxyOptions.weights.lambdaBuild <= 0.0)
 		proxyOptions.weights.lambdaBuild = 1.0;
 	std::cout << "  auto-conditions: proxy stage uses visit-count surrogate (alpha="
@@ -6079,15 +5990,7 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 	return records;
 }
 
-// Runs one batch of candidates through the configured rung schedule. Each rung gets its own
-// `WorkloadProfile` (via withQueryCount) and its own `ScoreWeights` override (visit-proxy on/off,
-// alpha). The cache fingerprint already mixes the visit-proxy flag and the effective query count
-// (workload.numQueries) so cached rows do not bleed between rungs even though the underlying
-// schema/dataset are the same.
-//
-// Returns the final-rung evaluations (sorted best-first). `finalRecordsOut` receives the
-// SchemaSearchRecords from the highest-fidelity rung only — intermediate rungs still populate
-// the score cache but their rows are not duplicated into the CSV.
+// Runs a batch through the rung schedule (each rung has its own WorkloadProfile and ScoreWeights) and returns the final-rung evaluations best-first; finalRecordsOut gets only the highest-fidelity rung's records.
 static std::vector<EvaluatedCandidate> runRungSchedule(
 	const std::string& batchLabel,
 	const std::vector<Experiments::SchemaCandidate>& inputBatch,
@@ -6149,13 +6052,7 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 				? evaluations.size()
 				: std::min(rung.advanceTopK, evaluations.size());
 
-			// Diverse-by-primary advancement: guarantee each distinct primary-block type
-			// has at least one survivor passing to the next rung before filling the rest by
-			// score. Without this, a proxy-rung asymmetry (visit-proxy under-counts HGrid's
-			// real GPU cost, for example) can sweep HGrid descendants into every promotion
-			// slot, starving the latency rung of any Octree/KDTree-rooted candidates to
-			// compare against. Reuses the same `primaryBlockKey` helper as the auto-condition
-			// `topCandidates` filter for consistency.
+			// Diverse-by-primary advancement: each primary-block type keeps at least one survivor before slots fill by score, so proxy bias can't starve the latency rung of a whole family.
 			std::vector<size_t> advanceOrder;
 			advanceOrder.reserve(keep);
 			std::unordered_set<std::string> primarySeen;
@@ -6215,17 +6112,11 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 	std::vector<Experiments::SchemaSearchRecord> records;
 	CudaIndexCache cudaCache;
 
-	// Phase B4 diversity audit: count distinct topology hashes (level-type sequence only,
-	// ignoring leaf caps / depth / conditions) across every evaluated candidate. Reported at
-	// end of run so we can tell whether the GA explored qualitatively different shapes or
-	// just polished a single corridor of the search space.
+	// Diversity audit: count distinct topology hashes across evaluated candidates, reported at end of run to show whether the GA explored varied shapes or one corridor.
 	std::map<std::string, size_t> topologyCounts;
 	size_t totalEvaluatedCandidates = 0;
 
-	// Picks the right ordering helper based on options.useNsga2Ranking. NSGA-II ranks by
-	// non-dominated front first (smaller = better), ties broken by larger crowding distance
-	// (more isolated = preferred). Scalar fallback keeps the single-score path bit-for-bit
-	// identical to pre-B4 behavior.
+	// Picks the ordering helper per options.useNsga2Ranking: NSGA-II by front then crowding distance, else the scalar single-score path.
 	auto rankArchive = [&]() {
 		if (evolution.useNsga2Ranking)
 			nsga2RankAndSort(archive);
@@ -6289,9 +6180,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		if (candidates.empty())
 			return;
 
-		// Topology audit: every candidate that makes it this far counts, whether or not it
-		// survives the rung schedule's downstream filters. Lets the diversity report capture
-		// the *attempted* search breadth, not just what the front rewarded.
+		// Topology audit counts every candidate reaching here, so the diversity report captures attempted search breadth rather than only what the front rewarded.
 		for (const Experiments::SchemaCandidate& candidate : candidates)
 		{
 			++topologyCounts[schemaTopologyKey(candidate.config)];
@@ -6319,9 +6208,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		std::vector<EvaluatedCandidate> evaluations(candidates.size());
 		if (parallelWorkers > 1)
 		{
-			// CPU-only parallel dispatch. The CUDA index cache is bypassed because its
-			// per-builder build cache is not thread-safe. The score cache is internally
-			// synchronised so it is safe to share across workers.
+			// CPU-only parallel dispatch; the CUDA index cache is bypassed (per-builder build cache isn't thread-safe), while the internally-synchronised score cache is shared across workers.
 			std::atomic<size_t> nextIndex{0};
 			std::vector<std::thread> workers;
 			workers.reserve(parallelWorkers);
@@ -6448,9 +6335,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			}
 		}
 
-		// Bayesian acquisition step: ask the surrogate to rank a fresh pool and inject its
-		// top-K predictions as additional children alongside random immigrants. Cheap (no
-		// measurement) and decouples optimizer progress from the GA's pure mutation noise.
+		// Bayesian acquisition step: have the surrogate rank a fresh pool and inject its top-K predictions as extra children, cheaply decoupling progress from pure mutation noise.
 		if (surrogate.active
 			&& evolution.rungSchedule.surrogateCandidatePool > 0
 			&& evolution.rungSchedule.surrogateProposalsPerStep > 0
@@ -6496,16 +6381,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			bool wasCrossover = false;
 			if (currentEliteCount >= 2 && useCrossover(rng))
 			{
-				// Champion-anchored crossover: archive[0] is always one parent (it's the
-				// scalar champion after NSGA-II's tie-break + the post-sort iter_swap), the
-				// other is sampled from the remaining elites. This guarantees every
-				// crossover child inherits half its blocks from the current best-known
-				// schema and explores the other half. Without anchoring, random elite-elite
-				// splices often produce children worse than either parent because crossover
-				// has no signal about which blocks are good at which depths — and the user
-				// observed the baselines beating evolved candidates exactly because of
-				// this. Anchoring keeps the champion's DNA in every crossover child while
-				// the second parent provides the variation.
+				// Champion-anchored crossover: archive[0] (the scalar champion) is always one parent, the other sampled from the elites, so every child inherits half the best-known schema.
 				const size_t aIdx = 0;
 				std::uniform_int_distribution<size_t> partnerDistribution(1, currentEliteCount - 1);
 				const size_t bIdx = partnerDistribution(rng);
@@ -6555,10 +6431,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 	if (!archive.empty())
 		std::cout << "  optimizer best aggregate: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
 
-	// Phase B4 diversity audit. Reports distinct topology shapes attempted across the run
-	// vs. the total candidate count. A low distinct-to-total ratio means the GA spent its
-	// budget refining a few corridors instead of exploring the manifold — fix is then to
-	// raise crossoverRate, enable NSGA-II ranking, or broaden the generator's bounds.
+	// Diversity audit: distinct topology shapes vs. total candidates; a low ratio means the GA refined a few corridors instead of exploring the manifold.
 	if (totalEvaluatedCandidates > 0)
 	{
 		std::cout << "  diversity audit: " << topologyCounts.size()
@@ -6579,9 +6452,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 				<< (sortedTopologies[i].first.empty() ? "<empty>" : sortedTopologies[i].first) << '\n';
 		}
 
-		// Front-0 diversity is the load-bearing number: if every Pareto-front entry has the
-		// same topology, B4 (or richer generation in B2/B3) needs more pressure. Computed
-		// only when NSGA-II ran, so the front ranks are populated.
+		// Front-0 diversity is the key signal: if every Pareto-front entry shares a topology, ranking/generation needs more pressure. Computed only when NSGA-II ran.
 		if (evolution.useNsga2Ranking)
 		{
 			std::set<std::string> frontTopologies;
@@ -6596,11 +6467,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		}
 	}
 
-	// Threshold refinement (Phase B1). Picks the top-K archive entries with conditional
-	// levels and runs a continuous-parameter (1+lambda)-ES on the active threshold vector.
-	// Each refiner evaluation uses the visit-proxy on the first dataset+workload (cheap and
-	// deterministic), and then the resulting refined candidate is measured at full fidelity
-	// so it lands in the records/CSV like any other candidate.
+	// Threshold refinement: runs a (1+lambda)-ES on the top-K conditional candidates using the cheap visit-proxy, then re-measures each refined candidate at full fidelity.
 	if (evolution.refineThresholds && !archive.empty() && !datasets.empty() && !workloads.empty())
 	{
 		const size_t topK = std::max<size_t>(1, evolution.refineThresholdsTopK);
@@ -6623,18 +6490,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			? std::string("results/refined_schemas")
 			: options.generation.outputDirectory + "/refined";
 
-		// Visit-proxy score function: builds the candidate against the first dataset's
-		// PreparedWorkload and returns the resulting `record.score`. Reuses
-		// `benchmarkSchemaCandidateCached` so cache hits between refinement iterations come
-		// for free. We force `weights.useVisitProxy = true` (cheap, deterministic) regardless
-		// of the user's measurement-level score weights, AND clamp the workload to a small
-		// query count for refinement evaluations. The refiner does up to maxEvaluations
-		// (default 60) full-fidelity builds per candidate; with the user's full workload
-		// (often 64+ queries on a 100M-point cloud) each evaluation runs the full sweep and
-		// total refinement time balloons. Refinement only needs to navigate the threshold
-		// landscape, not produce a final number — 8 queries are enough to discriminate
-		// neighboring threshold vectors, and the post-refinement re-measurement at full
-		// fidelity gives the final reported score.
+		// Visit-proxy score function: scores against the first dataset with useVisitProxy forced on and a small query count, since refinement only needs to navigate the threshold landscape, not produce the final number.
 		Experiments::SchemaSearchOptions proxyOptions = options;
 		proxyOptions.weights.useVisitProxy = true;
 		proxyOptions.scoreStage = "refine_proxy";
@@ -6645,17 +6501,13 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		const DatasetContext& primary = datasets.front();
 		const Experiments::WorkloadProfile fullWorkload = workloads.front();
 		Experiments::WorkloadProfile refinerWorkload = fullWorkload;
-		// 8 queries is the same query budget the auto-conditions proxy stage uses by default;
-		// the threshold refiner's job is qualitatively identical (cheap deterministic ranking
-		// of neighboring threshold vectors).
+		// 8 queries matches the auto-conditions proxy stage default; the refiner just needs cheap deterministic ranking of neighboring threshold vectors.
 		constexpr size_t kRefinerProxyQueryCount = 8;
 		if (refinerWorkload.numQueries > kRefinerProxyQueryCount)
 			refinerWorkload.numQueries = kRefinerProxyQueryCount;
 		const Experiments::WorkloadFeatures primaryWorkloadFeatures = Experiments::extractWorkloadFeatures(refinerWorkload, proxyOptions.weights);
 
-		// Prepare a separate PreparedWorkload for the trimmed query count so the cache
-		// fingerprint reflects the smaller workload and per-seed cache hits accumulate
-		// across refinement iterations.
+		// Separate PreparedWorkload for the trimmed query count so its cache fingerprint reflects the smaller workload and per-seed hits accumulate across iterations.
 		const PreparedWorkload refinerPrepared = prepareWorkloadProfile(refinerWorkload, primary.dataset->cloud, useCudaEvaluator(proxyOptions));
 
 		std::cout << "  refinement workload: " << refinerWorkload.numQueries
@@ -6718,10 +6570,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 	return records;
 }
 
-// Phase C2: re-measure the top-K candidates per (dataset, workload) with multiple query
-// seeds, then store seed-averaged mean + 95% bootstrap CI on (avgLatency, p95Latency,
-// gpuBuild). The Pareto step (and the best-CSV view of latency) will prefer these means
-// over the single-seed point estimate.
+// Re-measures the top-K candidates per (dataset, workload) over multiple query seeds, storing seed-averaged mean + 95% bootstrap CI that the Pareto step prefers over the point estimate.
 static const SearchDataset* findDatasetByName(const std::vector<SearchDataset>& datasets, const std::string& name)
 {
 	for (const SearchDataset& dataset : datasets)
@@ -6808,8 +6657,7 @@ static void runMultiSeedConfirmation(
 			for (size_t s = 0; s < options.confirmSeeds; ++s)
 			{
 				Experiments::WorkloadProfile seededWorkload = *workload;
-				// 7919 is a prime offset that decorrelates seeded sub-runs even when the
-				// caller's base querySeed is also bumped between invocations.
+				// 7919 is a prime offset that decorrelates seeded sub-runs even as the base querySeed is bumped between invocations.
 				seededWorkload.querySeed = workload->querySeed + static_cast<uint32_t>(7919u * (s + 1));
 				const PreparedWorkload preparedWorkload = prepareWorkloadProfile(
 					seededWorkload, dataset->cloud, cudaEvaluator);
@@ -6917,8 +6765,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	std::vector<double> extentXValues;
 	std::vector<double> extentYValues;
 	std::vector<double> extentZValues;
-	// Phase B3 anisotropy samples: `1 - shortExtent / longExtent` per sketch cell. Root counts too
-	// so the quantile estimator has at least one sample on extremely uniform clouds.
+	// Anisotropy samples (1 - shortExtent / longExtent) per sketch cell; the root counts too so the quantile estimator has a sample even on uniform clouds.
 	std::vector<double> anisotropyValues;
 
 	const glm::vec3 rootExtent = glm::max(cloud.bounds().size(), glm::vec3(0.0f));
@@ -7011,18 +6858,13 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 		if (!anisotropyValues.empty())
 			addUniqueDouble(domain.anisotropyThresholds, std::clamp(quantileValue(anisotropyValues, quantile), 0.0, 1.0));
 	}
-	// Default fallback anisotropy gates when the sketch yielded too few samples — covers a
-	// reasonable spread from "near-cubic" to "highly elongated" so the generator always has
-	// something to sample from.
+	// Fallback anisotropy gates spanning near-cubic to highly elongated, used when the sketch yielded too few samples.
 	if (domain.anisotropyThresholds.size() < 3)
 	{
 		for (const double fallback : { 0.1, 0.25, 0.4, 0.55, 0.7, 0.85 })
 			addUniqueDouble(domain.anisotropyThresholds, fallback);
 	}
-	// Occupancy-entropy thresholds. Fixed spread over [0.1, 0.9] in the [0, 1] normalized space
-	// covers the useful gating range — values near 0 fire on extremely clustered nodes, values
-	// near 1 fire on near-uniform ones. No per-cloud anchoring needed since the per-node entropy
-	// is itself normalized by ln(64) at evaluation time.
+	// Occupancy-entropy thresholds: fixed spread over the normalized [0, 1] range (near 0 fires on clustered nodes, near 1 on uniform ones); no per-cloud anchoring since entropy is already normalized by ln(64).
 	for (const double fallback : { 0.15, 0.30, 0.45, 0.60, 0.75, 0.90 })
 		addUniqueDouble(domain.occupancyEntropyThresholds, fallback);
 
@@ -7422,9 +7264,7 @@ double Experiments::computeSchemaSearchScore(
 		weights.lambdaImbalance * imbalancePenalty;
 }
 
-// Memory footprint in MB, preferring the measured GPU allocation for CUDA records and falling
-// back to the crude CPU-side estimate otherwise. Keeps the memory objective honest for GPU runs
-// instead of ranking a measured value against a closed-form estimate.
+// Memory footprint in MB, preferring the measured GPU allocation for CUDA records and falling back to the crude CPU-side estimate, so the memory objective stays honest for GPU runs.
 static double recordMemoryMb(const Experiments::SchemaSearchRecord& record)
 {
 	const size_t bytes = (record.backend == "cuda" && record.gpuMemoryBytes > 0)
@@ -7482,9 +7322,7 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 
 bool Experiments::confidentlyBetter(const SchemaSearchRecord& a, const SchemaSearchRecord& b)
 {
-	// Prefer the multi-seed confirmation CI (re-drawn query sets); fall back to the measurement-
-	// repeat CI (re-timed batch). Both bound the latency distribution; without either there is no
-	// interval to separate and we cannot claim confidence.
+	// Prefer the multi-seed confirmation CI, falling back to the measurement-repeat CI; without either there is no interval to separate and no confidence to claim.
 	double aHigh = 0.0;
 	double bLow = 0.0;
 	bool haveInterval = false;
@@ -7534,8 +7372,7 @@ void Experiments::annotateRankingConfidence(std::vector<SchemaSearchRecord>& rec
 			}
 		}
 
-		// A lone candidate is trivially the unambiguous winner; otherwise require non-overlapping
-		// latency CIs between the winner and the runner-up.
+		// A lone candidate wins trivially; otherwise require non-overlapping latency CIs between winner and runner-up.
 		const bool confident = !haveRunner
 			? true
 			: Experiments::confidentlyBetter(records[bestIdx], records[runnerIdx]);
@@ -7658,8 +7495,7 @@ void Experiments::reportProxyLatencyCorrelation(const std::vector<SchemaSearchRe
 	}
 }
 
-// Spatial branching factor and partitioned dimensionality for a primitive, used to turn a leaf
-// count into a per-axis leaf count and an internal-node multiplier.
+// Spatial branching factor and partitioned dimensionality for a primitive, used to turn a leaf count into a per-axis leaf count and an internal-node multiplier.
 static std::pair<double, int> primitiveBranchingAndDims(SchemaPrimitiveKind kind)
 {
 	switch (kind)
@@ -7707,8 +7543,7 @@ double Experiments::estimateSchemaQueryCost(
 	const double leavesPerSide = std::pow(leaves, 1.0 / static_cast<double>(dims));
 	const double scale = std::clamp(workload.queryScaleMean, 0.0, 1.0);
 
-	// A volume query of side `scale` per axis touches ~(scale * leavesPerSide + 1) leaves per axis;
-	// internal ancestors add a geometric b/(b-1) factor.
+	// A side-`scale` volume query touches ~(scale * leavesPerSide + 1) leaves per axis; internal ancestors add a geometric b/(b-1) factor.
 	const double volumeVisitedLeaves = std::min(leaves, std::pow(scale * leavesPerSide + 1.0, static_cast<double>(dims)));
 	const double volumeTested = volumeVisitedLeaves * avgLeafPop;
 	const double internalFactor = branching > 1.0 ? branching / (branching - 1.0) : static_cast<double>(totalDepth);
@@ -7791,15 +7626,12 @@ struct ParetoMetrics
 static ParetoMetrics extractParetoMetrics(const Experiments::SchemaSearchRecord& record)
 {
 	ParetoMetrics m;
-	// When the record went through multi-seed confirmation, prefer the seed-averaged mean.
-	// A single noisy seed that got lucky can't fake a Pareto win because its win has to hold
-	// up against the average over confirmSeedsUsed independent draws.
+	// Prefer the seed-averaged mean after multi-seed confirmation, so a single lucky seed can't fake a Pareto win.
 	m.avgLatencyMs = record.confirmSeedsUsed > 0
 		? record.latencyMean
 		: record.queryMetrics.averageLatencyMs;
 	m.buildTimeMs = record.buildMetrics.buildTimeMs;
-	// Prefer the measured GPU footprint (recordMemoryMb); fall back to the closed-form CPU
-	// estimate. scoreMemoryMb may be 0 when a record is loaded from the cache, so derive here.
+	// Prefer the measured GPU footprint, falling back to the closed-form CPU estimate; derived here since scoreMemoryMb may be 0 for cached records.
 	m.memoryMb = recordMemoryMb(record);
 	m.imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
 		? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
@@ -7860,10 +7692,7 @@ static std::string describeParetoEntry(const Experiments::SchemaSearchRecord& r)
 
 std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(const std::vector<SchemaSearchRecord>& records)
 {
-	// Group by (dataset, workload). For each group we run O(n^2) non-domination filtering;
-	// schema-search batches stay well under a few thousand candidates so the quadratic cost is
-	// far cheaper than any single measurement. If that ever stops being true, switch to a
-	// Kung-style sweep — the API contract here doesn't change.
+	// Group by (dataset, workload) and run O(n^2) non-domination filtering per group; batch sizes stay small enough that the quadratic cost is far cheaper than any single measurement.
 	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
 	for (size_t i = 0; i < records.size(); ++i)
 		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
@@ -7891,17 +7720,14 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 				nonDominated.push_back(i);
 		}
 
-		// Rank non-dominated entries by avgLatencyMs (then buildTimeMs as a stable tie-break) so
-		// the CSV reader can find the "fastest" front entry at rank 0 without re-sorting.
+		// Rank non-dominated entries by avgLatencyMs (buildTimeMs as a stable tie-break) so the CSV's fastest front entry sits at rank 0 without re-sorting.
 		std::sort(nonDominated.begin(), nonDominated.end(), [&records](size_t a, size_t b) {
 			if (records[a].queryMetrics.averageLatencyMs != records[b].queryMetrics.averageLatencyMs)
 				return records[a].queryMetrics.averageLatencyMs < records[b].queryMetrics.averageLatencyMs;
 			return records[a].buildMetrics.buildTimeMs < records[b].buildMetrics.buildTimeMs;
 		});
 
-		// Knee = front entry closest to the normalized ideal across the four objectives. Equal
-		// weighting yields the balanced compromise independent of the scalar score weights; a
-		// single-entry front is its own knee.
+		// Knee = front entry closest to the normalized ideal across the four objectives (equal weighting); a single-entry front is its own knee.
 		size_t kneeRank = 0;
 		if (!nonDominated.empty())
 		{
@@ -8027,10 +7853,7 @@ static SchemaConfig makeParitySchema(const std::string& typeName, MultiDataStruc
 	return schema;
 }
 
-// Builds canonical schemas on both the CPU index and the GPU MixedTree, then compares the
-// returned-point COUNT for each range/radius query (exact on both backends). KNN is skipped
-// because the GPU path is a brute-force scan, not the tree traversal the CPU uses. GPU queries
-// are derived directly from the CPU queries so the two backends see byte-identical inputs.
+// Compares CPU-index vs. GPU-MixedTree returned-point counts for each range/radius query (KNN skipped since the GPU path brute-force scans); GPU queries derive from the CPU queries for identical inputs.
 static void runCpuGpuParityCheck(
 	const std::vector<SearchDataset>& datasets,
 	const std::vector<Experiments::WorkloadProfile>& workloads,
@@ -8205,11 +8028,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 
 	const std::vector<SearchDataset> datasets = loadDatasets(resolvedOptions);
 
-	// Per-cloud condition domain — estimated once from the first dataset so the initial
-	// generator + the GA's mutation operator can sample conditional thresholds calibrated to
-	// actual cloud statistics. The auto-conditions path computes its own domain internally
-	// (and uses tighter sketch parameters), so this estimate is only consulted in the GA /
-	// flat measurement paths. Skipped on synthetic-only / empty-dataset runs.
+	// Per-cloud condition domain estimated once from the first dataset to calibrate conditional thresholds; only the GA / flat paths consult it (auto-conditions builds its own), and it's skipped on synthetic/empty runs.
 	std::optional<ConditionDomain> sharedConditionDomain;
 	if (!resolvedOptions.autoConditions.enabled && !datasets.empty() && !datasets.front().cloud.empty())
 	{

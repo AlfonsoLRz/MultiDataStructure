@@ -136,8 +136,7 @@ struct GuiState
 	bool generatedAdaptiveLeafCapacity = false;
 	bool queryMinimalPrimitives = true;
 	bool useRankModel = false;
-	// Default-on: when the user disables auto-conditions, the GA path is the publication
-	// pipeline and Phase A+B1 (rungs + threshold refinement) ride on top of it.
+	// GA path with rungs + threshold refinement; default-on.
 	bool optimizeSchemas = true;
 	int evaluator = 0;
 	int cudaDevice = 0;
@@ -178,17 +177,14 @@ struct GuiState
 	float scoreMemoryWeight = 0.0f;
 	float scoreImbalanceWeight = 0.0f;
 
-	// Score cache + parallel dispatch defaults exposed via the optimizer panel.
+	// Score cache and parallel dispatch defaults.
 	bool scoreCacheEnabled = true;
 	std::array<char, 512> scoreCachePath{};
 	bool rebuildScoreCache = false;
 	int parallelDispatch = 1;
 	bool includeBaselineSchemas = true;
 
-	// Multi-fidelity rung schedule (Phase A successive halving). When enabled, each
-	// optimizer batch flows through a cheap visit-proxy stage, a mid-fidelity latency stage,
-	// and a confirmation stage at the full workload. Default-on so the smarter-search
-	// pipeline is the GUI's recommended starting point.
+	// Multi-fidelity rung schedule: visit-proxy, latency, then full-workload confirmation; default-on.
 	bool useRungSchedule = true;
 	int rungProxyQueries = 4;
 	int rungProxyAdvance = 32;
@@ -200,26 +196,19 @@ struct GuiState
 	int rungSurrogatePool = 0;
 	int rungSurrogateTop = 0;
 
-	// Threshold refinement (Phase B1). After the GA finishes, the top-K archive entries with
-	// conditional levels get their numeric thresholds tuned by a (1+lambda)-ES using the
-	// visit-proxy score; survivors that improved are re-measured at full fidelity. Default-on
-	// so the GA path ships its best Phase B1 settings out of the box.
+	// Tune top-K conditional thresholds with a (1+lambda)-ES after the GA, then re-measure improvers; default-on.
 	bool refineThresholds = true;
 	int refineThresholdsTopK = 4;
 	int refineThresholdsEvals = 60;
 	float refineThresholdsSigma = 0.3f;
 	int refineThresholdsSeed = 1337;
 
-	// Multi-seed confirmation (Phase C2). After the main measurement loop the top-K per
-	// (dataset, workload) is re-measured with N distinct query seeds and the seed-averaged
-	// mean + 95% bootstrap CI lands in the record. Default-on with 5 seeds, top-4.
+	// Re-measure top-K per (dataset, workload) over N seeds for a mean + 95% bootstrap CI; default-on.
 	bool confirmSeeds = true;
 	int confirmSeedsCount = 5;
 	int confirmTopK = 4;
 
-	// Phase B4 diversity controls. Default-on: crossover at 0.4 + NSGA-II elite ranking are
-	// the recommended pipeline for traversing the search manifold instead of polishing a
-	// single corridor.
+	// Diversity controls: crossover plus NSGA-II elite ranking; default-on.
 	float optimizerCrossoverRate = 0.4f;
 	bool optimizerUseNsga2 = true;
 	bool repairMutations = true;
@@ -1071,8 +1060,7 @@ static void applyPublicationDefaults(GuiState& state)
 	state.generatedConditional = true;
 	state.generatedAdaptiveLeafCapacity = false;
 	state.useRankModel = false;
-	// Reset defaults match the struct defaults: GA + rung schedule + threshold refinement on
-	// so the optimizer panel reflects the recommended pipeline whenever the user resets state.
+	// Reset to struct defaults: GA, rung schedule, and threshold refinement on.
 	state.optimizeSchemas = true;
 	state.useRungSchedule = true;
 	state.refineThresholds = true;
@@ -1531,8 +1519,7 @@ static void drawPublicationPanel(GuiState& state)
 			state.benchmarkTopK);
 	}
 
-	// The individual recommended toggles are tucked away so the first-glance path is just the
-	// button above; open this only to deviate from the recommended setup.
+	// Toggles tucked away; open only to deviate from the recommended setup.
 	if (ImGui::CollapsingHeader("Fine-tune recommended setup"))
 	{
 		if (ImGui::Checkbox("Per-cloud auto conditions", &state.autoConditions) && state.autoConditions)
@@ -2006,12 +1993,6 @@ static void drawResultsTable(const std::vector<BestResult>& results, GuiState& s
 }
 
 // Lineage classification parsed from the generator's schema naming convention.
-// `evolved_g<N>_i<K>_...` → mutation child of generation N
-// `xover_g<N>_i<K>_...`   → crossover child of generation N
-// `generated_...`         → random immigrant (or initial population) — gen 0
-// `refined_g<N>_c<K>_...` → threshold-refiner inner-loop candidate (Phase B1, post-GA)
-// `*_default`             → injected baseline control (gen 0)
-// Anything else           → configured/manual schema (gen 0)
 enum class LineageOperator
 {
 	Baseline = 0,
@@ -2114,9 +2095,7 @@ static LineageInfo parseLineage(const std::string& schemaName)
 	return info;
 }
 
-// Per-generation rollup of the live ranking. Counts each operator that contributed to the
-// generation and tracks the best-scoring candidate in that generation. Computed on the fly
-// from the live ranking so it stays in sync without any backend changes.
+// Per-generation rollup of the live ranking: operator counts and best candidate.
 struct GenerationBucket
 {
 	int generation = -1;
@@ -2155,12 +2134,7 @@ static std::vector<GenerationBucket> bucketByGeneration(const std::vector<LiveRa
 	return out;
 }
 
-// GA-progress panel rendered between the live ranking and the best-results table. Reads
-// lineage out of schema names — no SchemaSearch changes required — so it works on any
-// existing GA / auto-conditions / mixed run. Shows one row per generation with operator
-// breakdown and the best schema name + score of that generation, highlighting it with the
-// operator color so you can see at a glance whether crossover, mutation, or immigrants are
-// driving progress.
+// GA-progress panel: one row per generation with operator breakdown and best schema, parsed from schema names.
 static void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
 {
 	if (ranking.empty())
@@ -2191,9 +2165,7 @@ static void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
 		ImGui::TableSetupColumn("Best-of-gen schema");
 		ImGui::TableHeadersRow();
 
-		// Cumulative best across all generations so far. Excludes the post-GA refiner bucket
-		// (generation == -1) from the running min — refinement is a separate stage and
-		// folding it into the "did the GA improve" trace would be misleading.
+		// Cumulative best so far; excludes the post-GA refiner bucket from the running min.
 		double cumulativeBest = std::numeric_limits<double>::infinity();
 
 		for (const GenerationBucket& bucket : buckets)
@@ -2229,9 +2201,7 @@ static void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
 				ImGui::PopStyleColor();
 			}
 
-			// Gen best: what THIS generation's children achieved. Intrinsically noisy —
-			// most mutation/crossover children are perturbations of their elite parents and
-			// score worse, so this column is *not* expected to monotonically decrease.
+			// Gen best: this generation's children; noisy and not expected to decrease monotonically.
 			ImGui::TableNextColumn();
 			if (bucket.best)
 			{
@@ -2254,10 +2224,7 @@ static void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
 				ImGui::TextUnformatted("--");
 			}
 
-			// Best so far: cumulative running min, excludes the refiner bucket so this shows
-			// the GA's actual progress. Monotonically non-increasing — flat rows mean no
-			// new global best was discovered that generation (still normal; just means
-			// existing elites weren't beaten).
+			// Best so far: cumulative running min excluding the refiner bucket; monotonically non-increasing.
 			ImGui::TableNextColumn();
 			if (bucket.generation != -1 && bucket.best)
 			{
@@ -2296,9 +2263,7 @@ static void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
 		ImGui::EndTable();
 	}
 
-	// Cumulative best progress trace — the one that should be monotone. If this flattens
-	// across multiple generations, the GA is stuck (consider raising mutation rate, random
-	// fraction, or population). If it keeps decreasing, the optimizer is genuinely working.
+	// Cumulative best progress trace; if it flattens across generations the GA is stuck.
 	if (buckets.size() >= 2)
 	{
 		ImGui::Spacing();

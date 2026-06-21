@@ -767,10 +767,7 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 
 	if (condition.minAnisotropy.has_value() || condition.maxAnisotropy.has_value())
 	{
-		// Per-node anisotropy proxy: 1 - shortExtent / longExtent over the bbox. Range [0, 1].
-		// 0 = perfectly cubic, 1 = degenerate line. Skip the test when the bbox is degenerate
-		// (e.g. zero-volume slice) — there's no meaningful aspect ratio to compare against the
-		// threshold there, and gating on a singular ratio would cause condition cliffs.
+		// Anisotropy 1 - shortExtent / longExtent in [0, 1]; skip when the bbox is degenerate.
 		const double minE = std::min({ extentX, extentY, extentZ });
 		const double maxE = std::max({ extentX, extentY, extentZ });
 		if (maxE > EPSILON)
@@ -783,11 +780,7 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 
 	if (condition.minOccupancyEntropy.has_value() || condition.maxOccupancyEntropy.has_value())
 	{
-		// Per-node Shannon entropy over a 4x4x4 = 64-cell sub-grid of this node's bbox.
-		// Normalized to [0, 1] by dividing by ln(64). 0 = all points in one sub-cell (perfectly
-		// clustered), 1 = uniformly spread. Skip the test when the node has too few points to
-		// estimate entropy meaningfully (a couple of points always gives near-zero entropy and
-		// would trigger maxOccupancyEntropy gates spuriously).
+		// Shannon entropy over a 4x4x4 sub-grid, normalized to [0, 1]; skip when too few points.
 		const size_t pointThreshold = 16;
 		if (pointCount >= pointThreshold && extentX > EPSILON && extentY > EPSILON && extentZ > EPSILON)
 		{

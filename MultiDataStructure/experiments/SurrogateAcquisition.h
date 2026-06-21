@@ -6,9 +6,7 @@
 
 namespace Experiments
 {
-	// Holds a loaded surrogate model + the cloud/workload it should be evaluated against. Built
-	// once per evolutionary run; cheap to query thereafter (no I/O, no feature pipeline rebuild).
-	// `active` is false when no surrogate path was configured or when the model failed to load.
+	// A loaded surrogate model built once per run and cheap to query thereafter; active is false when no path was configured or the model failed to load.
 	struct SurrogateAcquisition
 	{
 		SchemaSelectorModel model;
@@ -16,19 +14,10 @@ namespace Experiments
 		bool active = false;
 	};
 
-	// Attempts to load the exported selector JSON at `modelPath`. On any failure (empty path,
-	// missing file, parse error, measured-best artifact) returns an inactive acquisition state
-	// rather than throwing — the GA falls back to its mutation/immigration path automatically.
+	// Loads the selector JSON at modelPath; on any failure returns an inactive acquisition rather than throwing, so the GA falls back to its mutation/immigration path.
 	SurrogateAcquisition loadSurrogateAcquisition(const std::string& modelPath);
 
-	// Generates a pool of fresh genomes through the existing `generateSchemaCandidates` path,
-	// scores each one with the surrogate model against (cloud, workload), and returns the lowest
-	// predicted-score `topK` candidates. Returned candidates have already been materialised to
-	// disk under generationOptions.outputDirectory by the generator, so they can be replayed.
-	//
-	// Dedup against the GA's running `seenSignatures` set is the caller's responsibility — this
-	// helper does not know about the GA's state. `seed` lets the GA decorrelate the surrogate's
-	// pool from its random-immigration RNG.
+	// Generates a fresh genome pool, scores it with the surrogate against (cloud, workload), and returns the lowest-score topK (already materialised to disk); the caller handles dedup and seed decorrelates the pool.
 	std::vector<SchemaCandidate> acquireSurrogateProposals(
 		const SurrogateAcquisition& acquisition,
 		const SchemaGenerationOptions& generationOptions,

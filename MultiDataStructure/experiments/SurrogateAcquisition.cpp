@@ -20,10 +20,7 @@ namespace Experiments
 			return acquisition;
 		}
 
-		// Measured-best artifacts cannot rank generic generated genomes — they only know the
-		// single tuned schema. ONNX rankers are supported in principle but routing them through
-		// `scoreSchemaCandidates` requires the ONNX runtime to be linked; we degrade gracefully
-		// rather than throw inside the GA's hot path.
+		// Measured-best artifacts only know their one tuned schema, so they can't rank generated genomes; degrade gracefully rather than throw in the GA's hot path.
 		if (acquisition.model.measuredBestSelector)
 		{
 			std::cerr << "  surrogate acquisition: '" << modelPath

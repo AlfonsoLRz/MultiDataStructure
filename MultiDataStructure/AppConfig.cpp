@@ -1,9 +1,7 @@
 #include "stdafx.h"
 #include "AppConfig.h"
 
-// Parses a single rung spec of the form `name:queries:scoreMode:advance`. queries=0 means
-// "use workload default"; scoreMode is `visit` or `latency`; advance=0 means "promote all
-// candidates" (only meaningful for the last rung).
+// Parses a rung spec `name:queries:scoreMode:advance` (queries=0 uses workload default, advance=0 promotes all).
 static bool parseRungSpec(const std::string& token, Experiments::RungSpec& outRung)
 {
 	std::vector<std::string> parts;
