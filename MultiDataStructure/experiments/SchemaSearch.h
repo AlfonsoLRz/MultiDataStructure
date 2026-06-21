@@ -253,6 +253,12 @@ namespace Experiments
 		size_t parallelDispatch = 1;
 		bool enableLeafMicroIndexes = false;
 		size_t leafMicroIndexThreshold = 512;
+		// Measurement-reliability repeats. When >= 2, each candidate's query batch is re-timed this
+		// many times (same queries, no rebuild) and the per-repeat batch-average latency mean,
+		// standard deviation, coefficient of variation, and 95% bootstrap CI are recorded on
+		// queryMetrics. 1 keeps the original one-shot timing. This measures timing noise, which is
+		// complementary to confirmSeeds (which re-draws the query set).
+		size_t measurementRepeats = 1;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
 
@@ -325,6 +331,12 @@ namespace Experiments
 		double gpuBuildMean = 0.0;
 		double gpuBuildCiLow = 0.0;
 		double gpuBuildCiHigh = 0.0;
+		// True when this record's (dataset, workload) winner is separated from its runner-up by
+		// non-overlapping latency confidence intervals (see `confidentlyBetter`). Set by
+		// `annotateRankingConfidence`. Defaults to false: with single-shot measurement (no
+		// --measure-repeats and no --confirm-seeds) confidence cannot be established, which is the
+		// honest answer and nudges the operator toward repeated measurement.
+		bool rankingConfident = false;
 	};
 
 	struct SchemaRepairDiagnostics
@@ -391,6 +403,18 @@ namespace Experiments
 		const std::string& namePrefix,
 		const std::string& outputDirectory);
 	std::vector<SchemaSearchRecord> selectBestRecords(const std::vector<SchemaSearchRecord>& records);
+
+	// True when candidate `a` is confidently lower-latency than `b`: a's upper latency CI lies
+	// strictly below b's lower latency CI, so the ordering is not an artifact of measurement noise.
+	// CI source priority: multi-seed confirmation CI (confirmSeedsUsed > 0) first, then measurement-
+	// repeat CI (queryMetrics.measurementRepeats > 1). With neither available the intervals collapse
+	// to the point estimate and the function returns false (no confidence claimable).
+	bool confidentlyBetter(const SchemaSearchRecord& a, const SchemaSearchRecord& b);
+
+	// Sets `rankingConfident` on every record: for each (dataset, workload) group, true iff the
+	// group's best candidate is `confidentlyBetter` than its runner-up (or the group has a single
+	// candidate). Call before writing CSVs so both raw and best rows carry the flag.
+	void annotateRankingConfidence(std::vector<SchemaSearchRecord>& records);
 
 	// Returns the non-dominated set per (dataset, workload) group over the four-tuple
 	// (avgLatencyMs, buildTimeMs, memoryMb, imbalancePenalty). Each returned record carries its

@@ -592,6 +592,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.confirmTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--measure-repeats" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.measurementRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
+		}
 		else if (arg == "--queries" && i + 1 < argc)
 		{
 			config.pointOptions.queryCount = static_cast<size_t>(std::stoull(argv[++i]));
@@ -765,6 +769,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "                              record mean + 95% bootstrap CI on (avg latency, p95 latency, GPU build).\n"
 		<< "                              N < 2 disables. The Pareto step uses the seed-averaged mean.\n"
 		<< "  --confirm-top <k>           Number of top candidates per (dataset, workload) to re-measure, default 4\n"
+		<< "  --measure-repeats <n>       Re-time each candidate's query batch N times (same queries) and record\n"
+		<< "                              latency mean/stddev/CV/95% CI on queryMetrics. 1 disables (default).\n"
 		<< "  --no-csv                    Disable CSV summary output\n"
 		<< "  --queries <count>           Run generated query profile; 0 disables it\n"
 		<< "  --knn-k <count>             Neighbor count for generated KNN queries\n"

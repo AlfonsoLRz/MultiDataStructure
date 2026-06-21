@@ -1351,5 +1351,51 @@ namespace BaselineTests
 			expect(result.refinedCandidate.config.name == flat.config.name,
 				"flat candidate is returned unchanged");
 		}
+
+		// Measurement-reliability: confidentlyBetter + annotateRankingConfidence. Default ScoreWeights
+		// (lambdaLatency = 1, no proxy) make bestSelectionScore equal average latency.
+		{
+			auto makeRecord = [](const std::string& schema, double avgLatency, size_t repeats,
+				double ciLow, double ciHigh) {
+				Experiments::SchemaSearchRecord r;
+				r.datasetName = "ds";
+				r.workloadName = "wl";
+				r.schemaName = schema;
+				r.queryMetrics.averageLatencyMs = avgLatency;
+				r.queryMetrics.latencyMeanMs = avgLatency;
+				r.queryMetrics.measurementRepeats = repeats;
+				r.queryMetrics.latencyCiLowMs = ciLow;
+				r.queryMetrics.latencyCiHighMs = ciHigh;
+				r.score = avgLatency;
+				return r;
+			};
+
+			const Experiments::SchemaSearchRecord fast = makeRecord("fast", 1.0, 5, 0.9, 1.1);
+			const Experiments::SchemaSearchRecord slow = makeRecord("slow", 2.0, 5, 1.8, 2.2);
+			expect(Experiments::confidentlyBetter(fast, slow), "fast confidently beats slow (disjoint repeat CIs)");
+			expect(!Experiments::confidentlyBetter(slow, fast), "slow does not confidently beat fast");
+
+			const Experiments::SchemaSearchRecord overlapA = makeRecord("a", 1.0, 5, 0.5, 1.5);
+			const Experiments::SchemaSearchRecord overlapB = makeRecord("b", 1.2, 5, 0.7, 1.7);
+			expect(!Experiments::confidentlyBetter(overlapA, overlapB), "overlapping repeat CIs are not confidently separable");
+
+			const Experiments::SchemaSearchRecord oneShotFast = makeRecord("s1", 1.0, 1, 1.0, 1.0);
+			const Experiments::SchemaSearchRecord oneShotSlow = makeRecord("s2", 5.0, 1, 5.0, 5.0);
+			expect(!Experiments::confidentlyBetter(oneShotFast, oneShotSlow), "single-shot measurement yields no confidence");
+
+			std::vector<Experiments::SchemaSearchRecord> separable = { slow, fast };
+			Experiments::annotateRankingConfidence(separable);
+			expect(separable[0].rankingConfident && separable[1].rankingConfident,
+				"group with separable winner is flagged confident on all rows");
+
+			std::vector<Experiments::SchemaSearchRecord> overlapping = { overlapA, overlapB };
+			Experiments::annotateRankingConfidence(overlapping);
+			expect(!overlapping[0].rankingConfident && !overlapping[1].rankingConfident,
+				"group with overlapping winner is not flagged confident");
+
+			std::vector<Experiments::SchemaSearchRecord> lone = { fast };
+			Experiments::annotateRankingConfidence(lone);
+			expect(lone[0].rankingConfident, "single-candidate group is trivially confident");
+		}
 	}
 }

@@ -3026,7 +3026,32 @@ namespace
 		}
 	}
 
-	WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index)
+	// Summarize run-to-run timing noise from a set of per-repeat batch-average latencies into the
+	// reliability fields on a QueryMetrics. Deterministic (fixed bootstrap seed) so cached/replayed
+	// runs are reproducible. With a single repeat the CI degenerates to the point estimate.
+	void fillLatencyReliability(Experiments::QueryMetrics& metrics, const std::vector<double>& repeatMeanLatencies)
+	{
+		if (repeatMeanLatencies.empty())
+			return;
+
+		const double n = static_cast<double>(repeatMeanLatencies.size());
+		const double mean = std::accumulate(repeatMeanLatencies.begin(), repeatMeanLatencies.end(), 0.0) / n;
+		double variance = 0.0;
+		for (double value : repeatMeanLatencies)
+			variance += (value - mean) * (value - mean);
+		variance /= n;
+
+		metrics.measurementRepeats = repeatMeanLatencies.size();
+		metrics.latencyMeanMs = mean;
+		metrics.latencyStdDevMs = std::sqrt(variance);
+		metrics.latencyCoeffVar = mean > 0.0 ? metrics.latencyStdDevMs / mean : 0.0;
+		const auto [ciMean, ciLow, ciHigh] = Experiments::bootstrapMeanCI(repeatMeanLatencies, 1000, 0x5EED1234u);
+		(void)ciMean;
+		metrics.latencyCiLowMs = ciLow;
+		metrics.latencyCiHighMs = ciHigh;
+	}
+
+	WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index, size_t repeats = 1)
 	{
 		WorkloadRun result;
 		if (prepared.cpuQueries.empty())
@@ -3082,6 +3107,29 @@ namespace
 				result.stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
 		}
 		result.stratumSummary = formatStratumSummary(result.stratumMetrics);
+
+		if (repeats > 1)
+		{
+			std::vector<double> repeatMeanLatencies;
+			repeatMeanLatencies.reserve(repeats);
+			repeatMeanLatencies.push_back(result.metrics.averageLatencyMs);
+			for (size_t r = 1; r < repeats; ++r)
+			{
+				double totalMs = 0.0;
+				for (const PreparedCpuQuery& query : prepared.cpuQueries)
+				{
+					if (query.kind == PreparedQueryKind::Range)
+						totalMs += index.rangeQuery(query.bounds).stats.elapsedMs;
+					else if (query.kind == PreparedQueryKind::Radius)
+						totalMs += index.radiusQuery(query.center, query.radius).stats.elapsedMs;
+					else
+						totalMs += index.knnQuery(query.center, knnK).stats.elapsedMs;
+				}
+				repeatMeanLatencies.push_back(totalMs / static_cast<double>(prepared.cpuQueries.size()));
+			}
+			fillLatencyReliability(result.metrics, repeatMeanLatencies);
+		}
+
 		return result;
 	}
 
@@ -3089,7 +3137,8 @@ namespace
 	WorkloadRun runCudaWorkloadProfile(
 		const PreparedWorkload& prepared,
 		const IndexType& index,
-		const PointGpu::Options& cudaOptions)
+		const PointGpu::Options& cudaOptions,
+		size_t repeats = 1)
 	{
 		WorkloadRun result;
 		if (prepared.cudaQueries.empty())
@@ -3147,6 +3196,20 @@ namespace
 		for (const auto& [name, stratum] : stratumSamples)
 			result.stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
 		result.stratumSummary = formatStratumSummary(result.stratumMetrics);
+
+		if (repeats > 1)
+		{
+			std::vector<double> repeatMeanLatencies;
+			repeatMeanLatencies.reserve(repeats);
+			repeatMeanLatencies.push_back(result.metrics.averageLatencyMs);
+			for (size_t r = 1; r < repeats; ++r)
+			{
+				const PointGpu::QueryResult rerun = index.query(prepared.cudaQueries, cudaOptions);
+				repeatMeanLatencies.push_back(rerun.metrics.averageLatencyMs);
+			}
+			fillLatencyReliability(result.metrics, repeatMeanLatencies);
+		}
+
 		return result;
 	}
 
@@ -3220,7 +3283,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else if (isHGridBuilder(cudaOptions.builder))
 			{
@@ -3232,7 +3295,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else if (isKDTreeBuilder(cudaOptions.builder))
 			{
@@ -3244,7 +3307,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else if (isOctreeBuilder(cudaOptions.builder))
 			{
@@ -3256,7 +3319,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else if (isQuadTreeBuilder(cudaOptions.builder))
 			{
@@ -3268,7 +3331,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else if (isRegularGridBuilder(cudaOptions.builder))
 			{
@@ -3280,7 +3343,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else if (isMixedBuilder(cudaOptions.builder))
 			{
@@ -3292,7 +3355,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 			else
 			{
@@ -3304,7 +3367,7 @@ namespace
 				else
 					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
-				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
+				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
 			}
 		}
 		else
@@ -3316,7 +3379,7 @@ namespace
 
 			buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd), effectiveConfig);
 			activeStats = collectActiveStructureStats(index.root(), effectiveConfig);
-			workloadRun = runWorkloadProfile(preparedWorkload, workload.knnK, index);
+			workloadRun = runWorkloadProfile(preparedWorkload, workload.knnK, index, options.measurementRepeats);
 		}
 
 		appendSchemaQueryTrace(
@@ -3590,7 +3653,8 @@ namespace
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
-			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
+			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
+			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident\n";
 	}
 
 	void writeSearchRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
@@ -3725,7 +3789,13 @@ namespace
 				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
 				<< record.queryMetrics.totalQueries << ','
 				<< (record.weights.useVisitProxy ? 1 : 0) << ','
-				<< record.weights.visitProxyAlpha << '\n';
+				<< record.weights.visitProxyAlpha << ','
+				<< record.queryMetrics.measurementRepeats << ','
+				<< record.queryMetrics.latencyStdDevMs << ','
+				<< record.queryMetrics.latencyCoeffVar << ','
+				<< record.queryMetrics.latencyCiLowMs << ','
+				<< record.queryMetrics.latencyCiHighMs << ','
+				<< (record.rankingConfident ? 1 : 0) << '\n';
 		}
 	}
 
@@ -3765,7 +3835,8 @@ namespace
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 			<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
-			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
+			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
+			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
 		{
@@ -3865,7 +3936,13 @@ namespace
 				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
 				<< record.queryMetrics.totalQueries << ','
 				<< (record.weights.useVisitProxy ? 1 : 0) << ','
-				<< record.weights.visitProxyAlpha << '\n';
+				<< record.weights.visitProxyAlpha << ','
+				<< record.queryMetrics.measurementRepeats << ','
+				<< record.queryMetrics.latencyStdDevMs << ','
+				<< record.queryMetrics.latencyCoeffVar << ','
+				<< record.queryMetrics.latencyCiLowMs << ','
+				<< record.queryMetrics.latencyCiHighMs << ','
+				<< (record.rankingConfident ? 1 : 0) << '\n';
 		}
 	}
 
@@ -3893,7 +3970,8 @@ namespace
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 			<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
-			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha\n";
+			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
+			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : front)
 		{
@@ -3948,7 +4026,13 @@ namespace
 				<< (record.scoreIsFinalLatency ? 1 : 0) << ','
 				<< record.queryMetrics.totalQueries << ','
 				<< (record.weights.useVisitProxy ? 1 : 0) << ','
-				<< record.weights.visitProxyAlpha << '\n';
+				<< record.weights.visitProxyAlpha << ','
+				<< record.queryMetrics.measurementRepeats << ','
+				<< record.queryMetrics.latencyStdDevMs << ','
+				<< record.queryMetrics.latencyCoeffVar << ','
+				<< record.queryMetrics.latencyCiLowMs << ','
+				<< record.queryMetrics.latencyCiHighMs << ','
+				<< (record.rankingConfident ? 1 : 0) << '\n';
 		}
 	}
 
@@ -7332,6 +7416,70 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 	return best;
 }
 
+bool Experiments::confidentlyBetter(const SchemaSearchRecord& a, const SchemaSearchRecord& b)
+{
+	// Prefer the multi-seed confirmation CI (re-drawn query sets); fall back to the measurement-
+	// repeat CI (re-timed batch). Both bound the latency distribution; without either there is no
+	// interval to separate and we cannot claim confidence.
+	double aHigh = 0.0;
+	double bLow = 0.0;
+	bool haveInterval = false;
+	if (a.confirmSeedsUsed > 0 && b.confirmSeedsUsed > 0 && a.latencyCiHigh > 0.0 && b.latencyCiLow > 0.0)
+	{
+		aHigh = a.latencyCiHigh;
+		bLow = b.latencyCiLow;
+		haveInterval = true;
+	}
+	else if (a.queryMetrics.measurementRepeats > 1 && b.queryMetrics.measurementRepeats > 1)
+	{
+		aHigh = a.queryMetrics.latencyCiHighMs;
+		bLow = b.queryMetrics.latencyCiLowMs;
+		haveInterval = true;
+	}
+
+	if (!haveInterval)
+		return false;
+	return aHigh < bLow;
+}
+
+void Experiments::annotateRankingConfidence(std::vector<SchemaSearchRecord>& records)
+{
+	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
+	for (size_t i = 0; i < records.size(); ++i)
+		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
+
+	for (auto& [key, indices] : groups)
+	{
+		(void)key;
+		size_t bestIdx = indices.front();
+		size_t runnerIdx = bestIdx;
+		bool haveRunner = false;
+		for (size_t k = 1; k < indices.size(); ++k)
+		{
+			const size_t idx = indices[k];
+			if (bestSelectionScore(records[idx]) < bestSelectionScore(records[bestIdx]))
+			{
+				runnerIdx = bestIdx;
+				haveRunner = true;
+				bestIdx = idx;
+			}
+			else if (!haveRunner || bestSelectionScore(records[idx]) < bestSelectionScore(records[runnerIdx]))
+			{
+				runnerIdx = idx;
+				haveRunner = true;
+			}
+		}
+
+		// A lone candidate is trivially the unambiguous winner; otherwise require non-overlapping
+		// latency CIs between the winner and the runner-up.
+		const bool confident = !haveRunner
+			? true
+			: Experiments::confidentlyBetter(records[bestIdx], records[runnerIdx]);
+		for (size_t idx : indices)
+			records[idx].rankingConfident = confident;
+	}
+}
+
 namespace
 {
 	struct ParetoMetrics
@@ -7690,6 +7838,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 
 	runMultiSeedConfirmation(records, datasets, workloads, resolvedOptions);
 	annotateBaselineComparisons(records);
+	annotateRankingConfidence(records);
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);
 	reportMetricSummaries(records, resolvedOptions);

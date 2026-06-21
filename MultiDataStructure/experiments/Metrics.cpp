@@ -244,5 +244,13 @@ Experiments::QueryMetrics Experiments::summarizeQueryStats(const std::vector<Poi
 	metrics.averageTestedPoints = static_cast<double>(metrics.totalTestedPoints) / queryCount;
 	metrics.averageReturnedPoints = static_cast<double>(metrics.totalReturnedPoints) / queryCount;
 	metrics.averageFullyContainedNodes = static_cast<double>(metrics.totalFullyContainedNodes) / queryCount;
+	// Single batch: the reliability summary degenerates to the point estimate. Multi-repeat callers
+	// overwrite these via the schema-search profilers when measurementRepeats > 1.
+	metrics.measurementRepeats = 1;
+	metrics.latencyMeanMs = metrics.averageLatencyMs;
+	metrics.latencyStdDevMs = 0.0;
+	metrics.latencyCoeffVar = 0.0;
+	metrics.latencyCiLowMs = metrics.averageLatencyMs;
+	metrics.latencyCiHighMs = metrics.averageLatencyMs;
 	return metrics;
 }

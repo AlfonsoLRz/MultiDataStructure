@@ -66,6 +66,14 @@ namespace BaselineTests
 		expect(queryMetrics.totalReturnedPoints == 10, "query metrics total returned points");
 		expect(queryMetrics.throughputQueriesPerSecond > 0.0, "query metrics throughput");
 
+		// Single-batch summaries degenerate the measurement-reliability fields to the point estimate.
+		expect(queryMetrics.measurementRepeats == 1, "query metrics single-batch repeat count");
+		expect(nearlyEqual(queryMetrics.latencyMeanMs, queryMetrics.averageLatencyMs), "query metrics latency mean equals average");
+		expect(nearlyEqual(queryMetrics.latencyStdDevMs, 0.0), "query metrics single-batch stddev is zero");
+		expect(nearlyEqual(queryMetrics.latencyCoeffVar, 0.0), "query metrics single-batch cv is zero");
+		expect(nearlyEqual(queryMetrics.latencyCiLowMs, queryMetrics.averageLatencyMs), "query metrics ci low equals average");
+		expect(nearlyEqual(queryMetrics.latencyCiHighMs, queryMetrics.averageLatencyMs), "query metrics ci high equals average");
+
 		const PointCloud cloud = SyntheticPointClouds::generateSparseDenseMixture(32, 64, 7);
 		PointSpatialIndex index;
 		index.build(cloud, makeMetricsSchema());
