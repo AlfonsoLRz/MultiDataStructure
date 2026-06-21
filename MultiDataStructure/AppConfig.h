@@ -20,11 +20,14 @@ namespace AppDefaults
 	inline constexpr size_t POINT_QUERY_COUNT = 16;
 	inline constexpr size_t POINT_QUERY_K = 8;
 	inline constexpr uint32_t POINT_QUERY_SEED = 1337;
+	inline constexpr bool ENABLE_LEAF_MICRO_INDEXES = false;
+	inline constexpr size_t LEAF_MICRO_INDEX_THRESHOLD = 512;
 	inline constexpr const char* SCHEMA_SEARCH_SCHEMA_PATHS = "configs/schemas/quadtree.json;configs/schemas/octree.json;configs/schemas/kdtree.json;configs/schemas/bvh.json;configs/schemas/quadtree_octree.json;configs/schemas/octree_kdtree.json;configs/schemas/urban_hybrid.json";
 	inline constexpr const char* SCHEMA_SEARCH_WORKLOAD_PATHS = "configs/workloads/volume_small_medium.json";
 	inline constexpr const char* SCHEMA_SEARCH_CSV_PATH = "results/schema_search.csv";
 	inline constexpr const char* SCHEMA_SEARCH_BEST_CSV_PATH = "results/schema_search_best.csv";
 	inline constexpr const char* SCHEMA_SEARCH_PARETO_CSV_PATH = "results/schema_search_pareto.csv";
+	inline constexpr const char* SCHEMA_SEARCH_EXPLAIN_REPORT_PATH = "";
 	inline constexpr size_t SCHEMA_SEARCH_SYNTHETIC_SCALE = 512;
 	inline constexpr size_t SCHEMA_SEARCH_QUERY_COUNT = 64;
 	inline constexpr const char* SCHEMA_SEARCH_RANK_MODEL_PATH = "models/schema_selector.json";

@@ -95,6 +95,18 @@ namespace
 		out["maxDepth"] = metrics.maxDepth;
 		out["averageLeafOccupancy"] = metrics.averageLeafOccupancy;
 		out["maxLeafOccupancy"] = metrics.maxLeafOccupancy;
+		out["leafOccupancyP50"] = metrics.leafOccupancyP50;
+		out["leafOccupancyP90"] = metrics.leafOccupancyP90;
+		out["leafOccupancyP99"] = metrics.leafOccupancyP99;
+		out["averageDepth"] = metrics.averageDepth;
+		out["averageFanout"] = metrics.averageFanout;
+		out["maxFanout"] = metrics.maxFanout;
+		out["emptyChildRatio"] = metrics.emptyChildRatio;
+		out["singleChildNodeCount"] = metrics.singleChildNodeCount;
+		out["meanTightBoundsVolumeRatio"] = metrics.meanTightBoundsVolumeRatio;
+		out["microIndexedLeaves"] = metrics.microIndexedLeaves;
+		out["microIndexedPoints"] = metrics.microIndexedPoints;
+		out["nodeFanoutSummary"] = metrics.nodeFanoutSummary;
 		out["memoryEstimateBytes"] = metrics.memoryEstimateBytes;
 		return out;
 	}
@@ -108,6 +120,18 @@ namespace
 		out.maxDepth = asSize(source, "maxDepth");
 		out.averageLeafOccupancy = asDouble(source, "averageLeafOccupancy");
 		out.maxLeafOccupancy = asSize(source, "maxLeafOccupancy");
+		out.leafOccupancyP50 = asDouble(source, "leafOccupancyP50");
+		out.leafOccupancyP90 = asDouble(source, "leafOccupancyP90");
+		out.leafOccupancyP99 = asDouble(source, "leafOccupancyP99");
+		out.averageDepth = asDouble(source, "averageDepth");
+		out.averageFanout = asDouble(source, "averageFanout");
+		out.maxFanout = asSize(source, "maxFanout");
+		out.emptyChildRatio = asDouble(source, "emptyChildRatio");
+		out.singleChildNodeCount = asSize(source, "singleChildNodeCount");
+		out.meanTightBoundsVolumeRatio = asDouble(source, "meanTightBoundsVolumeRatio");
+		out.microIndexedLeaves = asSize(source, "microIndexedLeaves");
+		out.microIndexedPoints = asSize(source, "microIndexedPoints");
+		out.nodeFanoutSummary = asString(source, "nodeFanoutSummary");
 		out.memoryEstimateBytes = asSize(source, "memoryEstimateBytes");
 	}
 
@@ -155,10 +179,15 @@ namespace
 		out["key"] = canonicalKey;
 		out["build"] = encodeBuildMetrics(record.buildMetrics);
 		out["query"] = encodeQueryMetrics(record.queryMetrics);
+		out["rangeQuery"] = encodeQueryMetrics(record.rangeMetrics);
+		out["countRangeQuery"] = encodeQueryMetrics(record.countRangeMetrics);
+		out["radiusQuery"] = encodeQueryMetrics(record.radiusMetrics);
+		out["knnQuery"] = encodeQueryMetrics(record.knnMetrics);
 		out["rangeQueries"] = record.rangeQueries;
 		out["countRangeQueries"] = record.countRangeQueries;
 		out["radiusQueries"] = record.radiusQueries;
 		out["knnQueries"] = record.knnQueries;
+		out["queryStrataSummary"] = record.queryStrataSummary;
 		out["score"] = record.score;
 		out["scoreMemoryMb"] = record.scoreMemoryMb;
 		out["scoreImbalancePenalty"] = record.scoreImbalancePenalty;
@@ -193,10 +222,24 @@ namespace
 		if (query && query->is_object())
 			decodeQueryMetrics(query->as_object(), out.queryMetrics);
 
+		const boost::json::value* rangeQuery = find(source, "rangeQuery");
+		if (rangeQuery && rangeQuery->is_object())
+			decodeQueryMetrics(rangeQuery->as_object(), out.rangeMetrics);
+		const boost::json::value* countRangeQuery = find(source, "countRangeQuery");
+		if (countRangeQuery && countRangeQuery->is_object())
+			decodeQueryMetrics(countRangeQuery->as_object(), out.countRangeMetrics);
+		const boost::json::value* radiusQuery = find(source, "radiusQuery");
+		if (radiusQuery && radiusQuery->is_object())
+			decodeQueryMetrics(radiusQuery->as_object(), out.radiusMetrics);
+		const boost::json::value* knnQuery = find(source, "knnQuery");
+		if (knnQuery && knnQuery->is_object())
+			decodeQueryMetrics(knnQuery->as_object(), out.knnMetrics);
+
 		out.rangeQueries = asSize(source, "rangeQueries");
 		out.countRangeQueries = asSize(source, "countRangeQueries");
 		out.radiusQueries = asSize(source, "radiusQueries");
 		out.knnQueries = asSize(source, "knnQueries");
+		out.queryStrataSummary = asString(source, "queryStrataSummary");
 		out.score = asDouble(source, "score");
 		out.scoreMemoryMb = asDouble(source, "scoreMemoryMb");
 		out.scoreImbalancePenalty = asDouble(source, "scoreImbalancePenalty");
@@ -427,7 +470,8 @@ namespace Experiments
 			<< "|ds=" << formatDouble(workload.radiusScaleMin, 4) << "-" << formatDouble(workload.radiusScaleMax, 4)
 			<< "|n=" << workload.numQueries
 			<< "|kk=" << workload.knnK
-			<< "|seed=" << workload.querySeed;
+			<< "|seed=" << workload.querySeed
+			<< "|strata=" << (workload.stratifyQueries ? "1" : "0");
 		key.workloadFingerprint = hex64(fnv1aString(workloadText.str()));
 
 		std::ostringstream evaluatorText;

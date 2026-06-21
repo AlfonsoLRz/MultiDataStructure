@@ -10,5 +10,6 @@ struct BuildPolicy
 	bool collapseSingleChild = true;
 	bool removeEmptyNodes = true;
 	bool allowOverlapDuplication = true;
+	bool enableLeafMicroIndexes = false;
+	size_t leafMicroIndexThreshold = 512;
 };
-

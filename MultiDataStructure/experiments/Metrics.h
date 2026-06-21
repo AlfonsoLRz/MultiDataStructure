@@ -14,6 +14,18 @@ namespace Experiments
 		size_t maxDepth = 0;
 		double averageLeafOccupancy = 0.0;
 		size_t maxLeafOccupancy = 0;
+		double leafOccupancyP50 = 0.0;
+		double leafOccupancyP90 = 0.0;
+		double leafOccupancyP99 = 0.0;
+		double averageDepth = 0.0;
+		double averageFanout = 0.0;
+		size_t maxFanout = 0;
+		double emptyChildRatio = 0.0;
+		size_t singleChildNodeCount = 0;
+		double meanTightBoundsVolumeRatio = 0.0;
+		size_t microIndexedLeaves = 0;
+		size_t microIndexedPoints = 0;
+		std::string nodeFanoutSummary;
 		size_t memoryEstimateBytes = 0;
 	};
 
@@ -36,5 +48,6 @@ namespace Experiments
 	};
 
 	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs);
+	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs, const SchemaConfig& schema);
 	QueryMetrics summarizeQueryStats(const std::vector<PointSpatialIndex::QueryStats>& samples);
 }

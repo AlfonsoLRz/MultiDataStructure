@@ -59,11 +59,17 @@ namespace
 	struct WorkloadRun
 	{
 		Experiments::QueryMetrics metrics;
+		Experiments::QueryMetrics rangeMetrics;
+		Experiments::QueryMetrics countRangeMetrics;
+		Experiments::QueryMetrics radiusMetrics;
+		Experiments::QueryMetrics knnMetrics;
 		std::vector<PointSpatialIndex::QueryStats> samples;
 		size_t rangeQueries = 0;
 		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
 		size_t knnQueries = 0;
+		std::map<std::string, Experiments::QueryMetrics> stratumMetrics;
+		std::string stratumSummary;
 		double gpuQueryMs = 0.0;
 	};
 
@@ -80,12 +86,14 @@ namespace
 		AABB bounds;
 		glm::vec3 center = glm::vec3(0.0f);
 		float radius = 0.0f;
+		std::string stratum;
 	};
 
 	struct PreparedWorkload
 	{
 		std::vector<PreparedCpuQuery> cpuQueries;
 		std::vector<PointGpu::Query> cudaQueries;
+		std::vector<std::string> cudaStrata;
 		size_t rangeQueries = 0;
 		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
@@ -383,6 +391,44 @@ namespace
 		return largestRange * randomFloat(rng, static_cast<float>(profile.radiusScaleMin), static_cast<float>(profile.radiusScaleMax));
 	}
 
+	AABB queryBoxAtScale(const glm::vec3& center, const PointCloud& cloud, double scale)
+	{
+		const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
+		const glm::vec3 halfExtent = glm::max(range * static_cast<float>(scale) * 0.5f, glm::vec3(0.0005f));
+		return AABB(center - halfExtent, center + halfExtent);
+	}
+
+	glm::vec3 sampledCloudPoint(std::mt19937& rng, const PointCloud& cloud)
+	{
+		if (cloud.empty())
+			return cloud.bounds().center();
+		std::uniform_int_distribution<size_t> distribution(0, cloud.size() - 1);
+		return cloud.points()[distribution(rng)].position;
+	}
+
+	glm::vec3 boundaryPoint(std::mt19937& rng, const PointCloud& cloud)
+	{
+		glm::vec3 point = randomPointInBounds(rng, cloud.bounds());
+		const glm::vec3 minBound = cloud.bounds().min();
+		const glm::vec3 maxBound = cloud.bounds().max();
+		std::uniform_int_distribution<int> axisDistribution(0, 2);
+		std::uniform_int_distribution<int> sideDistribution(0, 1);
+		const int axis = axisDistribution(rng);
+		point[axis] = sideDistribution(rng) == 0 ? minBound[axis] : maxBound[axis];
+		return point;
+	}
+
+	glm::vec3 outsidePoint(std::mt19937& rng, const PointCloud& cloud)
+	{
+		const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(1.0f));
+		glm::vec3 point = randomPointInBounds(rng, cloud.bounds());
+		const glm::vec3 maxBound = cloud.bounds().max();
+		std::uniform_int_distribution<int> axisDistribution(0, 2);
+		const int axis = axisDistribution(rng);
+		point[axis] = maxBound[axis] + range[axis] * 0.25f;
+		return point;
+	}
+
 	std::string lowerCopy(std::string value)
 	{
 		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -653,6 +699,7 @@ namespace
 		cudaOptions.builder = canonicalCudaBuilder(options.cuda.builder);
 		cudaOptions.queryBatchSize = options.cuda.queryBatchSize;
 		cudaOptions.memoryBudgetMb = options.cuda.memoryBudgetMb;
+		cudaOptions.knnBackend = options.cuda.knnBackend;
 		// Auto-default the budget to 75% of total VRAM when the caller leaves it at 0. The
 		// HGrid aggregate pre-check and the RegularGrid per-level cap both consult this value,
 		// so a sensible default protects users who haven't manually set it without preventing
@@ -921,6 +968,80 @@ namespace
 		return source[distribution(rng)];
 	}
 
+	double chooseDoubleValue(std::mt19937& rng, const std::vector<double>& values)
+	{
+		std::uniform_int_distribution<size_t> distribution(0, values.size() - 1);
+		return values[distribution(rng)];
+	}
+
+	AdaptiveLeafCapacityConfig randomAdaptiveLeafCapacity(
+		std::mt19937& rng,
+		size_t baseLeafCapacity)
+	{
+		static const std::vector<double> weights = { 0.0, 0.5, 1.0, 1.5, 2.0 };
+		static const std::vector<double> queryFactors = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
+
+		AdaptiveLeafCapacityConfig config;
+		config.enabled = true;
+		config.minCapacity = std::max<size_t>(1, baseLeafCapacity / 4);
+		config.maxCapacity = baseLeafCapacity > std::numeric_limits<size_t>::max() / 4
+			? std::numeric_limits<size_t>::max()
+			: std::max<size_t>(baseLeafCapacity, baseLeafCapacity * 4);
+		config.densityWeight = chooseDoubleValue(rng, weights);
+		config.anisotropyWeight = chooseDoubleValue(rng, weights);
+		config.heightRatioWeight = chooseDoubleValue(rng, weights);
+		config.queryMixFactor = chooseDoubleValue(rng, queryFactors);
+
+		if (config.densityWeight == 0.0 &&
+			config.anisotropyWeight == 0.0 &&
+			config.heightRatioWeight == 0.0 &&
+			config.queryMixFactor == 1.0)
+		{
+			config.densityWeight = 1.0;
+		}
+
+		return config;
+	}
+
+	void normalizeAdaptiveLeafCapacity(SchemaLevelConfig& level)
+	{
+		AdaptiveLeafCapacityConfig& adaptive = level.adaptiveLeafCapacity;
+		if (!adaptive.enabled)
+			return;
+
+		const size_t baseCapacity = std::max<size_t>(1, level.leafCapacity);
+		if (adaptive.minCapacity == 0)
+			adaptive.minCapacity = std::max<size_t>(1, baseCapacity / 4);
+		if (adaptive.maxCapacity == 0)
+		{
+			adaptive.maxCapacity = baseCapacity > std::numeric_limits<size_t>::max() / 4
+				? std::numeric_limits<size_t>::max()
+				: std::max<size_t>(baseCapacity, baseCapacity * 4);
+		}
+		if (adaptive.maxCapacity < adaptive.minCapacity)
+			adaptive.maxCapacity = adaptive.minCapacity;
+
+		adaptive.densityWeight = std::clamp(adaptive.densityWeight, -3.0, 3.0);
+		adaptive.anisotropyWeight = std::clamp(adaptive.anisotropyWeight, -3.0, 3.0);
+		adaptive.heightRatioWeight = std::clamp(adaptive.heightRatioWeight, -3.0, 3.0);
+		if (!std::isfinite(adaptive.queryMixFactor) || adaptive.queryMixFactor <= 0.0)
+			adaptive.queryMixFactor = 1.0;
+		adaptive.queryMixFactor = std::clamp(adaptive.queryMixFactor, 0.25, 4.0);
+	}
+
+	void maybeAssignAdaptiveLeafCapacity(
+		SchemaLevelConfig& level,
+		std::mt19937& rng,
+		const Experiments::SchemaGenerationOptions& options)
+	{
+		if (!options.adaptiveLeafCapacity)
+			return;
+
+		std::bernoulli_distribution adaptiveDistribution(std::clamp(options.adaptiveLeafProbability, 0.0, 1.0));
+		if (adaptiveDistribution(rng))
+			level.adaptiveLeafCapacity = randomAdaptiveLeafCapacity(rng, std::max<size_t>(1, level.leafCapacity));
+	}
+
 	template <typename T>
 	T nearbyDomainValue(const std::vector<T>& values, T current, std::mt19937& rng)
 	{
@@ -1025,6 +1146,13 @@ namespace
 		return count;
 	}
 
+	bool schemaUsesAdaptiveLeafCapacity(const SchemaConfig& schema)
+	{
+		return std::any_of(schema.levels.begin(), schema.levels.end(), [](const SchemaLevelConfig& level) {
+			return level.adaptiveLeafCapacity.enabled;
+		});
+	}
+
 	std::string schemaConditionSummary(const SchemaConfig& schema)
 	{
 		std::ostringstream output;
@@ -1040,6 +1168,8 @@ namespace
 			output << schemaTypeShortName(level) << ':';
 			appendConditionSignature(output, level.condition);
 		}
+		if (schema.buildPolicy.enableLeafMicroIndexes)
+			output << "_mi" << schema.buildPolicy.leafMicroIndexThreshold;
 		return output.str();
 	}
 
@@ -1254,6 +1384,22 @@ namespace
 				<< level.numLevels
 				<< "l"
 				<< level.leafCapacity;
+			if (level.adaptiveLeafCapacity.enabled)
+			{
+				output
+					<< "ac"
+					<< level.adaptiveLeafCapacity.minCapacity
+					<< "m"
+					<< level.adaptiveLeafCapacity.maxCapacity
+					<< "d"
+					<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.densityWeight * 100.0))
+					<< "a"
+					<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.anisotropyWeight * 100.0))
+					<< "h"
+					<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.heightRatioWeight * 100.0))
+					<< "q"
+					<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.queryMixFactor * 100.0));
+			}
 			// Phase B2: include the axis policy in the signature so two KDTree/BIH genomes that
 			// differ only in policy land under distinct cache keys and seenSignatures slots. We
 			// only emit the suffix when the policy meaningfully changes behavior — empty or the
@@ -1318,6 +1464,18 @@ namespace
 			output << "      \"minPointsToSplit\": " << level.minPrimitivesToSplit;
 			if (!level.axisPolicy.empty())
 				output << ",\n      \"axisPolicy\": \"" << level.axisPolicy << "\"";
+			if (level.adaptiveLeafCapacity.enabled)
+			{
+				output << ",\n      \"adaptiveLeafCapacity\": {\n";
+				output << "        \"enabled\": true,\n";
+				output << "        \"minCapacity\": " << level.adaptiveLeafCapacity.minCapacity << ",\n";
+				output << "        \"maxCapacity\": " << level.adaptiveLeafCapacity.maxCapacity << ",\n";
+				output << "        \"densityWeight\": " << level.adaptiveLeafCapacity.densityWeight << ",\n";
+				output << "        \"anisotropyWeight\": " << level.adaptiveLeafCapacity.anisotropyWeight << ",\n";
+				output << "        \"heightRatioWeight\": " << level.adaptiveLeafCapacity.heightRatioWeight << ",\n";
+				output << "        \"queryMixFactor\": " << level.adaptiveLeafCapacity.queryMixFactor << "\n";
+				output << "      }";
+			}
 			if (!level.condition.empty())
 			{
 				output << ",\n      \"condition\": {\n";
@@ -1350,7 +1508,9 @@ namespace
 		output << "    \"minPointsToSplit\": " << schema.buildPolicy.minPrimitivesToSplit << ",\n";
 		output << "    \"collapseSingleChild\": " << (schema.buildPolicy.collapseSingleChild ? "true" : "false") << ",\n";
 		output << "    \"removeEmptyNodes\": " << (schema.buildPolicy.removeEmptyNodes ? "true" : "false") << ",\n";
-		output << "    \"allowOverlapDuplication\": " << (schema.buildPolicy.allowOverlapDuplication ? "true" : "false") << "\n";
+		output << "    \"allowOverlapDuplication\": " << (schema.buildPolicy.allowOverlapDuplication ? "true" : "false") << ",\n";
+		output << "    \"enableLeafMicroIndexes\": " << (schema.buildPolicy.enableLeafMicroIndexes ? "true" : "false") << ",\n";
+		output << "    \"leafMicroIndexThreshold\": " << schema.buildPolicy.leafMicroIndexThreshold << "\n";
 		output << "  }\n";
 		output << "}\n";
 		return output.str();
@@ -1403,6 +1563,7 @@ namespace
 		level.numLevels = 1;
 		level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+		maybeAssignAdaptiveLeafCapacity(level, rng, options);
 		if (level.type == MultiDataStructure::QuadTreeNode)
 			level.axisPolicy = "xy";
 		else if (level.type == MultiDataStructure::KDTreeNode)
@@ -1485,6 +1646,7 @@ namespace
 			level.leafCapacity = clampPowerOfTwo(level.leafCapacity, minLeaf, maxLeaf);
 			level.minPrimitivesToSplit = std::clamp(level.minPrimitivesToSplit, static_cast<size_t>(2), std::max<size_t>(2, level.leafCapacity));
 			refreshLevelTypeName(level, options);
+			normalizeAdaptiveLeafCapacity(level);
 			if (i == 0)
 				level.condition = {};
 		}
@@ -1625,6 +1787,63 @@ namespace
 		}
 	}
 
+	void mutateAdaptiveLeafCapacity(
+		SchemaLevelConfig& level,
+		std::mt19937& rng)
+	{
+		if (!level.adaptiveLeafCapacity.enabled)
+		{
+			level.adaptiveLeafCapacity = randomAdaptiveLeafCapacity(rng, std::max<size_t>(1, level.leafCapacity));
+			return;
+		}
+
+		AdaptiveLeafCapacityConfig& adaptive = level.adaptiveLeafCapacity;
+		std::uniform_int_distribution<int> mutationDistribution(0, 5);
+		switch (mutationDistribution(rng))
+		{
+		case 0:
+			adaptive.minCapacity = clampPowerOfTwo(
+				std::max<size_t>(1, adaptive.minCapacity / 2),
+				size_t(1),
+				std::max<size_t>(1, level.leafCapacity));
+			break;
+		case 1:
+			adaptive.maxCapacity = clampPowerOfTwo(
+				adaptive.maxCapacity >= std::numeric_limits<size_t>::max() / 2
+					? adaptive.maxCapacity
+					: adaptive.maxCapacity * 2,
+				std::max<size_t>(adaptive.minCapacity, level.leafCapacity),
+				std::numeric_limits<size_t>::max());
+			break;
+		case 2:
+			adaptive.densityWeight = std::clamp(
+				adaptive.densityWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
+				-3.0,
+				3.0);
+			break;
+		case 3:
+			adaptive.anisotropyWeight = std::clamp(
+				adaptive.anisotropyWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
+				-3.0,
+				3.0);
+			break;
+		case 4:
+			adaptive.heightRatioWeight = std::clamp(
+				adaptive.heightRatioWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
+				-3.0,
+				3.0);
+			break;
+		case 5:
+			adaptive.queryMixFactor = std::clamp(
+				adaptive.queryMixFactor * (std::bernoulli_distribution(0.5)(rng) ? 1.25 : 0.8),
+				0.25,
+				4.0);
+			break;
+		}
+
+		normalizeAdaptiveLeafCapacity(level);
+	}
+
 	// Single-point crossover on the level list. Splices the first `splitA` levels from parent A
 	// with the tail of parent B starting at `splitB`. Lets the search reach topology combinations
 	// neither parent had — e.g. parent A is "QuadTree -> Octree" and parent B is "BIH -> LBVH",
@@ -1702,8 +1921,13 @@ namespace
 			std::uniform_int_distribution<size_t> levelDistribution(0, schema.levels.size() - 1);
 			const size_t levelIndex = levelDistribution(rng);
 			SchemaLevelConfig& level = schema.levels[levelIndex];
+			const bool canMutateAdaptiveLeafCapacity =
+				options.adaptiveLeafCapacity ||
+				std::any_of(schema.levels.begin(), schema.levels.end(), [](const SchemaLevelConfig& candidateLevel) {
+					return candidateLevel.adaptiveLeafCapacity.enabled;
+				});
 
-			std::uniform_int_distribution<int> mutationDistribution(0, 8);
+			std::uniform_int_distribution<int> mutationDistribution(0, canMutateAdaptiveLeafCapacity ? 9 : 8);
 			switch (mutationDistribution(rng))
 			{
 			case 0:
@@ -1772,11 +1996,310 @@ namespace
 						: std::string("round_robin");
 				}
 				break;
+			case 9:
+				mutateAdaptiveLeafCapacity(level, rng);
+				break;
 			}
 		}
 
 		normalizeSchemaForGeneration(schema, options);
 		return schema;
+	}
+
+	struct RepairSchemaMutation
+	{
+		SchemaConfig schema;
+		std::string reason;
+	};
+
+	void assignRepairPrimitive(
+		SchemaLevelConfig& level,
+		SchemaPrimitiveKind primitive,
+		const Experiments::SchemaGenerationOptions& options)
+	{
+		level.primitiveKind = primitive;
+		level.typeName = Config::schemaPrimitiveKindName(primitive);
+		level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(primitive);
+		level.type = level.cpuFallbackType;
+
+		if (primitive == SchemaPrimitiveKind::QuadTree)
+			level.axisPolicy = "xy";
+		else if (primitive == SchemaPrimitiveKind::KDTree || primitive == SchemaPrimitiveKind::BIH)
+			level.axisPolicy = "round_robin";
+		else
+			level.axisPolicy.clear();
+
+		refreshLevelTypeName(level, options);
+	}
+
+	size_t repairTargetLeafLevel(const SchemaConfig& schema)
+	{
+		if (schema.levels.empty())
+			return 0;
+		return schema.levels.size() - 1;
+	}
+
+	void tightenLeafCapacity(
+		SchemaLevelConfig& level,
+		const Experiments::SchemaGenerationOptions& options)
+	{
+		const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+		const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+		level.leafCapacity = clampPowerOfTwo(std::max<size_t>(1, level.leafCapacity / 2), minLeaf, maxLeaf);
+		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+	}
+
+	void loosenLeafCapacity(
+		SchemaLevelConfig& level,
+		const Experiments::SchemaGenerationOptions& options)
+	{
+		const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
+		const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+		level.leafCapacity = clampPowerOfTwo(
+			level.leafCapacity >= std::numeric_limits<size_t>::max() / 2
+				? level.leafCapacity
+				: level.leafCapacity * 2,
+			minLeaf,
+			maxLeaf);
+		level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+	}
+
+	void addPointGateFromDomain(
+		SchemaLevelConfig& level,
+		const Experiments::ConditionDomain* domain,
+		size_t fallback)
+	{
+		if (domain && !domain->pointThresholds.empty())
+		{
+			auto it = std::lower_bound(domain->pointThresholds.begin(), domain->pointThresholds.end(), fallback);
+			if (it == domain->pointThresholds.end())
+				it = std::prev(domain->pointThresholds.end());
+			level.condition.minPoints = *it;
+			return;
+		}
+		level.condition.minPoints = std::max<size_t>(2, fallback);
+	}
+
+	Experiments::SchemaRepairDiagnostics diagnoseRepairInternal(
+		const Experiments::SchemaCandidate& candidate,
+		const std::vector<Experiments::SchemaSearchRecord>& measuredRecords)
+	{
+		Experiments::SchemaRepairDiagnostics diagnostics;
+		if (measuredRecords.empty())
+			return diagnostics;
+
+		double leafRatioSum = 0.0;
+		double testedPerVisitedSum = 0.0;
+		double visitedSum = 0.0;
+		double testedFractionSum = 0.0;
+		double fullContainmentRatioSum = 0.0;
+		double nodeLeafRatioSum = 0.0;
+		size_t count = 0;
+
+		for (const Experiments::SchemaSearchRecord& record : measuredRecords)
+		{
+			if (!std::isfinite(record.score))
+				continue;
+
+			const double averageLeaf = std::max(record.buildMetrics.averageLeafOccupancy, 1.0);
+			const double leafRatio = static_cast<double>(record.buildMetrics.maxLeafOccupancy) / averageLeaf;
+			const double visited = std::max(record.queryMetrics.averageVisitedNodes, 0.0);
+			const double tested = std::max(record.queryMetrics.averageTestedPoints, 0.0);
+			const double testedPerVisited = tested / std::max(visited, 1.0);
+			const double testedFraction = record.numPoints > 0
+				? tested / static_cast<double>(record.numPoints)
+				: 0.0;
+			const double fullContainmentRatio = record.queryMetrics.averageFullyContainedNodes / std::max(visited, 1.0);
+			const double nodeLeafRatio = record.buildMetrics.numLeaves > 0
+				? static_cast<double>(record.buildMetrics.numNodes) / static_cast<double>(record.buildMetrics.numLeaves)
+				: 0.0;
+
+			leafRatioSum += leafRatio;
+			testedPerVisitedSum += testedPerVisited;
+			visitedSum += visited;
+			testedFractionSum += testedFraction;
+			fullContainmentRatioSum += fullContainmentRatio;
+			nodeLeafRatioSum += nodeLeafRatio;
+			++count;
+		}
+
+		if (count == 0)
+			return diagnostics;
+
+		const double invCount = 1.0 / static_cast<double>(count);
+		diagnostics.leafOccupancyRatio = leafRatioSum * invCount;
+		diagnostics.testedPerVisited = testedPerVisitedSum * invCount;
+		diagnostics.visitedPerQuery = visitedSum * invCount;
+		diagnostics.testedPointFraction = testedFractionSum * invCount;
+		diagnostics.fullContainmentRatio = fullContainmentRatioSum * invCount;
+
+		const size_t deepestConfiguredLeaf = candidate.config.levels.empty()
+			? 1
+			: candidate.config.levels[repairTargetLeafLevel(candidate.config)].leafCapacity;
+
+		diagnostics.highLeafOccupancy =
+			diagnostics.leafOccupancyRatio >= 3.0 ||
+			(!measuredRecords.empty() &&
+				measuredRecords.front().buildMetrics.maxLeafOccupancy >= std::max<size_t>(deepestConfiguredLeaf * 2, 1024));
+		diagnostics.testedPointDominated =
+			diagnostics.testedPerVisited >= 32.0 ||
+			diagnostics.testedPointFraction >= 0.20;
+		diagnostics.visitedNodeDominated =
+			diagnostics.visitedPerQuery >= 64.0 &&
+			diagnostics.testedPerVisited <= 8.0;
+		diagnostics.fullContainmentDominated =
+			diagnostics.fullContainmentRatio >= 0.20;
+		diagnostics.likelySingleChildChains =
+			(nodeLeafRatioSum * invCount) >= 2.50 &&
+			measuredRecords.front().buildMetrics.maxDepth > candidate.config.totalLevels() / 2;
+
+		if (diagnostics.highLeafOccupancy)
+			diagnostics.bottleneck = "high_leaf_occupancy";
+		else if (diagnostics.testedPointDominated)
+			diagnostics.bottleneck = "tested_points_dominated";
+		else if (diagnostics.visitedNodeDominated)
+			diagnostics.bottleneck = "visited_nodes_dominated";
+		else if (diagnostics.fullContainmentDominated)
+			diagnostics.bottleneck = "full_containment_dominated";
+		else if (diagnostics.likelySingleChildChains)
+			diagnostics.bottleneck = "single_child_chains";
+
+		return diagnostics;
+	}
+
+	void addRepairMutation(
+		std::vector<RepairSchemaMutation>& mutations,
+		SchemaConfig schema,
+		const std::string& reason,
+		const Experiments::SchemaGenerationOptions& options,
+		std::unordered_set<std::string>& seen)
+	{
+		normalizeSchemaForGeneration(schema, options);
+		const std::string signature = schemaSignature(schema);
+		if (!seen.insert(signature).second)
+			return;
+		mutations.push_back({ std::move(schema), reason });
+	}
+
+	std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
+		const Experiments::SchemaCandidate& candidate,
+		const std::vector<Experiments::SchemaSearchRecord>& measuredRecords,
+		const Experiments::SchemaGenerationOptions& options,
+		const Experiments::ConditionDomain* domain,
+		size_t maxMutations,
+		uint32_t seed)
+	{
+		std::vector<RepairSchemaMutation> mutations;
+		if (maxMutations == 0 || candidate.config.levels.empty())
+			return mutations;
+
+		const Experiments::SchemaRepairDiagnostics diagnostics = diagnoseRepairInternal(candidate, measuredRecords);
+		const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
+		const size_t maxBlocks = std::max<size_t>(1, std::min(options.maxBlocks, maxDepth));
+		const bool canAppendBlock = candidate.config.levels.size() < maxBlocks && candidate.config.totalLevels() < maxDepth;
+		std::unordered_set<std::string> seen;
+		seen.insert(schemaSignature(candidate.config));
+		std::mt19937 rng(seed);
+
+		auto maybeStop = [&]() { return mutations.size() >= maxMutations; };
+
+		if (diagnostics.highLeafOccupancy || diagnostics.testedPointDominated)
+		{
+			SchemaConfig repaired = candidate.config;
+			SchemaLevelConfig& leafLevel = repaired.levels[repairTargetLeafLevel(repaired)];
+			tightenLeafCapacity(leafLevel, options);
+			if (repaired.totalLevels() < maxDepth)
+				++leafLevel.numLevels;
+			addRepairMutation(mutations, std::move(repaired), diagnostics.highLeafOccupancy
+				? "high_leaf_occupancy"
+				: "tested_points_leaf_tighten", options, seen);
+			if (maybeStop()) return mutations;
+		}
+
+		if (diagnostics.testedPointDominated && canAppendBlock)
+		{
+			SchemaConfig repaired = candidate.config;
+			SchemaLevelConfig micro = repaired.levels.back();
+			assignRepairPrimitive(micro,
+				measuredRecords.empty() || measuredRecords.front().knnWeight < 0.5
+					? SchemaPrimitiveKind::BVH
+					: SchemaPrimitiveKind::KDTree,
+				options);
+			micro.numLevels = std::min<size_t>(3, maxDepth - repaired.totalLevels());
+			micro.leafCapacity = std::max<size_t>(options.minLeafCapacity, repaired.levels.back().leafCapacity / 2);
+			micro.leafCapacity = clampPowerOfTwo(micro.leafCapacity, std::max<size_t>(1, options.minLeafCapacity), std::max<size_t>(1, options.maxLeafCapacity));
+			micro.minPrimitivesToSplit = std::max<size_t>(2, micro.leafCapacity / 4);
+			addPointGateFromDomain(micro, domain, std::max<size_t>(micro.leafCapacity * 2, 32));
+			repaired.levels.push_back(micro);
+			addRepairMutation(mutations, std::move(repaired), "tested_points_micro_index", options, seen);
+			if (maybeStop()) return mutations;
+		}
+
+		if (diagnostics.visitedNodeDominated)
+		{
+			SchemaConfig repaired = candidate.config;
+			SchemaLevelConfig& root = repaired.levels.front();
+			if (measuredRecords.empty() || measuredRecords.front().pointFeatures.flatnessScore >= measuredRecords.front().pointFeatures.verticalityScore)
+				assignRepairPrimitive(root, SchemaPrimitiveKind::QuadTree, options);
+			else
+				assignRepairPrimitive(root, SchemaPrimitiveKind::Octree, options);
+			loosenLeafCapacity(root, options);
+			if (root.numLevels > 1)
+				--root.numLevels;
+			addRepairMutation(mutations, std::move(repaired), "visited_nodes_coarsen_root", options, seen);
+			if (maybeStop()) return mutations;
+		}
+
+		if (diagnostics.fullContainmentDominated)
+		{
+			SchemaConfig repaired = candidate.config;
+			SchemaLevelConfig& root = repaired.levels.front();
+			const bool allowGrid = !queryMinimalPrimitiveProfile(options);
+			if (allowGrid)
+				assignRepairPrimitive(root, SchemaPrimitiveKind::RegularGrid, options);
+			else if (measuredRecords.empty() || measuredRecords.front().pointFeatures.flatnessScore >= measuredRecords.front().pointFeatures.verticalityScore)
+				assignRepairPrimitive(root, SchemaPrimitiveKind::QuadTree, options);
+			else
+				assignRepairPrimitive(root, SchemaPrimitiveKind::Octree, options);
+			loosenLeafCapacity(root, options);
+			addRepairMutation(mutations, std::move(repaired), "full_containment_coarse_grid", options, seen);
+			if (maybeStop()) return mutations;
+		}
+
+		if (diagnostics.likelySingleChildChains)
+		{
+			SchemaConfig repaired = candidate.config;
+			auto kdLevel = std::find_if(repaired.levels.begin(), repaired.levels.end(), [](const SchemaLevelConfig& level) {
+				return level.type == MultiDataStructure::KDTreeNode || isBIHLevelName(level.typeName);
+			});
+			if (kdLevel != repaired.levels.end())
+			{
+				kdLevel->axisPolicy = kdLevel->axisPolicy == "round_robin"
+					? "median_longest_axis"
+					: "round_robin";
+			}
+			else
+			{
+				std::uniform_int_distribution<int> policyDistribution(0, 2);
+				static const std::array<const char*, 3> policies = { "xy", "ignore_shortest", "ignore_z" };
+				repaired.levels.front().axisPolicy = policies[policyDistribution(rng)];
+			}
+			addRepairMutation(mutations, std::move(repaired), "single_child_axis_policy", options, seen);
+			if (maybeStop()) return mutations;
+		}
+
+		if (mutations.empty())
+		{
+			SchemaConfig repaired = candidate.config;
+			SchemaLevelConfig& leafLevel = repaired.levels[repairTargetLeafLevel(repaired)];
+			if (diagnostics.testedPerVisited > 8.0)
+				tightenLeafCapacity(leafLevel, options);
+			else
+				loosenLeafCapacity(repaired.levels.front(), options);
+			addRepairMutation(mutations, std::move(repaired), "balanced_leaf_probe", options, seen);
+		}
+
+		return mutations;
 	}
 
 	std::vector<SearchDataset> makeSyntheticDatasets(size_t scale)
@@ -2016,6 +2539,79 @@ namespace
 		return weights;
 	}
 
+	enum class QueryCenterMode
+	{
+		Random,
+		Dense,
+		Boundary,
+		Outside,
+	};
+
+	struct StratifiedQuerySpec
+	{
+		PreparedQueryKind kind = PreparedQueryKind::Range;
+		std::string name;
+		double scale = 0.01;
+		QueryCenterMode centerMode = QueryCenterMode::Random;
+	};
+
+	std::vector<StratifiedQuerySpec> stratifiedQuerySpecs(const Experiments::WorkloadProfile& profile)
+	{
+		std::vector<StratifiedQuerySpec> specs;
+		const double rangeMin = std::min(profile.rangeScaleMin, profile.rangeScaleMax);
+		const double rangeMax = std::max(profile.rangeScaleMin, profile.rangeScaleMax);
+		const double rangeMid = 0.5 * (rangeMin + rangeMax);
+		const double radiusMin = std::min(profile.radiusScaleMin, profile.radiusScaleMax);
+		const double radiusMax = std::max(profile.radiusScaleMin, profile.radiusScaleMax);
+		const double radiusMid = 0.5 * (radiusMin + radiusMax);
+
+		if (profile.rangeWeight > 0.0)
+		{
+			specs.push_back({ PreparedQueryKind::Range, "range_small", rangeMin, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Range, "range_medium", rangeMid, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Range, "range_large", rangeMax, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Range, "range_near_empty", rangeMin, QueryCenterMode::Outside });
+			specs.push_back({ PreparedQueryKind::Range, "range_dense", rangeMin, QueryCenterMode::Dense });
+		}
+		if (profile.radiusWeight > 0.0)
+		{
+			specs.push_back({ PreparedQueryKind::Radius, "radius_small", radiusMin, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Radius, "radius_medium", radiusMid, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Radius, "radius_large", radiusMax, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Radius, "radius_dense", radiusMin, QueryCenterMode::Dense });
+			specs.push_back({ PreparedQueryKind::Radius, "radius_boundary", radiusMid, QueryCenterMode::Boundary });
+		}
+		if (profile.knnWeight > 0.0)
+		{
+			specs.push_back({ PreparedQueryKind::Knn, "knn_dense", 0.0, QueryCenterMode::Dense });
+			specs.push_back({ PreparedQueryKind::Knn, "knn_outside", 0.0, QueryCenterMode::Outside });
+			specs.push_back({ PreparedQueryKind::Knn, "knn_boundary", 0.0, QueryCenterMode::Boundary });
+		}
+		if (specs.empty())
+		{
+			specs.push_back({ PreparedQueryKind::Range, "range_medium", rangeMid, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Radius, "radius_medium", radiusMid, QueryCenterMode::Random });
+			specs.push_back({ PreparedQueryKind::Knn, "knn_dense", 0.0, QueryCenterMode::Dense });
+		}
+		return specs;
+	}
+
+	glm::vec3 centerForStratum(std::mt19937& rng, const PointCloud& cloud, QueryCenterMode mode)
+	{
+		switch (mode)
+		{
+		case QueryCenterMode::Dense:
+			return sampledCloudPoint(rng, cloud);
+		case QueryCenterMode::Boundary:
+			return boundaryPoint(rng, cloud);
+		case QueryCenterMode::Outside:
+			return outsidePoint(rng, cloud);
+		case QueryCenterMode::Random:
+		default:
+			return randomPointInBounds(rng, cloud.bounds());
+		}
+	}
+
 	PreparedWorkload prepareWorkloadProfile(
 		const Experiments::WorkloadProfile& profile,
 		const PointCloud& cloud,
@@ -2026,6 +2622,82 @@ namespace
 			return prepared;
 
 		std::mt19937 rng(profile.querySeed);
+		if (profile.stratifyQueries)
+		{
+			const std::vector<StratifiedQuerySpec> specs = stratifiedQuerySpecs(profile);
+			bool nextRangeIsCount = false;
+			if (cudaEvaluator)
+			{
+				prepared.cudaQueries.reserve(profile.numQueries);
+				prepared.cudaStrata.reserve(profile.numQueries);
+				for (size_t i = 0; i < profile.numQueries; ++i)
+				{
+					const StratifiedQuerySpec& spec = specs[i % specs.size()];
+					const glm::vec3 center = centerForStratum(rng, cloud, spec.centerMode);
+					PointGpu::Query query;
+					if (spec.kind == PreparedQueryKind::Range)
+					{
+						query.type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
+						query.bounds = queryBoxAtScale(center, cloud, spec.scale);
+						if (nextRangeIsCount)
+							++prepared.countRangeQueries;
+						else
+							++prepared.rangeQueries;
+						nextRangeIsCount = !nextRangeIsCount;
+					}
+					else if (spec.kind == PreparedQueryKind::Radius)
+					{
+						query.type = PointGpu::QueryType::Radius;
+						query.center = center;
+						const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
+						const float largestRange = std::max({ range.x, range.y, range.z, 1.0f });
+						query.radius = largestRange * static_cast<float>(spec.scale);
+						++prepared.radiusQueries;
+					}
+					else
+					{
+						query.type = PointGpu::QueryType::Knn;
+						query.center = center;
+						query.k = profile.knnK;
+						++prepared.knnQueries;
+					}
+					prepared.cudaQueries.push_back(query);
+					prepared.cudaStrata.push_back(spec.name);
+				}
+				return prepared;
+			}
+
+			prepared.cpuQueries.reserve(profile.numQueries);
+			for (size_t i = 0; i < profile.numQueries; ++i)
+			{
+				const StratifiedQuerySpec& spec = specs[i % specs.size()];
+				const glm::vec3 center = centerForStratum(rng, cloud, spec.centerMode);
+				PreparedCpuQuery query;
+				query.kind = spec.kind;
+				query.stratum = spec.name;
+				if (spec.kind == PreparedQueryKind::Range)
+				{
+					query.bounds = queryBoxAtScale(center, cloud, spec.scale);
+					++prepared.rangeQueries;
+				}
+				else if (spec.kind == PreparedQueryKind::Radius)
+				{
+					query.center = center;
+					const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
+					const float largestRange = std::max({ range.x, range.y, range.z, 1.0f });
+					query.radius = largestRange * static_cast<float>(spec.scale);
+					++prepared.radiusQueries;
+				}
+				else
+				{
+					query.center = center;
+					++prepared.knnQueries;
+				}
+				prepared.cpuQueries.push_back(query);
+			}
+			return prepared;
+		}
+
 		if (cudaEvaluator)
 		{
 			std::vector<double> weights = queryTypeWeights(profile);
@@ -2062,6 +2734,7 @@ namespace
 					++prepared.knnQueries;
 				}
 				prepared.cudaQueries.push_back(query);
+				prepared.cudaStrata.push_back({});
 			}
 
 			return prepared;
@@ -2078,6 +2751,7 @@ namespace
 			{
 				query.kind = PreparedQueryKind::Range;
 				query.bounds = randomQueryBox(rng, cloud, profile);
+				query.stratum = "range";
 				++prepared.rangeQueries;
 			}
 			else if (type == 1)
@@ -2085,12 +2759,14 @@ namespace
 				query.kind = PreparedQueryKind::Radius;
 				query.center = randomPointInBounds(rng, cloud.bounds());
 				query.radius = randomQueryRadius(rng, cloud, profile);
+				query.stratum = "radius";
 				++prepared.radiusQueries;
 			}
 			else
 			{
 				query.kind = PreparedQueryKind::Knn;
 				query.center = randomPointInBounds(rng, cloud.bounds());
+				query.stratum = "knn";
 				++prepared.knnQueries;
 			}
 			prepared.cpuQueries.push_back(query);
@@ -2133,13 +2809,77 @@ namespace
 		return !std::filesystem::exists(path, error) || std::filesystem::file_size(path, error) == 0;
 	}
 
+	using QueryBreakdown = PointSpatialIndex::QueryStats::QueryBreakdown;
+
+	std::vector<std::pair<std::string, size_t>> sortedBreakdownMap(const std::unordered_map<std::string, size_t>& values)
+	{
+		std::vector<std::pair<std::string, size_t>> sorted(values.begin(), values.end());
+		std::sort(sorted.begin(), sorted.end(), [](const auto& left, const auto& right) {
+			return left.first < right.first;
+		});
+		return sorted;
+	}
+
+	std::string formatDepthBreakdown(const QueryBreakdown& breakdown)
+	{
+		std::ostringstream output;
+		bool first = true;
+		for (size_t depth = 0; depth < breakdown.visitedByDepth.size(); ++depth)
+		{
+			const size_t count = breakdown.visitedByDepth[depth];
+			if (count == 0)
+				continue;
+			if (!first)
+				output << ';';
+			first = false;
+			output << depth << ':' << count;
+		}
+		return output.str();
+	}
+
+	std::string formatMapBreakdown(const std::unordered_map<std::string, size_t>& values)
+	{
+		std::ostringstream output;
+		bool first = true;
+		for (const auto& [name, count] : sortedBreakdownMap(values))
+		{
+			if (!first)
+				output << ';';
+			first = false;
+			output << name << ':' << count;
+		}
+		return output.str();
+	}
+
+	std::string formatStratumSummary(const std::map<std::string, Experiments::QueryMetrics>& metricsByStratum)
+	{
+		std::ostringstream output;
+		bool first = true;
+		for (const auto& [name, metrics] : metricsByStratum)
+		{
+			if (metrics.totalQueries == 0)
+				continue;
+			if (!first)
+				output << ';';
+			first = false;
+			output << name
+				<< "|q=" << metrics.totalQueries
+				<< "|avg_ms=" << metrics.averageLatencyMs
+				<< "|p95_ms=" << metrics.p95LatencyMs
+				<< "|visited=" << metrics.averageVisitedNodes
+				<< "|tested=" << metrics.averageTestedPoints;
+		}
+		return output.str();
+	}
+
 	void writeQueryTraceHeader(std::ostream& output)
 	{
 		output
 			<< "dataset_name,dataset_source,schema_name,schema_path,workload_name,score_stage,"
-			<< "query_id,query_type,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
+			<< "query_id,query_type,query_stratum,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
 			<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,"
-			<< "fully_contained_nodes,backend,query_seed\n";
+			<< "fully_contained_nodes,visited_by_depth,visited_by_structure,tested_points_by_structure,"
+			<< "fully_contained_by_structure,backend,query_seed\n";
 	}
 
 	void appendQueryTraceRow(
@@ -2150,6 +2890,7 @@ namespace
 		const std::string& scoreStage,
 		size_t queryId,
 		const std::string& queryType,
+		const std::string& queryStratum,
 		const AABB* bounds,
 		const glm::vec3* center,
 		float radius,
@@ -2166,6 +2907,7 @@ namespace
 			<< csvEscape(scoreStage) << ','
 			<< queryId << ','
 			<< csvEscape(queryType) << ',';
+		output << csvEscape(queryStratum) << ',';
 
 		if (bounds)
 		{
@@ -2202,6 +2944,10 @@ namespace
 			<< stats.testedPoints << ','
 			<< stats.returnedPoints << ','
 			<< stats.fullyContainedNodes << ','
+			<< csvEscape(formatDepthBreakdown(stats.breakdown)) << ','
+			<< csvEscape(formatMapBreakdown(stats.breakdown.visitedByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(stats.breakdown.testedPointsByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(stats.breakdown.fullyContainedByStructure)) << ','
 			<< csvEscape(backend) << ','
 			<< workload.querySeed << '\n';
 	}
@@ -2244,6 +2990,7 @@ namespace
 					scoreStage,
 					i,
 					queryKindName(query.kind),
+					query.stratum,
 					hasBounds ? &query.bounds : nullptr,
 					hasCenter ? &query.center : nullptr,
 					query.kind == PreparedQueryKind::Radius ? query.radius : 0.0f,
@@ -2258,6 +3005,7 @@ namespace
 		for (size_t i = 0; i < count; ++i)
 		{
 			const PointGpu::Query& query = prepared.cudaQueries[i];
+			const std::string queryStratum = i < prepared.cudaStrata.size() ? prepared.cudaStrata[i] : std::string();
 			const bool hasBounds = query.type == PointGpu::QueryType::Range || query.type == PointGpu::QueryType::CountRange;
 			const bool hasCenter = query.type == PointGpu::QueryType::Radius || query.type == PointGpu::QueryType::Knn;
 			appendQueryTraceRow(
@@ -2268,6 +3016,7 @@ namespace
 				scoreStage,
 				i,
 				queryKindName(query.type),
+				queryStratum,
 				hasBounds ? &query.bounds : nullptr,
 				hasCenter ? &query.center : nullptr,
 				query.type == PointGpu::QueryType::Radius ? query.radius : 0.0f,
@@ -2284,30 +3033,55 @@ namespace
 			return result;
 
 		std::vector<PointSpatialIndex::QueryStats> samples;
+		std::vector<PointSpatialIndex::QueryStats> rangeSamples;
+		std::vector<PointSpatialIndex::QueryStats> radiusSamples;
+		std::vector<PointSpatialIndex::QueryStats> knnSamples;
+		std::map<std::string, std::vector<PointSpatialIndex::QueryStats>> stratumSamples;
 		samples.reserve(prepared.cpuQueries.size());
+		rangeSamples.reserve(prepared.rangeQueries);
+		radiusSamples.reserve(prepared.radiusQueries);
+		knnSamples.reserve(prepared.knnQueries);
 
 		for (const PreparedCpuQuery& query : prepared.cpuQueries)
 		{
 			if (query.kind == PreparedQueryKind::Range)
 			{
-				samples.push_back(index.rangeQuery(query.bounds).stats);
+				PointSpatialIndex::QueryStats stats = index.rangeQuery(query.bounds).stats;
+				stratumSamples[query.stratum].push_back(stats);
+				rangeSamples.push_back(stats);
+				samples.push_back(std::move(stats));
 				++result.rangeQueries;
 				continue;
 			}
 
 			if (query.kind == PreparedQueryKind::Radius)
 			{
-				samples.push_back(index.radiusQuery(query.center, query.radius).stats);
+				PointSpatialIndex::QueryStats stats = index.radiusQuery(query.center, query.radius).stats;
+				stratumSamples[query.stratum].push_back(stats);
+				radiusSamples.push_back(stats);
+				samples.push_back(std::move(stats));
 				++result.radiusQueries;
 				continue;
 			}
 
-			samples.push_back(index.knnQuery(query.center, knnK).stats);
+			PointSpatialIndex::QueryStats stats = index.knnQuery(query.center, knnK).stats;
+			stratumSamples[query.stratum].push_back(stats);
+			knnSamples.push_back(stats);
+			samples.push_back(std::move(stats));
 			++result.knnQueries;
 		}
 
 		result.samples = samples;
 		result.metrics = Experiments::summarizeQueryStats(samples);
+		result.rangeMetrics = Experiments::summarizeQueryStats(rangeSamples);
+		result.radiusMetrics = Experiments::summarizeQueryStats(radiusSamples);
+		result.knnMetrics = Experiments::summarizeQueryStats(knnSamples);
+		for (const auto& [name, stratum] : stratumSamples)
+		{
+			if (!name.empty())
+				result.stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
+		}
+		result.stratumSummary = formatStratumSummary(result.stratumMetrics);
 		return result;
 	}
 
@@ -2325,20 +3099,68 @@ namespace
 		result.metrics = queryResult.metrics;
 		result.gpuQueryMs = queryResult.gpuQueryTimeMs;
 		result.samples.reserve(queryResult.samples.size());
-		for (const PointGpu::QuerySample& sample : queryResult.samples)
+		std::vector<PointSpatialIndex::QueryStats> rangeSamples;
+		std::vector<PointSpatialIndex::QueryStats> countRangeSamples;
+		std::vector<PointSpatialIndex::QueryStats> radiusSamples;
+		std::vector<PointSpatialIndex::QueryStats> knnSamples;
+		std::map<std::string, std::vector<PointSpatialIndex::QueryStats>> stratumSamples;
+		rangeSamples.reserve(queryResult.rangeQueries);
+		countRangeSamples.reserve(queryResult.countRangeQueries);
+		radiusSamples.reserve(queryResult.radiusQueries);
+		knnSamples.reserve(queryResult.knnQueries);
+		const size_t sampleCount = std::min(queryResult.samples.size(), prepared.cudaQueries.size());
+		for (size_t i = 0; i < sampleCount; ++i)
 		{
+			const PointGpu::QuerySample& sample = queryResult.samples[i];
 			PointSpatialIndex::QueryStats stats;
 			stats.visitedNodes = sample.visitedNodes;
 			stats.testedPoints = sample.testedPoints;
 			stats.returnedPoints = sample.returnedPoints;
 			stats.elapsedMs = sample.elapsedMs;
+			if (i < prepared.cudaStrata.size() && !prepared.cudaStrata[i].empty())
+				stratumSamples[prepared.cudaStrata[i]].push_back(stats);
+			switch (prepared.cudaQueries[i].type)
+			{
+			case PointGpu::QueryType::Range:
+				rangeSamples.push_back(stats);
+				break;
+			case PointGpu::QueryType::CountRange:
+				countRangeSamples.push_back(stats);
+				break;
+			case PointGpu::QueryType::Radius:
+				radiusSamples.push_back(stats);
+				break;
+			case PointGpu::QueryType::Knn:
+				knnSamples.push_back(stats);
+				break;
+			}
 			result.samples.push_back(stats);
 		}
 		result.rangeQueries = queryResult.rangeQueries;
 		result.countRangeQueries = queryResult.countRangeQueries;
 		result.radiusQueries = queryResult.radiusQueries;
 		result.knnQueries = queryResult.knnQueries;
+		result.rangeMetrics = Experiments::summarizeQueryStats(rangeSamples);
+		result.countRangeMetrics = Experiments::summarizeQueryStats(countRangeSamples);
+		result.radiusMetrics = Experiments::summarizeQueryStats(radiusSamples);
+		result.knnMetrics = Experiments::summarizeQueryStats(knnSamples);
+		for (const auto& [name, stratum] : stratumSamples)
+			result.stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
+		result.stratumSummary = formatStratumSummary(result.stratumMetrics);
 		return result;
+	}
+
+	SchemaConfig effectiveSchemaForEvaluation(
+		const Experiments::SchemaCandidate& schema,
+		const Experiments::SchemaSearchOptions& options)
+	{
+		SchemaConfig config = schema.config;
+		if (!useCudaEvaluator(options) && options.enableLeafMicroIndexes)
+		{
+			config.buildPolicy.enableLeafMicroIndexes = true;
+			config.buildPolicy.leafMicroIndexThreshold = options.leafMicroIndexThreshold;
+		}
+		return config;
 	}
 
 	Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
@@ -2360,13 +3182,19 @@ namespace
 		double gpuBuildMs = 0.0;
 		size_t gpuMemoryBytes = 0;
 		ActiveStructureStats activeStats;
+		const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
 
 		if (useCudaEvaluator(options))
 		{
-			activeStats = staticSchemaStructureStats(schema.config);
+			if (schemaUsesAdaptiveLeafCapacity(effectiveConfig))
+				throw std::runtime_error(
+					"CUDA schema-search evaluators do not currently support adaptiveLeafCapacity; "
+					"use the CPU evaluator for adaptive capacity tuning or remove the adaptive leaf-capacity rule.");
+
+			activeStats = staticSchemaStructureStats(effectiveConfig);
 			backend = "cuda";
 			const PointGpu::Options cudaOptions = cudaOptionsFrom(options);
-			const std::string currentSignature = schemaSignature(schema.config);
+			const std::string currentSignature = schemaSignature(effectiveConfig);
 			auto applyBuildResult = [&](const PointGpu::BuildResult& build) {
 				buildMetrics = build.metrics;
 				cudaDevice = build.device;
@@ -2388,9 +3216,9 @@ namespace
 				PointGpu::BIH* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->bih, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->bih, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2400,9 +3228,9 @@ namespace
 				PointGpu::HGrid* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->hgrid, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->hgrid, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2412,9 +3240,9 @@ namespace
 				PointGpu::KDTree* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->kdTree, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->kdTree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2424,9 +3252,9 @@ namespace
 				PointGpu::Octree* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->octree, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->octree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2436,9 +3264,9 @@ namespace
 				PointGpu::QuadTree* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->quadTree, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->quadTree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2448,9 +3276,9 @@ namespace
 				PointGpu::RegularGrid* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->regularGrid, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->regularGrid, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2460,9 +3288,9 @@ namespace
 				PointGpu::MixedTree* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->mixedTree, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->mixedTree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2472,9 +3300,9 @@ namespace
 				PointGpu::LBVH* indexPtr = &localIndex;
 				PointGpu::BuildResult build;
 				if (cudaCacheEntry)
-					build = cudaBuildOrReuse(cudaCacheEntry->lbvh, currentSignature, dataset.cloud, schema.config, cudaOptions, *cudaCacheEntry, indexPtr);
+					build = cudaBuildOrReuse(cudaCacheEntry->lbvh, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 				else
-					build = localIndex.build(dataset.cloud, schema.config, cudaOptions);
+					build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
 				applyBuildResult(build);
 				workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions);
 			}
@@ -2483,11 +3311,11 @@ namespace
 		{
 			PointSpatialIndex index;
 			const auto buildBegin = std::chrono::steady_clock::now();
-			index.build(dataset.cloud, schema.config);
+			index.build(dataset.cloud, effectiveConfig);
 			const auto buildEnd = std::chrono::steady_clock::now();
 
-			buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd));
-			activeStats = collectActiveStructureStats(index.root(), schema.config);
+			buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd), effectiveConfig);
+			activeStats = collectActiveStructureStats(index.root(), effectiveConfig);
 			workloadRun = runWorkloadProfile(preparedWorkload, workload.knnK, index);
 		}
 
@@ -2512,14 +3340,19 @@ namespace
 		record.numQueries = workload.numQueries;
 		record.knnK = workload.knnK;
 		record.querySeed = workload.querySeed;
-		record.schemaName = schema.config.name;
+		record.schemaName = effectiveConfig.name;
 		record.schemaPath = schema.path;
 		record.buildMetrics = buildMetrics;
 		record.queryMetrics = workloadRun.metrics;
+		record.rangeMetrics = workloadRun.rangeMetrics;
+		record.countRangeMetrics = workloadRun.countRangeMetrics;
+		record.radiusMetrics = workloadRun.radiusMetrics;
+		record.knnMetrics = workloadRun.knnMetrics;
 		record.rangeQueries = workloadRun.rangeQueries;
 		record.countRangeQueries = workloadRun.countRangeQueries;
 		record.radiusQueries = workloadRun.radiusQueries;
 		record.knnQueries = workloadRun.knnQueries;
+		record.queryStrataSummary = workloadRun.stratumSummary;
 		record.weights = effectiveScoreWeights(workload, options);
 		record.scoreMode = scoreModeForWeights(record.weights);
 		record.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
@@ -2542,9 +3375,9 @@ namespace
 		record.gpuBuildMs = gpuBuildMs;
 		record.gpuQueryMs = workloadRun.gpuQueryMs;
 		record.gpuMemoryBytes = gpuMemoryBytes;
-		record.conditionalLevels = schemaConditionalLevels(schema.config);
-		record.conditionFields = schemaConditionFields(schema.config);
-		record.conditionSummary = schemaConditionSummary(schema.config);
+		record.conditionalLevels = schemaConditionalLevels(effectiveConfig);
+		record.conditionFields = schemaConditionFields(effectiveConfig);
+		record.conditionSummary = schemaConditionSummary(effectiveConfig);
 		record.isBaseline = schema.isBaseline;
 		record.activeStructureTypes = activeStats.activeStructureTypes;
 		record.nestedActiveFraction = activeStats.nestedActiveFraction;
@@ -2566,12 +3399,13 @@ namespace
 		if (cache && cache->enabled() && !options.rebuildScoreCache && options.queryTracePath.empty())
 		{
 			const std::string backendName = useCudaEvaluator(options) ? "cuda" : "cpu";
+			const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
 			std::string cudaBuilder;
 			if (useCudaEvaluator(options))
 				cudaBuilder = cudaOptionsFrom(options).builder;
 
 			const Experiments::EvaluationCacheKey key = Experiments::makeEvaluationCacheKey(
-				schemaSignature(schema.config),
+				schemaSignature(effectiveConfig),
 				dataset.name,
 				dataset.cloud.size(),
 				dataset.cloud.bounds().min(),
@@ -2745,9 +3579,11 @@ namespace
 			<< "feature_sample_size,bbox_x,bbox_y,bbox_z,aspect_xy,aspect_xz,aspect_yz,density_bbox,height_mean,height_std,height_range,"
 			<< "cov_eig_0,cov_eig_1,cov_eig_2,linearity,planarity,scattering,occupancy_ratio_8,occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,"
 			<< "w_range,w_radius,w_knn,query_scale_mean,query_scale_std,build_weight,memory_weight,"
-			<< "schema_name,schema_path,build_time_ms,num_nodes,num_leaves,max_depth,avg_leaf_occupancy,max_leaf_occupancy,memory_estimate_bytes,"
+			<< "schema_name,schema_path,build_time_ms,num_nodes,num_leaves,max_depth,avg_leaf_occupancy,max_leaf_occupancy,"
+			<< "leaf_occupancy_p50,leaf_occupancy_p90,leaf_occupancy_p99,avg_depth,avg_fanout,max_fanout,empty_child_ratio,single_child_nodes,"
+			<< "mean_tight_bounds_volume_ratio,micro_indexed_leaves,micro_indexed_points,node_fanout_summary,memory_estimate_bytes,"
 			<< "total_queries,avg_latency_ms,median_latency_ms,p95_latency_ms,throughput_qps,avg_visited_nodes,avg_tested_points,avg_returned_points,"
-			<< "range_queries,radius_queries,knn_queries,score,score_memory_mb,score_imbalance_penalty,lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
+			<< "range_queries,radius_queries,knn_queries,query_strata_summary,score,score_memory_mb,score_imbalance_penalty,lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 			<< "backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries,"
 			<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
 			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
@@ -2823,6 +3659,18 @@ namespace
 				<< record.buildMetrics.maxDepth << ','
 				<< record.buildMetrics.averageLeafOccupancy << ','
 				<< record.buildMetrics.maxLeafOccupancy << ','
+				<< record.buildMetrics.leafOccupancyP50 << ','
+				<< record.buildMetrics.leafOccupancyP90 << ','
+				<< record.buildMetrics.leafOccupancyP99 << ','
+				<< record.buildMetrics.averageDepth << ','
+				<< record.buildMetrics.averageFanout << ','
+				<< record.buildMetrics.maxFanout << ','
+				<< record.buildMetrics.emptyChildRatio << ','
+				<< record.buildMetrics.singleChildNodeCount << ','
+				<< record.buildMetrics.meanTightBoundsVolumeRatio << ','
+				<< record.buildMetrics.microIndexedLeaves << ','
+				<< record.buildMetrics.microIndexedPoints << ','
+				<< csvEscape(record.buildMetrics.nodeFanoutSummary) << ','
 				<< record.buildMetrics.memoryEstimateBytes << ','
 				<< record.queryMetrics.totalQueries << ','
 				<< record.queryMetrics.averageLatencyMs << ','
@@ -2835,6 +3683,7 @@ namespace
 				<< record.rangeQueries << ','
 				<< record.radiusQueries << ','
 				<< record.knnQueries << ','
+				<< csvEscape(record.queryStrataSummary) << ','
 				<< record.score << ','
 				<< record.scoreMemoryMb << ','
 				<< record.scoreImbalancePenalty << ','
@@ -2905,9 +3754,11 @@ namespace
 		output
 			<< "dataset_name,workload_name,num_points,feature_sample_size,bbox_x,bbox_y,bbox_z,aspect_xy,aspect_xz,aspect_yz,density_bbox,"
 			<< "height_mean,height_std,height_range,cov_eig_0,cov_eig_1,cov_eig_2,linearity,planarity,scattering,occupancy_ratio_8,"
-			<< "occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,w_range,w_radius,w_knn,knn_k,num_queries,"
+			<< "occupancy_entropy_8,density_cv_8,verticality_score,flatness_score,w_range,w_radius,w_knn,knn_k,num_queries,query_strata_summary,"
 			<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
-			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,num_candidates,backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
+			<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,leaf_occupancy_p50,leaf_occupancy_p90,leaf_occupancy_p99,"
+			<< "avg_depth,avg_fanout,max_fanout,empty_child_ratio,single_child_nodes,mean_tight_bounds_volume_ratio,"
+			<< "micro_indexed_leaves,micro_indexed_points,node_fanout_summary,num_candidates,backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
 			<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
 			<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
@@ -2949,6 +3800,7 @@ namespace
 				<< record.workloadFeatures.wKnn << ','
 				<< record.workloadFeatures.knnK << ','
 				<< record.workloadFeatures.numQueries << ','
+				<< csvEscape(record.queryStrataSummary) << ','
 				<< record.workloadFeatures.rangeScaleMin << ','
 				<< record.workloadFeatures.rangeScaleMax << ','
 				<< record.workloadFeatures.radiusScaleMin << ','
@@ -2963,6 +3815,18 @@ namespace
 				<< record.queryMetrics.averageLatencyMs << ','
 				<< record.buildMetrics.buildTimeMs << ','
 				<< record.buildMetrics.memoryEstimateBytes << ','
+				<< record.buildMetrics.leafOccupancyP50 << ','
+				<< record.buildMetrics.leafOccupancyP90 << ','
+				<< record.buildMetrics.leafOccupancyP99 << ','
+				<< record.buildMetrics.averageDepth << ','
+				<< record.buildMetrics.averageFanout << ','
+				<< record.buildMetrics.maxFanout << ','
+				<< record.buildMetrics.emptyChildRatio << ','
+				<< record.buildMetrics.singleChildNodeCount << ','
+				<< record.buildMetrics.meanTightBoundsVolumeRatio << ','
+				<< record.buildMetrics.microIndexedLeaves << ','
+				<< record.buildMetrics.microIndexedPoints << ','
+				<< csvEscape(record.buildMetrics.nodeFanoutSummary) << ','
 				<< countCandidatesForBest(records, record) << ','
 				<< csvEscape(record.backend) << ','
 				<< csvEscape(record.knnBackend) << ','
@@ -3020,8 +3884,9 @@ namespace
 		// the candidate. The full feature-rich layout stays in the `best` CSV; this one is meant
 		// for plotting the front, not training.
 		output
-			<< "dataset_name,workload_name,pareto_rank,schema_name,schema_path,score,"
+			<< "dataset_name,workload_name,query_strata_summary,pareto_rank,schema_name,schema_path,score,"
 			<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
+			<< "leaf_occupancy_p90,empty_child_ratio,mean_tight_bounds_volume_ratio,micro_indexed_leaves,micro_indexed_points,"
 			<< "p95_latency_ms,throughput_qps,backend,knn_backend,cuda_builder,is_baseline,"
 			<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction,"
 			<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
@@ -3039,6 +3904,7 @@ namespace
 			output
 				<< csvEscape(record.datasetName) << ','
 				<< csvEscape(record.workloadName) << ','
+				<< csvEscape(record.queryStrataSummary) << ','
 				<< record.paretoRank << ','
 				<< csvEscape(record.schemaName) << ','
 				<< csvEscape(record.schemaPath) << ','
@@ -3048,6 +3914,11 @@ namespace
 				<< memoryMb << ','
 				<< record.buildMetrics.memoryEstimateBytes << ','
 				<< imbalancePenalty << ','
+				<< record.buildMetrics.leafOccupancyP90 << ','
+				<< record.buildMetrics.emptyChildRatio << ','
+				<< record.buildMetrics.meanTightBoundsVolumeRatio << ','
+				<< record.buildMetrics.microIndexedLeaves << ','
+				<< record.buildMetrics.microIndexedPoints << ','
 				<< record.queryMetrics.p95LatencyMs << ','
 				<< record.queryMetrics.throughputQueriesPerSecond << ','
 				<< csvEscape(record.backend) << ','
@@ -3254,6 +4125,370 @@ namespace
 			if (meanSpeedup >= 0.05 && p95NoWorse)
 				std::cout << " (target met)";
 			std::cout << '\n';
+		}
+	}
+
+	struct ActiveExplainEntry
+	{
+		std::string typeName;
+		size_t nodes = 0;
+		size_t leafPoints = 0;
+		bool schemaOnly = false;
+	};
+
+	size_t parseSizeField(const std::string& value, const std::string& key)
+	{
+		const size_t begin = value.find(key);
+		if (begin == std::string::npos)
+			return 0;
+		const size_t numberBegin = begin + key.size();
+		size_t numberEnd = numberBegin;
+		while (numberEnd < value.size() && std::isdigit(static_cast<unsigned char>(value[numberEnd])))
+			++numberEnd;
+		if (numberEnd == numberBegin)
+			return 0;
+		try
+		{
+			return static_cast<size_t>(std::stoull(value.substr(numberBegin, numberEnd - numberBegin)));
+		}
+		catch (...)
+		{
+			return 0;
+		}
+	}
+
+	std::string displayTypeName(const std::string& shortName)
+	{
+		if (shortName == "qt") return "QuadTree";
+		if (shortName == "ot") return "Octree";
+		if (shortName == "kd") return "KDTree";
+		if (shortName == "bvh") return "BVH";
+		if (shortName == "lbvh") return "LBVH";
+		if (shortName == "bih") return "BIH";
+		if (shortName == "kot") return "KarrasOctree";
+		if (shortName == "rg") return "RegularGrid";
+		if (shortName == "hg") return "HGrid";
+		return shortName.empty() ? "Unknown" : shortName;
+	}
+
+	std::vector<ActiveExplainEntry> parseActiveStructureSummary(const std::string& summary)
+	{
+		std::vector<ActiveExplainEntry> entries;
+		size_t start = 0;
+		while (start < summary.size())
+		{
+			const size_t end = summary.find(';', start);
+			const std::string token = summary.substr(start, end == std::string::npos ? std::string::npos : end - start);
+			const size_t separator = token.find(':');
+			if (separator != std::string::npos)
+			{
+				ActiveExplainEntry entry;
+				entry.typeName = token.substr(0, separator);
+				const std::string fields = token.substr(separator + 1);
+				entry.schemaOnly = fields.find("schema") != std::string::npos;
+				entry.nodes = parseSizeField(fields, "nodes=");
+				entry.leafPoints = parseSizeField(fields, "points=");
+				entries.push_back(std::move(entry));
+			}
+			if (end == std::string::npos)
+				break;
+			start = end + 1;
+		}
+		return entries;
+	}
+
+	std::string formatPercent(double fraction)
+	{
+		std::ostringstream out;
+		out << std::fixed << std::setprecision(1) << (fraction * 100.0) << "%";
+		return out.str();
+	}
+
+	std::string formatMs(double value)
+	{
+		std::ostringstream out;
+		out << std::fixed << std::setprecision(4) << value << " ms";
+		return out.str();
+	}
+
+	std::string schemaLevelDisplayName(const SchemaLevelConfig& level)
+	{
+		std::string name = levelJsonTypeName(level);
+		if (!level.axisPolicy.empty())
+			name += "(" + level.axisPolicy + ")";
+		return name;
+	}
+
+	std::string schemaChainForReport(const Experiments::SchemaSearchRecord& record, SchemaConfig* loadedSchema)
+	{
+		SchemaConfig schema;
+		bool hasSchema = false;
+		if (!record.schemaPath.empty() && record.schemaPath.rfind("generated:", 0) != 0)
+		{
+			std::error_code error;
+			if (std::filesystem::exists(record.schemaPath, error))
+			{
+				try
+				{
+					schema = Config::loadSchemaConfig(record.schemaPath);
+					hasSchema = !schema.levels.empty();
+				}
+				catch (...)
+				{
+					hasSchema = false;
+				}
+			}
+		}
+
+		if (hasSchema)
+		{
+			if (loadedSchema)
+				*loadedSchema = schema;
+			std::ostringstream out;
+			for (size_t i = 0; i < schema.levels.size(); ++i)
+			{
+				if (i > 0)
+					out << " -> ";
+				out << schemaLevelDisplayName(schema.levels[i]);
+			}
+			return out.str();
+		}
+
+		if (loadedSchema)
+			*loadedSchema = {};
+		return record.schemaName;
+	}
+
+	const ActiveExplainEntry* dominantLeafStructure(const std::vector<ActiveExplainEntry>& entries)
+	{
+		const ActiveExplainEntry* best = nullptr;
+		for (const ActiveExplainEntry& entry : entries)
+		{
+			if (!best || entry.leafPoints > best->leafPoints)
+				best = &entry;
+		}
+		return best;
+	}
+
+	const SchemaLevelConfig* levelForDominantStructure(const SchemaConfig& schema, const std::string& shortName)
+	{
+		for (auto it = schema.levels.rbegin(); it != schema.levels.rend(); ++it)
+		{
+			if (schemaTypeShortName(*it) == shortName)
+				return &*it;
+		}
+		return schema.levels.empty() ? nullptr : &schema.levels.back();
+	}
+
+	std::string metricComparisonPhrase(const char* verb, const char* noun, double baseline, double current)
+	{
+		if (baseline <= 0.0 || !std::isfinite(baseline) || !std::isfinite(current))
+			return {};
+		const double reduction = (baseline - current) / baseline;
+		std::ostringstream out;
+		out << verb << ' ';
+		if (std::abs(reduction) < 0.05)
+			out << "similar " << noun << " to baseline";
+		else if (reduction > 0.0)
+			out << formatPercent(reduction) << " fewer " << noun << " than baseline";
+		else
+			out << formatPercent(-reduction) << " more " << noun << " than baseline";
+		return out.str();
+	}
+
+	void writeQueryBehaviorLine(
+		std::ostream& output,
+		const char* label,
+		const Experiments::QueryMetrics& metrics,
+		const Experiments::QueryMetrics* baselineMetrics)
+	{
+		if (metrics.totalQueries == 0)
+			return;
+
+		output << "- " << label << ": ";
+		if (baselineMetrics && baselineMetrics->totalQueries > 0)
+		{
+			const std::string nodePhrase = metricComparisonPhrase(
+				"visits", "nodes", baselineMetrics->averageVisitedNodes, metrics.averageVisitedNodes);
+			const std::string pointPhrase = metricComparisonPhrase(
+				"tests", "points", baselineMetrics->averageTestedPoints, metrics.averageTestedPoints);
+			if (!nodePhrase.empty())
+				output << nodePhrase;
+			if (!nodePhrase.empty() && !pointPhrase.empty())
+				output << "; ";
+			if (!pointPhrase.empty())
+				output << pointPhrase;
+			if (nodePhrase.empty() && pointPhrase.empty())
+				output << "baseline comparison unavailable";
+		}
+		else
+		{
+			output << "avg " << metrics.averageVisitedNodes << " visited nodes, "
+				<< metrics.averageTestedPoints << " tested points";
+		}
+		if (metrics.averageFullyContainedNodes > 0.0)
+			output << "; " << metrics.averageFullyContainedNodes << " fully-contained nodes/query";
+		output << '\n';
+	}
+
+	void writeDiagnosis(
+		std::ostream& output,
+		const Experiments::SchemaSearchRecord& record,
+		const SchemaConfig& schema,
+		const std::vector<ActiveExplainEntry>& activeEntries)
+	{
+		Experiments::SchemaCandidate candidate;
+		candidate.config = schema;
+		candidate.name = record.schemaName;
+		const Experiments::SchemaRepairDiagnostics diagnostics = diagnoseRepairInternal(candidate, { record });
+		const ActiveExplainEntry* dominant = dominantLeafStructure(activeEntries);
+		const SchemaLevelConfig* dominantLevel = dominant ? levelForDominantStructure(schema, dominant->typeName) : nullptr;
+		const std::string dominantName = dominant ? displayTypeName(dominant->typeName) : "leaf";
+
+		output << "Diagnosis:\n";
+		if (record.isBaseline)
+			output << "- Baseline control; use this row as the comparison reference for mixed schemas.\n";
+		if (diagnostics.highLeafOccupancy && dominantLevel)
+		{
+			output << "- Reduce " << dominantName << " leafCapacity from " << dominantLevel->leafCapacity
+				<< " to " << std::max<size_t>(1, dominantLevel->leafCapacity / 2)
+				<< " or add one more level in that block.\n";
+		}
+		if (diagnostics.testedPointDominated)
+		{
+			output << "- Tested-points dominate traversal; add a gated leaf micro-index or tighten the deepest leaf capacity.\n";
+			if (dominant && (dominant->typeName == "kd" || dominant->typeName == "bih") &&
+				record.pointFeatures.verticalityScore >= record.pointFeatures.flatnessScore)
+			{
+				output << "- Try HGrid before " << dominantName << " for dense vertical regions.\n";
+			}
+		}
+		if (diagnostics.visitedNodeDominated)
+			output << "- Visited-node count is high while leaf scans are light; coarsen the root or switch the upper block.\n";
+		if (diagnostics.fullContainmentDominated)
+			output << "- Full-containment shortcuts are carrying the range workload; prefer coarser Grid/QuadTree blocks for this query scale.\n";
+		if (diagnostics.likelySingleChildChains)
+			output << "- Many nodes likely collapse into one-child chains; flip KDTree axisPolicy or use QuadTree xy/ignore_shortest for terrain-shaped regions.\n";
+		if (!diagnostics.highLeafOccupancy &&
+			!diagnostics.testedPointDominated &&
+			!diagnostics.visitedNodeDominated &&
+			!diagnostics.fullContainmentDominated &&
+			!diagnostics.likelySingleChildChains &&
+			!record.isBaseline)
+		{
+			output << "- No dominant counter bottleneck; confirm with more query seeds before structural changes.\n";
+		}
+	}
+
+	void writeSchemaExplainReport(
+		const std::string& reportPath,
+		const std::vector<Experiments::SchemaSearchRecord>& records)
+	{
+		if (reportPath.empty() || records.empty())
+			return;
+
+		createParentDirectory(reportPath);
+		std::ofstream output(reportPath);
+		if (!output.is_open())
+			throw std::runtime_error("Unable to open schema explain report path: " + reportPath);
+
+		std::map<std::string, std::vector<const Experiments::SchemaSearchRecord*>> groups;
+		for (const Experiments::SchemaSearchRecord& record : records)
+			groups[recordGroupKey(record)].push_back(&record);
+
+		std::map<std::string, const Experiments::SchemaSearchRecord*> bestBaselines;
+		for (const Experiments::SchemaSearchRecord& record : records)
+		{
+			if (!record.isBaseline)
+				continue;
+			const std::string key = recordGroupKey(record);
+			const auto existing = bestBaselines.find(key);
+			if (existing == bestBaselines.end() || record.score < existing->second->score)
+				bestBaselines[key] = &record;
+		}
+
+		output << "# Schema Explain Report\n\n";
+		output << "Rows: " << records.size() << "\n\n";
+
+		for (auto& [key, group] : groups)
+		{
+			std::sort(group.begin(), group.end(), [](const auto* left, const auto* right) {
+				if (left->score == right->score)
+					return left->schemaName < right->schemaName;
+				return left->score < right->score;
+			});
+
+			const size_t separator = key.find('\n');
+			const std::string dataset = separator == std::string::npos ? key : key.substr(0, separator);
+			const std::string workload = separator == std::string::npos ? std::string() : key.substr(separator + 1);
+			const auto baselineIt = bestBaselines.find(key);
+			const Experiments::SchemaSearchRecord* baseline = baselineIt == bestBaselines.end() ? nullptr : baselineIt->second;
+
+			output << "## " << dataset << " / " << workload << "\n\n";
+			if (baseline)
+				output << "Best baseline: `" << baseline->schemaName << "` (score " << baseline->score << ")\n\n";
+
+			for (const Experiments::SchemaSearchRecord* record : group)
+			{
+				SchemaConfig schema;
+				const std::string chain = schemaChainForReport(*record, &schema);
+				const std::vector<ActiveExplainEntry> activeEntries = parseActiveStructureSummary(record->activeStructureSummary);
+				output << "### " << record->schemaName << "\n\n";
+				output << "Schema: " << chain << "\n\n";
+				output << "- Score: " << record->score << " (" << record->scoreMode << ", " << record->scoreStage << ")\n";
+				output << "- Avg latency: " << formatMs(record->queryMetrics.averageLatencyMs)
+					<< ", p95: " << formatMs(record->queryMetrics.p95LatencyMs)
+					<< ", build: " << formatMs(record->buildMetrics.buildTimeMs) << "\n";
+				if (!record->bestBaselineSchema.empty())
+					output << "- Speedup vs baseline: " << formatPercent(record->relativeSpeedupVsBaseline) << "\n";
+				output << '\n';
+
+				output << "Active structures:\n";
+				if (activeEntries.empty())
+				{
+					output << "- unavailable";
+					if (!record->activeStructureSummary.empty())
+						output << " (`" << record->activeStructureSummary << "`)";
+					output << '\n';
+				}
+				else
+				{
+					const double totalNodes = static_cast<double>(std::max<size_t>(1, record->buildMetrics.numNodes));
+					const double totalPoints = static_cast<double>(std::max<size_t>(1, record->buildMetrics.indexedPoints > 0
+						? record->buildMetrics.indexedPoints
+						: record->numPoints));
+					for (const ActiveExplainEntry& entry : activeEntries)
+					{
+						output << "- " << displayTypeName(entry.typeName) << ": ";
+						if (entry.schemaOnly)
+							output << "schema-level present";
+						else
+							output << formatPercent(static_cast<double>(entry.nodes) / totalNodes) << " nodes, "
+								<< formatPercent(static_cast<double>(entry.leafPoints) / totalPoints) << " leaf points";
+						output << '\n';
+					}
+				}
+				output << '\n';
+
+				output << "Query behavior:\n";
+				writeQueryBehaviorLine(output, "Range", record->rangeMetrics, baseline ? &baseline->rangeMetrics : nullptr);
+				writeQueryBehaviorLine(output, "Count range", record->countRangeMetrics, baseline ? &baseline->countRangeMetrics : nullptr);
+				writeQueryBehaviorLine(output, "Radius", record->radiusMetrics, baseline ? &baseline->radiusMetrics : nullptr);
+				writeQueryBehaviorLine(output, "KNN", record->knnMetrics, baseline ? &baseline->knnMetrics : nullptr);
+				if (record->rangeMetrics.totalQueries == 0 &&
+					record->countRangeMetrics.totalQueries == 0 &&
+					record->radiusMetrics.totalQueries == 0 &&
+					record->knnMetrics.totalQueries == 0)
+				{
+					output << "- Per-query-family metrics unavailable; avg "
+						<< record->queryMetrics.averageVisitedNodes << " visited nodes and "
+						<< record->queryMetrics.averageTestedPoints << " tested points/query.\n";
+				}
+				output << '\n';
+
+				writeDiagnosis(output, *record, schema, activeEntries);
+				output << '\n';
+			}
 		}
 	}
 
@@ -3791,6 +5026,7 @@ namespace
 		std::vector<Experiments::SchemaCandidate> candidates;
 		candidates.reserve(options.count);
 
+		std::mt19937 rng(options.seed);
 		size_t variant = 0;
 		for (const DeepFamily& family : families)
 		{
@@ -3817,10 +5053,12 @@ namespace
 
 								SchemaConfig schema;
 								schema.levels.push_back(makeDeepLevel(family.first, firstDepth, leaf));
+								maybeAssignAdaptiveLeafCapacity(schema.levels.back(), rng, options);
 								SchemaLevelConfig second = makeDeepLevel(
 									secondType,
 									secondDepthSeed,
 									std::max<size_t>(options.minLeafCapacity, leaf / 2));
+								maybeAssignAdaptiveLeafCapacity(second, rng, options);
 								second.condition = makeDeepSecondStageCondition(
 									family.first,
 									secondType,
@@ -4868,6 +6106,12 @@ namespace
 		std::cout << "    elites: " << eliteCount << '\n';
 		std::cout << "    mutation rate: " << evolution.mutationRate << '\n';
 		std::cout << "    random immigration: " << randomFraction << '\n';
+		if (evolution.repairMutations)
+		{
+			std::cout << "    repair mutations: top-" << std::max<size_t>(1, evolution.repairTopK)
+				<< ", " << std::max<size_t>(1, evolution.repairPerCandidate)
+				<< " candidate(s)/parent\n";
+		}
 
 		const bool useRungSchedule = !evolution.rungSchedule.rungs.empty();
 		std::vector<const SearchDataset*> datasetPtrs;
@@ -5010,7 +6254,46 @@ namespace
 			std::vector<Experiments::SchemaCandidate> children;
 			children.reserve(populationSize);
 
-			const size_t randomCount = std::min(populationSize, static_cast<size_t>(std::round(static_cast<double>(populationSize) * randomFraction)));
+			size_t repairAccepted = 0;
+			if (evolution.repairMutations && children.size() < populationSize)
+			{
+				const size_t repairParents = std::min({
+					std::max<size_t>(1, evolution.repairTopK),
+					currentEliteCount,
+					archive.size()
+				});
+				const size_t repairsPerParent = std::max<size_t>(1, evolution.repairPerCandidate);
+				for (size_t parentIndex = 0; parentIndex < repairParents && children.size() < populationSize; ++parentIndex)
+				{
+					const EvaluatedCandidate& parent = archive[parentIndex];
+					std::vector<RepairSchemaMutation> repairs = generateRepairSchemaMutations(
+						parent.candidate,
+						parent.records,
+						options.generation,
+						conditionDomain,
+						repairsPerParent,
+						rng());
+					for (RepairSchemaMutation& repair : repairs)
+					{
+						const std::string signature = schemaSignature(repair.schema);
+						if (!seenSignatures.insert(signature).second)
+							continue;
+
+						const std::string prefix = "repair_g" + std::to_string(generation)
+							+ "_i" + std::to_string(children.size())
+							+ "_" + repair.reason;
+						children.push_back(materializeGeneratedSchema(std::move(repair.schema), prefix, options.generation.outputDirectory));
+						++repairAccepted;
+						if (children.size() >= populationSize)
+							break;
+					}
+				}
+				if (repairAccepted > 0)
+					std::cout << "      generation " << generation << " repairs accepted: " << repairAccepted << '\n';
+			}
+
+			const size_t remainingAfterRepairs = populationSize - children.size();
+			const size_t randomCount = std::min(remainingAfterRepairs, static_cast<size_t>(std::round(static_cast<double>(populationSize) * randomFraction)));
 			if (randomCount > 0)
 			{
 				Experiments::SchemaGenerationOptions randomOptions = options.generation;
@@ -5684,6 +6967,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 			level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
 			level.axisPolicy = sampleAxisPolicy(rng, level.type);
+			maybeAssignAdaptiveLeafCapacity(level, rng, options);
 			if (options.conditionalLevels && block > 0 && conditionDistribution(rng))
 				level.condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, conditionDomain);
 
@@ -5710,6 +6994,40 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 	return candidates;
 }
 
+Experiments::SchemaRepairDiagnostics Experiments::diagnoseSchemaRepair(
+	const SchemaCandidate& candidate,
+	const std::vector<SchemaSearchRecord>& measuredRecords)
+{
+	return diagnoseRepairInternal(candidate, measuredRecords);
+}
+
+std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaRepairCandidates(
+	const SchemaCandidate& candidate,
+	const std::vector<SchemaSearchRecord>& measuredRecords,
+	const SchemaGenerationOptions& generationOptions,
+	const ConditionDomain* conditionDomain,
+	size_t maxCandidates,
+	uint32_t seed,
+	const std::string& outputDirectory)
+{
+	std::vector<RepairSchemaMutation> mutations = generateRepairSchemaMutations(
+		candidate,
+		measuredRecords,
+		generationOptions,
+		conditionDomain,
+		maxCandidates,
+		seed);
+
+	std::vector<SchemaCandidate> candidates;
+	candidates.reserve(mutations.size());
+	for (size_t i = 0; i < mutations.size(); ++i)
+	{
+		const std::string prefix = "repair_" + mutations[i].reason + "_" + std::to_string(i);
+		candidates.push_back(materializeGeneratedSchema(std::move(mutations[i].schema), prefix, outputDirectory));
+	}
+	return candidates;
+}
+
 Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string& jsonText, const std::string& sourceName)
 {
 	boost::system::error_code error;
@@ -5727,6 +7045,8 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 	profile.numQueries = asSize(root, "numQueries", profile.numQueries);
 	profile.knnK = asSize(root, "knnK", profile.knnK);
 	profile.querySeed = static_cast<uint32_t>(asSize(root, "querySeed", profile.querySeed));
+	profile.stratifyQueries = asBool(root, "stratifyQueries", profile.stratifyQueries);
+	profile.stratifyQueries = asBool(root, "stratifiedQueries", profile.stratifyQueries);
 	profile.rangeScaleMin = asDouble(root, "rangeScaleMin", profile.rangeScaleMin);
 	profile.rangeScaleMax = asDouble(root, "rangeScaleMax", profile.rangeScaleMax);
 	profile.radiusScaleMin = asDouble(root, "radiusScaleMin", profile.radiusScaleMin);
@@ -5797,6 +7117,18 @@ namespace
 		out["maxDepth"] = metrics.maxDepth;
 		out["averageLeafOccupancy"] = metrics.averageLeafOccupancy;
 		out["maxLeafOccupancy"] = metrics.maxLeafOccupancy;
+		out["leafOccupancyP50"] = metrics.leafOccupancyP50;
+		out["leafOccupancyP90"] = metrics.leafOccupancyP90;
+		out["leafOccupancyP99"] = metrics.leafOccupancyP99;
+		out["averageDepth"] = metrics.averageDepth;
+		out["averageFanout"] = metrics.averageFanout;
+		out["maxFanout"] = metrics.maxFanout;
+		out["emptyChildRatio"] = metrics.emptyChildRatio;
+		out["singleChildNodeCount"] = metrics.singleChildNodeCount;
+		out["meanTightBoundsVolumeRatio"] = metrics.meanTightBoundsVolumeRatio;
+		out["microIndexedLeaves"] = metrics.microIndexedLeaves;
+		out["microIndexedPoints"] = metrics.microIndexedPoints;
+		out["nodeFanoutSummary"] = metrics.nodeFanoutSummary;
 		out["memoryEstimateBytes"] = metrics.memoryEstimateBytes;
 		return out;
 	}
@@ -5842,6 +7174,7 @@ namespace
 		out["countRangeQueries"] = record.countRangeQueries;
 		out["radiusQueries"] = record.radiusQueries;
 		out["knnQueries"] = record.knnQueries;
+		out["queryStrataSummary"] = record.queryStrataSummary;
 		out["score"] = record.score;
 		out["scoreMemoryMb"] = record.scoreMemoryMb;
 		out["scoreImbalancePenalty"] = record.scoreImbalancePenalty;
@@ -6154,6 +7487,11 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		evaluatorResolution.usingCuda);
 	if (resolvedOptions.deepNestedSearch)
 		resolvedOptions.generation.primitiveProfile = resolvePrimitiveProfile("query_minimal_cpu", false);
+	if (evaluatorResolution.usingCuda && resolvedOptions.generation.adaptiveLeafCapacity)
+	{
+		std::cout << "  warning: generated adaptive leaf capacity is CPU-only for now; disabling it for CUDA evaluation\n";
+		resolvedOptions.generation.adaptiveLeafCapacity = false;
+	}
 
 	Experiments::EvaluationCache ownedScoreCache;
 	if (!resolvedOptions.scoreCachePath.empty() && resolvedOptions.scoreCache == nullptr)
@@ -6248,6 +7586,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		std::cout << "  primitive profile: " << resolvedOptions.generation.primitiveProfile << '\n';
 		if (resolvedOptions.generation.conditionalLevels)
 			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
+		if (resolvedOptions.generation.adaptiveLeafCapacity)
+			std::cout << "  adaptive leaf capacity: probability " << resolvedOptions.generation.adaptiveLeafProbability << '\n';
 	}
 	else if (resolvedOptions.generation.count > 0)
 	{
@@ -6255,6 +7595,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		std::cout << "  primitive profile: " << resolvedOptions.generation.primitiveProfile << '\n';
 		if (resolvedOptions.generation.conditionalLevels)
 			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
+		if (resolvedOptions.generation.adaptiveLeafCapacity)
+			std::cout << "  adaptive leaf capacity: probability " << resolvedOptions.generation.adaptiveLeafProbability << '\n';
 	}
 	if (!resolvedOptions.evolution.enabled && rankModel.has_value())
 	{
@@ -6351,6 +7693,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);
 	reportMetricSummaries(records, resolvedOptions);
+	writeSchemaExplainReport(resolvedOptions.explainReportPath, records);
 	writeSearchRows(resolvedOptions.csvPath, records);
 	writeBestRows(resolvedOptions.bestCsvPath, records);
 	writeParetoRows(resolvedOptions.paretoCsvPath, records);
@@ -6366,6 +7709,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		std::cout << "  pareto csv: " << resolvedOptions.paretoCsvPath
 			<< " (" << front.size() << " non-dominated rows)\n";
 	}
+	if (!resolvedOptions.explainReportPath.empty())
+		std::cout << "  explain report: " << resolvedOptions.explainReportPath << '\n';
 
 	if (resolvedOptions.scoreCache != nullptr && resolvedOptions.scoreCache->enabled())
 	{

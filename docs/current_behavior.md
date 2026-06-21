@@ -30,6 +30,8 @@ Default knobs:
 | `POINT_QUERY_COUNT` | Number of generated queries per query type; `0` disables query profiling. |
 | `POINT_QUERY_K` | Neighbor count for generated KNN queries. |
 | `POINT_QUERY_SEED` | Seed for generated range/radius/KNN query profiles. |
+| `ENABLE_LEAF_MICRO_INDEXES` | Opts CPU point indexes into heavy-leaf micro-indexes. Disabled by default. |
+| `LEAF_MICRO_INDEX_THRESHOLD` | Minimum leaf point count before building a leaf-local micro-index. |
 | `SCHEMA_SEARCH_SCHEMA_PATHS` | Default finite candidate schema list. |
 | `SCHEMA_SEARCH_WORKLOAD_PATHS` | Default workload profile JSON list. |
 | `SCHEMA_SEARCH_CSV_PATH` | Default raw schema-search CSV output. |
@@ -65,6 +67,8 @@ Supported command-line overrides:
 | `--queries <count>` | Runs generated range/count/radius/KNN query profiles; `0` disables them. |
 | `--knn-k <count>` | Sets the generated KNN query neighbor count. |
 | `--query-seed <seed>` | Sets the generated query profile seed. |
+| `--leaf-micro-indexes` | Enables optional CPU leaf-local micro-indexes for leaves above the configured threshold. |
+| `--leaf-micro-threshold <count>` | Sets the heavy-leaf threshold for micro-index construction; default is `512`. |
 | `--workloads <a;b;c>` | Selects workload profile JSON files for schema-search mode. |
 | `--synthetic-scale <count>` | Sets the synthetic dataset size scale for schema-search mode. |
 | `--no-synthetic` | Uses only `--input` datasets in schema-search mode. |
@@ -86,6 +90,7 @@ Point mode:
 - stores LAS positions as local `float3` coordinates relative to a double-precision coordinate-frame origin,
 - loads a schema JSON,
 - builds the CPU point index,
+- optionally builds heavy-leaf micro-indexes when `--leaf-micro-indexes` or schema `buildPolicy.enableLeafMicroIndexes` is enabled,
 - optionally runs generated AABB range, count-range, radius, and KNN query profiles,
 - prints load/build stats,
 - writes JSON metrics when `POINT_OUTPUT_PATH` or `--output` is set,
@@ -95,10 +100,12 @@ The JSON document includes:
 
 - `run_id`, dataset, local bounds, coordinate-frame, cache, schema, and workload metadata,
 - schema/point load timings,
-- build metrics: build time, node/leaf/depth counts, leaf occupancy, indexed points, memory estimate,
+- build metrics: build time, node/leaf/depth counts, leaf occupancy, indexed points, memory estimate, and tree-health diagnostics,
 - query metrics for mixed/range/count/radius/KNN workloads: total queries, average/median/p95 latency, throughput, visited nodes, tested points, returned points.
 
 The CSV summary uses one row per `(dataset, schema, workload)` run and is meant for later schema comparison or learner training.
+
+When enabled, heavy-leaf micro-indexes are built only for leaves above the threshold. Range/count/radius use a leaf-local uniform grid, while KNN uses a leaf-local KD tree. This is CPU-only and disabled by default so existing point and schema-search behavior stays comparable.
 
 Multi-schema experiment helper:
 
@@ -134,6 +141,8 @@ Workload JSON files configure the query mix, query count, seed, KNN `k`, and opt
 
 For AABB range queries the scale is a linear fraction of each dataset bounding-box extent. `configs/workloads/volume_small_medium.json` uses only 3D volume queries and samples continuously from 1% to 25% of each dimension.
 
+Workload JSON files can also enable query-set stratification with `"stratifyQueries": true`. Stratified runs sample deterministic difficulty buckets such as small/medium/large ranges, near-empty ranges, dense-region ranges, small/medium/large radii, boundary radii, dense KNN, outside-cloud KNN, and boundary KNN. Raw schema-search rows include `query_strata_summary`, and query traces include `query_stratum`.
+
 Example:
 
 ```powershell
@@ -162,7 +171,9 @@ Schema levels may include a `condition` object. Conditions are evaluated per nod
 
 Supported CPU condition fields are `minPoints`, `maxPoints`, `minDensity`, `maxDensity`, `minHeightRatio`, `maxHeightRatio`, per-axis extent bounds (`minExtentX`, `maxExtentX`, etc.), `minAnisotropy` / `maxAnisotropy`, and `minOccupancyEntropy` / `maxOccupancyEntropy`. CUDA MixedTree supports the cheap bbox-based fields plus bbox anisotropy and rejects occupancy entropy until a GPU entropy estimator exists. `configs/schemas/adaptive_quadtree_octree.json` is a hand-authored example. Generated search can sample conditions with `--generated-conditional`. Schema parsing keeps the original primitive kind (`RegularGrid`, `HGrid`, `KarrasOctree`, `LBVH`, `BIH`, etc.) separately from its current CPU fallback enum so CPU discovery and CUDA replay do not erase schema intent.
 
-Per-cloud condition tuning is available with `--auto-conditions`. This path estimates a deterministic shallow feature sketch from the target cloud, builds condition-threshold domains from occupancy, density, height-ratio, and extent quantiles, then writes generated schemas with concrete numeric thresholds. It evaluates many candidates with a small proxy workload and downsampled cloud, shortlists a few on the full cloud, and confirms the best candidates with the requested query count. The raw/best CSV formats keep all existing columns and append condition-summary, runtime nesting, baseline-normalized, and score-provenance columns. The provenance columns include `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. Workload JSON files can define `scoreWeights`; explicit CLI score flags take precedence.
+CPU point schemas can also opt into per-node adaptive leaf capacity with an `adaptiveLeafCapacity` object on a level. The base `leafCapacity` is multiplied by deterministic density, height-ratio, anisotropy, and explicit `queryMixFactor` terms, then clamped by `minCapacity` / `maxCapacity`. Positive `densityWeight` shrinks dense nodes, positive `heightRatioWeight` grows flatter-than-root nodes and shrinks taller ones, and positive `anisotropyWeight` shrinks elongated nodes. Generated CPU search can sample these rules with `--generated-adaptive-leaf-capacity` and `--generated-adaptive-leaf-probability`. Schema-search CUDA evaluators reject fixed adaptive leaf-capacity schemas; generated CUDA runs disable adaptive leaf-capacity sampling until GPU support exists.
+
+Per-cloud condition tuning is available with `--auto-conditions`. This path estimates a deterministic shallow feature sketch from the target cloud, builds condition-threshold domains from occupancy, density, height-ratio, and extent quantiles, then writes generated schemas with concrete numeric thresholds. It evaluates many candidates with a small proxy workload and downsampled cloud, shortlists a few on the full cloud, and confirms the best candidates with the requested query count. The raw/best CSV formats keep all existing columns and append condition-summary, runtime nesting, baseline-normalized, tree-health, query-strata, and score-provenance columns. The tree-health columns include leaf occupancy quantiles, average depth, fanout, empty-child ratio, single-child count, tight-bounds volume ratio, and micro-indexed leaf counts. The provenance columns include `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. Workload JSON files can define `scoreWeights`; explicit CLI score flags take precedence.
 
 Example local threshold tuning:
 
@@ -270,7 +281,10 @@ The executable no longer exposes the triangle/ray benchmark, and `TriangleBenchm
 
 ## Current Limitations
 
-- Optional per-query CSV traces are available with `--query-trace` for point benchmarks and schema-search measurements.
+- Optional per-query CSV traces are available with `--query-trace` for point benchmarks and schema-search measurements. CPU point-index traces include `query_stratum` plus traversal breakdown columns for visited nodes by depth, visited nodes by structure, tested points by structure, and fully contained nodes by structure; CUDA trace rows currently leave those breakdown fields empty.
+- Schema-search can write a Markdown schema explanation report with `--explain-report <path>`. The report groups measured rows by dataset/workload, shows the schema chain, active-structure node/leaf-point fractions, query-family behavior against the best baseline, and repair-style diagnoses.
+- CUDA MixedTree uses the original thread-per-query traversal for small range/count/radius queries and switches to a block-per-query cooperative leaf-scan kernel for larger estimated query volumes. CUDA KNN backend labels are explicit: `cpu_tree_knn`, `gpu_bruteforce_knn`, and KDTree/BIH `gpu_tree_knn` for exact `k <= 16`.
+- Evolutionary schema search can use diagnostic-guided repair mutations with `--repair-mutations`. Repairs are created only after a candidate has measured build/query counters, then re-enter the normal measurement loop as ordinary generated schemas. Current repair rules target high leaf occupancy, high tested-points per visit, high visited-node counts, high full-containment ratios, and likely single-child chains.
 - Schema-search labels currently use synthetic datasets and placeholder score weights.
 - The built-in PLY reader supports ASCII PLY only.
 - The built-in LAS reader supports uncompressed LAS records, not LAZ.

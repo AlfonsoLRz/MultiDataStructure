@@ -165,6 +165,8 @@ PointBenchmark::Options AppConfig::defaultPointOptions()
 	options.queryCount = AppDefaults::POINT_QUERY_COUNT;
 	options.queryK = AppDefaults::POINT_QUERY_K;
 	options.querySeed = AppDefaults::POINT_QUERY_SEED;
+	options.enableLeafMicroIndexes = AppDefaults::ENABLE_LEAF_MICRO_INDEXES;
+	options.leafMicroIndexThreshold = AppDefaults::LEAF_MICRO_INDEX_THRESHOLD;
 	return options;
 }
 
@@ -176,6 +178,7 @@ Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 	options.csvPath = AppDefaults::SCHEMA_SEARCH_CSV_PATH;
 	options.bestCsvPath = AppDefaults::SCHEMA_SEARCH_BEST_CSV_PATH;
 	options.paretoCsvPath = AppDefaults::SCHEMA_SEARCH_PARETO_CSV_PATH;
+	options.explainReportPath = AppDefaults::SCHEMA_SEARCH_EXPLAIN_REPORT_PATH;
 	options.syntheticScale = AppDefaults::SCHEMA_SEARCH_SYNTHETIC_SCALE;
 	options.queryCountOverride = AppDefaults::SCHEMA_SEARCH_QUERY_COUNT;
 	options.querySeed = AppDefaults::POINT_QUERY_SEED;
@@ -190,6 +193,8 @@ Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 	options.autoConditions.proxyQueryCount = AppDefaults::AUTO_CONDITION_PROXY_QUERIES;
 	options.autoConditions.finalTopK = AppDefaults::AUTO_CONDITION_FINAL_TOP_K;
 	options.autoConditions.confirmationTopK = AppDefaults::AUTO_CONDITION_CONFIRM_TOP_K;
+	options.enableLeafMicroIndexes = AppDefaults::ENABLE_LEAF_MICRO_INDEXES;
+	options.leafMicroIndexThreshold = AppDefaults::LEAF_MICRO_INDEX_THRESHOLD;
 	options.pauseAtEnd = AppDefaults::PAUSE_AT_END;
 	return options;
 }
@@ -348,6 +353,14 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.generation.conditionalProbability = std::stod(argv[++i]);
 		}
+		else if (arg == "--generated-adaptive-leaf-capacity")
+		{
+			config.schemaSearchOptions.generation.adaptiveLeafCapacity = true;
+		}
+		else if (arg == "--generated-adaptive-leaf-probability" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.generation.adaptiveLeafProbability = std::stod(argv[++i]);
+		}
 		else if (arg == "--generated-seed" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.generation.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
@@ -445,6 +458,22 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.evolution.useNsga2Ranking = false;
 		}
+		else if (arg == "--repair-mutations")
+		{
+			config.schemaSearchOptions.evolution.repairMutations = true;
+		}
+		else if (arg == "--no-repair-mutations")
+		{
+			config.schemaSearchOptions.evolution.repairMutations = false;
+		}
+		else if (arg == "--repair-top" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.repairTopK = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--repair-per-candidate" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.evolution.repairPerCandidate = static_cast<size_t>(std::stoull(argv[++i]));
+		}
 		else if (arg == "--rungs" && i + 1 < argc)
 		{
 			const std::string spec = argv[++i];
@@ -503,6 +532,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.cuda.memoryBudgetMb = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--cuda-knn-backend" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.cuda.knnBackend = argv[++i];
+		}
 		else if (arg == "--score-build-weight" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.weights.lambdaBuild = std::stod(argv[++i]);
@@ -547,6 +580,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.paretoCsvPath = argv[++i];
 		}
+		else if (arg == "--explain-report" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.explainReportPath = argv[++i];
+		}
 		else if (arg == "--confirm-seeds" && i + 1 < argc)
 		{
 			config.schemaSearchOptions.confirmSeeds = static_cast<size_t>(std::stoull(argv[++i]));
@@ -564,6 +601,16 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.pointOptions.queryK = static_cast<size_t>(std::stoull(argv[++i]));
 			config.schemaSearchOptions.knnKOverride = config.pointOptions.queryK;
+		}
+		else if (arg == "--leaf-micro-indexes")
+		{
+			config.pointOptions.enableLeafMicroIndexes = true;
+			config.schemaSearchOptions.enableLeafMicroIndexes = true;
+		}
+		else if (arg == "--leaf-micro-threshold" && i + 1 < argc)
+		{
+			config.pointOptions.leafMicroIndexThreshold = static_cast<size_t>(std::stoull(argv[++i]));
+			config.schemaSearchOptions.leafMicroIndexThreshold = config.pointOptions.leafMicroIndexThreshold;
 		}
 		else if (arg == "--query-seed" && i + 1 < argc)
 		{
@@ -653,6 +700,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-max-leaf <n>    Max generated leaf capacity\n"
 		<< "  --generated-conditional     Add local node predicates to sampled nested blocks\n"
 		<< "  --generated-condition-probability <v> Probability for generated conditional blocks\n"
+		<< "  --generated-adaptive-leaf-capacity Add per-node adaptive leaf-capacity rules to generated CPU schemas\n"
+		<< "  --generated-adaptive-leaf-probability <v> Probability for generated adaptive leaf-capacity levels\n"
 		<< "  --generated-seed <seed>     Seed for generated schema search space sampling\n"
 		<< "  --generated-schema-dir <p>  Directory for generated schema JSON files\n"
 		<< "  --primitive-profile <auto|query_minimal_cpu|cuda_query_full|all> Generated primitive family profile\n"
@@ -675,6 +724,9 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --optimizer-random-fraction <v> Fraction of each generation sampled randomly, default 0.20\n"
 		<< "  --optimizer-crossover-rate <v> Probability that a child is built by splicing two elites, default 0.40\n"
 		<< "  --optimizer-nsga2 / --no-optimizer-nsga2  Toggle NSGA-II non-dominated + crowding-distance elite ranking\n"
+		<< "  --repair-mutations        Add diagnostic-guided repair children from measured GA archive entries\n"
+		<< "  --repair-top <n>          Number of measured archive parents to repair per generation, default 4\n"
+		<< "  --repair-per-candidate <n> Targeted repair children per parent, default 2\n"
 		<< "  --rungs <schedule>          Multi-fidelity rung schedule applied inside the optimizer.\n"
 		<< "                              Format: name:queries:visit|latency:advance,... e.g.\n"
 		<< "                              proxy:4:visit:32,full:16:latency:8,confirm:64:latency:0\n"
@@ -693,6 +745,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --cuda-builder lbvh|kdtree|bih|octree|karras_octree|quadtree|regular_grid|hgrid|mixed CUDA builder; LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented\n"
 		<< "  --cuda-query-batch <n>      Query batch size for CUDA evaluator; 0 uses all queries\n"
 		<< "  --cuda-memory-budget-mb <n> Reject CUDA builds estimated above this memory budget\n"
+		<< "  --cuda-knn-backend <auto|gpu_tree_knn|gpu_bruteforce_knn> CUDA KNN backend; KDTree/BIH auto uses tree KNN for k<=16\n"
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
 		<< "  --score-memory-weight <v>   Memory score weight, default 0\n"
 		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0\n"
@@ -707,6 +760,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --query-trace <path>        Write optional per-query CSV traces for point/schema runs\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
 		<< "  --pareto-csv <path>         Write Pareto front (non-dominated rows over latency/build/memory/imbalance)\n"
+		<< "  --explain-report <path>     Write Markdown schema explanations with active structures, query behavior, and diagnoses\n"
 		<< "  --confirm-seeds <n>         After the main run, re-measure the top-K with N distinct query seeds and\n"
 		<< "                              record mean + 95% bootstrap CI on (avg latency, p95 latency, GPU build).\n"
 		<< "                              N < 2 disables. The Pareto step uses the seed-averaged mean.\n"
@@ -714,6 +768,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --no-csv                    Disable CSV summary output\n"
 		<< "  --queries <count>           Run generated query profile; 0 disables it\n"
 		<< "  --knn-k <count>             Neighbor count for generated KNN queries\n"
+		<< "  --leaf-micro-indexes        Enable CPU heavy-leaf micro-indexes for point/schema benchmarks\n"
+		<< "  --leaf-micro-threshold <n>  Build micro-indexes for leaves with more than n points; default 512\n"
 		<< "  --query-seed <seed>         Seed for generated query profile\n"
 		<< "  --synthetic-scale <count>   Synthetic point count scale for schema-search mode\n"
 		<< "  --no-synthetic              Use only --input datasets in schema-search mode\n"

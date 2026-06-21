@@ -56,6 +56,20 @@ WORKLOAD_FEATURE_COLUMNS = [
     "memory_weight",
 ]
 
+TREE_HEALTH_FEATURE_COLUMNS = [
+    "leaf_occupancy_p50",
+    "leaf_occupancy_p90",
+    "leaf_occupancy_p99",
+    "avg_depth",
+    "avg_fanout",
+    "max_fanout",
+    "empty_child_ratio",
+    "single_child_nodes",
+    "mean_tight_bounds_volume_ratio",
+    "micro_indexed_leaves",
+    "micro_indexed_points",
+]
+
 SCHEMA_FEATURE_COLUMNS = [
     "schema_has_quadtree",
     "schema_has_octree",
@@ -163,7 +177,7 @@ def load_rows(csv_path, repo_root):
 
 def available_feature_columns(rows):
     columns = []
-    for column in POINT_FEATURE_COLUMNS + WORKLOAD_FEATURE_COLUMNS:
+    for column in POINT_FEATURE_COLUMNS + WORKLOAD_FEATURE_COLUMNS + TREE_HEALTH_FEATURE_COLUMNS:
         if column in rows[0]:
             columns.append(column)
     return columns

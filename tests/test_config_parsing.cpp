@@ -266,6 +266,85 @@ namespace BaselineTests
 		expect(splitIndex.stats().numNodes > 1, "small leaf capacity allows point subdivision");
 		expect(splitIndex.stats().numPoints == cloud.size(), "policy-controlled split preserves point count");
 
+		PointCloud adaptiveCloud;
+		for (int x = 0; x < 6; ++x)
+		{
+			for (int y = 0; y < 6; ++y)
+			{
+				for (int z = 0; z < 3; ++z)
+					adaptiveCloud.addPoint({ glm::vec3(0.01f * x, 0.01f * y, 0.01f * z) });
+			}
+		}
+		for (float coordinate : { 10.0f, 20.0f })
+		{
+			adaptiveCloud.addPoint({ glm::vec3(coordinate, 0.0f, 0.0f) });
+			adaptiveCloud.addPoint({ glm::vec3(0.0f, coordinate, 0.0f) });
+			adaptiveCloud.addPoint({ glm::vec3(0.0f, 0.0f, coordinate) });
+		}
+
+		const char* adaptiveStaticJson = R"json(
+		{
+		  "name": "adaptive_static_control",
+		  "levels": [
+		    { "type": "Octree", "numLevels": 6, "leafCapacity": 112, "minPointsToSplit": 2 }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 6,
+		    "leafCapacity": 112,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": true,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+		const char* adaptiveJson = R"json(
+		{
+		  "name": "adaptive_density",
+		  "levels": [
+		    {
+		      "type": "Octree",
+		      "numLevels": 6,
+		      "leafCapacity": 112,
+		      "minPointsToSplit": 2,
+		      "adaptiveLeafCapacity": {
+		        "enabled": true,
+		        "minCapacity": 2,
+		        "maxCapacity": 224,
+		        "densityWeight": 2.0,
+		        "heightRatioWeight": 0.0,
+		        "anisotropyWeight": 0.0,
+		        "queryMixFactor": 1.0
+		      }
+		    }
+		  ],
+		  "buildPolicy": {
+		    "maxDepth": 6,
+		    "leafCapacity": 112,
+		    "minPointsToSplit": 2,
+		    "collapseSingleChild": false,
+		    "removeEmptyNodes": true,
+		    "allowOverlapDuplication": false
+		  }
+		}
+		)json";
+		const SchemaConfig adaptiveSchema = Config::parseSchemaConfig(adaptiveJson, "adaptive_density");
+		expect(adaptiveSchema.levels[0].adaptiveLeafCapacity.enabled, "adaptive leaf capacity parses enabled flag");
+		expect(adaptiveSchema.levels[0].adaptiveLeafCapacity.minCapacity == 2, "adaptive leaf capacity parses minimum capacity");
+		expect(nearlyEqual(static_cast<float>(adaptiveSchema.levels[0].adaptiveLeafCapacity.densityWeight), 2.0f),
+			"adaptive leaf capacity parses density weight");
+
+		PointSpatialIndex adaptiveStaticIndex;
+		adaptiveStaticIndex.build(adaptiveCloud, Config::parseSchemaConfig(adaptiveStaticJson, "adaptive_static_control"));
+		PointSpatialIndex adaptiveIndex;
+		adaptiveIndex.build(adaptiveCloud, adaptiveSchema);
+		expect(adaptiveIndex.stats().numPoints == adaptiveCloud.size(), "adaptive leaf capacity preserves point count");
+		const PointSpatialIndex::Stats adaptiveStaticStats = adaptiveStaticIndex.stats();
+		const PointSpatialIndex::Stats adaptiveStats = adaptiveIndex.stats();
+		expect(adaptiveIndex.stats().numNodes > adaptiveStaticIndex.stats().numNodes,
+			"adaptive leaf capacity shrinks dense-node leaves and creates a deeper local split: static=" +
+			std::to_string(adaptiveStaticStats.numNodes) + ", adaptive=" + std::to_string(adaptiveStats.numNodes));
+
 		const char* conditionalFalseJson = R"json(
 		{
 		  "name": "conditional_false",

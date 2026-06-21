@@ -33,6 +33,9 @@ namespace PointGpu
 		size_t queryBatchSize = 0;
 		size_t memoryBudgetMb = 0;
 		KdAxisPolicy kdAxisPolicy = KdAxisPolicy::LongestExtent;
+		// "auto" picks the structure's native choice. KDTree/BIH use gpu_tree_knn for
+		// K <= MaxTrackedKnnK; other builders currently use gpu_bruteforce_knn.
+		std::string knnBackend = "auto";
 	};
 
 	struct Query
@@ -73,6 +76,9 @@ namespace PointGpu
 		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
 		size_t knnQueries = 0;
+		std::string knnBackend = "none";
+		std::vector<std::vector<uint32_t>> knnPointIndices;
+		std::vector<std::vector<float>> knnDistancesSquared;
 		std::vector<QuerySample> samples;
 	};
 
@@ -156,6 +162,68 @@ namespace PointGpu
 
 #ifdef __CUDACC__
 	inline constexpr uint32_t MaxTrackedKnnK = 16;
+
+	__device__ inline bool knnHitLess(float distanceSquared, uint32_t pointIndex, float otherDistanceSquared, uint32_t otherPointIndex)
+	{
+		return distanceSquared < otherDistanceSquared ||
+			(distanceSquared == otherDistanceSquared && pointIndex < otherPointIndex);
+	}
+
+	__device__ inline void insertKnnHit(float* bestDistances, uint32_t* bestIndices, uint32_t& found, uint32_t trackedK, float distanceSquared, uint32_t pointIndex)
+	{
+		if (trackedK == 0)
+			return;
+
+		if (found < trackedK)
+		{
+			bestDistances[found] = distanceSquared;
+			bestIndices[found] = pointIndex;
+			++found;
+			return;
+		}
+
+		uint32_t worstIndex = 0;
+		for (uint32_t i = 1; i < trackedK; ++i)
+		{
+			if (knnHitLess(bestDistances[worstIndex], bestIndices[worstIndex], bestDistances[i], bestIndices[i]))
+				worstIndex = i;
+		}
+
+		if (knnHitLess(distanceSquared, pointIndex, bestDistances[worstIndex], bestIndices[worstIndex]))
+		{
+			bestDistances[worstIndex] = distanceSquared;
+			bestIndices[worstIndex] = pointIndex;
+		}
+	}
+
+	__device__ inline float worstKnnDistance(const float* bestDistances, uint32_t found, uint32_t trackedK)
+	{
+		if (found < trackedK)
+			return 3.402823466e+38F;
+
+		float worstDistance = bestDistances[0];
+		for (uint32_t i = 1; i < trackedK; ++i)
+			worstDistance = fmaxf(worstDistance, bestDistances[i]);
+		return worstDistance;
+	}
+
+	__device__ inline void sortKnnHits(float* distances, uint32_t* indices, uint32_t count)
+	{
+		for (uint32_t i = 1; i < count; ++i)
+		{
+			const float distance = distances[i];
+			const uint32_t index = indices[i];
+			uint32_t j = i;
+			while (j > 0 && knnHitLess(distance, index, distances[j - 1], indices[j - 1]))
+			{
+				distances[j] = distances[j - 1];
+				indices[j] = indices[j - 1];
+				--j;
+			}
+			distances[j] = distance;
+			indices[j] = index;
+		}
+	}
 
 	__device__ inline float pointDistanceSquared(const DevicePoint& point, const DeviceQuery& query)
 	{

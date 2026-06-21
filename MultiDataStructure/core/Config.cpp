@@ -57,6 +57,11 @@ namespace
 		return std::nullopt;
 	}
 
+	double asDouble(const boost::json::object& object, std::initializer_list<const char*> keys, double fallback)
+	{
+		return optionalDouble(object, keys).value_or(fallback);
+	}
+
 	bool asBool(const boost::json::object& object, const char* key, bool fallback)
 	{
 		if (const boost::json::value* value = object.if_contains(key))
@@ -208,6 +213,25 @@ namespace
 		return condition;
 	}
 
+	AdaptiveLeafCapacityConfig parseAdaptiveLeafCapacity(const boost::json::object& object)
+	{
+		AdaptiveLeafCapacityConfig config;
+		config.enabled = asBool(object, "enabled", true);
+		config.minCapacity = optionalSize(object, { "minCapacity", "minLeafCapacity", "leafCapacityMin", "min_leaf_capacity" }).value_or(0);
+		config.maxCapacity = optionalSize(object, { "maxCapacity", "maxLeafCapacity", "leafCapacityMax", "max_leaf_capacity" }).value_or(0);
+		config.densityWeight = asDouble(object, { "densityWeight", "densityExponent", "density_factor_weight" }, config.densityWeight);
+		config.anisotropyWeight = asDouble(object, { "anisotropyWeight", "anisotropyExponent", "anisotropy_factor_weight" }, config.anisotropyWeight);
+		config.heightRatioWeight = asDouble(object, { "heightRatioWeight", "heightRatioExponent", "height_ratio_factor_weight" }, config.heightRatioWeight);
+		config.queryMixFactor = asDouble(object, { "queryMixFactor", "queryFactor", "workloadFactor", "query_mix_factor" }, config.queryMixFactor);
+
+		if (config.maxCapacity > 0 && config.minCapacity > 0 && config.maxCapacity < config.minCapacity)
+			throw std::runtime_error("adaptiveLeafCapacity maxCapacity must be >= minCapacity");
+		if (config.queryMixFactor <= 0.0)
+			throw std::runtime_error("adaptiveLeafCapacity queryMixFactor must be positive");
+
+		return config;
+	}
+
 	SchemaLevelConfig parseLevel(const boost::json::object& object)
 	{
 		SchemaLevelConfig level;
@@ -228,6 +252,16 @@ namespace
 				throw std::runtime_error("Schema level condition must be an object");
 			level.condition = parseLevelCondition(conditionValue->as_object());
 		}
+		for (const char* key : { "adaptiveLeafCapacity", "leafCapacityAdaptation", "adaptiveCapacity" })
+		{
+			if (const boost::json::value* adaptiveValue = object.if_contains(key))
+			{
+				if (!adaptiveValue->is_object())
+					throw std::runtime_error("adaptiveLeafCapacity must be an object");
+				level.adaptiveLeafCapacity = parseAdaptiveLeafCapacity(adaptiveValue->as_object());
+				break;
+			}
+		}
 
 		if (level.numLevels == 0)
 			throw std::runtime_error("Schema level numLevels must be greater than zero");
@@ -245,6 +279,10 @@ namespace
 		policy.collapseSingleChild = asBool(object, "collapseSingleChild", policy.collapseSingleChild);
 		policy.removeEmptyNodes = asBool(object, "removeEmptyNodes", policy.removeEmptyNodes);
 		policy.allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy.allowOverlapDuplication);
+		policy.enableLeafMicroIndexes = asBool(object, "enableLeafMicroIndexes", policy.enableLeafMicroIndexes);
+		policy.enableLeafMicroIndexes = asBool(object, "leafMicroIndexes", policy.enableLeafMicroIndexes);
+		policy.leafMicroIndexThreshold = asSize(object, "leafMicroIndexThreshold", policy.leafMicroIndexThreshold);
+		policy.leafMicroIndexThreshold = asSize(object, "microIndexThreshold", policy.leafMicroIndexThreshold);
 		return policy;
 	}
 }

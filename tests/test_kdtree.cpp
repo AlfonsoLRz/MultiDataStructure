@@ -60,6 +60,31 @@ namespace BaselineTests
 			}
 			return count;
 		}
+
+		std::vector<uint32_t> bruteForceKnn(const PointCloud& cloud, const glm::vec3& center, size_t k)
+		{
+			std::vector<std::pair<float, uint32_t>> distances;
+			distances.reserve(cloud.size());
+			for (size_t pointIndex = 0; pointIndex < cloud.size(); ++pointIndex)
+			{
+				distances.push_back({
+					glm::length2(cloud.points()[pointIndex].position - center),
+					static_cast<uint32_t>(pointIndex)
+				});
+			}
+			std::sort(distances.begin(), distances.end(), [](const auto& left, const auto& right) {
+				if (left.first == right.first)
+					return left.second < right.second;
+				return left.first < right.first;
+			});
+
+			std::vector<uint32_t> result;
+			const size_t count = std::min(k, distances.size());
+			result.reserve(count);
+			for (size_t i = 0; i < count; ++i)
+				result.push_back(distances[i].second);
+			return result;
+		}
 	}
 
 	void runKDTreeTests()
@@ -109,8 +134,17 @@ namespace BaselineTests
 		expect(result.samples[1].returnedPoints == bruteForceRangeCount(cloud, countRange.bounds), "KDTree count-range matches brute force");
 		expect(result.samples[2].returnedPoints == bruteForceRadiusCount(cloud, radius.center, radius.radius), "KDTree radius count matches brute force");
 		expect(result.samples[3].returnedPoints == std::min(knn.k, cloud.size()), "KDTree KNN returns requested neighbor count");
-		expect(result.samples[3].testedPoints == cloud.size(), "KDTree KNN scans the GPU point buffer");
+		expect(result.knnBackend == "gpu_tree_knn", "KDTree auto KNN uses tree backend for small k");
+		expect(result.knnPointIndices.size() == queries.size(), "KDTree tree KNN returns per-query hit buffers");
+		expect(result.knnPointIndices[3] == bruteForceKnn(cloud, knn.center, knn.k), "KDTree tree KNN returns exact nearest-neighbor ordering");
 		expect(result.knnQueries == 1, "KDTree counts KNN queries");
 		expect(result.metrics.totalQueries == queries.size(), "KDTree summarizes query samples");
+
+		PointGpu::Options bruteOptions = options;
+		bruteOptions.knnBackend = "gpu_bruteforce_knn";
+		const PointGpu::QueryResult bruteResult = index.query(std::vector<PointGpu::Query>{ knn }, bruteOptions);
+		expect(bruteResult.knnBackend == "gpu_bruteforce_knn", "KDTree can still use the explicit brute-force GPU KNN backend");
+		expect(bruteResult.samples.size() == 1 && bruteResult.samples[0].testedPoints == cloud.size(),
+			"KDTree brute-force KNN backend scans the GPU point buffer");
 	}
 }

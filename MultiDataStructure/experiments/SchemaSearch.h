@@ -33,6 +33,8 @@ namespace Experiments
 		size_t maxLeafCapacity = 32768;
 		bool conditionalLevels = false;
 		double conditionalProbability = 0.35;
+		bool adaptiveLeafCapacity = false;
+		double adaptiveLeafProbability = 0.25;
 		uint32_t seed = 1337;
 		std::string outputDirectory = "results/generated_schemas";
 		// "auto" resolves at schema-search startup: CPU discovery gets query_minimal_cpu,
@@ -102,6 +104,7 @@ namespace Experiments
 		size_t numQueries = 1000;
 		size_t knnK = 16;
 		uint32_t querySeed = 1337;
+		bool stratifyQueries = false;
 		bool hasScoreWeights = false;
 		ScoreWeights scoreWeights;
 	};
@@ -172,6 +175,13 @@ namespace Experiments
 		// distance over the four Pareto objectives instead of the scalar aggregateScore.
 		// Intrinsically preserves diversity across the front.
 		bool useNsga2Ranking = true;
+		// Diagnostic-guided repair mutations. When enabled, each generation first creates a few
+		// children from measured archive entries by classifying their build/query bottleneck
+		// (high leaf occupancy, high tested-points, high visited-nodes, high full-containment,
+		// etc.) and applying a targeted schema edit before falling back to random mutation.
+		bool repairMutations = false;
+		size_t repairTopK = 4;
+		size_t repairPerCandidate = 2;
 	};
 
 	struct CudaEvaluationOptions
@@ -180,6 +190,7 @@ namespace Experiments
 		std::string builder = "lbvh";
 		size_t queryBatchSize = 0;
 		size_t memoryBudgetMb = 0;
+		std::string knnBackend = "auto";
 	};
 
 	struct SchemaSearchOptions
@@ -193,6 +204,9 @@ namespace Experiments
 		// Optional Phase C1 Pareto-front CSV. One row per non-dominated candidate per
 		// (dataset, workload) group with the `pareto_rank` column. Empty = skip.
 		std::string paretoCsvPath;
+		// Optional Markdown explanation report. Empty = skip. The report is generated from the
+		// measured SchemaSearchRecord rows after baseline annotation.
+		std::string explainReportPath;
 		// Optional per-query CSV trace. Empty = disabled. When enabled, cached score rows are
 		// bypassed so the trace reflects queries actually executed in this run.
 		std::string queryTracePath;
@@ -237,6 +251,8 @@ namespace Experiments
 		// state and the per-builder build cache are not thread-safe). Default 1 keeps current
 		// behaviour exactly.
 		size_t parallelDispatch = 1;
+		bool enableLeafMicroIndexes = false;
+		size_t leafMicroIndexThreshold = 512;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
 
@@ -256,10 +272,15 @@ namespace Experiments
 		std::string schemaPath;
 		BuildMetrics buildMetrics;
 		QueryMetrics queryMetrics;
+		QueryMetrics rangeMetrics;
+		QueryMetrics countRangeMetrics;
+		QueryMetrics radiusMetrics;
+		QueryMetrics knnMetrics;
 		size_t rangeQueries = 0;
 		size_t countRangeQueries = 0;
 		size_t radiusQueries = 0;
 		size_t knnQueries = 0;
+		std::string queryStrataSummary;
 		double score = 0.0;
 		double scoreMemoryMb = 0.0;
 		double scoreImbalancePenalty = 0.0;
@@ -306,6 +327,21 @@ namespace Experiments
 		double gpuBuildCiHigh = 0.0;
 	};
 
+	struct SchemaRepairDiagnostics
+	{
+		std::string bottleneck = "balanced";
+		double leafOccupancyRatio = 0.0;
+		double testedPerVisited = 0.0;
+		double visitedPerQuery = 0.0;
+		double testedPointFraction = 0.0;
+		double fullContainmentRatio = 0.0;
+		bool highLeafOccupancy = false;
+		bool testedPointDominated = false;
+		bool visitedNodeDominated = false;
+		bool fullContainmentDominated = false;
+		bool likelySingleChildChains = false;
+	};
+
 	struct EvaluatorResolution
 	{
 		std::string evaluator = "cpu";
@@ -327,6 +363,17 @@ namespace Experiments
 	std::vector<SchemaCandidate> generateSchemaCandidates(
 		const SchemaGenerationOptions& options,
 		const ConditionDomain* conditionDomain);
+	SchemaRepairDiagnostics diagnoseSchemaRepair(
+		const SchemaCandidate& candidate,
+		const std::vector<SchemaSearchRecord>& measuredRecords);
+	std::vector<SchemaCandidate> generateSchemaRepairCandidates(
+		const SchemaCandidate& candidate,
+		const std::vector<SchemaSearchRecord>& measuredRecords,
+		const SchemaGenerationOptions& generationOptions,
+		const ConditionDomain* conditionDomain,
+		size_t maxCandidates,
+		uint32_t seed,
+		const std::string& outputDirectory);
 	double computeSchemaSearchScore(
 		const BuildMetrics& buildMetrics,
 		const QueryMetrics& queryMetrics,

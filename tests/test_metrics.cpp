@@ -78,6 +78,15 @@ namespace BaselineTests
 		expect(buildMetrics.indexedPoints == cloud.size(), "build metrics preserve indexed points");
 		expect(buildMetrics.averageLeafOccupancy > 0.0, "build metrics compute average leaf occupancy");
 		expect(buildMetrics.maxLeafOccupancy > 0, "build metrics compute max leaf occupancy");
+		expect(buildMetrics.leafOccupancyP50 > 0.0, "build metrics compute leaf occupancy median");
+		expect(buildMetrics.leafOccupancyP90 >= buildMetrics.leafOccupancyP50, "build metrics compute ordered leaf occupancy quantiles");
+		expect(buildMetrics.averageDepth > 0.0, "build metrics compute average depth");
+		expect(buildMetrics.averageFanout > 0.0, "build metrics compute average fanout");
+		expect(buildMetrics.maxFanout > 0, "build metrics compute max fanout");
+		expect(buildMetrics.emptyChildRatio >= 0.0 && buildMetrics.emptyChildRatio <= 1.0, "build metrics compute bounded empty-child ratio");
+		expect(buildMetrics.meanTightBoundsVolumeRatio >= 0.0 && buildMetrics.meanTightBoundsVolumeRatio <= 1.0,
+			"build metrics compute bounded tight-bounds volume ratio");
+		expect(!buildMetrics.nodeFanoutSummary.empty(), "build metrics report fanout distribution");
 		expect(buildMetrics.memoryEstimateBytes > 0, "build metrics compute memory estimate");
 	}
 }

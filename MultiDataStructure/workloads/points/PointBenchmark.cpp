@@ -55,10 +55,123 @@ namespace
 		stream << '[' << value.x << ", " << value.y << ", " << value.z << ']';
 	}
 
+	using QueryBreakdown = PointSpatialIndex::QueryStats::QueryBreakdown;
+
+	void mergeBreakdown(QueryBreakdown& target, const QueryBreakdown& source)
+	{
+		for (size_t i = 0; i < target.visitedByDepth.size(); ++i)
+			target.visitedByDepth[i] += source.visitedByDepth[i];
+
+		for (const auto& [name, count] : source.visitedByStructure)
+			target.visitedByStructure[name] += count;
+		for (const auto& [name, count] : source.testedPointsByStructure)
+			target.testedPointsByStructure[name] += count;
+		for (const auto& [name, count] : source.fullyContainedByStructure)
+			target.fullyContainedByStructure[name] += count;
+	}
+
+	QueryBreakdown aggregateBreakdowns(const std::vector<PointSpatialIndex::QueryStats>& samples)
+	{
+		QueryBreakdown result;
+		for (const PointSpatialIndex::QueryStats& sample : samples)
+			mergeBreakdown(result, sample.breakdown);
+		return result;
+	}
+
+	std::vector<std::pair<std::string, size_t>> sortedBreakdownMap(const std::unordered_map<std::string, size_t>& values)
+	{
+		std::vector<std::pair<std::string, size_t>> sorted(values.begin(), values.end());
+		std::sort(sorted.begin(), sorted.end(), [](const auto& left, const auto& right) {
+			return left.first < right.first;
+		});
+		return sorted;
+	}
+
+	std::string formatDepthBreakdown(const QueryBreakdown& breakdown)
+	{
+		std::ostringstream output;
+		bool first = true;
+		for (size_t depth = 0; depth < breakdown.visitedByDepth.size(); ++depth)
+		{
+			const size_t count = breakdown.visitedByDepth[depth];
+			if (count == 0)
+				continue;
+			if (!first)
+				output << ';';
+			first = false;
+			output << depth << ':' << count;
+		}
+		return output.str();
+	}
+
+	std::string formatMapBreakdown(const std::unordered_map<std::string, size_t>& values)
+	{
+		std::ostringstream output;
+		bool first = true;
+		for (const auto& [name, count] : sortedBreakdownMap(values))
+		{
+			if (!first)
+				output << ';';
+			first = false;
+			output << name << ':' << count;
+		}
+		return output.str();
+	}
+
+	void writeDepthBreakdownJson(std::ostream& stream, const QueryBreakdown& breakdown)
+	{
+		stream << '{';
+		bool first = true;
+		for (size_t depth = 0; depth < breakdown.visitedByDepth.size(); ++depth)
+		{
+			const size_t count = breakdown.visitedByDepth[depth];
+			if (count == 0)
+				continue;
+			if (!first)
+				stream << ", ";
+			first = false;
+			stream << '"' << depth << "\": " << count;
+		}
+		stream << '}';
+	}
+
+	void writeMapBreakdownJson(std::ostream& stream, const std::unordered_map<std::string, size_t>& values)
+	{
+		stream << '{';
+		bool first = true;
+		for (const auto& [name, count] : sortedBreakdownMap(values))
+		{
+			if (!first)
+				stream << ", ";
+			first = false;
+			stream << '"' << jsonEscape(name) << "\": " << count;
+		}
+		stream << '}';
+	}
+
+	void writeQueryBreakdownJson(std::ostream& stream, const char* name, const QueryBreakdown& breakdown, bool trailingComma)
+	{
+		stream << "    \"" << name << "\": {\n";
+		stream << "      \"visited_by_depth\": ";
+		writeDepthBreakdownJson(stream, breakdown);
+		stream << ",\n";
+		stream << "      \"visited_by_structure\": ";
+		writeMapBreakdownJson(stream, breakdown.visitedByStructure);
+		stream << ",\n";
+		stream << "      \"tested_points_by_structure\": ";
+		writeMapBreakdownJson(stream, breakdown.testedPointsByStructure);
+		stream << ",\n";
+		stream << "      \"fully_contained_by_structure\": ";
+		writeMapBreakdownJson(stream, breakdown.fullyContainedByStructure);
+		stream << "\n";
+		stream << "    }" << (trailingComma ? "," : "") << "\n";
+	}
+
 	struct QueryProfileSection
 	{
 		std::vector<PointSpatialIndex::QueryStats> samples;
 		Experiments::QueryMetrics metrics;
+		QueryBreakdown breakdown;
 
 		void add(const PointSpatialIndex::QueryStats& stats)
 		{
@@ -68,6 +181,7 @@ namespace
 		void finalize()
 		{
 			metrics = Experiments::summarizeQueryStats(samples);
+			breakdown = aggregateBreakdowns(samples);
 		}
 	};
 
@@ -94,6 +208,7 @@ namespace
 		QueryProfileSection radius;
 		QueryProfileSection knn;
 		Experiments::QueryMetrics mixed;
+		QueryBreakdown mixedBreakdown;
 		std::vector<QueryTraceSample> traces;
 
 		size_t totalQueries() const
@@ -115,6 +230,7 @@ namespace
 			allSamples.insert(allSamples.end(), radius.samples.begin(), radius.samples.end());
 			allSamples.insert(allSamples.end(), knn.samples.begin(), knn.samples.end());
 			mixed = Experiments::summarizeQueryStats(allSamples);
+			mixedBreakdown = aggregateBreakdowns(allSamples);
 		}
 	};
 
@@ -418,6 +534,18 @@ namespace
 		output << "    \"max_depth\": " << buildMetrics.maxDepth << ",\n";
 		output << "    \"avg_leaf_occupancy\": " << buildMetrics.averageLeafOccupancy << ",\n";
 		output << "    \"max_leaf_occupancy\": " << buildMetrics.maxLeafOccupancy << ",\n";
+		output << "    \"leaf_occupancy_p50\": " << buildMetrics.leafOccupancyP50 << ",\n";
+		output << "    \"leaf_occupancy_p90\": " << buildMetrics.leafOccupancyP90 << ",\n";
+		output << "    \"leaf_occupancy_p99\": " << buildMetrics.leafOccupancyP99 << ",\n";
+		output << "    \"avg_depth\": " << buildMetrics.averageDepth << ",\n";
+		output << "    \"avg_fanout\": " << buildMetrics.averageFanout << ",\n";
+		output << "    \"max_fanout\": " << buildMetrics.maxFanout << ",\n";
+		output << "    \"empty_child_ratio\": " << buildMetrics.emptyChildRatio << ",\n";
+		output << "    \"single_child_nodes\": " << buildMetrics.singleChildNodeCount << ",\n";
+		output << "    \"mean_tight_bounds_volume_ratio\": " << buildMetrics.meanTightBoundsVolumeRatio << ",\n";
+		output << "    \"micro_indexed_leaves\": " << buildMetrics.microIndexedLeaves << ",\n";
+		output << "    \"micro_indexed_points\": " << buildMetrics.microIndexedPoints << ",\n";
+		output << "    \"node_fanout_summary\": \"" << jsonEscape(buildMetrics.nodeFanoutSummary) << "\",\n";
 		output << "    \"memory_estimate_bytes\": " << buildMetrics.memoryEstimateBytes << "\n";
 		output << "  },\n";
 		output << "  \"query_metrics\": {\n";
@@ -427,6 +555,13 @@ namespace
 		writeQueryMetricsJson(output, "radius", queryProfile.radius.metrics, true);
 		writeQueryMetricsJson(output, "knn", queryProfile.knn.metrics, false);
 		output << "\n";
+		output << "  },\n";
+		output << "  \"query_breakdowns\": {\n";
+		writeQueryBreakdownJson(output, "mixed", queryProfile.mixedBreakdown, true);
+		writeQueryBreakdownJson(output, "range", queryProfile.range.breakdown, true);
+		writeQueryBreakdownJson(output, "count_range", queryProfile.countRange.breakdown, true);
+		writeQueryBreakdownJson(output, "radius", queryProfile.radius.breakdown, true);
+		writeQueryBreakdownJson(output, "knn", queryProfile.knn.breakdown, false);
 		output << "  },\n";
 		output << "  \"outputs\": {\n";
 		output << "    \"json_path\": \"" << jsonEscape(outputPath.string()) << "\",\n";
@@ -442,6 +577,8 @@ namespace
 		output
 			<< "run_id,dataset_name,dataset_path,num_points,schema_name,schema_path,workload_name,queries_per_type,total_queries,knn_k,query_seed,"
 			<< "schema_load_time_ms,point_load_time_ms,build_time_ms,num_nodes,num_leaves,max_depth,avg_leaf_occupancy,max_leaf_occupancy,memory_estimate_bytes,"
+			<< "leaf_occupancy_p50,leaf_occupancy_p90,leaf_occupancy_p99,avg_depth,avg_fanout,max_fanout,empty_child_ratio,single_child_nodes,"
+			<< "mean_tight_bounds_volume_ratio,micro_indexed_leaves,micro_indexed_points,node_fanout_summary,"
 			<< "mixed_avg_latency_ms,mixed_median_latency_ms,mixed_p95_latency_ms,mixed_throughput_qps,mixed_avg_visited_nodes,mixed_avg_tested_points,mixed_avg_returned_points,"
 			<< "range_avg_latency_ms,range_p95_latency_ms,count_range_avg_latency_ms,count_range_p95_latency_ms,radius_avg_latency_ms,radius_p95_latency_ms,knn_avg_latency_ms,knn_p95_latency_ms,knn_backend\n";
 	}
@@ -494,6 +631,18 @@ namespace
 			<< buildMetrics.averageLeafOccupancy << ','
 			<< buildMetrics.maxLeafOccupancy << ','
 			<< buildMetrics.memoryEstimateBytes << ','
+			<< buildMetrics.leafOccupancyP50 << ','
+			<< buildMetrics.leafOccupancyP90 << ','
+			<< buildMetrics.leafOccupancyP99 << ','
+			<< buildMetrics.averageDepth << ','
+			<< buildMetrics.averageFanout << ','
+			<< buildMetrics.maxFanout << ','
+			<< buildMetrics.emptyChildRatio << ','
+			<< buildMetrics.singleChildNodeCount << ','
+			<< buildMetrics.meanTightBoundsVolumeRatio << ','
+			<< buildMetrics.microIndexedLeaves << ','
+			<< buildMetrics.microIndexedPoints << ','
+			<< csvEscape(buildMetrics.nodeFanoutSummary) << ','
 			<< queryProfile.mixed.averageLatencyMs << ','
 			<< queryProfile.mixed.medianLatencyMs << ','
 			<< queryProfile.mixed.p95LatencyMs << ','
@@ -518,7 +667,8 @@ namespace
 			<< "run_id,dataset_name,dataset_path,schema_name,schema_path,workload_name,"
 			<< "query_id,query_type,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
 			<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,"
-			<< "fully_contained_nodes,backend,query_seed\n";
+			<< "fully_contained_nodes,visited_by_depth,visited_by_structure,tested_points_by_structure,"
+			<< "fully_contained_by_structure,backend,query_seed\n";
 	}
 
 	void appendPointQueryTrace(
@@ -591,6 +741,10 @@ namespace
 				<< trace.stats.testedPoints << ','
 				<< trace.stats.returnedPoints << ','
 				<< trace.stats.fullyContainedNodes << ','
+				<< csvEscape(formatDepthBreakdown(trace.stats.breakdown)) << ','
+				<< csvEscape(formatMapBreakdown(trace.stats.breakdown.visitedByStructure)) << ','
+				<< csvEscape(formatMapBreakdown(trace.stats.breakdown.testedPointsByStructure)) << ','
+				<< csvEscape(formatMapBreakdown(trace.stats.breakdown.fullyContainedByStructure)) << ','
 				<< "cpu" << ','
 				<< queryProfile.seed << '\n';
 		}
@@ -674,7 +828,12 @@ int PointBenchmark::run(const Options& options)
 	for (size_t schemaIndex = 0; schemaIndex < schemas.size(); ++schemaIndex)
 	{
 		const LoadedSchema& loadedSchema = schemas[schemaIndex];
-		const SchemaConfig& schema = loadedSchema.config;
+		SchemaConfig schema = loadedSchema.config;
+		if (options.enableLeafMicroIndexes)
+		{
+			schema.buildPolicy.enableLeafMicroIndexes = true;
+			schema.buildPolicy.leafMicroIndexThreshold = options.leafMicroIndexThreshold;
+		}
 
 		PointSpatialIndex index;
 		const auto buildBegin = std::chrono::steady_clock::now();
@@ -682,7 +841,7 @@ int PointBenchmark::run(const Options& options)
 		const auto buildEnd = std::chrono::steady_clock::now();
 		const double buildMs = elapsedMilliseconds(buildBegin, buildEnd);
 		const PointSpatialIndex::Stats indexStats = index.stats();
-		const Experiments::BuildMetrics buildMetrics = Experiments::collectBuildMetrics(indexStats, index.root(), buildMs);
+		const Experiments::BuildMetrics buildMetrics = Experiments::collectBuildMetrics(indexStats, index.root(), buildMs, schema);
 		const QueryProfileSummary queryProfile = runQueryProfile(options, cloud, index);
 		const std::string runId = makeRunId(options.inputPath, schema.name, schemaIndex);
 		const std::filesystem::path jsonPath = outputPathForRun(options.outputPath, schema.name, multipleSchemas);

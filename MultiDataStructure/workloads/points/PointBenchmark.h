@@ -22,6 +22,8 @@ namespace PointBenchmark
 		size_t queryCount = 0;
 		size_t queryK = 8;
 		uint32_t querySeed = 1337;
+		bool enableLeafMicroIndexes = false;
+		size_t leafMicroIndexThreshold = 512;
 	};
 
 	int run(const Options& options);

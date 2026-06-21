@@ -157,6 +157,10 @@ namespace
 	{
 		for (const SchemaLevelConfig& level : schema.levels)
 		{
+			if (level.adaptiveLeafCapacity.enabled)
+				throw std::runtime_error(
+					"CUDA MixedTree does not currently support adaptiveLeafCapacity; "
+					"remove the adaptive leaf-capacity rule or use the CPU evaluator.");
 			if (hasUnsupportedMixedCondition(level.condition))
 				throw std::runtime_error(
 					"CUDA MixedTree does not currently support occupancy-entropy conditions; "
@@ -1264,6 +1268,132 @@ namespace
 		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
+
+	__global__ void cooperativeQueryKernel(
+		const DevicePoint* points,
+		const uint32_t* indices,
+		const LinearMixedTreeNode* nodes,
+		const DeviceQuery* queries,
+		size_t queryCount,
+		float clockRateKHz,
+		DeviceQuerySample* samples)
+	{
+		const size_t queryIndex = static_cast<size_t>(blockIdx.x);
+		if (queryIndex >= queryCount)
+			return;
+
+		const DeviceQuery query = queries[queryIndex];
+		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		{
+			if (threadIdx.x == 0)
+				samples[queryIndex] = DeviceQuerySample{};
+			return;
+		}
+
+		const unsigned long long begin = clock64();
+		__shared__ int stack[QueryStackSize];
+		__shared__ int stackSize;
+		__shared__ unsigned long long visited;
+		__shared__ unsigned long long tested;
+		__shared__ unsigned long long returned;
+		__shared__ unsigned long long sharedCounts[ThreadsPerBlock];
+
+		if (threadIdx.x == 0)
+		{
+			stackSize = 0;
+			visited = 0;
+			tested = 0;
+			returned = 0;
+			stack[stackSize++] = 0;
+		}
+		__syncthreads();
+
+		while (true)
+		{
+			__shared__ int nodeIndex;
+			if (threadIdx.x == 0)
+				nodeIndex = stackSize > 0 ? stack[--stackSize] : -1;
+			__syncthreads();
+
+			if (nodeIndex < 0)
+				break;
+
+			const LinearMixedTreeNode node = nodes[nodeIndex];
+			bool intersects = node.pointCount > 0;
+			if (intersects)
+			{
+				if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+					intersects = distanceSquaredToNode(node, query) <= query.radius * query.radius;
+				else
+					intersects = rangeIntersectsNode(node, query);
+			}
+
+			if (intersects && threadIdx.x == 0)
+				++visited;
+			__syncthreads();
+
+			if (!intersects)
+				continue;
+
+			if (node.childBase < 0)
+			{
+				unsigned long long localReturned = 0;
+				for (uint32_t i = threadIdx.x; i < node.pointCount; i += blockDim.x)
+				{
+					const DevicePoint point = points[indices[node.pointOffset + i]];
+					if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+					{
+						if (pointInsideRadius(point, query))
+							++localReturned;
+					}
+					else if (pointInsideRange(point, query))
+					{
+						++localReturned;
+					}
+				}
+
+				sharedCounts[threadIdx.x] = localReturned;
+				__syncthreads();
+				for (uint32_t stride = blockDim.x / 2; stride > 0; stride >>= 1)
+				{
+					if (threadIdx.x < stride)
+						sharedCounts[threadIdx.x] += sharedCounts[threadIdx.x + stride];
+					__syncthreads();
+				}
+
+				if (threadIdx.x == 0)
+				{
+					tested += node.pointCount;
+					returned += sharedCounts[0];
+				}
+				__syncthreads();
+				continue;
+			}
+
+			if (threadIdx.x == 0)
+			{
+				for (uint32_t child = 0; child < MaxChildCount; ++child)
+				{
+					if ((node.childMask & (1u << child)) == 0)
+						continue;
+					if (stackSize < QueryStackSize)
+						stack[stackSize++] = node.childBase + static_cast<int>(child);
+				}
+			}
+			__syncthreads();
+		}
+
+		if (threadIdx.x == 0)
+		{
+			const unsigned long long end = clock64();
+			DeviceQuerySample sample{};
+			sample.visitedNodes = visited;
+			sample.testedPoints = tested;
+			sample.returnedPoints = returned;
+			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			samples[queryIndex] = sample;
+		}
+	}
 }
 
 struct PointGpu::MixedTree::DeviceState
@@ -1346,6 +1476,44 @@ namespace
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
 		state.queryCapacity = capacity;
+	}
+
+	double safeVolume(const glm::vec3& extent)
+	{
+		return static_cast<double>(std::max(extent.x, 0.0f)) *
+			static_cast<double>(std::max(extent.y, 0.0f)) *
+			static_cast<double>(std::max(extent.z, 0.0f));
+	}
+
+	bool shouldUseCooperativeQueryKernel(const std::vector<DeviceQuery>& queries, const PointCloud* cloud)
+	{
+		if (!cloud || cloud->empty())
+			return false;
+
+		const double cloudVolume = std::max(safeVolume(cloud->bounds().size()), 1.0e-12);
+		for (const DeviceQuery& query : queries)
+		{
+			if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+				continue;
+
+			if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+			{
+				const double radius = std::max(0.0f, query.radius);
+				const double radiusVolume = (4.0 / 3.0) * 3.14159265358979323846 * radius * radius * radius;
+				if (radiusVolume / cloudVolume >= 0.005)
+					return true;
+				continue;
+			}
+
+			const glm::vec3 queryExtent(
+				std::max(0.0f, query.maxX - query.minX),
+				std::max(0.0f, query.maxY - query.minY),
+				std::max(0.0f, query.maxZ - query.minZ));
+			if (safeVolume(queryExtent) / cloudVolume >= 0.005)
+				return true;
+		}
+
+		return false;
 	}
 }
 
@@ -1758,19 +1926,37 @@ PointGpu::QueryResult PointGpu::MixedTree::query(const std::vector<Query>& queri
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
 			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
+		if (batchHasKnn)
+			result.knnBackend = "gpu_bruteforce_knn";
+		const bool useCooperativeQuery = shouldUseCooperativeQueryKernel(hostQueries, _state->cloud);
 
 		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
-		const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
-		queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->nodes,
-			_state->pointCount,
-			_state->queryBuffer,
-			currentBatch,
-			clockRate,
-			_state->sampleBuffer);
-		CudaHelper::synchronize("MixedTreeQueryKernel");
+		if (useCooperativeQuery)
+		{
+			cooperativeQueryKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock>>>(
+				_state->points,
+				_state->indices,
+				_state->nodes,
+				_state->queryBuffer,
+				currentBatch,
+				clockRate,
+				_state->sampleBuffer);
+			CudaHelper::synchronize("MixedTreeCooperativeQueryKernel");
+		}
+		else
+		{
+			const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
+			queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
+				_state->points,
+				_state->indices,
+				_state->nodes,
+				_state->pointCount,
+				_state->queryBuffer,
+				currentBatch,
+				clockRate,
+				_state->sampleBuffer);
+			CudaHelper::synchronize("MixedTreeQueryKernel");
+		}
 		if (batchHasKnn)
 		{
 			PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(

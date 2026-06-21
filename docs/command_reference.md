@@ -74,12 +74,35 @@ Replay a generated schema:
 .\x64\Release\MultiDataStructure.exe --input C:/Datasets/points/Alhambra_100M.las --schema results/generated_schemas/generated_qt4l128_ot5l128.json --workload-profile configs/workloads/mixed.json --queries 64 --no-pause
 ```
 
+Opt into heavy-leaf micro-indexes for CPU point benchmarks. This keeps the macro schema unchanged, but builds a leaf-local uniform grid for range/count/radius and a leaf-local KD tree for KNN only on leaves above the threshold:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --input C:/Datasets/points/Alhambra_100M.las --schema configs/schemas/octree.json --queries 64 --leaf-micro-indexes --leaf-micro-threshold 512 --csv results/point_micro_index.csv --no-pause
+```
+
+Schema JSON can set the same opt-in through `buildPolicy`:
+
+```json
+{
+  "buildPolicy": {
+    "enableLeafMicroIndexes": true,
+    "leafMicroIndexThreshold": 512
+  }
+}
+```
+
 ## Local Measured Tuning
 
 Tune one point cloud over the configured candidate list and export a measured-best selector:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --auto-conditions --output models/alhambra_local_selector.json
+```
+
+Include adaptive per-node leaf capacity in generated candidates:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_schema_for_cloud.py --input C:/Datasets/points/Alhambra_100M.las --workload-profile configs/workloads/volume_small_medium.json --queries 64 --auto-conditions --adaptive-leaf-capacity --output models/alhambra_adaptive_selector.json
 ```
 
 Use that measured winner:
@@ -158,6 +181,12 @@ Generated conditional schema search. Later generated blocks may include local no
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --generated-condition-probability 0.5 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_conditional.csv --best-csv results/alhambra_volume_conditional_best.csv --no-pause
 ```
 
+CPU adaptive leaf-capacity search. Generated levels may include `adaptiveLeafCapacity`, which scales each node's effective leaf capacity from density, height-ratio, anisotropy, and query-mix factors. Keep this on CPU for now; CUDA generated runs disable it and fixed adaptive schemas are rejected by schema-search CUDA evaluators until GPU support exists:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --generated-adaptive-leaf-capacity --generated-adaptive-leaf-probability 0.35 --evaluator cpu --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_adaptive_leaf_cpu.csv --best-csv results/alhambra_adaptive_leaf_cpu_best.csv --no-pause
+```
+
 Per-cloud auto-condition tuning. This estimates threshold domains from the point cloud, screens generated numeric conditional schemas with a small proxy workload, confirms the shortlist on the full cloud, writes the winning schema JSON, and updates a measured selector artifact:
 
 ```powershell
@@ -176,10 +205,10 @@ Reduced deep-search smoke preset for quick validation on synthetic data:
 .\x64\Release\MultiDataStructure.exe --mode schema-search --synthetic-scale 32 --deep-nested-search --condition-proxy-candidates 4 --condition-final-top 2 --condition-confirm-top 1 --condition-proxy-queries 1 --queries 2 --condition-output-dir $env:TEMP\mdspc_deep_smoke --condition-selector-output $env:TEMP\mdspc_deep_smoke_selector.json --no-csv --no-pause
 ```
 
-Evolutionary schema optimization. This evaluates an initial population, keeps the best measured schemas as parents, mutates them, adds random immigrants, and repeats:
+Evolutionary schema optimization. This evaluates an initial population, keeps the best measured schemas as parents, adds diagnostic repair children, mutates them, adds random immigrants, and repeats:
 
 ```powershell
-.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generate-schemas 128 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --optimizer-mutation-rate 0.65 --optimizer-random-fraction 0.20 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_evolution.csv --best-csv results/alhambra_evolution_best.csv --no-pause
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generate-schemas 128 --generated-conditional --optimize-schemas --repair-mutations --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --optimizer-mutation-rate 0.65 --optimizer-random-fraction 0.20 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_evolution.csv --best-csv results/alhambra_evolution_best.csv --no-pause
 ```
 
 LBVH GPU evaluator. This keeps the optimizer and candidate loop on CPU, but builds LBVH and measures range/count/radius/KNN queries on the selected CUDA device. CUDA KNN is reported as `knn_backend=bruteforce_gpu_scan` because it scans the GPU point buffer rather than traversing the structure:
@@ -194,13 +223,13 @@ RegularGrid GPU evaluator. This uses CUDA cell binning plus exact range/count/ra
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder regular_grid --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_regular_grid_search.csv --best-csv results/alhambra_cuda_regular_grid_best.csv --no-pause
 ```
 
-KDTree GPU evaluator. This builds a spatial-median KD tree on CUDA and measures exact range/count/radius queries plus brute-force parallel GPU point-buffer KNN:
+KDTree GPU evaluator. This builds a spatial-median KD tree on CUDA and measures exact range/count/radius queries. KNN defaults to exact tree traversal for `k <= 16`; pass `--cuda-knn-backend gpu_bruteforce_knn` to force the point-buffer scan:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder kdtree --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_kdtree_search.csv --best-csv results/alhambra_cuda_kdtree_best.csv --no-pause
 ```
 
-BIH GPU evaluator. This builds a binary interval hierarchy on CUDA, refits tight child bounds after partitioning, and measures exact range/count/radius queries plus brute-force parallel GPU point-buffer KNN:
+BIH GPU evaluator. This builds a binary interval hierarchy on CUDA, refits tight child bounds after partitioning, and measures exact range/count/radius queries. KNN defaults to exact tree traversal for `k <= 16`; pass `--cuda-knn-backend gpu_bruteforce_knn` to force the point-buffer scan:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --optimize-schemas --optimizer-generations 4 --optimizer-population 64 --optimizer-elites 8 --workloads configs/workloads/volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder bih --cuda-query-batch 0 --cuda-memory-budget-mb 0 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_cuda_bih_search.csv --best-csv results/alhambra_cuda_bih_best.csv --no-pause
@@ -313,6 +342,8 @@ Workload query-scale syntax:
 }
 ```
 
+Workload JSON files may also set `"stratifyQueries": true`. Schema-search then samples deterministic query strata such as `range_small`, `range_large`, `range_dense`, `radius_boundary`, `knn_dense`, and `knn_outside`, writes per-stratum metric summaries to `query_strata_summary`, and includes `query_stratum` in query traces.
+
 ## Reading The Best Schema
 
 Inspect the best measured result:
@@ -374,7 +405,19 @@ Query profile:
 --queries <count>
 --knn-k <count>
 --query-seed <seed>
+--query-trace <path>
 ```
+
+`--query-trace` writes per-query CSV rows. CPU point-index rows include `query_stratum` plus traversal breakdowns by depth and structure; CUDA rows keep those breakdown columns empty for now.
+
+CPU leaf micro-index options:
+
+```text
+--leaf-micro-indexes
+--leaf-micro-threshold <count>
+```
+
+Leaf micro-indexes are disabled by default. When enabled, only leaves above the threshold build the extra local structures.
 
 Point loading cache:
 
@@ -398,6 +441,8 @@ Generated schema search:
 --generated-max-leaf <n>
 --generated-conditional
 --generated-condition-probability <value>
+--generated-adaptive-leaf-capacity
+--generated-adaptive-leaf-probability <value>
 --generated-seed <seed>
 --generated-schema-dir <path>
 --primitive-profile <auto|query_minimal_cpu|cuda_query_full|all>
@@ -431,6 +476,9 @@ Evolutionary schema optimizer:
 --optimizer-mutation-rate <value>
 --optimizer-random-fraction <value>
 --optimizer-seed <seed>
+--repair-mutations
+--repair-top <n>
+--repair-per-candidate <n>
 ```
 
 Schema-search score weights:
@@ -449,13 +497,15 @@ CUDA schema-search evaluator:
 --cuda-builder lbvh|kdtree|bih|octree|karras_octree|quadtree|regular_grid|hgrid|mixed
 --cuda-query-batch <count>
 --cuda-memory-budget-mb <mb>
+--cuda-knn-backend auto|gpu_tree_knn|gpu_bruteforce_knn
+--explain-report <path>
 ```
 
 `lbvh`, `kdtree`, `bih`, `octree`, `karras_octree`, `quadtree`, `regular_grid`, `hgrid`, and static `mixed` schemas are implemented now. `karras_octree` uses Morton sorting plus prefix child ranges, `bih` is a binary interval hierarchy with tight child bounds, `hgrid` builds multiple CUDA grid levels and chooses one per query, and `mixed` follows the schema's per-depth structure schedule and treats conditional levels as GPU split gates. Mixed schema levels can currently name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid`.
 
 `QuadTree` schema levels default to `axisPolicy: "xy"` for point clouds. Other supported policies are `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, and `ignore_z`.
 
-Schema-search defaults to `--evaluator cuda --cuda-device 0 --cuda-builder mixed`; the resolver checks CUDA once and falls back to CPU with a warning when CUDA is unavailable.
+Schema-search defaults to `--evaluator cuda --cuda-device 0 --cuda-builder mixed`; the resolver checks CUDA once and falls back to CPU with a warning when CUDA is unavailable. CUDA KNN has explicit backend provenance: CPU point mode remains `cpu_tree_knn`, generic GPU builders keep `gpu_bruteforce_knn`, and KDTree/BIH `auto` uses exact `gpu_tree_knn` for `k <= 16`.
 
 Current default score:
 
@@ -469,6 +519,8 @@ score = avg_query_latency_ms
 Build time, memory, and imbalance are still logged, but they are not part of the default score.
 
 Raw/best/pareto CSVs append score provenance columns: `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. Workload JSON files may also define a `scoreWeights` object; explicit CLI score flags override those workload-local weights. To compare GA and non-GA runs:
+
+The same CSVs now also append tree-health and query-strata diagnostics, including leaf occupancy quantiles, average depth, fanout, empty-child ratio, single-child count, tight-bounds volume ratio, micro-indexed leaf counts, and `query_strata_summary`.
 
 ```powershell
 python scripts\audit_schema_scores.py results\non_ga.csv results\ga.csv --left-label non_ga --right-label ga

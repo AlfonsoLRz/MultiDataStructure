@@ -49,6 +49,17 @@ struct SchemaLevelCondition
 	bool empty() const;
 };
 
+struct AdaptiveLeafCapacityConfig
+{
+	bool enabled = false;
+	size_t minCapacity = 0;
+	size_t maxCapacity = 0;
+	double densityWeight = 0.0;
+	double anisotropyWeight = 0.0;
+	double heightRatioWeight = 0.0;
+	double queryMixFactor = 1.0;
+};
+
 struct SchemaLevelConfig
 {
 	SchemaPrimitiveKind primitiveKind = SchemaPrimitiveKind::Octree;
@@ -62,6 +73,7 @@ struct SchemaLevelConfig
 	size_t minPrimitivesToSplit = 2;
 	std::string axisPolicy;
 	SchemaLevelCondition condition;
+	AdaptiveLeafCapacityConfig adaptiveLeafCapacity;
 };
 
 struct SchemaConfig

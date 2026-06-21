@@ -594,6 +594,183 @@ namespace
 		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
+
+	__global__ void treeKnnKernel(
+		const DevicePoint* points,
+		const uint32_t* indices,
+		const LinearNode* nodes,
+		const DeviceQuery* queries,
+		size_t queryCount,
+		float clockRateKHz,
+		DeviceQuerySample* samples,
+		uint32_t* outputIndices,
+		float* outputDistances)
+	{
+		const size_t queryIndex = static_cast<size_t>(blockIdx.x);
+		if (queryIndex >= queryCount)
+			return;
+
+		const DeviceQuery query = queries[queryIndex];
+		if (query.type != static_cast<int>(PointGpu::QueryType::Knn))
+			return;
+
+		const unsigned long long begin = clock64();
+		const uint32_t requestedK = query.knnK;
+		const uint32_t trackedK = requestedK < PointGpu::MaxTrackedKnnK ? requestedK : PointGpu::MaxTrackedKnnK;
+
+		__shared__ int stack[QueryStackSize];
+		__shared__ int stackSize;
+		__shared__ float bestDistances[PointGpu::MaxTrackedKnnK];
+		__shared__ uint32_t bestIndices[PointGpu::MaxTrackedKnnK];
+		__shared__ uint32_t bestFound;
+		__shared__ unsigned long long visited;
+		__shared__ unsigned long long tested;
+		__shared__ float candidateDistances[ThreadsPerBlock * PointGpu::MaxTrackedKnnK];
+		__shared__ uint32_t candidateIndices[ThreadsPerBlock * PointGpu::MaxTrackedKnnK];
+		__shared__ uint32_t candidateCounts[ThreadsPerBlock];
+
+		if (threadIdx.x == 0)
+		{
+			stackSize = 0;
+			bestFound = 0;
+			visited = 0;
+			tested = 0;
+			for (uint32_t i = 0; i < PointGpu::MaxTrackedKnnK; ++i)
+			{
+				bestDistances[i] = 3.402823466e+38F;
+				bestIndices[i] = UINT_MAX;
+			}
+			if (trackedK > 0)
+				stack[stackSize++] = 0;
+		}
+		__syncthreads();
+
+		while (true)
+		{
+			__shared__ int nodeIndex;
+			if (threadIdx.x == 0)
+				nodeIndex = stackSize > 0 ? stack[--stackSize] : -1;
+			__syncthreads();
+
+			if (nodeIndex < 0)
+				break;
+
+			const LinearNode node = nodes[nodeIndex];
+			bool processNode = node.pointCount > 0;
+			if (processNode)
+			{
+				const float lowerBound = distanceSquaredToNode(node, query);
+				processNode = lowerBound <= PointGpu::worstKnnDistance(bestDistances, bestFound, trackedK);
+			}
+
+			if (processNode && threadIdx.x == 0)
+				++visited;
+			__syncthreads();
+
+			if (!processNode)
+				continue;
+
+			if (node.left < 0 || node.right < 0)
+			{
+				float localDistances[PointGpu::MaxTrackedKnnK];
+				uint32_t localIndices[PointGpu::MaxTrackedKnnK];
+				uint32_t localFound = 0;
+				for (uint32_t i = 0; i < PointGpu::MaxTrackedKnnK; ++i)
+				{
+					localDistances[i] = 3.402823466e+38F;
+					localIndices[i] = UINT_MAX;
+				}
+
+				for (uint32_t i = threadIdx.x; i < node.pointCount; i += blockDim.x)
+				{
+					const uint32_t pointIndex = indices[node.pointOffset + i];
+					const float distanceSquared = PointGpu::pointDistanceSquared(points[pointIndex], query);
+					PointGpu::insertKnnHit(localDistances, localIndices, localFound, trackedK, distanceSquared, pointIndex);
+				}
+
+				const uint32_t candidateBase = threadIdx.x * PointGpu::MaxTrackedKnnK;
+				candidateCounts[threadIdx.x] = localFound;
+				for (uint32_t i = 0; i < PointGpu::MaxTrackedKnnK; ++i)
+				{
+					candidateDistances[candidateBase + i] = localDistances[i];
+					candidateIndices[candidateBase + i] = localIndices[i];
+				}
+				__syncthreads();
+
+				if (threadIdx.x == 0)
+				{
+					tested += node.pointCount;
+					for (uint32_t thread = 0; thread < blockDim.x; ++thread)
+					{
+						const uint32_t count = candidateCounts[thread];
+						const uint32_t base = thread * PointGpu::MaxTrackedKnnK;
+						for (uint32_t i = 0; i < count; ++i)
+						{
+							PointGpu::insertKnnHit(
+								bestDistances,
+								bestIndices,
+								bestFound,
+								trackedK,
+								candidateDistances[base + i],
+								candidateIndices[base + i]);
+						}
+					}
+				}
+				__syncthreads();
+				continue;
+			}
+
+			if (threadIdx.x == 0)
+			{
+				const float leftDistance = node.left >= 0 ? distanceSquaredToNode(nodes[node.left], query) : 3.402823466e+38F;
+				const float rightDistance = node.right >= 0 ? distanceSquaredToNode(nodes[node.right], query) : 3.402823466e+38F;
+				const float worst = PointGpu::worstKnnDistance(bestDistances, bestFound, trackedK);
+				const bool pushLeft = node.left >= 0 && leftDistance <= worst;
+				const bool pushRight = node.right >= 0 && rightDistance <= worst;
+				if (pushLeft && pushRight)
+				{
+					if (leftDistance <= rightDistance)
+					{
+						if (stackSize < QueryStackSize) stack[stackSize++] = node.right;
+						if (stackSize < QueryStackSize) stack[stackSize++] = node.left;
+					}
+					else
+					{
+						if (stackSize < QueryStackSize) stack[stackSize++] = node.left;
+						if (stackSize < QueryStackSize) stack[stackSize++] = node.right;
+					}
+				}
+				else if (pushLeft)
+				{
+					if (stackSize < QueryStackSize) stack[stackSize++] = node.left;
+				}
+				else if (pushRight)
+				{
+					if (stackSize < QueryStackSize) stack[stackSize++] = node.right;
+				}
+			}
+			__syncthreads();
+		}
+
+		if (threadIdx.x == 0)
+		{
+			PointGpu::sortKnnHits(bestDistances, bestIndices, bestFound);
+			const size_t outputBase = queryIndex * PointGpu::MaxTrackedKnnK;
+			for (uint32_t i = 0; i < PointGpu::MaxTrackedKnnK; ++i)
+			{
+				outputIndices[outputBase + i] = i < bestFound ? bestIndices[i] : UINT_MAX;
+				outputDistances[outputBase + i] = i < bestFound ? bestDistances[i] : 3.402823466e+38F;
+			}
+
+			const unsigned long long end = clock64();
+			DeviceQuerySample sample{};
+			sample.visitedNodes = visited;
+			sample.testedPoints = tested;
+			sample.returnedPoints = bestFound;
+			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			samples[queryIndex] = sample;
+		}
+	}
 }
 
 struct PointGpu::KDTree::DeviceState
@@ -606,6 +783,8 @@ struct PointGpu::KDTree::DeviceState
 	uint32_t* writeCursors = nullptr;
 	DeviceQuery* queryBuffer = nullptr;
 	DeviceQuerySample* sampleBuffer = nullptr;
+	uint32_t* knnIndexBuffer = nullptr;
+	float* knnDistanceBuffer = nullptr;
 	size_t pointCount = 0;
 	size_t nodeCapacity = 0;
 	size_t actualNodes = 0;
@@ -614,6 +793,7 @@ struct PointGpu::KDTree::DeviceState
 	size_t minSplit = 2;
 	size_t maxDepth = 0;
 	size_t queryCapacity = 0;
+	size_t knnCapacity = 0;
 	size_t baseMemoryBytes = 0;
 	size_t memoryBytes = 0;
 	int device = 0;
@@ -650,9 +830,14 @@ namespace
 	{
 		cudaFree(state.queryBuffer);
 		cudaFree(state.sampleBuffer);
+		cudaFree(state.knnIndexBuffer);
+		cudaFree(state.knnDistanceBuffer);
 		state.queryBuffer = nullptr;
 		state.sampleBuffer = nullptr;
+		state.knnIndexBuffer = nullptr;
+		state.knnDistanceBuffer = nullptr;
 		state.queryCapacity = 0;
+		state.knnCapacity = 0;
 	}
 
 	template <typename State>
@@ -665,6 +850,57 @@ namespace
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
 		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
 		state.queryCapacity = capacity;
+	}
+
+	template <typename State>
+	void ensureKnnBuffers(State& state, size_t capacity)
+	{
+		if (state.knnCapacity >= capacity && state.knnIndexBuffer && state.knnDistanceBuffer)
+			return;
+
+		cudaFree(state.knnIndexBuffer);
+		cudaFree(state.knnDistanceBuffer);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.knnIndexBuffer), sizeof(uint32_t) * capacity * PointGpu::MaxTrackedKnnK));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.knnDistanceBuffer), sizeof(float) * capacity * PointGpu::MaxTrackedKnnK));
+		state.knnCapacity = capacity;
+	}
+
+	std::string normalizeKnnBackend(std::string backend)
+	{
+		std::transform(backend.begin(), backend.end(), backend.begin(), [](unsigned char c) {
+			return static_cast<char>(std::tolower(c));
+		});
+		std::replace(backend.begin(), backend.end(), '-', '_');
+		return backend;
+	}
+
+	bool requestsBruteForceKnn(const PointGpu::Options& options)
+	{
+		const std::string backend = normalizeKnnBackend(options.knnBackend);
+		return backend == "bruteforce" ||
+			backend == "brute_force" ||
+			backend == "gpu_bruteforce_knn" ||
+			backend == "bruteforce_gpu_scan";
+	}
+
+	bool canUseTreeKnn(const std::vector<DeviceQuery>& queries, const PointGpu::Options& options)
+	{
+		if (requestsBruteForceKnn(options))
+			return false;
+
+		const std::string backend = normalizeKnnBackend(options.knnBackend);
+		if (!(backend.empty() || backend == "auto" || backend == "tree" || backend == "gpu_tree_knn"))
+			return false;
+
+		for (const DeviceQuery& query : queries)
+		{
+			if (query.type == static_cast<int>(PointGpu::QueryType::Knn) &&
+				query.knnK > PointGpu::MaxTrackedKnnK)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 }
 
@@ -962,6 +1198,8 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 
 	QueryResult result;
 	result.samples.reserve(queries.size());
+	result.knnPointIndices.resize(queries.size());
+	result.knnDistancesSquared.resize(queries.size());
 	for (const Query& query : queries)
 	{
 		if (query.type == QueryType::Radius)
@@ -997,6 +1235,9 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
 			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
+		const bool useTreeKnn = batchHasKnn && canUseTreeKnn(hostQueries, options);
+		if (batchHasKnn)
+			result.knnBackend = useTreeKnn ? "gpu_tree_knn" : "gpu_bruteforce_knn";
 
 		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
 		const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
@@ -1012,26 +1253,77 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 		CudaHelper::synchronize("kdQueryKernel");
 		if (batchHasKnn)
 		{
-			PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
-				_state->points,
-				_state->pointCount,
-				_state->queryBuffer,
-				currentBatch,
-				clockRate,
-				_state->sampleBuffer);
-			CudaHelper::synchronize("kdKnnQueryKernel");
+			if (useTreeKnn)
+			{
+				ensureKnnBuffers(*_state, currentBatch);
+				treeKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock>>>(
+					_state->points,
+					_state->indices,
+					_state->nodes,
+					_state->queryBuffer,
+					currentBatch,
+					clockRate,
+					_state->sampleBuffer,
+					_state->knnIndexBuffer,
+					_state->knnDistanceBuffer);
+				CudaHelper::synchronize("kdTreeKnnQueryKernel");
+			}
+			else
+			{
+				PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
+					_state->points,
+					_state->pointCount,
+					_state->queryBuffer,
+					currentBatch,
+					clockRate,
+					_state->sampleBuffer);
+				CudaHelper::synchronize("kdBruteForceKnnQueryKernel");
+			}
 		}
 
 		hostSamples.resize(currentBatch);
 		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
-		for (const DeviceQuerySample& sample : hostSamples)
+		std::vector<uint32_t> hostKnnIndices;
+		std::vector<float> hostKnnDistances;
+		if (batchHasKnn && useTreeKnn)
 		{
+			hostKnnIndices.resize(currentBatch * PointGpu::MaxTrackedKnnK);
+			hostKnnDistances.resize(currentBatch * PointGpu::MaxTrackedKnnK);
+			CudaHelper::checkError(cudaMemcpy(
+				hostKnnIndices.data(),
+				_state->knnIndexBuffer,
+				sizeof(uint32_t) * hostKnnIndices.size(),
+				cudaMemcpyDeviceToHost));
+			CudaHelper::checkError(cudaMemcpy(
+				hostKnnDistances.data(),
+				_state->knnDistanceBuffer,
+				sizeof(float) * hostKnnDistances.size(),
+				cudaMemcpyDeviceToHost));
+		}
+
+		for (size_t sampleIndex = 0; sampleIndex < hostSamples.size(); ++sampleIndex)
+		{
+			const DeviceQuerySample& sample = hostSamples[sampleIndex];
 			QuerySample converted;
 			converted.visitedNodes = static_cast<size_t>(sample.visitedNodes);
 			converted.testedPoints = static_cast<size_t>(sample.testedPoints);
 			converted.returnedPoints = static_cast<size_t>(sample.returnedPoints);
 			converted.elapsedMs = sample.elapsedMs;
 			result.samples.push_back(converted);
+
+			const size_t globalQueryIndex = offset + sampleIndex;
+			if (useTreeKnn && hostQueries[sampleIndex].type == static_cast<int>(PointGpu::QueryType::Knn))
+			{
+				const size_t outputBase = sampleIndex * PointGpu::MaxTrackedKnnK;
+				const size_t outputCount = std::min<size_t>(converted.returnedPoints, PointGpu::MaxTrackedKnnK);
+				result.knnPointIndices[globalQueryIndex].reserve(outputCount);
+				result.knnDistancesSquared[globalQueryIndex].reserve(outputCount);
+				for (size_t i = 0; i < outputCount; ++i)
+				{
+					result.knnPointIndices[globalQueryIndex].push_back(hostKnnIndices[outputBase + i]);
+					result.knnDistancesSquared[globalQueryIndex].push_back(hostKnnDistances[outputBase + i]);
+				}
+			}
 		}
 	}
 

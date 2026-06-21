@@ -118,6 +118,7 @@ namespace
 		std::array<char, TextBufferSize> csvPath{};
 		std::array<char, TextBufferSize> bestCsvPath{};
 		std::array<char, TextBufferSize> paretoCsvPath{};
+		std::array<char, TextBufferSize> explainReportPath{};
 		std::array<char, TextBufferSize> queryTracePath{};
 		std::array<char, TextBufferSize> generatedSchemaDir{};
 		std::array<char, TextBufferSize> autoConditionSchemaDir{};
@@ -134,6 +135,7 @@ namespace
 		bool generateSchemas = true;
 		bool generatedOnly = true;
 		bool generatedConditional = true;
+		bool generatedAdaptiveLeafCapacity = false;
 		bool queryMinimalPrimitives = true;
 		bool useRankModel = false;
 		// Default-on: when the user disables auto-conditions, the GA path is the publication
@@ -142,6 +144,7 @@ namespace
 		int evaluator = 0;
 		int cudaDevice = 0;
 		int cudaBuilder = 0;
+		int cudaKnnBackend = 0;
 		int cudaQueryBatch = 0;
 		int cudaMemoryBudgetMb = 0;
 		int liveRankingTopN = 10;
@@ -170,6 +173,7 @@ namespace
 		int conditionFinalTopK = 16;
 		int conditionConfirmTopK = 4;
 		float generatedConditionProbability = 0.5f;
+		float generatedAdaptiveLeafProbability = 0.25f;
 		float optimizerMutationRate = 0.65f;
 		float optimizerRandomFraction = 0.20f;
 		float scoreBuildWeight = 0.0f;
@@ -220,6 +224,9 @@ namespace
 		// single corridor.
 		float optimizerCrossoverRate = 0.4f;
 		bool optimizerUseNsga2 = true;
+		bool repairMutations = true;
+		int repairTopK = 4;
+		int repairPerCandidate = 2;
 
 		SchemaFileViewer fileViewer;
 		StructurePreview structurePreview;
@@ -1064,15 +1071,20 @@ namespace
 		state.generateSchemas = true;
 		state.generatedOnly = true;
 		state.generatedConditional = true;
+		state.generatedAdaptiveLeafCapacity = false;
 		state.useRankModel = false;
 		// Reset defaults match the struct defaults: GA + rung schedule + threshold refinement on
 		// so the optimizer panel reflects the recommended pipeline whenever the user resets state.
 		state.optimizeSchemas = true;
 		state.useRungSchedule = true;
 		state.refineThresholds = true;
+		state.repairMutations = true;
+		state.repairTopK = 4;
+		state.repairPerCandidate = 2;
 		state.evaluator = 1;
 		state.cudaDevice = 0;
 		state.cudaBuilder = 8;
+		state.cudaKnnBackend = 0;
 		state.cudaQueryBatch = 0;
 		state.cudaMemoryBudgetMb = 0;
 		state.queryCount = 64;
@@ -1087,6 +1099,7 @@ namespace
 		state.generatedMaxLeaf = 32768;
 		state.generatedSeed = 1337;
 		state.generatedConditionProbability = 0.75f;
+		state.generatedAdaptiveLeafProbability = 0.25f;
 		state.conditionProxyCandidates = 256;
 		state.conditionProxyPoints = 262144;
 		state.conditionProxyQueries = 8;
@@ -1108,6 +1121,7 @@ namespace
 		setText(state.csvPath, projectPath("results/gui_schema_search.csv"));
 		setText(state.bestCsvPath, projectPath("results/gui_schema_search_best.csv"));
 		setText(state.paretoCsvPath, projectPath("results/gui_schema_search_pareto.csv"));
+		setText(state.explainReportPath, projectPath("results/gui_schema_explain.md"));
 		setText(state.queryTracePath, "");
 		setText(state.generatedSchemaDir, projectPath("results/generated_schemas"));
 		setText(state.autoConditionSchemaDir, projectPath("results/auto_conditions"));
@@ -1207,6 +1221,7 @@ namespace
 		state.evaluator = std::clamp(state.evaluator, 0, 1);
 		state.cudaDevice = std::max(0, state.cudaDevice);
 		state.cudaBuilder = std::clamp(state.cudaBuilder, 0, 8);
+		state.cudaKnnBackend = std::clamp(state.cudaKnnBackend, 0, 2);
 		state.cudaQueryBatch = std::max(0, state.cudaQueryBatch);
 		state.cudaMemoryBudgetMb = std::max(0, state.cudaMemoryBudgetMb);
 		state.liveRankingTopN = std::clamp(state.liveRankingTopN, 1, 100);
@@ -1216,8 +1231,11 @@ namespace
 		state.conditionFinalTopK = std::max(1, state.conditionFinalTopK);
 		state.conditionConfirmTopK = std::max(1, std::min(state.conditionConfirmTopK, state.conditionFinalTopK));
 		state.generatedConditionProbability = std::clamp(state.generatedConditionProbability, 0.0f, 1.0f);
+		state.generatedAdaptiveLeafProbability = std::clamp(state.generatedAdaptiveLeafProbability, 0.0f, 1.0f);
 		state.optimizerMutationRate = std::clamp(state.optimizerMutationRate, 0.0f, 1.0f);
 		state.optimizerRandomFraction = std::clamp(state.optimizerRandomFraction, 0.0f, 1.0f);
+		state.repairTopK = std::max(1, state.repairTopK);
+		state.repairPerCandidate = std::max(1, state.repairPerCandidate);
 		state.scoreBuildWeight = std::max(0.0f, state.scoreBuildWeight);
 		state.scoreMemoryWeight = std::max(0.0f, state.scoreMemoryWeight);
 		state.scoreImbalanceWeight = std::max(0.0f, state.scoreImbalanceWeight);
@@ -1240,6 +1258,7 @@ namespace
 		options.csvPath = textValue(state.csvPath);
 		options.bestCsvPath = textValue(state.bestCsvPath);
 		options.paretoCsvPath = textValue(state.paretoCsvPath);
+		options.explainReportPath = textValue(state.explainReportPath);
 		options.queryTracePath = textValue(state.queryTracePath);
 
 		const std::string inputPath = resolvePath(textValue(state.inputPath));
@@ -1274,6 +1293,8 @@ namespace
 			options.generation.maxLeafCapacity = static_cast<size_t>(state.generatedMaxLeaf);
 			options.generation.conditionalLevels = state.generatedConditional;
 			options.generation.conditionalProbability = static_cast<double>(state.generatedConditionProbability);
+			options.generation.adaptiveLeafCapacity = state.generatedAdaptiveLeafCapacity && state.evaluator == 0;
+			options.generation.adaptiveLeafProbability = static_cast<double>(state.generatedAdaptiveLeafProbability);
 			options.generation.seed = static_cast<uint32_t>(state.generatedSeed);
 			options.generation.outputDirectory = textValue(state.generatedSchemaDir);
 			options.generation.primitiveProfile = state.queryMinimalPrimitives
@@ -1334,6 +1355,9 @@ namespace
 		options.evolution.randomImmigrationRate = static_cast<double>(state.optimizerRandomFraction);
 		options.evolution.crossoverRate = static_cast<double>(state.optimizerCrossoverRate);
 		options.evolution.useNsga2Ranking = state.optimizerUseNsga2;
+		options.evolution.repairMutations = state.optimizeSchemas && state.repairMutations;
+		options.evolution.repairTopK = static_cast<size_t>(std::max(1, state.repairTopK));
+		options.evolution.repairPerCandidate = static_cast<size_t>(std::max(1, state.repairPerCandidate));
 
 		if (state.optimizeSchemas && state.useRungSchedule)
 		{
@@ -1408,6 +1432,8 @@ namespace
 			options.cuda.builder = "mixed";
 		else
 			options.cuda.builder = "lbvh";
+		static const char* knnBackends[] = { "auto", "gpu_tree_knn", "gpu_bruteforce_knn" };
+		options.cuda.knnBackend = knnBackends[state.cudaKnnBackend];
 		options.cuda.queryBatchSize = static_cast<size_t>(state.cudaQueryBatch);
 		options.cuda.memoryBudgetMb = static_cast<size_t>(state.cudaMemoryBudgetMb);
 		return std::nullopt;
@@ -1609,6 +1635,12 @@ namespace
 			state.generatedConditional = true;
 		drawHelpMarker("Allows later schema blocks to activate only for local node conditions such as point count, density, or height ratio. This is the current branch-adaptive multi-DS mechanism.");
 		ImGui::SameLine();
+		const bool cpuAdaptiveLeafSupported = state.evaluator == 0;
+		ImGui::BeginDisabled(!cpuAdaptiveLeafSupported);
+		ImGui::Checkbox("Adaptive leaf capacity", &state.generatedAdaptiveLeafCapacity);
+		ImGui::EndDisabled();
+		drawHelpMarker("CPU-only generated rule that scales leaf capacity per node using density, height-ratio, anisotropy, and query-mix factors. CUDA runs leave this off until GPU support exists.");
+		ImGui::SameLine();
 		ImGui::Checkbox("Generated only", &state.generatedOnly);
 		drawHelpMarker("Ignores checked fixed schemas and searches only generated candidates. Turn this off to compare generated candidates against known baselines.");
 		ImGui::Checkbox("Query-minimal primitives", &state.queryMinimalPrimitives);
@@ -1698,6 +1730,10 @@ namespace
 			drawHelpMarker("Random seed for schema sampling. Keep fixed for repeatability; change it to explore a different batch of candidates.");
 			ImGui::SliderFloat("Condition probability", &state.generatedConditionProbability, 0.0f, 1.0f, "%.2f");
 			drawHelpMarker("Probability that a generated block gets a local activation condition. Higher values make more branch-adaptive schemas.");
+			ImGui::BeginDisabled(!cpuAdaptiveLeafSupported);
+			ImGui::SliderFloat("Adaptive leaf probability", &state.generatedAdaptiveLeafProbability, 0.0f, 1.0f, "%.2f");
+			ImGui::EndDisabled();
+			drawHelpMarker("Probability that a generated level gets per-node adaptive leaf capacity. Applies only to CPU schema discovery.");
 			bool allPrimitiveVariants = !state.queryMinimalPrimitives;
 			if (ImGui::Checkbox("All CUDA primitive variants", &allPrimitiveVariants))
 				state.queryMinimalPrimitives = !allPrimitiveVariants;
@@ -1724,6 +1760,14 @@ namespace
 			drawHelpMarker("Probability that a child is built by splicing two elite parents' level lists instead of mutating one. Reaches topology combinations neither parent had; 0 disables crossover (pre-B4 behavior).");
 			ImGui::Checkbox("NSGA-II elite ranking", &state.optimizerUseNsga2);
 			drawHelpMarker("Rank elites by non-dominated-sort + crowding distance over (latency, build, memory, imbalance). Preserves diversity across the Pareto front instead of collapsing it to a scalar score winner.");
+			ImGui::Checkbox("Repair mutations", &state.repairMutations);
+			drawHelpMarker("Creates targeted children from measured bottlenecks: high leaf occupancy tightens leaves/depth, high tested-points adds local indexing, high visited-nodes coarsens the root, and high full-containment prefers coarse grid/quadtree shapes.");
+			ImGui::BeginDisabled(!state.repairMutations);
+			ImGui::InputInt("Repair top-K", &state.repairTopK);
+			drawHelpMarker("Number of measured archive parents to diagnose each generation.");
+			ImGui::InputInt("Repairs/parent", &state.repairPerCandidate);
+			drawHelpMarker("Maximum targeted repair children created from each diagnosed parent before normal mutation fills the remaining population.");
+			ImGui::EndDisabled();
 
 			ImGui::Separator();
 			ImGui::Checkbox("Multi-fidelity rungs", &state.useRungSchedule);
@@ -1803,6 +1847,9 @@ namespace
 				drawHelpMarker("GPU id passed to cudaSetDevice. Use 0 unless you have several CUDA GPUs.");
 				ImGui::Combo("Structure", &state.cudaBuilder, builders, IM_ARRAYSIZE(builders));
 				drawHelpMarker("LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented. KarrasOctree uses Morton sorting and prefix child ranges; BIH is a binary interval hierarchy with tight child bounds; standalone HGrid builds several RegularGrid levels and chooses one per query; Mixed follows the schema's per-depth structure schedule, including RegularGrid and HGrid grid split levels.");
+				const char* knnBackends[] = { "Auto", "Tree KNN", "Bruteforce scan" };
+				ImGui::Combo("KNN backend", &state.cudaKnnBackend, knnBackends, IM_ARRAYSIZE(knnBackends));
+				drawHelpMarker("Auto uses exact KDTree/BIH tree KNN for k<=16 and brute-force GPU scan elsewhere. Tree KNN returns hit IDs for diagnostics and tests.");
 				ImGui::InputInt("Query batch", &state.cudaQueryBatch);
 				drawHelpMarker("Number of CUDA queries uploaded/launched per batch. 0 runs the whole generated workload as one batch.");
 				ImGui::InputInt("Memory budget MB", &state.cudaMemoryBudgetMb);
@@ -1842,6 +1889,7 @@ namespace
 		drawPathInput("CSV", state.csvPath, "Full measured result table, with one row per dataset/workload/schema candidate.");
 		drawPathInput("Best CSV", state.bestCsvPath, "Compact winner table. This is what the GUI reads back to populate Best Results.");
 		drawPathInput("Pareto CSV", state.paretoCsvPath, "Non-dominated front over (avg latency, build time, memory, imbalance) per (dataset, workload). Empty path disables.");
+		drawPathInput("Explain report", state.explainReportPath, "Markdown explanation report with schema chain, active-structure fractions, query-family behavior against baselines, and repair-style diagnosis. Empty path disables.");
 		drawPathInput("Query trace", state.queryTracePath, "Optional per-query CSV trace. Leave empty for normal runs; enable for noisy/outlier audits. Score-cache hits are bypassed while tracing.");
 
 		drawSectionTitle("Speed-ups");

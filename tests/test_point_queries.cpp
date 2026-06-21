@@ -141,6 +141,31 @@ namespace BaselineTests
 			}
 			return cloud;
 		}
+
+		PointCloud makeTightBoundsRadiusCloud()
+		{
+			PointCloud cloud;
+			for (int x = 0; x < 4; ++x)
+			{
+				for (int y = 0; y < 4; ++y)
+				{
+					for (int z = 0; z < 2; ++z)
+					{
+						PointPrimitive point;
+						point.position = glm::vec3(
+							0.1f + static_cast<float>(x) * 0.05f,
+							0.1f + static_cast<float>(y) * 0.05f,
+							0.1f + static_cast<float>(z) * 0.05f);
+						cloud.addPoint(point);
+					}
+				}
+			}
+
+			PointPrimitive outlier;
+			outlier.position = glm::vec3(100.0f, 100.0f, 100.0f);
+			cloud.addPoint(outlier);
+			return cloud;
+		}
 	}
 
 	void runPointQueryTests()
@@ -163,6 +188,13 @@ namespace BaselineTests
 		expect(range.stats.visitedNodes > 0, "range query records visited nodes");
 		expect(range.stats.testedPoints > 0 || range.stats.fullyContainedNodes > 0, "range query records tested points or containment shortcuts");
 		expect(range.stats.returnedPoints == range.pointIndices.size(), "range query records returned points");
+		const size_t rangeVisitedByDepth = std::accumulate(
+			range.stats.breakdown.visitedByDepth.begin(),
+			range.stats.breakdown.visitedByDepth.end(),
+			size_t(0));
+		expect(rangeVisitedByDepth == range.stats.visitedNodes, "range query breakdown accounts for visited nodes by depth");
+		expect(range.stats.breakdown.visitedByStructure.at("Octree") == range.stats.visitedNodes,
+			"range query breakdown accounts for visited nodes by structure");
 
 		const PointSpatialIndex::CountResult count = index.countRange(rangeBounds);
 		expect(count.count == bruteRange.size(), "count range query matches brute force");
@@ -185,6 +217,8 @@ namespace BaselineTests
 		expectSameSet(radiusResult.pointIndices, bruteRadius, "radius query matches brute force");
 		expect(radiusResult.stats.visitedNodes > 0, "radius query records visited nodes");
 		expect(radiusResult.stats.testedPoints > 0, "radius query records tested points");
+		expect(radiusResult.stats.breakdown.testedPointsByStructure.at("Octree") == radiusResult.stats.testedPoints,
+			"radius query breakdown accounts for tested points by structure");
 
 		const size_t k = 7;
 		const std::vector<size_t> bruteKnn = bruteForceKnn(cloud, denseCenter, k);
@@ -212,6 +246,33 @@ namespace BaselineTests
 		const PointSpatialIndex::QueryResult outsideKnn = tieIndex.knnQuery(outsideCenter, 3);
 		expect(outsideKnn.pointIndices == bruteForceKnn(tieCloud, outsideCenter, 3), "KNN outside cloud bounds matches brute force");
 
+		PointSpatialIndex rebuiltIndex;
+		rebuiltIndex.build(cloud, schema);
+		rebuiltIndex.build(tieCloud, makeQuerySchema());
+		expectSameSet(rebuiltIndex.radiusQuery(origin, 1.01f).pointIndices, bruteForceRadius(tieCloud, origin, 1.01f),
+			"point query index rebuild refreshes ordered SoA point storage");
+
+		const PointCloud tightBoundsCloud = makeTightBoundsRadiusCloud();
+		PointSpatialIndex tightBoundsIndex;
+		tightBoundsIndex.build(tightBoundsCloud, makePrimitiveSchema("Octree", 4));
+		const PointSpatialIndex::QueryResult tightBoundsRadius = tightBoundsIndex.radiusQuery(glm::vec3(49.0f, 49.0f, 49.0f), 0.25f);
+		expect(tightBoundsRadius.pointIndices.empty(), "radius query outside tight node bounds returns no points");
+		expect(tightBoundsIndex.root() && tightBoundsRadius.stats.visitedNodes <= tightBoundsIndex.root()->children.size() + 1,
+			"radius query prunes sparse nodes with tight bounds before visiting grandchildren");
+
+		SchemaConfig microSchema = makePrimitiveSchema("Octree", 1);
+		microSchema.levels[0].leafCapacity = 4096;
+		microSchema.levels[0].minPrimitivesToSplit = 4096;
+		microSchema.buildPolicy.leafCapacity = 4096;
+		microSchema.buildPolicy.minPrimitivesToSplit = 4096;
+		microSchema.buildPolicy.enableLeafMicroIndexes = true;
+		microSchema.buildPolicy.leafMicroIndexThreshold = 16;
+		PointSpatialIndex microIndex;
+		microIndex.build(cloud, microSchema);
+		expect(microIndex.root() && microIndex.root()->isLeaf(), "micro-index test keeps one heavy leaf");
+		expect(microIndex.root() && microIndex.root()->microIndex, "heavy leaf builds optional micro-index");
+		expectQueryCorrectness(cloud, microIndex, rangeBounds, denseCenter, radius, "heavy-leaf micro-index");
+
 		const AABB gridRange(glm::vec3(-15.0f, -15.0f, -4.0f), glm::vec3(15.0f, 15.0f, 8.0f));
 		for (const std::string& typeName : { std::string("RegularGrid"), std::string("HGrid") })
 		{
@@ -219,6 +280,7 @@ namespace BaselineTests
 			gridIndex.build(cloud, makePrimitiveSchema(typeName, 2));
 			expect(gridIndex.root() && gridIndex.root()->children.size() > 8, typeName + " CPU split creates grid cells instead of collapsing to Octree");
 			expect(gridIndex.stats().numPoints == cloud.size(), typeName + " CPU split preserves point count");
+			expect(gridIndex.root()->subtreePointCount == cloud.size(), typeName + " CPU split preserves subtree point count");
 			expectQueryCorrectness(cloud, gridIndex, gridRange, denseCenter, radius, typeName + " CPU grid");
 		}
 	}

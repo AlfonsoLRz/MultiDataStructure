@@ -91,6 +91,8 @@ def main() -> int:
     parser.add_argument("--no-cache", action="store_true", help="Disable point-cloud cache use during tuning.")
     parser.add_argument("--auto-conditions", action="store_true", help="Tune conditional schema thresholds with staged proxy/full measurements.")
     parser.add_argument("--deep-nested-search", action="store_true", help="Run CPU-first deep nested search against single-DS baselines, with CUDA confirmation when available.")
+    parser.add_argument("--adaptive-leaf-capacity", action="store_true", help="Allow generated schemas to tune per-node adaptive leaf capacity.")
+    parser.add_argument("--adaptive-leaf-probability", type=float, help="Probability that a generated level receives adaptive leaf-capacity rules.")
     parser.add_argument("--condition-proxy-candidates", type=int, help="Candidates for the auto-condition proxy stage.")
     parser.add_argument("--condition-proxy-points", type=int, help="Point cap for the auto-condition proxy stage.")
     parser.add_argument("--condition-proxy-queries", type=int, help="Queries for the auto-condition proxy stage.")
@@ -131,6 +133,10 @@ def main() -> int:
         command.append("--no-cache")
     if args.deep_nested_search:
         command.append("--deep-nested-search")
+    if args.adaptive_leaf_capacity:
+        command.append("--generated-adaptive-leaf-capacity")
+    if args.adaptive_leaf_probability is not None:
+        command.extend(["--generated-adaptive-leaf-probability", str(args.adaptive_leaf_probability)])
     if args.auto_conditions or args.deep_nested_search:
         command.append("--auto-conditions")
         optional_condition_args = [

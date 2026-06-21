@@ -30,6 +30,7 @@ namespace BaselineTests
 		  "knnK": 12,
 		  "numQueries": 42,
 		  "querySeed": 99,
+		  "stratifyQueries": true,
 		  "queryScales": {
 		    "aabb_range": {
 		      "min": 0.02,
@@ -57,6 +58,7 @@ namespace BaselineTests
 		expect(profile.knnK == 12, "schema search parses workload knn k");
 		expect(profile.numQueries == 42, "schema search parses workload query count");
 		expect(profile.querySeed == 99, "schema search parses workload query seed");
+		expect(profile.stratifyQueries, "schema search parses query stratification flag");
 		expect(nearlyEqual(profile.rangeScaleMin, 0.02), "schema search parses range scale min");
 		expect(nearlyEqual(profile.rangeScaleMax, 0.25), "schema search parses range scale max");
 		expect(nearlyEqual(profile.radiusScaleMin, 0.03), "schema search parses radius scale min");
@@ -146,6 +148,103 @@ namespace BaselineTests
 			visitMemoryMb,
 			visitImbalance);
 		expect(nearlyEqual(visitScore, 45.0), "visit-proxy score combines visited nodes and tested points");
+
+		// Diagnostic-guided repair mutations classify measured failure modes and emit targeted
+		// schema edits instead of another random perturbation.
+		{
+			Experiments::SchemaCandidate parent;
+			parent.config.name = "repair_parent";
+			parent.config.levels.resize(1);
+			parent.config.levels[0].type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			parent.config.levels[0].typeName = "Octree";
+			parent.config.levels[0].numLevels = 4;
+			parent.config.levels[0].leafCapacity = 1024;
+			parent.config.levels[0].minPrimitivesToSplit = 256;
+			parent.config.buildPolicy.maxDepth = 8;
+			parent.config.buildPolicy.leafCapacity = 1024;
+			parent.config.buildPolicy.minPrimitivesToSplit = 256;
+
+			Experiments::SchemaSearchRecord measured;
+			measured.numPoints = 10000;
+			measured.knnWeight = 0.7;
+			measured.buildMetrics.averageLeafOccupancy = 32.0;
+			measured.buildMetrics.maxLeafOccupancy = 4096;
+			measured.buildMetrics.numNodes = 20;
+			measured.buildMetrics.numLeaves = 10;
+			measured.buildMetrics.maxDepth = 4;
+			measured.queryMetrics.averageVisitedNodes = 4.0;
+			measured.queryMetrics.averageTestedPoints = 512.0;
+
+			Experiments::SchemaGenerationOptions repairOptions;
+			repairOptions.maxDepth = 8;
+			repairOptions.maxBlocks = 3;
+			repairOptions.minLeafCapacity = 32;
+			repairOptions.maxLeafCapacity = 4096;
+			repairOptions.outputDirectory.clear();
+			repairOptions.primitiveProfile = "query_minimal_cpu";
+
+			Experiments::ConditionDomain domain;
+			domain.pointThresholds = { 64, 128, 256, 512, 1024 };
+
+			const Experiments::SchemaRepairDiagnostics diagnostics =
+				Experiments::diagnoseSchemaRepair(parent, { measured });
+			expect(diagnostics.highLeafOccupancy, "repair diagnosis detects high leaf occupancy");
+			expect(diagnostics.testedPointDominated, "repair diagnosis detects tested-point-heavy queries");
+
+			const std::vector<Experiments::SchemaCandidate> repaired =
+				Experiments::generateSchemaRepairCandidates(parent, { measured }, repairOptions, &domain, 2, 1234, "");
+			expect(repaired.size() == 2, "repair generator emits bounded targeted candidates");
+			expect(repaired[0].config.levels[0].leafCapacity < parent.config.levels[0].leafCapacity,
+				"high-occupancy repair reduces leaf capacity");
+			expect(repaired[0].config.levels[0].numLevels > parent.config.levels[0].numLevels,
+				"high-occupancy repair increases depth when budget allows");
+			expect(repaired[1].config.levels.size() > parent.config.levels.size(),
+				"tested-point repair appends a local micro-index block");
+			expect(!repaired[1].config.levels.back().condition.empty(),
+				"micro-index repair gates the added block with measured point thresholds");
+		}
+
+		{
+			Experiments::SchemaCandidate parent;
+			parent.config.name = "visited_parent";
+			parent.config.levels.resize(1);
+			parent.config.levels[0].type = MultiDataStructure::DataStructureLevel::KDTreeNode;
+			parent.config.levels[0].typeName = "KDTree";
+			parent.config.levels[0].numLevels = 6;
+			parent.config.levels[0].leafCapacity = 128;
+			parent.config.levels[0].minPrimitivesToSplit = 32;
+
+			Experiments::SchemaSearchRecord measured;
+			measured.numPoints = 20000;
+			measured.pointFeatures.flatnessScore = 1.0;
+			measured.buildMetrics.averageLeafOccupancy = 64.0;
+			measured.buildMetrics.maxLeafOccupancy = 128;
+			measured.buildMetrics.numNodes = 4096;
+			measured.buildMetrics.numLeaves = 2048;
+			measured.buildMetrics.maxDepth = 6;
+			measured.queryMetrics.averageVisitedNodes = 256.0;
+			measured.queryMetrics.averageTestedPoints = 256.0;
+
+			Experiments::SchemaGenerationOptions repairOptions;
+			repairOptions.maxDepth = 8;
+			repairOptions.maxBlocks = 2;
+			repairOptions.minLeafCapacity = 32;
+			repairOptions.maxLeafCapacity = 4096;
+			repairOptions.outputDirectory.clear();
+			repairOptions.primitiveProfile = "query_minimal_cpu";
+
+			const Experiments::SchemaRepairDiagnostics diagnostics =
+				Experiments::diagnoseSchemaRepair(parent, { measured });
+			expect(diagnostics.visitedNodeDominated, "repair diagnosis detects visited-node-heavy traversal");
+
+			const std::vector<Experiments::SchemaCandidate> repaired =
+				Experiments::generateSchemaRepairCandidates(parent, { measured }, repairOptions, nullptr, 1, 99, "");
+			expect(repaired.size() == 1, "visited-node repair emits one targeted candidate");
+			expect(repaired[0].config.levels[0].type == MultiDataStructure::DataStructureLevel::QuadTreeNode,
+				"visited-node repair switches flat root to quadtree");
+			expect(repaired[0].config.levels[0].leafCapacity > parent.config.levels[0].leafCapacity,
+				"visited-node repair coarsens root leaves");
+		}
 
 		std::vector<Experiments::SchemaSearchRecord> records(3);
 		records[0].datasetName = "flat";
@@ -306,10 +405,37 @@ namespace BaselineTests
 		}
 		expect(sawNumericCondition, "domain-aware schema generator emits conditional levels");
 
+		Experiments::SchemaGenerationOptions adaptiveGeneration = conditionalGeneration;
+		adaptiveGeneration.count = 12;
+		adaptiveGeneration.seed = 18;
+		adaptiveGeneration.adaptiveLeafCapacity = true;
+		adaptiveGeneration.adaptiveLeafProbability = 1.0;
+		const std::vector<Experiments::SchemaCandidate> adaptiveGenerated =
+			Experiments::generateSchemaCandidates(adaptiveGeneration, &flatDomainA);
+		expect(adaptiveGenerated.size() == adaptiveGeneration.count,
+			"adaptive leaf-capacity generator creates requested candidates");
+		bool sawAdaptiveLeafCapacity = false;
+		for (const Experiments::SchemaCandidate& candidate : adaptiveGenerated)
+		{
+			for (const SchemaLevelConfig& level : candidate.config.levels)
+			{
+				if (level.adaptiveLeafCapacity.enabled)
+				{
+					sawAdaptiveLeafCapacity = true;
+					expect(level.adaptiveLeafCapacity.minCapacity > 0,
+						"adaptive leaf-capacity generator writes numeric minimum capacity");
+					expect(level.adaptiveLeafCapacity.maxCapacity >= level.adaptiveLeafCapacity.minCapacity,
+						"adaptive leaf-capacity generator writes valid capacity bounds");
+				}
+			}
+		}
+		expect(sawAdaptiveLeafCapacity, "adaptive leaf-capacity generator emits adaptive levels");
+
 		const std::filesystem::path tempRoot = std::filesystem::temp_directory_path() / "mdspc_schema_search_tests";
 		std::filesystem::create_directories(tempRoot);
 		const std::filesystem::path csvPath = tempRoot / "prepared_queries.csv";
 		const std::filesystem::path bestCsvPath = tempRoot / "prepared_queries_best.csv";
+		const std::filesystem::path explainPath = tempRoot / "prepared_queries_explain.md";
 
 		Experiments::SchemaSearchOptions options;
 		options.schemaPaths = { "configs/schemas/quadtree.json" };
@@ -317,12 +443,24 @@ namespace BaselineTests
 		options.includeBaselineSchemas = false;
 		options.csvPath = csvPath.string();
 		options.bestCsvPath = bestCsvPath.string();
+		options.explainReportPath = explainPath.string();
 		options.syntheticScale = 64;
 		options.queryCountOverride = 9;
 		options.evaluator = "cpu";
 		options.pauseAtEnd = false;
 		const int exitCode = Experiments::runSchemaSearch(options);
 		expect(exitCode == 0, "schema search smoke run succeeds");
+		std::ifstream explain(explainPath);
+		expect(explain.is_open(), "schema search writes schema explain report");
+		const std::string explainText((std::istreambuf_iterator<char>(explain)), std::istreambuf_iterator<char>());
+		expect(explainText.find("Schema Explain Report") != std::string::npos,
+			"schema explain report has markdown title");
+		expect(explainText.find("Active structures") != std::string::npos,
+			"schema explain report includes active structure section");
+		expect(explainText.find("Query behavior") != std::string::npos,
+			"schema explain report includes query behavior section");
+		expect(explainText.find("Diagnosis") != std::string::npos,
+			"schema explain report includes diagnosis section");
 
 		std::ifstream csv(csvPath);
 		expect(csv.is_open(), "schema search writes prepared-query CSV");
@@ -361,6 +499,10 @@ namespace BaselineTests
 		const size_t rangeQueriesColumn = columnIndex("range_queries");
 		const size_t radiusQueriesColumn = columnIndex("radius_queries");
 		const size_t knnQueriesColumn = columnIndex("knn_queries");
+		const size_t queryStrataColumn = columnIndex("query_strata_summary");
+		const size_t leafP90Column = columnIndex("leaf_occupancy_p90");
+		const size_t emptyChildColumn = columnIndex("empty_child_ratio");
+		const size_t tightVolumeColumn = columnIndex("mean_tight_bounds_volume_ratio");
 		const size_t nestedFractionColumn = columnIndex("nested_active_fraction");
 		const size_t baselineSchemaColumn = columnIndex("best_baseline_schema");
 		const size_t scoreModeColumn = columnIndex("score_mode");
@@ -371,6 +513,10 @@ namespace BaselineTests
 		expect(totalQueriesColumn < values.size() && rangeQueriesColumn < values.size() &&
 			radiusQueriesColumn < values.size() && knnQueriesColumn < values.size(),
 			"schema search prepared-query CSV includes query count columns");
+		expect(queryStrataColumn < values.size(),
+			"schema search CSV includes query stratum summary column");
+		expect(leafP90Column < values.size() && emptyChildColumn < values.size() && tightVolumeColumn < values.size(),
+			"schema search CSV includes tree health columns");
 		expect(nestedFractionColumn < values.size() && baselineSchemaColumn < values.size(),
 			"schema search CSV includes nested accounting and baseline-normalized columns");
 		expect(scoreModeColumn < values.size() && scoreStageColumn < values.size() &&
@@ -383,6 +529,8 @@ namespace BaselineTests
 		const size_t knnQueries = static_cast<size_t>(std::stoull(values[knnQueriesColumn]));
 		expect(totalQueries == 9, "schema search prepared workload keeps query override count");
 		expect(rangeQueries + radiusQueries + knnQueries == totalQueries, "schema search prepared CPU query counts match total");
+		expect(!values[queryStrataColumn].empty(), "schema search records per-stratum query metrics");
+		expect(std::stod(values[leafP90Column]) >= 0.0, "schema search writes leaf occupancy health metric");
 		expect(values[scoreModeColumn] == "latency", "schema search direct CSV marks latency score mode");
 		expect(values[scoreStageColumn] == "final", "schema search direct CSV marks final score stage");
 		expect(values[finalLatencyColumn] == "1", "schema search direct CSV marks final latency score");
@@ -509,6 +657,54 @@ namespace BaselineTests
 			}
 			expect(rejectedEntropyCondition,
 				"CUDA MixedTree rejects occupancy-entropy conditions instead of silently ignoring them");
+
+			const char* adaptiveLeafJson = R"json(
+			{
+			  "name": "cuda_adaptive_leaf_rejected",
+			  "levels": [
+			    {
+			      "type": "Octree",
+			      "numLevels": 2,
+			      "leafCapacity": 8,
+			      "minPointsToSplit": 2,
+			      "adaptiveLeafCapacity": {
+			        "enabled": true,
+			        "minCapacity": 2,
+			        "maxCapacity": 32,
+			        "densityWeight": 1.0
+			      }
+			    }
+			  ],
+			  "buildPolicy": {
+			    "maxDepth": 2,
+			    "leafCapacity": 8,
+			    "minPointsToSplit": 2,
+			    "collapseSingleChild": false,
+			    "removeEmptyNodes": true,
+			    "allowOverlapDuplication": false
+			  }
+			}
+			)json";
+			bool rejectedAdaptiveLeafCapacity = false;
+			try
+			{
+				PointGpu::MixedTree mixedTree;
+				PointGpu::Options mixedOptions;
+				mixedOptions.device = 0;
+				mixedOptions.builder = "mixed";
+				const PointCloud adaptiveCloud = SyntheticPointClouds::generateUrbanMixed(64, 64, 5);
+				mixedTree.build(
+					adaptiveCloud,
+					Config::parseSchemaConfig(adaptiveLeafJson, "cuda_adaptive_leaf_rejected"),
+					mixedOptions);
+			}
+			catch (const std::runtime_error& exception)
+			{
+				rejectedAdaptiveLeafCapacity =
+					std::string(exception.what()).find("adaptiveLeafCapacity") != std::string::npos;
+			}
+			expect(rejectedAdaptiveLeafCapacity,
+				"CUDA MixedTree rejects adaptive leaf-capacity schemas instead of silently ignoring them");
 
 			const char* conditionalSkipJson = R"json(
 			{
@@ -646,6 +842,10 @@ namespace BaselineTests
 			record.queryMetrics.averageLatencyMs = 0.5;
 			record.queryMetrics.averageVisitedNodes = 12.5;
 			record.queryMetrics.totalQueries = 16;
+			record.rangeMetrics.totalQueries = 6;
+			record.rangeMetrics.averageVisitedNodes = 8.0;
+			record.knnMetrics.totalQueries = 4;
+			record.knnMetrics.averageTestedPoints = 64.0;
 			record.backend = "cpu";
 			record.scoreMode = "latency";
 			record.scoreStage = "final";
@@ -682,6 +882,10 @@ namespace BaselineTests
 				expect(nearlyEqual(roundTrip.buildMetrics.buildTimeMs, 42.0), "cache restores build metrics");
 				expect(roundTrip.buildMetrics.numNodes == 17, "cache restores build node count");
 				expect(nearlyEqual(roundTrip.queryMetrics.averageVisitedNodes, 12.5), "cache restores visit counts");
+				expect(roundTrip.rangeMetrics.totalQueries == 6, "cache restores range-family query count");
+				expect(nearlyEqual(roundTrip.rangeMetrics.averageVisitedNodes, 8.0), "cache restores range-family metrics");
+				expect(roundTrip.knnMetrics.totalQueries == 4, "cache restores knn-family query count");
+				expect(nearlyEqual(roundTrip.knnMetrics.averageTestedPoints, 64.0), "cache restores knn-family metrics");
 				expect(roundTrip.backend == "cpu", "cache restores backend");
 				expect(roundTrip.isBaseline, "cache preserves caller baseline marker");
 				expect(roundTrip.scoreMode == "latency", "cache preserves caller score mode");
