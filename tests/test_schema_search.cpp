@@ -1397,5 +1397,19 @@ namespace BaselineTests
 			Experiments::annotateRankingConfidence(lone);
 			expect(lone[0].rankingConfident, "single-candidate group is trivially confident");
 		}
+
+		// Spearman rank correlation used by the proxy/latency validation report.
+		{
+			expect(nearlyEqual(Experiments::spearmanRankCorrelation({ 1.0, 2.0, 3.0, 4.0 }, { 10.0, 20.0, 30.0, 40.0 }), 1.0),
+				"spearman perfect positive");
+			expect(nearlyEqual(Experiments::spearmanRankCorrelation({ 1.0, 2.0, 3.0, 4.0 }, { 40.0, 30.0, 20.0, 10.0 }), -1.0),
+				"spearman perfect negative");
+			expect(nearlyEqual(Experiments::spearmanRankCorrelation({ 1.0, 2.0, 3.0, 4.0 }, { 1.0, 4.0, 9.0, 100.0 }), 1.0),
+				"spearman is monotonic, not linear");
+			expect(nearlyEqual(Experiments::spearmanRankCorrelation({ 1.0 }, { 2.0 }), 0.0),
+				"spearman returns 0 for fewer than two points");
+			expect(nearlyEqual(Experiments::spearmanRankCorrelation({ 5.0, 5.0, 5.0 }, { 1.0, 2.0, 3.0 }), 0.0),
+				"spearman returns 0 for a zero-variance series");
+		}
 	}
 }

@@ -596,6 +596,14 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config.schemaSearchOptions.measurementRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
 		}
+		else if (arg == "--proxy-correlation-csv" && i + 1 < argc)
+		{
+			config.schemaSearchOptions.proxyCorrelationCsvPath = argv[++i];
+		}
+		else if (arg == "--verify-parity")
+		{
+			config.schemaSearchOptions.verifyParity = true;
+		}
 		else if (arg == "--queries" && i + 1 < argc)
 		{
 			config.pointOptions.queryCount = static_cast<size_t>(std::stoull(argv[++i]));
@@ -771,6 +779,10 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --confirm-top <k>           Number of top candidates per (dataset, workload) to re-measure, default 4\n"
 		<< "  --measure-repeats <n>       Re-time each candidate's query batch N times (same queries) and record\n"
 		<< "                              latency mean/stddev/CV/95% CI on queryMetrics. 1 disables (default).\n"
+		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
+		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
+		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
+		<< "                              counts (results/parity_report.csv). Requires CUDA; skipped otherwise.\n"
 		<< "  --no-csv                    Disable CSV summary output\n"
 		<< "  --queries <count>           Run generated query profile; 0 disables it\n"
 		<< "  --knn-k <count>             Neighbor count for generated KNN queries\n"

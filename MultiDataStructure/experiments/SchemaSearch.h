@@ -259,6 +259,14 @@ namespace Experiments
 		// queryMetrics. 1 keeps the original one-shot timing. This measures timing noise, which is
 		// complementary to confirmSeeds (which re-draws the query set).
 		size_t measurementRepeats = 1;
+		// Optional sidecar CSV for the proxy/latency rank-correlation report (one row per
+		// dataset/workload). Empty = stdout summary only. The report is always printed to stdout.
+		std::string proxyCorrelationCsvPath;
+		// When true (and CUDA is available), after the search build canonical schemas on both the CPU
+		// index and the GPU MixedTree and compare per-query returned-point counts on a deterministic
+		// range/radius sample. Surfaces CPU<->GPU disagreement that the separate evaluators would
+		// otherwise hide. Writes results/parity_report.csv and a stdout summary.
+		bool verifyParity = false;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
 
@@ -415,6 +423,17 @@ namespace Experiments
 	// group's best candidate is `confidentlyBetter` than its runner-up (or the group has a single
 	// candidate). Call before writing CSVs so both raw and best rows carry the flag.
 	void annotateRankingConfidence(std::vector<SchemaSearchRecord>& records);
+
+	// Spearman rank correlation of two equal-length series, tie-aware (average ranks). Returns 0.0
+	// for fewer than two points or when either series has zero rank variance.
+	double spearmanRankCorrelation(const std::vector<double>& a, const std::vector<double>& b);
+
+	// Per (dataset, workload), reports the Spearman correlation between the cheap visit proxy
+	// (avgVisitedNodes + alpha * avgTestedPoints) and measured latency over the real-latency records
+	// (proxy-stage rows are excluded). Prints a summary to stdout and, when csvPath is non-empty,
+	// writes one row per group. High rho means the proxy can be trusted to pre-rank candidates; low
+	// means the cheap rungs may be discarding good schemas.
+	void reportProxyLatencyCorrelation(const std::vector<SchemaSearchRecord>& records, const std::string& csvPath);
 
 	// Returns the non-dominated set per (dataset, workload) group over the four-tuple
 	// (avgLatencyMs, buildTimeMs, memoryMb, imbalancePenalty). Each returned record carries its

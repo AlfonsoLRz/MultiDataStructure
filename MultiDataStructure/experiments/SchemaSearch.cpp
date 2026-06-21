@@ -7482,6 +7482,123 @@ void Experiments::annotateRankingConfidence(std::vector<SchemaSearchRecord>& rec
 
 namespace
 {
+	// Fractional (tie-averaged) 1-based ranks of the values in `v`.
+	std::vector<double> averageRanks(const std::vector<double>& v)
+	{
+		const size_t n = v.size();
+		std::vector<size_t> order(n);
+		std::iota(order.begin(), order.end(), size_t(0));
+		std::sort(order.begin(), order.end(), [&v](size_t a, size_t b) { return v[a] < v[b]; });
+
+		std::vector<double> ranks(n, 0.0);
+		size_t i = 0;
+		while (i < n)
+		{
+			size_t j = i;
+			while (j + 1 < n && v[order[j + 1]] == v[order[i]])
+				++j;
+			const double averageRank = (static_cast<double>(i) + static_cast<double>(j)) / 2.0 + 1.0;
+			for (size_t k = i; k <= j; ++k)
+				ranks[order[k]] = averageRank;
+			i = j + 1;
+		}
+		return ranks;
+	}
+}
+
+double Experiments::spearmanRankCorrelation(const std::vector<double>& a, const std::vector<double>& b)
+{
+	if (a.size() != b.size() || a.size() < 2)
+		return 0.0;
+
+	const std::vector<double> ra = averageRanks(a);
+	const std::vector<double> rb = averageRanks(b);
+	const double n = static_cast<double>(a.size());
+	const double meanA = std::accumulate(ra.begin(), ra.end(), 0.0) / n;
+	const double meanB = std::accumulate(rb.begin(), rb.end(), 0.0) / n;
+
+	double cov = 0.0;
+	double varA = 0.0;
+	double varB = 0.0;
+	for (size_t i = 0; i < ra.size(); ++i)
+	{
+		const double da = ra[i] - meanA;
+		const double db = rb[i] - meanB;
+		cov += da * db;
+		varA += da * da;
+		varB += db * db;
+	}
+
+	if (varA <= 0.0 || varB <= 0.0)
+		return 0.0;
+	return cov / std::sqrt(varA * varB);
+}
+
+void Experiments::reportProxyLatencyCorrelation(const std::vector<SchemaSearchRecord>& records, const std::string& csvPath)
+{
+	struct ProxyGroup
+	{
+		std::vector<double> proxy;
+		std::vector<double> latency;
+		double alpha = 0.0;
+	};
+
+	std::map<std::pair<std::string, std::string>, ProxyGroup> groups;
+	for (const SchemaSearchRecord& record : records)
+	{
+		// Compare on the real-latency records only; proxy-stage rows did not measure true latency.
+		if (record.weights.useVisitProxy)
+			continue;
+		const double latency = record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
+			? record.latencyMean
+			: record.queryMetrics.averageLatencyMs;
+		if (latency <= 0.0)
+			continue;
+
+		const double proxy = record.queryMetrics.averageVisitedNodes
+			+ record.weights.visitProxyAlpha * record.queryMetrics.averageTestedPoints;
+		ProxyGroup& group = groups[{ record.datasetName, record.workloadName }];
+		group.proxy.push_back(proxy);
+		group.latency.push_back(latency);
+		group.alpha = record.weights.visitProxyAlpha;
+	}
+
+	if (groups.empty())
+		return;
+
+	std::cout << "  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):\n";
+
+	std::ofstream csv;
+	const bool writeCsv = !csvPath.empty();
+	if (writeCsv)
+	{
+		createParentDirectory(csvPath);
+		csv.open(csvPath);
+		if (csv.is_open())
+			csv << "dataset_name,workload_name,num_candidates,spearman_rho,visit_proxy_alpha\n";
+	}
+
+	for (const auto& [key, group] : groups)
+	{
+		if (group.proxy.size() < 3)
+		{
+			std::cout << "    [" << key.first << " / " << key.second << "] n/a ("
+				<< group.proxy.size() << " candidate(s))\n";
+			continue;
+		}
+
+		const double rho = Experiments::spearmanRankCorrelation(group.proxy, group.latency);
+		std::cout << "    [" << key.first << " / " << key.second << "] rho="
+			<< std::fixed << std::setprecision(3) << rho
+			<< " over " << group.proxy.size() << " candidates\n";
+		if (writeCsv && csv.is_open())
+			csv << csvEscape(key.first) << ',' << csvEscape(key.second) << ','
+				<< group.proxy.size() << ',' << rho << ',' << group.alpha << '\n';
+	}
+}
+
+namespace
+{
 	struct ParetoMetrics
 	{
 		double avgLatencyMs = 0.0;
@@ -7609,6 +7726,152 @@ std::tuple<double, double, double> Experiments::bootstrapMeanCI(
 	const size_t loIdx = static_cast<size_t>(static_cast<double>(resamples) * 0.025);
 	const size_t hiIdx = std::min(resamples - 1, static_cast<size_t>(static_cast<double>(resamples) * 0.975));
 	return { pointMean, resampledMeans[loIdx], resampledMeans[hiIdx] };
+}
+
+namespace
+{
+	SchemaConfig makeParitySchema(const std::string& typeName, MultiDataStructure::DataStructureLevel type)
+	{
+		SchemaLevelConfig level;
+		level.type = type;
+		level.typeName = typeName;
+		level.numLevels = 6;
+		level.leafCapacity = 64;
+		level.minPrimitivesToSplit = 8;
+
+		SchemaConfig schema;
+		schema.name = "parity_" + typeName;
+		schema.levels.push_back(level);
+		schema.buildPolicy.maxDepth = 6;
+		schema.buildPolicy.leafCapacity = 64;
+		schema.buildPolicy.minPrimitivesToSplit = 8;
+		schema.buildPolicy.removeEmptyNodes = true;
+		schema.buildPolicy.collapseSingleChild = false;
+		return schema;
+	}
+
+	// Builds canonical schemas on both the CPU index and the GPU MixedTree, then compares the
+	// returned-point COUNT for each range/radius query (exact on both backends). KNN is skipped
+	// because the GPU path is a brute-force scan, not the tree traversal the CPU uses. GPU queries
+	// are derived directly from the CPU queries so the two backends see byte-identical inputs.
+	void runCpuGpuParityCheck(
+		const std::vector<SearchDataset>& datasets,
+		const std::vector<Experiments::WorkloadProfile>& workloads,
+		const Experiments::SchemaSearchOptions& options)
+	{
+		std::string cudaError;
+		if (!PointGpu::MixedTree::isAvailable(&cudaError))
+		{
+			std::cout << "  CPU/GPU parity check skipped: CUDA unavailable (" << cudaError << ")\n";
+			return;
+		}
+		if (datasets.empty() || workloads.empty())
+			return;
+
+		const Experiments::WorkloadProfile& workload = workloads.front();
+		PointGpu::Options cudaOptions = cudaOptionsFrom(options);
+		cudaOptions.builder = "mixed";
+
+		const std::vector<SchemaConfig> schemas = {
+			makeParitySchema("Octree", MultiDataStructure::DataStructureLevel::OctreeNode),
+			makeParitySchema("KDTree", MultiDataStructure::DataStructureLevel::KDTreeNode),
+		};
+
+		const std::string csvPath = "results/parity_report.csv";
+		createParentDirectory(csvPath);
+		std::ofstream csv(csvPath);
+		if (csv.is_open())
+			csv << "dataset_name,schema_name,workload_name,cpu_nodes,gpu_nodes,cpu_leaves,gpu_leaves,"
+				   "compared_queries,count_matches,max_count_delta,parity_ok\n";
+
+		std::cout << "  CPU/GPU parity check (range+radius returned-count agreement on '" << workload.name << "'):\n";
+
+		for (const SearchDataset& dataset : datasets)
+		{
+			const PreparedWorkload prepared = prepareWorkloadProfile(workload, dataset.cloud, false);
+			std::vector<PointGpu::Query> gpuQueries;
+			gpuQueries.reserve(prepared.cpuQueries.size());
+			for (const PreparedCpuQuery& q : prepared.cpuQueries)
+			{
+				PointGpu::Query gq;
+				if (q.kind == PreparedQueryKind::Range)
+				{
+					gq.type = PointGpu::QueryType::Range;
+					gq.bounds = q.bounds;
+				}
+				else if (q.kind == PreparedQueryKind::Radius)
+				{
+					gq.type = PointGpu::QueryType::Radius;
+					gq.center = q.center;
+					gq.radius = q.radius;
+				}
+				else
+				{
+					gq.type = PointGpu::QueryType::Knn;
+					gq.center = q.center;
+					gq.k = workload.knnK;
+				}
+				gpuQueries.push_back(gq);
+			}
+
+			for (const SchemaConfig& schema : schemas)
+			{
+				PointSpatialIndex cpu;
+				cpu.build(dataset.cloud, schema);
+				const PointSpatialIndex::Stats cpuStats = cpu.stats();
+
+				PointGpu::MixedTree gpu;
+				PointGpu::BuildResult gpuBuild;
+				PointGpu::QueryResult gpuResult;
+				try
+				{
+					gpuBuild = gpu.build(dataset.cloud, schema, cudaOptions);
+					gpuResult = gpu.query(gpuQueries, cudaOptions);
+				}
+				catch (const std::exception& ex)
+				{
+					std::cout << "    [" << dataset.name << " / " << schema.name << "] GPU build/query failed: " << ex.what() << "\n";
+					continue;
+				}
+
+				size_t compared = 0;
+				size_t matches = 0;
+				size_t maxDelta = 0;
+				const size_t n = std::min(prepared.cpuQueries.size(), gpuResult.samples.size());
+				for (size_t i = 0; i < n; ++i)
+				{
+					const PreparedCpuQuery& q = prepared.cpuQueries[i];
+					size_t cpuCount = 0;
+					if (q.kind == PreparedQueryKind::Range)
+						cpuCount = cpu.rangeQuery(q.bounds).pointIndices.size();
+					else if (q.kind == PreparedQueryKind::Radius)
+						cpuCount = cpu.radiusQuery(q.center, q.radius).pointIndices.size();
+					else
+						continue;
+
+					const size_t gpuCount = static_cast<size_t>(gpuResult.samples[i].returnedPoints);
+					const size_t delta = cpuCount > gpuCount ? cpuCount - gpuCount : gpuCount - cpuCount;
+					++compared;
+					if (delta == 0)
+						++matches;
+					maxDelta = std::max(maxDelta, delta);
+				}
+
+				const bool parityOk = compared > 0 && matches == compared;
+				std::cout << "    [" << dataset.name << " / " << schema.name << "] "
+					<< matches << "/" << compared << " range+radius counts match (max delta "
+					<< maxDelta << ")" << (parityOk ? "  OK" : "  MISMATCH")
+					<< "  [cpu nodes/leaves " << cpuStats.numNodes << "/" << cpuStats.numLeaves
+					<< " vs gpu " << gpuBuild.metrics.numNodes << "/" << gpuBuild.metrics.numLeaves << "]\n";
+
+				if (csv.is_open())
+					csv << csvEscape(dataset.name) << ',' << csvEscape(schema.name) << ',' << csvEscape(workload.name) << ','
+						<< cpuStats.numNodes << ',' << gpuBuild.metrics.numNodes << ','
+						<< cpuStats.numLeaves << ',' << gpuBuild.metrics.numLeaves << ','
+						<< compared << ',' << matches << ',' << maxDelta << ',' << (parityOk ? 1 : 0) << '\n';
+			}
+		}
+	}
 }
 
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
@@ -7839,6 +8102,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	runMultiSeedConfirmation(records, datasets, workloads, resolvedOptions);
 	annotateBaselineComparisons(records);
 	annotateRankingConfidence(records);
+	reportProxyLatencyCorrelation(records, resolvedOptions.proxyCorrelationCsvPath);
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);
 	reportMetricSummaries(records, resolvedOptions);
@@ -7846,6 +8110,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	writeSearchRows(resolvedOptions.csvPath, records);
 	writeBestRows(resolvedOptions.bestCsvPath, records);
 	writeParetoRows(resolvedOptions.paretoCsvPath, records);
+	if (resolvedOptions.verifyParity)
+		runCpuGpuParityCheck(datasets, workloads, resolvedOptions);
 
 	std::cout << "  wrote rows: " << records.size() << '\n';
 	if (!resolvedOptions.csvPath.empty())
