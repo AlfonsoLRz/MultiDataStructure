@@ -1153,6 +1153,18 @@ namespace
 		});
 	}
 
+	// Features the CUDA MixedTree evaluator cannot honor: adaptive leaf capacity and occupancy-
+	// entropy conditions. Both are CPU-native, so such schemas can be evaluated on the CPU instead
+	// of being dropped from a CUDA-default search.
+	bool schemaUsesGpuUnsupportedFeature(const SchemaConfig& schema)
+	{
+		if (schemaUsesAdaptiveLeafCapacity(schema))
+			return true;
+		return std::any_of(schema.levels.begin(), schema.levels.end(), [](const SchemaLevelConfig& level) {
+			return level.condition.minOccupancyEntropy.has_value() || level.condition.maxOccupancyEntropy.has_value();
+		});
+	}
+
 	std::string schemaConditionSummary(const SchemaConfig& schema)
 	{
 		std::ostringstream output;
@@ -3247,13 +3259,13 @@ namespace
 		ActiveStructureStats activeStats;
 		const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
 
-		if (useCudaEvaluator(options))
-		{
-			if (schemaUsesAdaptiveLeafCapacity(effectiveConfig))
-				throw std::runtime_error(
-					"CUDA schema-search evaluators do not currently support adaptiveLeafCapacity; "
-					"use the CPU evaluator for adaptive capacity tuning or remove the adaptive leaf-capacity rule.");
+		// CUDA cannot honor adaptive leaf capacity or occupancy-entropy conditions. Rather than drop
+		// such candidates from a CUDA-default search, fall back to the CPU evaluator (these features
+		// are CPU-native). The record keeps backend = "cpu" so the fallback is visible in the output.
+		const bool cpuFallbackForGpuFeature = useCudaEvaluator(options) && schemaUsesGpuUnsupportedFeature(effectiveConfig);
 
+		if (useCudaEvaluator(options) && !cpuFallbackForGpuFeature)
+		{
 			activeStats = staticSchemaStructureStats(effectiveConfig);
 			backend = "cuda";
 			const PointGpu::Options cudaOptions = cudaOptionsFrom(options);

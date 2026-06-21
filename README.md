@@ -38,7 +38,7 @@ Current schema names include `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BI
 ## Known Limitations
 
 - CUDA KNN is labeled `bruteforce_gpu_scan`: it scans the GPU point buffer and should not be reported as tree-accelerated KNN traversal.
-- CUDA MixedTree supports bbox-anisotropy conditions, but rejects occupancy-entropy conditions until a GPU entropy estimator is implemented.
+- CUDA MixedTree supports bbox-anisotropy conditions but has no GPU implementation of occupancy-entropy conditions or adaptive leaf capacity. In schema search these CPU-native features no longer drop the candidate: the evaluator falls back to the CPU index for that schema (its row reads `backend=cpu`). The direct MixedTree GPU API still rejects them.
 - The built-in LAS reader does not read LAZ.
 - The triangle/ray-tracing prototype (3D rendering, scene, mesh, and the vendored `tinybvh`/`progressbar` libraries) has been removed. The legacy `MultiDataStructure` meta-structure (and its `KdTree`/`Octree`/`QuadTree`/`Bvh` node types) is retained only because the point-cloud schema layer reuses its `DataStructureLevel`/`LevelConfig` types and two unit tests still cover it; the maintained path is point-cloud benchmarking and schema search.
 
