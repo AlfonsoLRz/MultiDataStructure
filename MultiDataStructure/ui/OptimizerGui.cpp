@@ -1508,55 +1508,16 @@ namespace
 
 	void drawPublicationPanel(GuiState& state)
 	{
-		drawSectionTitle("Publication Path");
-		if (ImGui::Button("Apply publication defaults"))
+		drawSectionTitle("Quick start");
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.68f, 0.78f, 1.0f));
+		ImGui::TextWrapped("Apply the recommended setup, choose your point cloud under \"1. Inputs\", then press \"Start tuning\" on the right.");
+		ImGui::PopStyleColor();
+
+		if (ImGui::Button("Apply recommended setup", ImVec2(-1.0f, 30.0f)))
 			applyPublicationDefaults(state);
 		drawHelpMarker("CUDA/Mixed, one real cloud, volume workload, generated conditional schemas, staged auto-condition tuning, and query-only score.");
 
-		if (ImGui::Checkbox("Per-cloud auto conditions", &state.autoConditions) && state.autoConditions)
-		{
-			state.generatedConditional = true;
-			state.useRankModel = false;
-		}
-		drawHelpMarker("Estimates cheap point-cloud/node domains, tunes numeric condition thresholds, and writes a reusable measured selector.");
-		ImGui::SameLine();
-		bool realCloudOnly = !state.includeSynthetic;
-		if (ImGui::Checkbox("Real cloud only", &realCloudOnly))
-			state.includeSynthetic = !realCloudOnly;
-		drawHelpMarker("Keeps the run specialized to the selected cloud instead of mixing in synthetic validation clouds.");
-
-		bool cudaMixed = state.evaluator == 1 && state.cudaBuilder == 8 && state.cudaDevice == 0;
-		if (ImGui::Checkbox("CUDA Mixed device 0", &cudaMixed))
-		{
-			if (cudaMixed)
-			{
-				state.evaluator = 1;
-				state.cudaDevice = 0;
-				state.cudaBuilder = 8;
-			}
-			else
-			{
-				state.evaluator = 0;
-			}
-		}
-		drawHelpMarker("Uses the schema-aware mixed CUDA builder on device 0. Schema-search still falls back to CPU if CUDA is unavailable.");
-		ImGui::SameLine();
-		const int volumeIndex = workloadIndexForToken(state, "volume_small_medium");
-		bool volumeWorkload = volumeIndex >= 0 && state.selectedWorkload == volumeIndex;
-		ImGui::BeginDisabled(volumeIndex < 0);
-		if (ImGui::Checkbox("Volume workload", &volumeWorkload) && volumeWorkload)
-			state.selectedWorkload = volumeIndex;
-		ImGui::EndDisabled();
-		drawHelpMarker("Uses the small/medium 3D volume workload, avoiding KNN in the default tuning path.");
-
-		if (ImGui::Checkbox("Generated-only candidates", &state.generatedOnly))
-			state.generateSchemas = state.generateSchemas || state.generatedOnly;
-		drawHelpMarker("Focuses the measured search on generated schema variants instead of fixed baselines.");
-		ImGui::SameLine();
-		if (ImGui::Checkbox("Conditional generated blocks", &state.generatedConditional) && state.autoConditions)
-			state.generatedConditional = true;
-		drawHelpMarker("Keeps local node predicates in the generated schema space.");
-
+		// Budget summary stays visible so the recommended run's cost is clear without expanding anything.
 		if (state.autoConditions)
 		{
 			ImGui::Text("Budget: %d proxy candidates, %d proxy queries, top %d -> %d",
@@ -1570,6 +1531,55 @@ namespace
 			ImGui::Text("Budget: %d generated candidates, top-k %d",
 				state.generatedCount,
 				state.benchmarkTopK);
+		}
+
+		// The individual recommended toggles are tucked away so the first-glance path is just the
+		// button above; open this only to deviate from the recommended setup.
+		if (ImGui::CollapsingHeader("Fine-tune recommended setup"))
+		{
+			if (ImGui::Checkbox("Per-cloud auto conditions", &state.autoConditions) && state.autoConditions)
+			{
+				state.generatedConditional = true;
+				state.useRankModel = false;
+			}
+			drawHelpMarker("Estimates cheap point-cloud/node domains, tunes numeric condition thresholds, and writes a reusable measured selector.");
+			ImGui::SameLine();
+			bool realCloudOnly = !state.includeSynthetic;
+			if (ImGui::Checkbox("Real cloud only", &realCloudOnly))
+				state.includeSynthetic = !realCloudOnly;
+			drawHelpMarker("Keeps the run specialized to the selected cloud instead of mixing in synthetic validation clouds.");
+
+			bool cudaMixed = state.evaluator == 1 && state.cudaBuilder == 8 && state.cudaDevice == 0;
+			if (ImGui::Checkbox("CUDA Mixed device 0", &cudaMixed))
+			{
+				if (cudaMixed)
+				{
+					state.evaluator = 1;
+					state.cudaDevice = 0;
+					state.cudaBuilder = 8;
+				}
+				else
+				{
+					state.evaluator = 0;
+				}
+			}
+			drawHelpMarker("Uses the schema-aware mixed CUDA builder on device 0. Schema-search still falls back to CPU if CUDA is unavailable.");
+			ImGui::SameLine();
+			const int volumeIndex = workloadIndexForToken(state, "volume_small_medium");
+			bool volumeWorkload = volumeIndex >= 0 && state.selectedWorkload == volumeIndex;
+			ImGui::BeginDisabled(volumeIndex < 0);
+			if (ImGui::Checkbox("Volume workload", &volumeWorkload) && volumeWorkload)
+				state.selectedWorkload = volumeIndex;
+			ImGui::EndDisabled();
+			drawHelpMarker("Uses the small/medium 3D volume workload, avoiding KNN in the default tuning path.");
+
+			if (ImGui::Checkbox("Generated-only candidates", &state.generatedOnly))
+				state.generateSchemas = state.generateSchemas || state.generatedOnly;
+			drawHelpMarker("Focuses the measured search on generated schema variants instead of fixed baselines.");
+			ImGui::SameLine();
+			if (ImGui::Checkbox("Conditional generated blocks", &state.generatedConditional) && state.autoConditions)
+				state.generatedConditional = true;
+			drawHelpMarker("Keeps local node predicates in the generated schema space.");
 		}
 	}
 
@@ -2441,7 +2451,7 @@ namespace
 			evaluatedCandidates = session.evaluatedCandidates;
 		}
 
-		drawSectionTitle("Run");
+		drawSectionTitle("4. Run");
 		const bool canStart = !session.running;
 		ImGui::BeginDisabled(!canStart);
 		if (ImGui::Button("Start tuning", ImVec2(180.0f, 34.0f)))
@@ -2732,6 +2742,8 @@ namespace
 		ImGui::TextUnformatted("MultiDataStructure Optimizer");
 		ImGui::SameLine();
 		ImGui::TextDisabled("measured schema search");
+		ImGui::SameLine();
+		ImGui::TextDisabled("|  steps 1-3 configure on the left, step 4 runs on the right");
 		ImGui::Separator();
 
 		const float leftWidth = std::max(360.0f, ImGui::GetContentRegionAvail().x * 0.36f);
@@ -2739,17 +2751,17 @@ namespace
 		drawPublicationPanel(state);
 		if (ImGui::BeginTabBar("configuration-tabs"))
 		{
-			if (ImGui::BeginTabItem("Inputs"))
+			if (ImGui::BeginTabItem("1. Inputs"))
 			{
 				drawDatasetPanel(state);
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Search"))
+			if (ImGui::BeginTabItem("2. Search"))
 			{
 				drawSchemaPanel(state);
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Advanced"))
+			if (ImGui::BeginTabItem("3. Advanced"))
 			{
 				drawScoringPanel(state);
 				ImGui::EndTabItem();
