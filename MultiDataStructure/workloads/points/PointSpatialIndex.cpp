@@ -700,20 +700,14 @@ uint32_t PointSpatialIndex::buildLeafMicroKdNode(LeafMicroIndex& index, uint32_t
 
 	const glm::uint axis = longestAxis(kdNode.bounds);
 	const uint32_t mid = begin + kdNode.count / 2u;
-	auto coordinate = [this, axis](uint32_t orderedIndex) {
-		if (axis == 0)
-			return _orderedX[orderedIndex];
-		if (axis == 1)
-			return _orderedY[orderedIndex];
-		return _orderedZ[orderedIndex];
-	};
+	const auto& orderedCoord = (axis == 0) ? _orderedX : (axis == 1) ? _orderedY : _orderedZ;
 	std::nth_element(
 		index.kdOrder.begin() + begin,
 		index.kdOrder.begin() + mid,
 		index.kdOrder.begin() + end,
 		[&](uint32_t left, uint32_t right) {
-			const float leftValue = coordinate(left);
-			const float rightValue = coordinate(right);
+			const float leftValue = orderedCoord[left];
+			const float rightValue = orderedCoord[right];
 			if (leftValue == rightValue)
 				return _pointOrder[left] < _pointOrder[right];
 			return leftValue < rightValue;

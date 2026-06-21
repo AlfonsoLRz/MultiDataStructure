@@ -6722,6 +6722,26 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 // seeds, then store seed-averaged mean + 95% bootstrap CI on (avgLatency, p95Latency,
 // gpuBuild). The Pareto step (and the best-CSV view of latency) will prefer these means
 // over the single-seed point estimate.
+static const SearchDataset* findDatasetByName(const std::vector<SearchDataset>& datasets, const std::string& name)
+{
+	for (const SearchDataset& dataset : datasets)
+	{
+		if (dataset.name == name)
+			return &dataset;
+	}
+	return nullptr;
+}
+
+static const Experiments::WorkloadProfile* findWorkloadByName(const std::vector<Experiments::WorkloadProfile>& workloads, const std::string& name)
+{
+	for (const Experiments::WorkloadProfile& workload : workloads)
+	{
+		if (workload.name == name)
+			return &workload;
+	}
+	return nullptr;
+}
+
 static void runMultiSeedConfirmation(
 	std::vector<Experiments::SchemaSearchRecord>& records,
 	const std::vector<SearchDataset>& datasets,
@@ -6741,27 +6761,10 @@ static void runMultiSeedConfirmation(
 	for (size_t i = 0; i < records.size(); ++i)
 		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
 
-	auto findDataset = [&](const std::string& name) -> const SearchDataset* {
-		for (const SearchDataset& dataset : datasets)
-		{
-			if (dataset.name == name)
-				return &dataset;
-		}
-		return nullptr;
-	};
-	auto findWorkload = [&](const std::string& name) -> const Experiments::WorkloadProfile* {
-		for (const Experiments::WorkloadProfile& workload : workloads)
-		{
-			if (workload.name == name)
-				return &workload;
-		}
-		return nullptr;
-	};
-
 	for (auto& [key, indices] : groups)
 	{
-		const SearchDataset* dataset = findDataset(key.first);
-		const Experiments::WorkloadProfile* workload = findWorkload(key.second);
+		const SearchDataset* dataset = findDatasetByName(datasets, key.first);
+		const Experiments::WorkloadProfile* workload = findWorkloadByName(workloads, key.second);
 		if (!dataset || !workload)
 			continue;
 
@@ -6883,6 +6886,14 @@ std::string Experiments::resolvePrimitiveProfile(const std::string& requestedPro
 	return primitiveProfileName(parsePrimitiveProfileInternal(requestedProfile, cudaEvaluator));
 }
 
+static void pushAnisotropy(std::vector<double>& anisotropyValues, double x, double y, double z)
+{
+	const double minE = std::min({ x, y, z });
+	const double maxE = std::max({ x, y, z });
+	if (maxE > 1.0e-9)
+		addUniqueDouble(anisotropyValues, 1.0 - (minE / maxE));
+}
+
 Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointCloud& cloud, size_t maxSamplePoints)
 {
 	ConditionDomain domain;
@@ -6909,12 +6920,6 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	// Phase B3 anisotropy samples: `1 - shortExtent / longExtent` per sketch cell. Root counts too
 	// so the quantile estimator has at least one sample on extremely uniform clouds.
 	std::vector<double> anisotropyValues;
-	auto pushAnisotropy = [&anisotropyValues](double x, double y, double z) {
-		const double minE = std::min({ x, y, z });
-		const double maxE = std::max({ x, y, z });
-		if (maxE > 1.0e-9)
-			addUniqueDouble(anisotropyValues, 1.0 - (minE / maxE));
-	};
 
 	const glm::vec3 rootExtent = glm::max(cloud.bounds().size(), glm::vec3(0.0f));
 	const double horizontalExtent = std::max({ static_cast<double>(rootExtent.x), static_cast<double>(rootExtent.y), 1.0e-9 });
@@ -6930,7 +6935,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	addUniqueDouble(extentXValues, rootExtent.x);
 	addUniqueDouble(extentYValues, rootExtent.y);
 	addUniqueDouble(extentZValues, rootExtent.z);
-	pushAnisotropy(rootExtent.x, rootExtent.y, rootExtent.z);
+	pushAnisotropy(anisotropyValues, rootExtent.x, rootExtent.y, rootExtent.z);
 
 	const size_t sampleCount = domain.samplePoints;
 	auto sampleIndexAt = [&](size_t sampleIndex) {
@@ -6971,7 +6976,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 		const double cellHeightRatio = cellExtent.z / cellHorizontalExtent;
 		const double cellVolume = cellExtent.x * cellExtent.y * cellExtent.z;
 		// All cells at this division share the same aspect ratio, so one sample is sufficient.
-		pushAnisotropy(cellExtent.x, cellExtent.y, cellExtent.z);
+		pushAnisotropy(anisotropyValues, cellExtent.x, cellExtent.y, cellExtent.z);
 		const double sampleScale = sampleCount > 0 ? static_cast<double>(cloud.size()) / static_cast<double>(sampleCount) : 1.0;
 
 		for (const SketchCell& cell : cells)
@@ -7819,6 +7824,40 @@ static bool dominates(const ParetoMetrics& a, const ParetoMetrics& b)
 	return anyStrict;
 }
 
+static double normalize01(double v, double lo, double hi)
+{
+	return hi > lo ? (v - lo) / (hi - lo) : 0.0;
+}
+
+static std::pair<double, double> paretoAxisRange(const std::vector<ParetoMetrics>& objectives, double ParetoMetrics::* axis)
+{
+	double lo = objectives.front().*axis;
+	double hi = lo;
+	for (const ParetoMetrics& o : objectives)
+	{
+		lo = std::min(lo, o.*axis);
+		hi = std::max(hi, o.*axis);
+	}
+	return std::make_pair(lo, hi);
+}
+
+static std::string describeParetoEntry(const Experiments::SchemaSearchRecord& r)
+{
+	const double latency = r.confirmSeedsUsed > 0 ? r.latencyMean : r.queryMetrics.averageLatencyMs;
+	const double memoryMb = (r.backend == "cuda" && r.gpuMemoryBytes > 0)
+		? static_cast<double>(r.gpuMemoryBytes) / (1024.0 * 1024.0)
+		: static_cast<double>(r.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+	const double imbalance = r.buildMetrics.averageLeafOccupancy > 0.0
+		? static_cast<double>(r.buildMetrics.maxLeafOccupancy) / r.buildMetrics.averageLeafOccupancy
+		: 0.0;
+	std::ostringstream out;
+	out << std::fixed << std::setprecision(4)
+		<< "latency=" << latency << "ms build=" << r.buildMetrics.buildTimeMs
+		<< "ms mem=" << std::setprecision(2) << memoryMb << "MB imbalance="
+		<< std::setprecision(2) << imbalance;
+	return out.str();
+}
+
 std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(const std::vector<SchemaSearchRecord>& records)
 {
 	// Group by (dataset, workload). For each group we run O(n^2) non-domination filtering;
@@ -7871,30 +7910,19 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 			for (const size_t idx : nonDominated)
 				objectives.push_back(extractParetoMetrics(records[idx]));
 
-			auto axisRange = [&objectives](double ParetoMetrics::* axis) {
-				double lo = objectives.front().*axis;
-				double hi = lo;
-				for (const ParetoMetrics& o : objectives)
-				{
-					lo = std::min(lo, o.*axis);
-					hi = std::max(hi, o.*axis);
-				}
-				return std::make_pair(lo, hi);
-			};
-			const auto [loL, hiL] = axisRange(&ParetoMetrics::avgLatencyMs);
-			const auto [loB, hiB] = axisRange(&ParetoMetrics::buildTimeMs);
-			const auto [loM, hiM] = axisRange(&ParetoMetrics::memoryMb);
-			const auto [loI, hiI] = axisRange(&ParetoMetrics::imbalancePenalty);
-			auto norm = [](double v, double lo, double hi) { return hi > lo ? (v - lo) / (hi - lo) : 0.0; };
+			const auto [loL, hiL] = paretoAxisRange(objectives, &ParetoMetrics::avgLatencyMs);
+			const auto [loB, hiB] = paretoAxisRange(objectives, &ParetoMetrics::buildTimeMs);
+			const auto [loM, hiM] = paretoAxisRange(objectives, &ParetoMetrics::memoryMb);
+			const auto [loI, hiI] = paretoAxisRange(objectives, &ParetoMetrics::imbalancePenalty);
 
 			double bestDist = std::numeric_limits<double>::max();
 			for (size_t r = 0; r < objectives.size(); ++r)
 			{
 				const ParetoMetrics& o = objectives[r];
-				const double nl = norm(o.avgLatencyMs, loL, hiL);
-				const double nb = norm(o.buildTimeMs, loB, hiB);
-				const double nm = norm(o.memoryMb, loM, hiM);
-				const double ni = norm(o.imbalancePenalty, loI, hiI);
+				const double nl = normalize01(o.avgLatencyMs, loL, hiL);
+				const double nb = normalize01(o.buildTimeMs, loB, hiB);
+				const double nm = normalize01(o.memoryMb, loM, hiM);
+				const double ni = normalize01(o.imbalancePenalty, loI, hiI);
 				const double dist = nl * nl + nb * nb + nm * nm + ni * ni;
 				if (dist < bestDist)
 				{
@@ -7927,22 +7955,6 @@ void Experiments::reportParetoKnee(const std::vector<SchemaSearchRecord>& record
 		groups[{ front[i].datasetName, front[i].workloadName }].push_back(i);
 
 	std::cout << "  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):\n";
-	const auto describe = [](const SchemaSearchRecord& r) {
-		const double latency = r.confirmSeedsUsed > 0 ? r.latencyMean : r.queryMetrics.averageLatencyMs;
-		const double memoryMb = (r.backend == "cuda" && r.gpuMemoryBytes > 0)
-			? static_cast<double>(r.gpuMemoryBytes) / (1024.0 * 1024.0)
-			: static_cast<double>(r.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
-		const double imbalance = r.buildMetrics.averageLeafOccupancy > 0.0
-			? static_cast<double>(r.buildMetrics.maxLeafOccupancy) / r.buildMetrics.averageLeafOccupancy
-			: 0.0;
-		std::ostringstream out;
-		out << std::fixed << std::setprecision(4)
-			<< "latency=" << latency << "ms build=" << r.buildMetrics.buildTimeMs
-			<< "ms mem=" << std::setprecision(2) << memoryMb << "MB imbalance="
-			<< std::setprecision(2) << imbalance;
-		return out.str();
-	};
-
 	for (const auto& [key, indices] : groups)
 	{
 		size_t fastestIdx = indices.front();
@@ -7956,11 +7968,11 @@ void Experiments::reportParetoKnee(const std::vector<SchemaSearchRecord>& record
 		}
 
 		std::cout << "    [" << key.first << " / " << key.second << "] front size " << indices.size() << "\n";
-		std::cout << "      fastest: " << front[fastestIdx].schemaName << "  " << describe(front[fastestIdx]) << "\n";
+		std::cout << "      fastest: " << front[fastestIdx].schemaName << "  " << describeParetoEntry(front[fastestIdx]) << "\n";
 		if (kneeIdx == fastestIdx)
 			std::cout << "      knee:    (same as fastest)\n";
 		else
-			std::cout << "      knee:    " << front[kneeIdx].schemaName << "  " << describe(front[kneeIdx]) << "\n";
+			std::cout << "      knee:    " << front[kneeIdx].schemaName << "  " << describeParetoEntry(front[kneeIdx]) << "\n";
 	}
 }
 

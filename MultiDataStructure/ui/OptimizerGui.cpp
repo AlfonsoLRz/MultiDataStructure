@@ -2054,46 +2054,49 @@ static ImU32 lineageOperatorColor(LineageOperator op)
 	}
 }
 
+static bool schemaNameStartsWith(const std::string& schemaName, const char* prefix)
+{
+	const size_t len = std::strlen(prefix);
+	return schemaName.size() >= len && schemaName.compare(0, len, prefix) == 0;
+}
+
+// Extract the generation index from a `..._g<N>_...` pattern. Returns -1 if absent.
+static int extractGenerationIndex(const std::string& schemaName, const char* prefix)
+{
+	const size_t prefixLen = std::strlen(prefix);
+	if (schemaName.size() <= prefixLen)
+		return -1;
+	size_t cursor = prefixLen;
+	int value = 0;
+	bool any = false;
+	while (cursor < schemaName.size() && std::isdigit(static_cast<unsigned char>(schemaName[cursor])))
+	{
+		value = value * 10 + (schemaName[cursor] - '0');
+		++cursor;
+		any = true;
+	}
+	return any ? value : -1;
+}
+
 static LineageInfo parseLineage(const std::string& schemaName)
 {
 	LineageInfo info;
-	auto startsWith = [&](const char* prefix) {
-		const size_t len = std::strlen(prefix);
-		return schemaName.size() >= len && schemaName.compare(0, len, prefix) == 0;
-	};
-	// Extract the generation index from a `..._g<N>_...` pattern. Returns -1 if absent.
-	auto extractGeneration = [&](const char* prefix) -> int {
-		const size_t prefixLen = std::strlen(prefix);
-		if (schemaName.size() <= prefixLen)
-			return -1;
-		size_t cursor = prefixLen;
-		int value = 0;
-		bool any = false;
-		while (cursor < schemaName.size() && std::isdigit(static_cast<unsigned char>(schemaName[cursor])))
-		{
-			value = value * 10 + (schemaName[cursor] - '0');
-			++cursor;
-			any = true;
-		}
-		return any ? value : -1;
-	};
-
-	if (startsWith("evolved_g"))
+	if (schemaNameStartsWith(schemaName, "evolved_g"))
 	{
 		info.op = LineageOperator::Mutation;
-		info.generation = std::max(1, extractGeneration("evolved_g"));
+		info.generation = std::max(1, extractGenerationIndex(schemaName, "evolved_g"));
 	}
-	else if (startsWith("xover_g"))
+	else if (schemaNameStartsWith(schemaName, "xover_g"))
 	{
 		info.op = LineageOperator::Crossover;
-		info.generation = std::max(1, extractGeneration("xover_g"));
+		info.generation = std::max(1, extractGenerationIndex(schemaName, "xover_g"));
 	}
-	else if (startsWith("refined_g"))
+	else if (schemaNameStartsWith(schemaName, "refined_g"))
 	{
 		info.op = LineageOperator::Refined;
 		info.generation = -1;   // threshold-refiner runs post-GA
 	}
-	else if (startsWith("generated_"))
+	else if (schemaNameStartsWith(schemaName, "generated_"))
 	{
 		info.op = LineageOperator::Generated;
 		info.generation = 0;
