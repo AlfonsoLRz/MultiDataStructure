@@ -11,340 +11,337 @@
 #define MDSPC_ONNX_AVAILABLE 0
 #endif
 
-namespace
+static bool pathExists(const std::filesystem::path& path)
 {
-	bool pathExists(const std::filesystem::path& path)
-	{
-		std::error_code error;
-		return std::filesystem::exists(path, error);
-	}
+	std::error_code error;
+	return std::filesystem::exists(path, error);
+}
 
-	std::filesystem::path resolveExistingPath(const std::string& filename)
-	{
-		const std::filesystem::path configuredPath(filename);
-		if (pathExists(configuredPath) || configuredPath.is_absolute())
-			return configuredPath;
-
-		std::error_code error;
-		std::filesystem::path current = std::filesystem::absolute(std::filesystem::current_path(), error);
-		if (error)
-			return configuredPath;
-
-		for (;;)
-		{
-			const std::filesystem::path candidate = (current / configuredPath).lexically_normal();
-			if (pathExists(candidate))
-				return candidate;
-
-			if (!current.has_parent_path() || current == current.parent_path())
-				break;
-
-			current = current.parent_path();
-		}
-
+static std::filesystem::path resolveExistingPath(const std::string& filename)
+{
+	const std::filesystem::path configuredPath(filename);
+	if (pathExists(configuredPath) || configuredPath.is_absolute())
 		return configuredPath;
-	}
 
-	std::string asString(const boost::json::object& object, const char* key, const std::string& fallback = {})
+	std::error_code error;
+	std::filesystem::path current = std::filesystem::absolute(std::filesystem::current_path(), error);
+	if (error)
+		return configuredPath;
+
+	for (;;)
 	{
-		if (const boost::json::value* value = object.if_contains(key))
-		{
-			if (value->is_string())
-				return std::string(value->as_string().c_str());
-		}
+		const std::filesystem::path candidate = (current / configuredPath).lexically_normal();
+		if (pathExists(candidate))
+			return candidate;
 
-		return fallback;
+		if (!current.has_parent_path() || current == current.parent_path())
+			break;
+
+		current = current.parent_path();
 	}
 
-	double asDouble(const boost::json::value& value)
+	return configuredPath;
+}
+
+static std::string asString(const boost::json::object& object, const char* key, const std::string& fallback = {})
+{
+	if (const boost::json::value* value = object.if_contains(key))
 	{
-		if (value.is_double())
-			return value.as_double();
-		if (value.is_int64())
-			return static_cast<double>(value.as_int64());
-		if (value.is_uint64())
-			return static_cast<double>(value.as_uint64());
-		throw std::runtime_error("Expected numeric model coefficient");
+		if (value->is_string())
+			return std::string(value->as_string().c_str());
 	}
 
-	int asInt(const boost::json::object& object, const char* key, int fallback = 0)
+	return fallback;
+}
+
+static double asDouble(const boost::json::value& value)
+{
+	if (value.is_double())
+		return value.as_double();
+	if (value.is_int64())
+		return static_cast<double>(value.as_int64());
+	if (value.is_uint64())
+		return static_cast<double>(value.as_uint64());
+	throw std::runtime_error("Expected numeric model coefficient");
+}
+
+static int asInt(const boost::json::object& object, const char* key, int fallback = 0)
+{
+	if (const boost::json::value* value = object.if_contains(key))
 	{
-		if (const boost::json::value* value = object.if_contains(key))
-		{
-			if (value->is_int64())
-				return static_cast<int>(value->as_int64());
-			if (value->is_uint64())
-				return static_cast<int>(value->as_uint64());
-		}
-		return fallback;
+		if (value->is_int64())
+			return static_cast<int>(value->as_int64());
+		if (value->is_uint64())
+			return static_cast<int>(value->as_uint64());
 	}
+	return fallback;
+}
 
-	std::vector<std::string> parseStringArray(const boost::json::value& value, const char* fieldName)
+static std::vector<std::string> parseStringArray(const boost::json::value& value, const char* fieldName)
+{
+	if (!value.is_array())
+		throw std::runtime_error(std::string(fieldName) + " must be an array");
+
+	std::vector<std::string> result;
+	for (const boost::json::value& entry : value.as_array())
 	{
-		if (!value.is_array())
-			throw std::runtime_error(std::string(fieldName) + " must be an array");
-
-		std::vector<std::string> result;
-		for (const boost::json::value& entry : value.as_array())
-		{
-			if (!entry.is_string())
-				throw std::runtime_error(std::string(fieldName) + " entries must be strings");
-			result.push_back(std::string(entry.as_string().c_str()));
-		}
-		return result;
+		if (!entry.is_string())
+			throw std::runtime_error(std::string(fieldName) + " entries must be strings");
+		result.push_back(std::string(entry.as_string().c_str()));
 	}
+	return result;
+}
 
-	std::vector<double> parseDoubleArray(const boost::json::value& value, const char* fieldName)
+static std::vector<double> parseDoubleArray(const boost::json::value& value, const char* fieldName)
+{
+	if (!value.is_array())
+		throw std::runtime_error(std::string(fieldName) + " must be an array");
+
+	std::vector<double> result;
+	for (const boost::json::value& entry : value.as_array())
+		result.push_back(asDouble(entry));
+	return result;
+}
+
+static double featureValue(
+	const std::string& name,
+	const Experiments::PointCloudFeatures& point,
+	const Experiments::WorkloadFeatures& workload,
+	const std::vector<double>& schema)
+{
+	if (name == "num_points") return static_cast<double>(point.numPoints);
+	if (name == "feature_sample_size") return static_cast<double>(point.sampleSize);
+	if (name == "bbox_x") return point.bboxX;
+	if (name == "bbox_y") return point.bboxY;
+	if (name == "bbox_z") return point.bboxZ;
+	if (name == "aspect_xy") return point.aspectXY;
+	if (name == "aspect_xz") return point.aspectXZ;
+	if (name == "aspect_yz") return point.aspectYZ;
+	if (name == "density_bbox") return point.densityBbox;
+	if (name == "height_mean") return point.heightMean;
+	if (name == "height_std") return point.heightStd;
+	if (name == "height_range") return point.heightRange;
+	if (name == "cov_eig_0") return point.covEig0;
+	if (name == "cov_eig_1") return point.covEig1;
+	if (name == "cov_eig_2") return point.covEig2;
+	if (name == "linearity") return point.linearity;
+	if (name == "planarity") return point.planarity;
+	if (name == "scattering") return point.scattering;
+	if (name == "occupancy_ratio_8") return point.occupancyRatio8;
+	if (name == "occupancy_entropy_8") return point.occupancyEntropy8;
+	if (name == "density_cv_8") return point.densityCv8;
+	if (name == "verticality_score") return point.verticalityScore;
+	if (name == "flatness_score") return point.flatnessScore;
+	if (name == "w_range") return workload.wRange;
+	if (name == "w_radius") return workload.wRadius;
+	if (name == "w_knn") return workload.wKnn;
+	if (name == "knn_k") return static_cast<double>(workload.knnK);
+	if (name == "num_queries") return static_cast<double>(workload.numQueries);
+	if (name == "range_scale_min") return workload.rangeScaleMin;
+	if (name == "range_scale_max") return workload.rangeScaleMax;
+	if (name == "radius_scale_min") return workload.radiusScaleMin;
+	if (name == "radius_scale_max") return workload.radiusScaleMax;
+	if (name == "query_scale_mean") return workload.queryScaleMean;
+	if (name == "query_scale_std") return workload.queryScaleStd;
+	if (name == "build_weight") return workload.buildWeight;
+	if (name == "memory_weight") return workload.memoryWeight;
+	if (name == "schema_has_quadtree") return schema[0];
+	if (name == "schema_has_octree") return schema[1];
+	if (name == "schema_has_kdtree") return schema[2];
+	if (name == "schema_has_grid2d") return schema[3];
+	if (name == "schema_has_grid3d") return schema[4];
+	if (name == "schema_num_blocks") return schema[5];
+	if (name == "schema_total_levels") return schema[6];
+	if (name == "schema_max_leaf_capacity") return schema[7];
+	if (name == "schema_min_leaf_capacity") return schema[8];
+	throw std::runtime_error("Unsupported schema-selector feature: " + name);
+}
+
+static std::vector<Experiments::SchemaCandidate> parseCandidates(const boost::json::value& value)
+{
+	if (!value.is_array())
+		throw std::runtime_error("candidate_schemas must be an array");
+
+	std::vector<Experiments::SchemaCandidate> candidates;
+	for (const boost::json::value& entry : value.as_array())
 	{
-		if (!value.is_array())
-			throw std::runtime_error(std::string(fieldName) + " must be an array");
+		if (!entry.is_object())
+			throw std::runtime_error("candidate_schemas entries must be objects");
 
-		std::vector<double> result;
-		for (const boost::json::value& entry : value.as_array())
-			result.push_back(asDouble(entry));
-		return result;
+		const boost::json::object& object = entry.as_object();
+		Experiments::SchemaCandidate candidate;
+		candidate.name = asString(object, "name");
+		candidate.path = asString(object, "path");
+		if (candidate.path.empty())
+			throw std::runtime_error("candidate schema path is empty for " + candidate.name);
+		candidate.config = Config::loadSchemaConfig(candidate.path);
+		if (candidate.name.empty())
+			candidate.name = candidate.config.name;
+		candidates.push_back(std::move(candidate));
 	}
+	return candidates;
+}
 
-	double featureValue(
-		const std::string& name,
-		const Experiments::PointCloudFeatures& point,
-		const Experiments::WorkloadFeatures& workload,
-		const std::vector<double>& schema)
+static Experiments::CandidatePrediction parseCandidatePrediction(const boost::json::object& object)
+{
+	Experiments::CandidatePrediction prediction;
+	prediction.schemaName = asString(object, "name", asString(object, "schema_name"));
+	prediction.schemaPath = asString(object, "path", asString(object, "schema_path"));
+	if (const boost::json::value* score = object.if_contains("score"))
+		prediction.predictedScore = asDouble(*score);
+	else if (const boost::json::value* predicted = object.if_contains("predicted_score"))
+		prediction.predictedScore = asDouble(*predicted);
+	return prediction;
+}
+
+static std::vector<Experiments::CandidatePrediction> parseCandidateScores(const boost::json::value& value)
+{
+	if (!value.is_array())
+		throw std::runtime_error("candidate_scores must be an array");
+
+	std::vector<Experiments::CandidatePrediction> candidates;
+	for (const boost::json::value& entry : value.as_array())
 	{
-		if (name == "num_points") return static_cast<double>(point.numPoints);
-		if (name == "feature_sample_size") return static_cast<double>(point.sampleSize);
-		if (name == "bbox_x") return point.bboxX;
-		if (name == "bbox_y") return point.bboxY;
-		if (name == "bbox_z") return point.bboxZ;
-		if (name == "aspect_xy") return point.aspectXY;
-		if (name == "aspect_xz") return point.aspectXZ;
-		if (name == "aspect_yz") return point.aspectYZ;
-		if (name == "density_bbox") return point.densityBbox;
-		if (name == "height_mean") return point.heightMean;
-		if (name == "height_std") return point.heightStd;
-		if (name == "height_range") return point.heightRange;
-		if (name == "cov_eig_0") return point.covEig0;
-		if (name == "cov_eig_1") return point.covEig1;
-		if (name == "cov_eig_2") return point.covEig2;
-		if (name == "linearity") return point.linearity;
-		if (name == "planarity") return point.planarity;
-		if (name == "scattering") return point.scattering;
-		if (name == "occupancy_ratio_8") return point.occupancyRatio8;
-		if (name == "occupancy_entropy_8") return point.occupancyEntropy8;
-		if (name == "density_cv_8") return point.densityCv8;
-		if (name == "verticality_score") return point.verticalityScore;
-		if (name == "flatness_score") return point.flatnessScore;
-		if (name == "w_range") return workload.wRange;
-		if (name == "w_radius") return workload.wRadius;
-		if (name == "w_knn") return workload.wKnn;
-		if (name == "knn_k") return static_cast<double>(workload.knnK);
-		if (name == "num_queries") return static_cast<double>(workload.numQueries);
-		if (name == "range_scale_min") return workload.rangeScaleMin;
-		if (name == "range_scale_max") return workload.rangeScaleMax;
-		if (name == "radius_scale_min") return workload.radiusScaleMin;
-		if (name == "radius_scale_max") return workload.radiusScaleMax;
-		if (name == "query_scale_mean") return workload.queryScaleMean;
-		if (name == "query_scale_std") return workload.queryScaleStd;
-		if (name == "build_weight") return workload.buildWeight;
-		if (name == "memory_weight") return workload.memoryWeight;
-		if (name == "schema_has_quadtree") return schema[0];
-		if (name == "schema_has_octree") return schema[1];
-		if (name == "schema_has_kdtree") return schema[2];
-		if (name == "schema_has_grid2d") return schema[3];
-		if (name == "schema_has_grid3d") return schema[4];
-		if (name == "schema_num_blocks") return schema[5];
-		if (name == "schema_total_levels") return schema[6];
-		if (name == "schema_max_leaf_capacity") return schema[7];
-		if (name == "schema_min_leaf_capacity") return schema[8];
-		throw std::runtime_error("Unsupported schema-selector feature: " + name);
+		if (!entry.is_object())
+			throw std::runtime_error("candidate_scores entries must be objects");
+		candidates.push_back(parseCandidatePrediction(entry.as_object()));
 	}
-
-	std::vector<Experiments::SchemaCandidate> parseCandidates(const boost::json::value& value)
-	{
-		if (!value.is_array())
-			throw std::runtime_error("candidate_schemas must be an array");
-
-		std::vector<Experiments::SchemaCandidate> candidates;
-		for (const boost::json::value& entry : value.as_array())
-		{
-			if (!entry.is_object())
-				throw std::runtime_error("candidate_schemas entries must be objects");
-
-			const boost::json::object& object = entry.as_object();
-			Experiments::SchemaCandidate candidate;
-			candidate.name = asString(object, "name");
-			candidate.path = asString(object, "path");
-			if (candidate.path.empty())
-				throw std::runtime_error("candidate schema path is empty for " + candidate.name);
-			candidate.config = Config::loadSchemaConfig(candidate.path);
-			if (candidate.name.empty())
-				candidate.name = candidate.config.name;
-			candidates.push_back(std::move(candidate));
-		}
-		return candidates;
-	}
-
-	Experiments::CandidatePrediction parseCandidatePrediction(const boost::json::object& object)
-	{
-		Experiments::CandidatePrediction prediction;
-		prediction.schemaName = asString(object, "name", asString(object, "schema_name"));
-		prediction.schemaPath = asString(object, "path", asString(object, "schema_path"));
-		if (const boost::json::value* score = object.if_contains("score"))
-			prediction.predictedScore = asDouble(*score);
-		else if (const boost::json::value* predicted = object.if_contains("predicted_score"))
-			prediction.predictedScore = asDouble(*predicted);
-		return prediction;
-	}
-
-	std::vector<Experiments::CandidatePrediction> parseCandidateScores(const boost::json::value& value)
-	{
-		if (!value.is_array())
-			throw std::runtime_error("candidate_scores must be an array");
-
-		std::vector<Experiments::CandidatePrediction> candidates;
-		for (const boost::json::value& entry : value.as_array())
-		{
-			if (!entry.is_object())
-				throw std::runtime_error("candidate_scores entries must be objects");
-			candidates.push_back(parseCandidatePrediction(entry.as_object()));
-		}
-		return candidates;
-	}
+	return candidates;
+}
 
 #if MDSPC_ONNX_AVAILABLE
-	std::string onnxStatusMessage(const OrtApi& api, OrtStatus* status)
-	{
-		if (status == nullptr)
-			return {};
-		const std::string message = api.GetErrorMessage(status);
-		api.ReleaseStatus(status);
-		return message;
-	}
+static std::string onnxStatusMessage(const OrtApi& api, OrtStatus* status)
+{
+	if (status == nullptr)
+		return {};
+	const std::string message = api.GetErrorMessage(status);
+	api.ReleaseStatus(status);
+	return message;
+}
 
-	void throwOnOnnxStatus(const OrtApi& api, OrtStatus* status, const char* operation)
-	{
-		if (status == nullptr)
-			return;
-		throw std::runtime_error(std::string("ONNX Runtime ") + operation + " failed: " + onnxStatusMessage(api, status));
-	}
+static void throwOnOnnxStatus(const OrtApi& api, OrtStatus* status, const char* operation)
+{
+	if (status == nullptr)
+		return;
+	throw std::runtime_error(std::string("ONNX Runtime ") + operation + " failed: " + onnxStatusMessage(api, status));
+}
 
-	std::filesystem::path resolveOnnxModelPath(const Experiments::SchemaSelectorModel& model)
-	{
-		const std::string path = model.onnxModelPath.empty() ? model.sourceModel : model.onnxModelPath;
-		if (path.empty())
-			throw std::runtime_error("onnx_score_ranker requires source_model or onnx_model");
-		return resolveExistingPath(path);
-	}
+static std::filesystem::path resolveOnnxModelPath(const Experiments::SchemaSelectorModel& model)
+{
+	const std::string path = model.onnxModelPath.empty() ? model.sourceModel : model.onnxModelPath;
+	if (path.empty())
+		throw std::runtime_error("onnx_score_ranker requires source_model or onnx_model");
+	return resolveExistingPath(path);
+}
 
-	const ORTCHAR_T* onnxPathChars(const std::filesystem::path& path, std::wstring& widePath, std::string& narrowPath)
-	{
+static const ORTCHAR_T* onnxPathChars(const std::filesystem::path& path, std::wstring& widePath, std::string& narrowPath)
+{
 #if defined(_WIN32)
-		(void)narrowPath;
-		widePath = path.wstring();
-		return widePath.c_str();
+	(void)narrowPath;
+	widePath = path.wstring();
+	return widePath.c_str();
 #else
-		(void)widePath;
-		narrowPath = path.string();
-		return narrowPath.c_str();
-#endif
-	}
-
-	class OnnxScoreRanker
-	{
-	public:
-		explicit OnnxScoreRanker(const Experiments::SchemaSelectorModel& model)
-			: model_(model),
-			  env_(ORT_LOGGING_LEVEL_WARNING, "mdspc_schema_selector"),
-			  sessionOptions_(),
-			  session_(nullptr)
-		{
-			sessionOptions_.SetIntraOpNumThreads(1);
-			sessionOptions_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-
-			if (model_.onnxExecutionProvider == "cuda")
-				appendCudaProvider();
-			else if (model_.onnxExecutionProvider != "cpu")
-				throw std::runtime_error("Unsupported ONNX execution_provider: " + model_.onnxExecutionProvider);
-
-			const std::filesystem::path modelPath = resolveOnnxModelPath(model_);
-			std::wstring widePath;
-			std::string narrowPath;
-			session_ = Ort::Session(env_, onnxPathChars(modelPath, widePath, narrowPath), sessionOptions_);
-		}
-
-		double predict(const std::vector<double>& features)
-		{
-			if (model_.onnxInputName.empty() || model_.onnxOutputName.empty())
-				throw std::runtime_error("onnx_score_ranker requires input_name and output_name");
-
-			std::vector<float> input;
-			input.reserve(features.size());
-			for (const double value : features)
-				input.push_back(static_cast<float>(value));
-
-			std::array<int64_t, 2> shape = { 1, static_cast<int64_t>(input.size()) };
-			Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-			Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-				memoryInfo,
-				input.data(),
-				input.size(),
-				shape.data(),
-				shape.size());
-
-			const char* inputNames[] = { model_.onnxInputName.c_str() };
-			const char* outputNames[] = { model_.onnxOutputName.c_str() };
-			std::vector<Ort::Value> outputs = session_.Run(
-				Ort::RunOptions{ nullptr },
-				inputNames,
-				&inputTensor,
-				1,
-				outputNames,
-				1);
-
-			if (outputs.empty() || !outputs[0].IsTensor())
-				throw std::runtime_error("ONNX score ranker did not return a tensor output");
-
-			const Ort::TensorTypeAndShapeInfo shapeInfo = outputs[0].GetTensorTypeAndShapeInfo();
-			if (shapeInfo.GetElementCount() < 1)
-				throw std::runtime_error("ONNX score ranker returned an empty tensor");
-
-			const ONNXTensorElementDataType elementType = shapeInfo.GetElementType();
-			if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
-				return static_cast<double>(outputs[0].GetTensorData<float>()[0]);
-			if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE)
-				return outputs[0].GetTensorData<double>()[0];
-
-			throw std::runtime_error("ONNX score ranker output must be float or double");
-		}
-
-	private:
-		void appendCudaProvider()
-		{
-			const OrtApi& api = Ort::GetApi();
-			OrtCUDAProviderOptionsV2* cudaOptions = nullptr;
-			throwOnOnnxStatus(api, api.CreateCUDAProviderOptions(&cudaOptions), "CreateCUDAProviderOptions");
-
-			std::unique_ptr<OrtCUDAProviderOptionsV2, decltype(api.ReleaseCUDAProviderOptions)> optionsGuard(
-				cudaOptions,
-				api.ReleaseCUDAProviderOptions);
-
-			const std::string deviceId = std::to_string(model_.onnxDeviceId);
-			const char* keys[] = { "device_id" };
-			const char* values[] = { deviceId.c_str() };
-			throwOnOnnxStatus(api, api.UpdateCUDAProviderOptions(cudaOptions, keys, values, 1), "UpdateCUDAProviderOptions");
-			throwOnOnnxStatus(
-				api,
-				api.SessionOptionsAppendExecutionProvider_CUDA_V2(static_cast<OrtSessionOptions*>(sessionOptions_), cudaOptions),
-				"SessionOptionsAppendExecutionProvider_CUDA_V2");
-		}
-
-		const Experiments::SchemaSelectorModel& model_;
-		Ort::Env env_;
-		Ort::SessionOptions sessionOptions_;
-		Ort::Session session_;
-	};
+	(void)widePath;
+	narrowPath = path.string();
+	return narrowPath.c_str();
 #endif
 }
+
+class OnnxScoreRanker
+{
+public:
+	explicit OnnxScoreRanker(const Experiments::SchemaSelectorModel& model)
+		: model_(model),
+		  env_(ORT_LOGGING_LEVEL_WARNING, "mdspc_schema_selector"),
+		  sessionOptions_(),
+		  session_(nullptr)
+	{
+		sessionOptions_.SetIntraOpNumThreads(1);
+		sessionOptions_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+		if (model_.onnxExecutionProvider == "cuda")
+			appendCudaProvider();
+		else if (model_.onnxExecutionProvider != "cpu")
+			throw std::runtime_error("Unsupported ONNX execution_provider: " + model_.onnxExecutionProvider);
+
+		const std::filesystem::path modelPath = resolveOnnxModelPath(model_);
+		std::wstring widePath;
+		std::string narrowPath;
+		session_ = Ort::Session(env_, onnxPathChars(modelPath, widePath, narrowPath), sessionOptions_);
+	}
+
+	double predict(const std::vector<double>& features)
+	{
+		if (model_.onnxInputName.empty() || model_.onnxOutputName.empty())
+			throw std::runtime_error("onnx_score_ranker requires input_name and output_name");
+
+		std::vector<float> input;
+		input.reserve(features.size());
+		for (const double value : features)
+			input.push_back(static_cast<float>(value));
+
+		std::array<int64_t, 2> shape = { 1, static_cast<int64_t>(input.size()) };
+		Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+		Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+			memoryInfo,
+			input.data(),
+			input.size(),
+			shape.data(),
+			shape.size());
+
+		const char* inputNames[] = { model_.onnxInputName.c_str() };
+		const char* outputNames[] = { model_.onnxOutputName.c_str() };
+		std::vector<Ort::Value> outputs = session_.Run(
+			Ort::RunOptions{ nullptr },
+			inputNames,
+			&inputTensor,
+			1,
+			outputNames,
+			1);
+
+		if (outputs.empty() || !outputs[0].IsTensor())
+			throw std::runtime_error("ONNX score ranker did not return a tensor output");
+
+		const Ort::TensorTypeAndShapeInfo shapeInfo = outputs[0].GetTensorTypeAndShapeInfo();
+		if (shapeInfo.GetElementCount() < 1)
+			throw std::runtime_error("ONNX score ranker returned an empty tensor");
+
+		const ONNXTensorElementDataType elementType = shapeInfo.GetElementType();
+		if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+			return static_cast<double>(outputs[0].GetTensorData<float>()[0]);
+		if (elementType == ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE)
+			return outputs[0].GetTensorData<double>()[0];
+
+		throw std::runtime_error("ONNX score ranker output must be float or double");
+	}
+
+private:
+	void appendCudaProvider()
+	{
+		const OrtApi& api = Ort::GetApi();
+		OrtCUDAProviderOptionsV2* cudaOptions = nullptr;
+		throwOnOnnxStatus(api, api.CreateCUDAProviderOptions(&cudaOptions), "CreateCUDAProviderOptions");
+
+		std::unique_ptr<OrtCUDAProviderOptionsV2, decltype(api.ReleaseCUDAProviderOptions)> optionsGuard(
+			cudaOptions,
+			api.ReleaseCUDAProviderOptions);
+
+		const std::string deviceId = std::to_string(model_.onnxDeviceId);
+		const char* keys[] = { "device_id" };
+		const char* values[] = { deviceId.c_str() };
+		throwOnOnnxStatus(api, api.UpdateCUDAProviderOptions(cudaOptions, keys, values, 1), "UpdateCUDAProviderOptions");
+		throwOnOnnxStatus(
+			api,
+			api.SessionOptionsAppendExecutionProvider_CUDA_V2(static_cast<OrtSessionOptions*>(sessionOptions_), cudaOptions),
+			"SessionOptionsAppendExecutionProvider_CUDA_V2");
+	}
+
+	const Experiments::SchemaSelectorModel& model_;
+	Ort::Env env_;
+	Ort::SessionOptions sessionOptions_;
+	Ort::Session session_;
+};
+#endif
 
 Experiments::SchemaSelectorModel Experiments::loadSchemaSelectorModel(const std::string& filename)
 {

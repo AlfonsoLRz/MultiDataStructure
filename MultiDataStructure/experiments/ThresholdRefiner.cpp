@@ -6,152 +6,149 @@
 #include <iostream>
 #include <random>
 
-namespace
+struct DomainBound
 {
-	struct DomainBound
-	{
-		bool valid = false;
-		double lo = 0.0;
-		double hi = 0.0;
-	};
+	bool valid = false;
+	double lo = 0.0;
+	double hi = 0.0;
+};
 
-	template <typename TValue>
-	DomainBound boundsOf(const std::vector<TValue>& sortedValues)
-	{
-		DomainBound bound;
-		if (sortedValues.empty())
-			return bound;
-		bound.valid = sortedValues.front() != sortedValues.back();
-		bound.lo = static_cast<double>(sortedValues.front());
-		bound.hi = static_cast<double>(sortedValues.back());
-		// Degenerate bound: skip — there's nothing to refine.
-		if (!bound.valid)
-			return bound;
-		// Defensive ordering: front < back is expected for sorted domains but guard anyway.
-		if (bound.lo > bound.hi)
-			std::swap(bound.lo, bound.hi);
+template <typename TValue>
+static DomainBound boundsOf(const std::vector<TValue>& sortedValues)
+{
+	DomainBound bound;
+	if (sortedValues.empty())
 		return bound;
-	}
+	bound.valid = sortedValues.front() != sortedValues.back();
+	bound.lo = static_cast<double>(sortedValues.front());
+	bound.hi = static_cast<double>(sortedValues.back());
+	// Degenerate bound: skip — there's nothing to refine.
+	if (!bound.valid)
+		return bound;
+	// Defensive ordering: front < back is expected for sorted domains but guard anyway.
+	if (bound.lo > bound.hi)
+		std::swap(bound.lo, bound.hi);
+	return bound;
+}
 
-	double clamp01(double x)
-	{
-		return std::clamp(x, 0.0, 1.0);
-	}
+static double clamp01(double x)
+{
+	return std::clamp(x, 0.0, 1.0);
+}
 
-	double encodeLinear(double value, double lo, double hi)
-	{
-		if (hi <= lo)
-			return 0.0;
-		return clamp01((value - lo) / (hi - lo));
-	}
+static double encodeLinear(double value, double lo, double hi)
+{
+	if (hi <= lo)
+		return 0.0;
+	return clamp01((value - lo) / (hi - lo));
+}
 
-	double decodeLinear(double x, double lo, double hi)
-	{
-		return lo + clamp01(x) * (hi - lo);
-	}
+static double decodeLinear(double x, double lo, double hi)
+{
+	return lo + clamp01(x) * (hi - lo);
+}
 
-	double encodeLog(double value, double lo, double hi)
-	{
-		if (hi <= lo || value <= 0.0 || lo <= 0.0)
-			return 0.0;
-		const double logLo = std::log2(lo);
-		const double logHi = std::log2(hi);
-		if (logHi <= logLo)
-			return 0.0;
-		return clamp01((std::log2(value) - logLo) / (logHi - logLo));
-	}
+static double encodeLog(double value, double lo, double hi)
+{
+	if (hi <= lo || value <= 0.0 || lo <= 0.0)
+		return 0.0;
+	const double logLo = std::log2(lo);
+	const double logHi = std::log2(hi);
+	if (logHi <= logLo)
+		return 0.0;
+	return clamp01((std::log2(value) - logLo) / (logHi - logLo));
+}
 
-	double decodeLog(double x, double lo, double hi)
-	{
-		if (hi <= lo || lo <= 0.0)
-			return lo;
-		const double logLo = std::log2(lo);
-		const double logHi = std::log2(hi);
-		return std::pow(2.0, logLo + clamp01(x) * (logHi - logLo));
-	}
+static double decodeLog(double x, double lo, double hi)
+{
+	if (hi <= lo || lo <= 0.0)
+		return lo;
+	const double logLo = std::log2(lo);
+	const double logHi = std::log2(hi);
+	return std::pow(2.0, logLo + clamp01(x) * (logHi - logLo));
+}
 
-	// Adds an active threshold dimension if both (a) the candidate has it set and (b) the domain
-	// has a non-degenerate bound for it. The plan keeps refinement non-destructive: thresholds
-	// the candidate did not set stay unset.
-	template <typename TGetter, typename TBoundProvider>
-	void addDimensionIfActive(
-		std::vector<Experiments::RefinementDimension>& outDims,
-		size_t levelIndex,
-		const std::string& fieldName,
-		bool integerValued,
-		bool logScale,
-		TGetter getter,
-		TBoundProvider bounds)
-	{
-		const auto& optional = getter();
-		if (!optional.has_value())
-			return;
-		const DomainBound bound = bounds();
-		if (!bound.valid)
-			return;
+// Adds an active threshold dimension if both (a) the candidate has it set and (b) the domain
+// has a non-degenerate bound for it. The plan keeps refinement non-destructive: thresholds
+// the candidate did not set stay unset.
+template <typename TGetter, typename TBoundProvider>
+static void addDimensionIfActive(
+	std::vector<Experiments::RefinementDimension>& outDims,
+	size_t levelIndex,
+	const std::string& fieldName,
+	bool integerValued,
+	bool logScale,
+	TGetter getter,
+	TBoundProvider bounds)
+{
+	const auto& optional = getter();
+	if (!optional.has_value())
+		return;
+	const DomainBound bound = bounds();
+	if (!bound.valid)
+		return;
 
-		Experiments::RefinementDimension dim;
-		dim.levelIndex = levelIndex;
-		dim.field = fieldName;
-		dim.integerValued = integerValued;
-		dim.logScale = logScale;
-		dim.lo = bound.lo;
-		dim.hi = bound.hi;
-		dim.current = static_cast<double>(optional.value());
-		// Snap a current value that falls outside the (possibly tightened) domain back into range
-		// so the initial mean encoding lands in [0,1].
-		dim.current = std::clamp(dim.current, dim.lo, dim.hi);
-		outDims.push_back(dim);
-	}
+	Experiments::RefinementDimension dim;
+	dim.levelIndex = levelIndex;
+	dim.field = fieldName;
+	dim.integerValued = integerValued;
+	dim.logScale = logScale;
+	dim.lo = bound.lo;
+	dim.hi = bound.hi;
+	dim.current = static_cast<double>(optional.value());
+	// Snap a current value that falls outside the (possibly tightened) domain back into range
+	// so the initial mean encoding lands in [0,1].
+	dim.current = std::clamp(dim.current, dim.lo, dim.hi);
+	outDims.push_back(dim);
+}
 
-	double encode(const Experiments::RefinementDimension& dim, double value)
-	{
-		return dim.logScale ? encodeLog(value, dim.lo, dim.hi) : encodeLinear(value, dim.lo, dim.hi);
-	}
+static double encode(const Experiments::RefinementDimension& dim, double value)
+{
+	return dim.logScale ? encodeLog(value, dim.lo, dim.hi) : encodeLinear(value, dim.lo, dim.hi);
+}
 
-	double decode(const Experiments::RefinementDimension& dim, double x)
-	{
-		double v = dim.logScale ? decodeLog(x, dim.lo, dim.hi) : decodeLinear(x, dim.lo, dim.hi);
-		if (dim.integerValued)
-			v = std::round(v);
-		return v;
-	}
+static double decode(const Experiments::RefinementDimension& dim, double x)
+{
+	double v = dim.logScale ? decodeLog(x, dim.lo, dim.hi) : decodeLinear(x, dim.lo, dim.hi);
+	if (dim.integerValued)
+		v = std::round(v);
+	return v;
+}
 
-	void writeDimensionInto(SchemaLevelCondition& condition, const std::string& field, double value)
-	{
-		if (field == "minPoints")
-			condition.minPoints = static_cast<size_t>(std::max(0.0, value));
-		else if (field == "maxPoints")
-			condition.maxPoints = static_cast<size_t>(std::max(0.0, value));
-		else if (field == "minDensity")
-			condition.minDensity = value;
-		else if (field == "maxDensity")
-			condition.maxDensity = value;
-		else if (field == "minHeightRatio")
-			condition.minHeightRatio = value;
-		else if (field == "maxHeightRatio")
-			condition.maxHeightRatio = value;
-		else if (field == "minExtentX")
-			condition.minExtentX = value;
-		else if (field == "maxExtentX")
-			condition.maxExtentX = value;
-		else if (field == "minExtentY")
-			condition.minExtentY = value;
-		else if (field == "maxExtentY")
-			condition.maxExtentY = value;
-		else if (field == "minExtentZ")
-			condition.minExtentZ = value;
-		else if (field == "maxExtentZ")
-			condition.maxExtentZ = value;
-		else if (field == "minAnisotropy")
-			condition.minAnisotropy = std::clamp(value, 0.0, 1.0);
-		else if (field == "maxAnisotropy")
-			condition.maxAnisotropy = std::clamp(value, 0.0, 1.0);
-		else if (field == "minOccupancyEntropy")
-			condition.minOccupancyEntropy = std::clamp(value, 0.0, 1.0);
-		else if (field == "maxOccupancyEntropy")
-			condition.maxOccupancyEntropy = std::clamp(value, 0.0, 1.0);
-	}
+static void writeDimensionInto(SchemaLevelCondition& condition, const std::string& field, double value)
+{
+	if (field == "minPoints")
+		condition.minPoints = static_cast<size_t>(std::max(0.0, value));
+	else if (field == "maxPoints")
+		condition.maxPoints = static_cast<size_t>(std::max(0.0, value));
+	else if (field == "minDensity")
+		condition.minDensity = value;
+	else if (field == "maxDensity")
+		condition.maxDensity = value;
+	else if (field == "minHeightRatio")
+		condition.minHeightRatio = value;
+	else if (field == "maxHeightRatio")
+		condition.maxHeightRatio = value;
+	else if (field == "minExtentX")
+		condition.minExtentX = value;
+	else if (field == "maxExtentX")
+		condition.maxExtentX = value;
+	else if (field == "minExtentY")
+		condition.minExtentY = value;
+	else if (field == "maxExtentY")
+		condition.maxExtentY = value;
+	else if (field == "minExtentZ")
+		condition.minExtentZ = value;
+	else if (field == "maxExtentZ")
+		condition.maxExtentZ = value;
+	else if (field == "minAnisotropy")
+		condition.minAnisotropy = std::clamp(value, 0.0, 1.0);
+	else if (field == "maxAnisotropy")
+		condition.maxAnisotropy = std::clamp(value, 0.0, 1.0);
+	else if (field == "minOccupancyEntropy")
+		condition.minOccupancyEntropy = std::clamp(value, 0.0, 1.0);
+	else if (field == "maxOccupancyEntropy")
+		condition.maxOccupancyEntropy = std::clamp(value, 0.0, 1.0);
 }
 
 namespace Experiments

@@ -1,29 +1,26 @@
 #include "../../stdafx.h"
 #include "SyntheticPointClouds.h"
 
-namespace
+static float uniform(std::mt19937& rng, float minValue, float maxValue)
 {
-	float uniform(std::mt19937& rng, float minValue, float maxValue)
-	{
-		std::uniform_real_distribution<float> distribution(minValue, maxValue);
-		return distribution(rng);
-	}
+	std::uniform_real_distribution<float> distribution(minValue, maxValue);
+	return distribution(rng);
+}
 
-	PointPrimitive makePoint(const glm::vec3& position, uint64_t, uint32_t = 0, float = 0.0f)
-	{
-		PointPrimitive point;
-		point.position = position;
-		return point;
-	}
+static PointPrimitive makePoint(const glm::vec3& position, uint64_t, uint32_t = 0, float = 0.0f)
+{
+	PointPrimitive point;
+	point.position = position;
+	return point;
+}
 
-	void appendTranslated(PointCloud& target, const PointCloud& source, const glm::vec3& offset)
+static void appendTranslated(PointCloud& target, const PointCloud& source, const glm::vec3& offset)
+{
+	for (const PointPrimitive& sourcePoint : source.points())
 	{
-		for (const PointPrimitive& sourcePoint : source.points())
-		{
-			PointPrimitive point = sourcePoint;
-			point.position += offset;
-			target.addPoint(point);
-		}
+		PointPrimitive point = sourcePoint;
+		point.position += offset;
+		target.addPoint(point);
 	}
 }
 

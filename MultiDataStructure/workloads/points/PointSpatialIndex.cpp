@@ -1,207 +1,204 @@
 #include "../../stdafx.h"
 #include "PointSpatialIndex.h"
 
-namespace
+static constexpr double EPSILON = 1e-9;
+
+static glm::uint longestAxis(const AABB& bounds)
 {
-	constexpr double EPSILON = 1e-9;
+	const glm::vec3 size = bounds.size();
+	if (size.x >= size.y && size.x >= size.z)
+		return 0;
+	if (size.y >= size.z)
+		return 1;
+	return 2;
+}
 
-	glm::uint longestAxis(const AABB& bounds)
+static glm::uint shortestAxis(const AABB& bounds)
+{
+	const glm::vec3 size = bounds.size();
+	if (size.x <= size.y && size.x <= size.z)
+		return 0;
+	if (size.y <= size.z)
+		return 1;
+	return 2;
+}
+
+static std::string normalizedAxisPolicy(std::string value)
+{
+	value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+		return std::isspace(c) || c == '_' || c == '-';
+	}), value.end());
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	return value;
+}
+
+static glm::uint ignoredQuadTreeAxis(const SchemaLevelConfig& levelConfig, const AABB& bounds)
+{
+	const std::string policy = normalizedAxisPolicy(levelConfig.axisPolicy.empty() ? std::string("xy") : levelConfig.axisPolicy);
+	if (policy == "yz" || policy == "ignorex" || policy == "x")
+		return 0;
+	if (policy == "xz" || policy == "ignorey" || policy == "y")
+		return 1;
+	if (policy == "ignoreshortest" || policy == "shortest")
+		return shortestAxis(bounds);
+	return 2;
+}
+
+static bool containsAABB(const AABB& outer, const AABB& inner)
+{
+	const glm::vec3 outerMin = outer.min();
+	const glm::vec3 outerMax = outer.max();
+	const glm::vec3 innerMin = inner.min();
+	const glm::vec3 innerMax = inner.max();
+	return innerMin.x >= outerMin.x && innerMax.x <= outerMax.x &&
+		   innerMin.y >= outerMin.y && innerMax.y <= outerMax.y &&
+		   innerMin.z >= outerMin.z && innerMax.z <= outerMax.z;
+}
+
+static float distanceSquaredToAABB(const AABB& bounds, const glm::vec3& point)
+{
+	const glm::vec3 min = bounds.min();
+	const glm::vec3 max = bounds.max();
+	const glm::vec3 clamped(
+		std::clamp(point.x, min.x, max.x),
+		std::clamp(point.y, min.y, max.y),
+		std::clamp(point.z, min.z, max.z));
+	return glm::length2(point - clamped);
+}
+
+static double clampedAdaptiveFactor(double value)
+{
+	if (!std::isfinite(value))
+		return 1.0;
+	return std::clamp(value, 0.25, 4.0);
+}
+
+static double elapsedMilliseconds(const std::chrono::steady_clock::time_point& start)
+{
+	return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+
+static size_t schemaBlockEndDepth(const SchemaConfig& schema, size_t schemaDepth)
+{
+	size_t cumulative = 0;
+	for (const SchemaLevelConfig& level : schema.levels)
 	{
-		const glm::vec3 size = bounds.size();
-		if (size.x >= size.y && size.x >= size.z)
-			return 0;
-		if (size.y >= size.z)
-			return 1;
-		return 2;
+		cumulative += level.numLevels;
+		if (schemaDepth < cumulative)
+			return cumulative;
 	}
 
-	glm::uint shortestAxis(const AABB& bounds)
+	return schema.totalLevels();
+}
+
+static bool belowMin(size_t value, const std::optional<size_t>& minValue)
+{
+	return minValue.has_value() && value < minValue.value();
+}
+
+static bool aboveMax(size_t value, const std::optional<size_t>& maxValue)
+{
+	return maxValue.has_value() && value > maxValue.value();
+}
+
+static bool belowMin(double value, const std::optional<double>& minValue)
+{
+	return minValue.has_value() && value < minValue.value();
+}
+
+static bool aboveMax(double value, const std::optional<double>& maxValue)
+{
+	return maxValue.has_value() && value > maxValue.value();
+}
+
+static SchemaPrimitiveKind primitiveKindForLevel(const SchemaLevelConfig& levelConfig)
+{
+	try
 	{
-		const glm::vec3 size = bounds.size();
-		if (size.x <= size.y && size.x <= size.z)
-			return 0;
-		if (size.y <= size.z)
-			return 1;
-		return 2;
+		if (!levelConfig.typeName.empty())
+			return Config::parseSchemaPrimitiveKind(levelConfig.typeName);
+	}
+	catch (const std::exception&)
+	{
 	}
 
-	std::string normalizedAxisPolicy(std::string value)
+	return levelConfig.primitiveKind;
+}
+
+static glm::uvec3 gridSubdivisionsForLevel(const SchemaLevelConfig& levelConfig)
+{
+	const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
+	if (kind == SchemaPrimitiveKind::HGrid)
+		return glm::uvec3(4, 4, 4);
+	return glm::uvec3(3, 3, 3);
+}
+
+static bool isGridPrimitive(const SchemaLevelConfig& levelConfig)
+{
+	const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
+	return kind == SchemaPrimitiveKind::RegularGrid || kind == SchemaPrimitiveKind::HGrid;
+}
+
+static size_t gridChildIndex(const glm::vec3& point, const AABB& bounds, const glm::uvec3& subdivisions)
+{
+	const glm::vec3 minBound = bounds.min();
+	const glm::vec3 extent = bounds.size();
+	glm::uvec3 coordinates(0);
+	for (glm::uint axis = 0; axis < 3; ++axis)
 	{
-		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
-			return std::isspace(c) || c == '_' || c == '-';
-		}), value.end());
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-			return static_cast<char>(std::tolower(c));
-		});
-		return value;
+		const uint32_t cells = subdivisions[axis];
+		if (cells <= 1 || extent[axis] <= 0.0f)
+			continue;
+
+		const float normalized = (point[axis] - minBound[axis]) / extent[axis];
+		const int raw = static_cast<int>(std::floor(normalized * static_cast<float>(cells)));
+		coordinates[axis] = static_cast<glm::uint>(std::clamp(raw, 0, static_cast<int>(cells) - 1));
 	}
 
-	glm::uint ignoredQuadTreeAxis(const SchemaLevelConfig& levelConfig, const AABB& bounds)
+	return coordinates.x * subdivisions.y * subdivisions.z +
+		coordinates.y * subdivisions.z +
+		coordinates.z;
+}
+
+static glm::uvec3 gridCoordinates(const glm::vec3& point, const AABB& bounds, const glm::uvec3& subdivisions)
+{
+	const glm::vec3 minBound = bounds.min();
+	const glm::vec3 extent = bounds.size();
+	glm::uvec3 coordinates(0);
+	for (glm::uint axis = 0; axis < 3; ++axis)
 	{
-		const std::string policy = normalizedAxisPolicy(levelConfig.axisPolicy.empty() ? std::string("xy") : levelConfig.axisPolicy);
-		if (policy == "yz" || policy == "ignorex" || policy == "x")
-			return 0;
-		if (policy == "xz" || policy == "ignorey" || policy == "y")
-			return 1;
-		if (policy == "ignoreshortest" || policy == "shortest")
-			return shortestAxis(bounds);
-		return 2;
-	}
+		const uint32_t cells = subdivisions[axis];
+		if (cells <= 1 || extent[axis] <= 0.0f)
+			continue;
 
-	bool containsAABB(const AABB& outer, const AABB& inner)
+		const float normalized = (point[axis] - minBound[axis]) / extent[axis];
+		const int raw = static_cast<int>(std::floor(normalized * static_cast<float>(cells)));
+		coordinates[axis] = static_cast<glm::uint>(std::clamp(raw, 0, static_cast<int>(cells) - 1));
+	}
+	return coordinates;
+}
+
+static AABB gridCellBounds(const AABB& bounds, const glm::uvec3& subdivisions, const glm::uvec3& coordinates)
+{
+	const glm::vec3 minBound = bounds.min();
+	const glm::vec3 extent = bounds.size();
+	glm::vec3 cellMin = minBound;
+	glm::vec3 cellMax = bounds.max();
+	for (glm::uint axis = 0; axis < 3; ++axis)
 	{
-		const glm::vec3 outerMin = outer.min();
-		const glm::vec3 outerMax = outer.max();
-		const glm::vec3 innerMin = inner.min();
-		const glm::vec3 innerMax = inner.max();
-		return innerMin.x >= outerMin.x && innerMax.x <= outerMax.x &&
-			   innerMin.y >= outerMin.y && innerMax.y <= outerMax.y &&
-			   innerMin.z >= outerMin.z && innerMax.z <= outerMax.z;
+		const uint32_t cells = subdivisions[axis];
+		if (cells <= 1 || extent[axis] <= 0.0f)
+			continue;
+
+		const float cellSize = extent[axis] / static_cast<float>(cells);
+		cellMin[axis] = minBound[axis] + static_cast<float>(coordinates[axis]) * cellSize;
+		cellMax[axis] = coordinates[axis] + 1u >= cells
+			? bounds.max()[axis]
+			: cellMin[axis] + cellSize;
 	}
-
-	float distanceSquaredToAABB(const AABB& bounds, const glm::vec3& point)
-	{
-		const glm::vec3 min = bounds.min();
-		const glm::vec3 max = bounds.max();
-		const glm::vec3 clamped(
-			std::clamp(point.x, min.x, max.x),
-			std::clamp(point.y, min.y, max.y),
-			std::clamp(point.z, min.z, max.z));
-		return glm::length2(point - clamped);
-	}
-
-	double clampedAdaptiveFactor(double value)
-	{
-		if (!std::isfinite(value))
-			return 1.0;
-		return std::clamp(value, 0.25, 4.0);
-	}
-
-	double elapsedMilliseconds(const std::chrono::steady_clock::time_point& start)
-	{
-		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-	}
-
-	size_t schemaBlockEndDepth(const SchemaConfig& schema, size_t schemaDepth)
-	{
-		size_t cumulative = 0;
-		for (const SchemaLevelConfig& level : schema.levels)
-		{
-			cumulative += level.numLevels;
-			if (schemaDepth < cumulative)
-				return cumulative;
-		}
-
-		return schema.totalLevels();
-	}
-
-	bool belowMin(size_t value, const std::optional<size_t>& minValue)
-	{
-		return minValue.has_value() && value < minValue.value();
-	}
-
-	bool aboveMax(size_t value, const std::optional<size_t>& maxValue)
-	{
-		return maxValue.has_value() && value > maxValue.value();
-	}
-
-	bool belowMin(double value, const std::optional<double>& minValue)
-	{
-		return minValue.has_value() && value < minValue.value();
-	}
-
-	bool aboveMax(double value, const std::optional<double>& maxValue)
-	{
-		return maxValue.has_value() && value > maxValue.value();
-	}
-
-	SchemaPrimitiveKind primitiveKindForLevel(const SchemaLevelConfig& levelConfig)
-	{
-		try
-		{
-			if (!levelConfig.typeName.empty())
-				return Config::parseSchemaPrimitiveKind(levelConfig.typeName);
-		}
-		catch (const std::exception&)
-		{
-		}
-
-		return levelConfig.primitiveKind;
-	}
-
-	glm::uvec3 gridSubdivisionsForLevel(const SchemaLevelConfig& levelConfig)
-	{
-		const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
-		if (kind == SchemaPrimitiveKind::HGrid)
-			return glm::uvec3(4, 4, 4);
-		return glm::uvec3(3, 3, 3);
-	}
-
-	bool isGridPrimitive(const SchemaLevelConfig& levelConfig)
-	{
-		const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
-		return kind == SchemaPrimitiveKind::RegularGrid || kind == SchemaPrimitiveKind::HGrid;
-	}
-
-	size_t gridChildIndex(const glm::vec3& point, const AABB& bounds, const glm::uvec3& subdivisions)
-	{
-		const glm::vec3 minBound = bounds.min();
-		const glm::vec3 extent = bounds.size();
-		glm::uvec3 coordinates(0);
-		for (glm::uint axis = 0; axis < 3; ++axis)
-		{
-			const uint32_t cells = subdivisions[axis];
-			if (cells <= 1 || extent[axis] <= 0.0f)
-				continue;
-
-			const float normalized = (point[axis] - minBound[axis]) / extent[axis];
-			const int raw = static_cast<int>(std::floor(normalized * static_cast<float>(cells)));
-			coordinates[axis] = static_cast<glm::uint>(std::clamp(raw, 0, static_cast<int>(cells) - 1));
-		}
-
-		return coordinates.x * subdivisions.y * subdivisions.z +
-			coordinates.y * subdivisions.z +
-			coordinates.z;
-	}
-
-	glm::uvec3 gridCoordinates(const glm::vec3& point, const AABB& bounds, const glm::uvec3& subdivisions)
-	{
-		const glm::vec3 minBound = bounds.min();
-		const glm::vec3 extent = bounds.size();
-		glm::uvec3 coordinates(0);
-		for (glm::uint axis = 0; axis < 3; ++axis)
-		{
-			const uint32_t cells = subdivisions[axis];
-			if (cells <= 1 || extent[axis] <= 0.0f)
-				continue;
-
-			const float normalized = (point[axis] - minBound[axis]) / extent[axis];
-			const int raw = static_cast<int>(std::floor(normalized * static_cast<float>(cells)));
-			coordinates[axis] = static_cast<glm::uint>(std::clamp(raw, 0, static_cast<int>(cells) - 1));
-		}
-		return coordinates;
-	}
-
-	AABB gridCellBounds(const AABB& bounds, const glm::uvec3& subdivisions, const glm::uvec3& coordinates)
-	{
-		const glm::vec3 minBound = bounds.min();
-		const glm::vec3 extent = bounds.size();
-		glm::vec3 cellMin = minBound;
-		glm::vec3 cellMax = bounds.max();
-		for (glm::uint axis = 0; axis < 3; ++axis)
-		{
-			const uint32_t cells = subdivisions[axis];
-			if (cells <= 1 || extent[axis] <= 0.0f)
-				continue;
-
-			const float cellSize = extent[axis] / static_cast<float>(cells);
-			cellMin[axis] = minBound[axis] + static_cast<float>(coordinates[axis]) * cellSize;
-			cellMax[axis] = coordinates[axis] + 1u >= cells
-				? bounds.max()[axis]
-				: cellMin[axis] + cellSize;
-		}
-		return AABB(cellMin, cellMax);
-	}
+	return AABB(cellMin, cellMax);
 }
 
 void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schema)

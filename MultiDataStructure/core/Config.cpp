@@ -4,287 +4,284 @@
 #include <boost/json.hpp>
 #include <boost/system/error_code.hpp>
 
-namespace
+static size_t asSize(const boost::json::object& object, const char* key, size_t fallback)
 {
-	size_t asSize(const boost::json::object& object, const char* key, size_t fallback)
+	if (const boost::json::value* value = object.if_contains(key))
+	{
+		if (value->is_int64())
+			return static_cast<size_t>(value->as_int64());
+		if (value->is_uint64())
+			return static_cast<size_t>(value->as_uint64());
+		if (value->is_double())
+			return static_cast<size_t>(value->as_double());
+	}
+
+	return fallback;
+}
+
+static std::optional<size_t> optionalSize(const boost::json::object& object, std::initializer_list<const char*> keys)
+{
+	for (const char* key : keys)
 	{
 		if (const boost::json::value* value = object.if_contains(key))
 		{
 			if (value->is_int64())
-				return static_cast<size_t>(value->as_int64());
+				return static_cast<size_t>(std::max<int64_t>(0, value->as_int64()));
 			if (value->is_uint64())
 				return static_cast<size_t>(value->as_uint64());
 			if (value->is_double())
-				return static_cast<size_t>(value->as_double());
+				return static_cast<size_t>(std::max(0.0, value->as_double()));
 		}
-
-		return fallback;
 	}
 
-	std::optional<size_t> optionalSize(const boost::json::object& object, std::initializer_list<const char*> keys)
-	{
-		for (const char* key : keys)
-		{
-			if (const boost::json::value* value = object.if_contains(key))
-			{
-				if (value->is_int64())
-					return static_cast<size_t>(std::max<int64_t>(0, value->as_int64()));
-				if (value->is_uint64())
-					return static_cast<size_t>(value->as_uint64());
-				if (value->is_double())
-					return static_cast<size_t>(std::max(0.0, value->as_double()));
-			}
-		}
+	return std::nullopt;
+}
 
-		return std::nullopt;
-	}
-
-	std::optional<double> optionalDouble(const boost::json::object& object, std::initializer_list<const char*> keys)
-	{
-		for (const char* key : keys)
-		{
-			if (const boost::json::value* value = object.if_contains(key))
-			{
-				if (value->is_double())
-					return value->as_double();
-				if (value->is_int64())
-					return static_cast<double>(value->as_int64());
-				if (value->is_uint64())
-					return static_cast<double>(value->as_uint64());
-			}
-		}
-
-		return std::nullopt;
-	}
-
-	double asDouble(const boost::json::object& object, std::initializer_list<const char*> keys, double fallback)
-	{
-		return optionalDouble(object, keys).value_or(fallback);
-	}
-
-	bool asBool(const boost::json::object& object, const char* key, bool fallback)
+static std::optional<double> optionalDouble(const boost::json::object& object, std::initializer_list<const char*> keys)
+{
+	for (const char* key : keys)
 	{
 		if (const boost::json::value* value = object.if_contains(key))
 		{
-			if (value->is_bool())
-				return value->as_bool();
+			if (value->is_double())
+				return value->as_double();
+			if (value->is_int64())
+				return static_cast<double>(value->as_int64());
+			if (value->is_uint64())
+				return static_cast<double>(value->as_uint64());
 		}
-
-		return fallback;
 	}
 
-	std::string asString(const boost::json::object& object, const char* key, const std::string& fallback = {})
+	return std::nullopt;
+}
+
+static double asDouble(const boost::json::object& object, std::initializer_list<const char*> keys, double fallback)
+{
+	return optionalDouble(object, keys).value_or(fallback);
+}
+
+static bool asBool(const boost::json::object& object, const char* key, bool fallback)
+{
+	if (const boost::json::value* value = object.if_contains(key))
 	{
-		if (const boost::json::value* value = object.if_contains(key))
+		if (value->is_bool())
+			return value->as_bool();
+	}
+
+	return fallback;
+}
+
+static std::string asString(const boost::json::object& object, const char* key, const std::string& fallback = {})
+{
+	if (const boost::json::value* value = object.if_contains(key))
+	{
+		if (value->is_string())
+			return std::string(value->as_string().c_str());
+	}
+
+	return fallback;
+}
+
+static std::string normalizeTypeName(std::string value)
+{
+	value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+		return std::isspace(c) || c == '_' || c == '-';
+		}), value.end());
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return value;
+}
+
+static std::string normalizeAxisPolicy(std::string value)
+{
+	value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+		return std::isspace(c) || c == '_' || c == '-';
+		}), value.end());
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	if (value == "xy")
+		return "xy";
+	if (value == "xz")
+		return "xz";
+	if (value == "yz")
+		return "yz";
+	if (value == "ignoreshortest" || value == "shortest")
+		return "ignore_shortest";
+	if (value == "ignorex" || value == "x")
+		return "ignore_x";
+	if (value == "ignorey" || value == "y")
+		return "ignore_y";
+	if (value == "ignorez" || value == "z")
+		return "ignore_z";
+	if (value == "medianlongestaxis" || value == "longestaxis" || value == "longestextent")
+		return "median_longest_axis";
+	if (value == "roundrobin")
+		return "round_robin";
+	if (value == "centerlongestaxis")
+		return "center_longest_axis";
+	return value;
+}
+
+static void normalizeLevelAxisPolicy(SchemaLevelConfig& level)
+{
+	level.axisPolicy = normalizeAxisPolicy(level.axisPolicy);
+	if (level.primitiveKind == SchemaPrimitiveKind::QuadTree)
+	{
+		if (level.axisPolicy.empty())
 		{
-			if (value->is_string())
-				return std::string(value->as_string().c_str());
+			level.axisPolicy = "xy";
+			return;
 		}
+		if (level.axisPolicy == "xy" ||
+			level.axisPolicy == "xz" ||
+			level.axisPolicy == "yz" ||
+			level.axisPolicy == "ignore_shortest" ||
+			level.axisPolicy == "ignore_x" ||
+			level.axisPolicy == "ignore_y" ||
+			level.axisPolicy == "ignore_z")
+			return;
 
-		return fallback;
+		throw std::runtime_error("Unsupported QuadTree axisPolicy: " + level.axisPolicy);
 	}
 
-	std::string normalizeTypeName(std::string value)
+	if (level.type == MultiDataStructure::DataStructureLevel::KDTreeNode)
 	{
-		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
-			return std::isspace(c) || c == '_' || c == '-';
-			}), value.end());
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		return value;
+		if (level.axisPolicy.empty())
+			level.axisPolicy = "median_longest_axis";
+		if (level.axisPolicy == "median_longest_axis" ||
+			level.axisPolicy == "round_robin" ||
+			level.axisPolicy == "center_longest_axis")
+			return;
+
+		throw std::runtime_error("Unsupported KDTree/BIH axisPolicy: " + level.axisPolicy);
 	}
+}
 
-	std::string normalizeAxisPolicy(std::string value)
-	{
-		value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
-			return std::isspace(c) || c == '_' || c == '-';
-			}), value.end());
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-			return static_cast<char>(std::tolower(c));
-		});
-		if (value == "xy")
-			return "xy";
-		if (value == "xz")
-			return "xz";
-		if (value == "yz")
-			return "yz";
-		if (value == "ignoreshortest" || value == "shortest")
-			return "ignore_shortest";
-		if (value == "ignorex" || value == "x")
-			return "ignore_x";
-		if (value == "ignorey" || value == "y")
-			return "ignore_y";
-		if (value == "ignorez" || value == "z")
-			return "ignore_z";
-		if (value == "medianlongestaxis" || value == "longestaxis" || value == "longestextent")
-			return "median_longest_axis";
-		if (value == "roundrobin")
-			return "round_robin";
-		if (value == "centerlongestaxis")
-			return "center_longest_axis";
-		return value;
-	}
+static bool pathExists(const std::filesystem::path& path)
+{
+	std::error_code error;
+	return std::filesystem::exists(path, error);
+}
 
-	void normalizeLevelAxisPolicy(SchemaLevelConfig& level)
-	{
-		level.axisPolicy = normalizeAxisPolicy(level.axisPolicy);
-		if (level.primitiveKind == SchemaPrimitiveKind::QuadTree)
-		{
-			if (level.axisPolicy.empty())
-			{
-				level.axisPolicy = "xy";
-				return;
-			}
-			if (level.axisPolicy == "xy" ||
-				level.axisPolicy == "xz" ||
-				level.axisPolicy == "yz" ||
-				level.axisPolicy == "ignore_shortest" ||
-				level.axisPolicy == "ignore_x" ||
-				level.axisPolicy == "ignore_y" ||
-				level.axisPolicy == "ignore_z")
-				return;
-
-			throw std::runtime_error("Unsupported QuadTree axisPolicy: " + level.axisPolicy);
-		}
-
-		if (level.type == MultiDataStructure::DataStructureLevel::KDTreeNode)
-		{
-			if (level.axisPolicy.empty())
-				level.axisPolicy = "median_longest_axis";
-			if (level.axisPolicy == "median_longest_axis" ||
-				level.axisPolicy == "round_robin" ||
-				level.axisPolicy == "center_longest_axis")
-				return;
-
-			throw std::runtime_error("Unsupported KDTree/BIH axisPolicy: " + level.axisPolicy);
-		}
-	}
-
-	bool pathExists(const std::filesystem::path& path)
-	{
-		std::error_code error;
-		return std::filesystem::exists(path, error);
-	}
-
-	std::filesystem::path resolveConfigPath(const std::string& filename)
-	{
-		const std::filesystem::path configuredPath(filename);
-		if (pathExists(configuredPath) || configuredPath.is_absolute())
-			return configuredPath;
-
-		std::error_code error;
-		std::filesystem::path current = std::filesystem::absolute(std::filesystem::current_path(), error);
-		if (error)
-			return configuredPath;
-
-		for (;;)
-		{
-			const std::filesystem::path candidate = (current / configuredPath).lexically_normal();
-			if (pathExists(candidate))
-				return candidate;
-
-			if (!current.has_parent_path() || current == current.parent_path())
-				break;
-
-			current = current.parent_path();
-		}
-
+static std::filesystem::path resolveConfigPath(const std::string& filename)
+{
+	const std::filesystem::path configuredPath(filename);
+	if (pathExists(configuredPath) || configuredPath.is_absolute())
 		return configuredPath;
+
+	std::error_code error;
+	std::filesystem::path current = std::filesystem::absolute(std::filesystem::current_path(), error);
+	if (error)
+		return configuredPath;
+
+	for (;;)
+	{
+		const std::filesystem::path candidate = (current / configuredPath).lexically_normal();
+		if (pathExists(candidate))
+			return candidate;
+
+		if (!current.has_parent_path() || current == current.parent_path())
+			break;
+
+		current = current.parent_path();
 	}
 
-	SchemaLevelCondition parseLevelCondition(const boost::json::object& object)
+	return configuredPath;
+}
+
+static SchemaLevelCondition parseLevelCondition(const boost::json::object& object)
+{
+	SchemaLevelCondition condition;
+	condition.minPoints = optionalSize(object, { "minPoints", "pointCountMin", "minPointCount", "point_count_min" });
+	condition.maxPoints = optionalSize(object, { "maxPoints", "pointCountMax", "maxPointCount", "point_count_max" });
+	condition.minDensity = optionalDouble(object, { "minDensity", "densityMin", "density_min" });
+	condition.maxDensity = optionalDouble(object, { "maxDensity", "densityMax", "density_max" });
+	condition.minHeightRatio = optionalDouble(object, { "minHeightRatio", "heightRatioMin", "height_ratio_min" });
+	condition.maxHeightRatio = optionalDouble(object, { "maxHeightRatio", "heightRatioMax", "height_ratio_max" });
+	condition.minExtentX = optionalDouble(object, { "minExtentX", "extentXMin", "extent_x_min" });
+	condition.maxExtentX = optionalDouble(object, { "maxExtentX", "extentXMax", "extent_x_max" });
+	condition.minExtentY = optionalDouble(object, { "minExtentY", "extentYMin", "extent_y_min" });
+	condition.maxExtentY = optionalDouble(object, { "maxExtentY", "extentYMax", "extent_y_max" });
+	condition.minExtentZ = optionalDouble(object, { "minExtentZ", "extentZMin", "extent_z_min" });
+	condition.maxExtentZ = optionalDouble(object, { "maxExtentZ", "extentZMax", "extent_z_max" });
+	condition.minAnisotropy = optionalDouble(object, { "minAnisotropy", "anisotropyMin", "anisotropy_min" });
+	condition.maxAnisotropy = optionalDouble(object, { "maxAnisotropy", "anisotropyMax", "anisotropy_max" });
+	condition.minOccupancyEntropy = optionalDouble(object, { "minOccupancyEntropy", "occupancyEntropyMin", "occupancy_entropy_min" });
+	condition.maxOccupancyEntropy = optionalDouble(object, { "maxOccupancyEntropy", "occupancyEntropyMax", "occupancy_entropy_max" });
+	return condition;
+}
+
+static AdaptiveLeafCapacityConfig parseAdaptiveLeafCapacity(const boost::json::object& object)
+{
+	AdaptiveLeafCapacityConfig config;
+	config.enabled = asBool(object, "enabled", true);
+	config.minCapacity = optionalSize(object, { "minCapacity", "minLeafCapacity", "leafCapacityMin", "min_leaf_capacity" }).value_or(0);
+	config.maxCapacity = optionalSize(object, { "maxCapacity", "maxLeafCapacity", "leafCapacityMax", "max_leaf_capacity" }).value_or(0);
+	config.densityWeight = asDouble(object, { "densityWeight", "densityExponent", "density_factor_weight" }, config.densityWeight);
+	config.anisotropyWeight = asDouble(object, { "anisotropyWeight", "anisotropyExponent", "anisotropy_factor_weight" }, config.anisotropyWeight);
+	config.heightRatioWeight = asDouble(object, { "heightRatioWeight", "heightRatioExponent", "height_ratio_factor_weight" }, config.heightRatioWeight);
+	config.queryMixFactor = asDouble(object, { "queryMixFactor", "queryFactor", "workloadFactor", "query_mix_factor" }, config.queryMixFactor);
+
+	if (config.maxCapacity > 0 && config.minCapacity > 0 && config.maxCapacity < config.minCapacity)
+		throw std::runtime_error("adaptiveLeafCapacity maxCapacity must be >= minCapacity");
+	if (config.queryMixFactor <= 0.0)
+		throw std::runtime_error("adaptiveLeafCapacity queryMixFactor must be positive");
+
+	return config;
+}
+
+static SchemaLevelConfig parseLevel(const boost::json::object& object)
+{
+	SchemaLevelConfig level;
+	level.typeName = asString(object, "type", level.typeName);
+	level.primitiveKind = Config::parseSchemaPrimitiveKind(level.typeName);
+	level.typeName = Config::schemaPrimitiveKindName(level.primitiveKind);
+	level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level.primitiveKind);
+	level.type = level.cpuFallbackType;
+	level.numLevels = asSize(object, "numLevels", level.numLevels);
+	level.leafCapacity = asSize(object, "leafCapacity", level.leafCapacity);
+	level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
+	level.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level.minPrimitivesToSplit);
+	level.axisPolicy = asString(object, "axisPolicy", level.axisPolicy);
+	normalizeLevelAxisPolicy(level);
+	if (const boost::json::value* conditionValue = object.if_contains("condition"))
 	{
-		SchemaLevelCondition condition;
-		condition.minPoints = optionalSize(object, { "minPoints", "pointCountMin", "minPointCount", "point_count_min" });
-		condition.maxPoints = optionalSize(object, { "maxPoints", "pointCountMax", "maxPointCount", "point_count_max" });
-		condition.minDensity = optionalDouble(object, { "minDensity", "densityMin", "density_min" });
-		condition.maxDensity = optionalDouble(object, { "maxDensity", "densityMax", "density_max" });
-		condition.minHeightRatio = optionalDouble(object, { "minHeightRatio", "heightRatioMin", "height_ratio_min" });
-		condition.maxHeightRatio = optionalDouble(object, { "maxHeightRatio", "heightRatioMax", "height_ratio_max" });
-		condition.minExtentX = optionalDouble(object, { "minExtentX", "extentXMin", "extent_x_min" });
-		condition.maxExtentX = optionalDouble(object, { "maxExtentX", "extentXMax", "extent_x_max" });
-		condition.minExtentY = optionalDouble(object, { "minExtentY", "extentYMin", "extent_y_min" });
-		condition.maxExtentY = optionalDouble(object, { "maxExtentY", "extentYMax", "extent_y_max" });
-		condition.minExtentZ = optionalDouble(object, { "minExtentZ", "extentZMin", "extent_z_min" });
-		condition.maxExtentZ = optionalDouble(object, { "maxExtentZ", "extentZMax", "extent_z_max" });
-		condition.minAnisotropy = optionalDouble(object, { "minAnisotropy", "anisotropyMin", "anisotropy_min" });
-		condition.maxAnisotropy = optionalDouble(object, { "maxAnisotropy", "anisotropyMax", "anisotropy_max" });
-		condition.minOccupancyEntropy = optionalDouble(object, { "minOccupancyEntropy", "occupancyEntropyMin", "occupancy_entropy_min" });
-		condition.maxOccupancyEntropy = optionalDouble(object, { "maxOccupancyEntropy", "occupancyEntropyMax", "occupancy_entropy_max" });
-		return condition;
+		if (!conditionValue->is_object())
+			throw std::runtime_error("Schema level condition must be an object");
+		level.condition = parseLevelCondition(conditionValue->as_object());
 	}
-
-	AdaptiveLeafCapacityConfig parseAdaptiveLeafCapacity(const boost::json::object& object)
+	for (const char* key : { "adaptiveLeafCapacity", "leafCapacityAdaptation", "adaptiveCapacity" })
 	{
-		AdaptiveLeafCapacityConfig config;
-		config.enabled = asBool(object, "enabled", true);
-		config.minCapacity = optionalSize(object, { "minCapacity", "minLeafCapacity", "leafCapacityMin", "min_leaf_capacity" }).value_or(0);
-		config.maxCapacity = optionalSize(object, { "maxCapacity", "maxLeafCapacity", "leafCapacityMax", "max_leaf_capacity" }).value_or(0);
-		config.densityWeight = asDouble(object, { "densityWeight", "densityExponent", "density_factor_weight" }, config.densityWeight);
-		config.anisotropyWeight = asDouble(object, { "anisotropyWeight", "anisotropyExponent", "anisotropy_factor_weight" }, config.anisotropyWeight);
-		config.heightRatioWeight = asDouble(object, { "heightRatioWeight", "heightRatioExponent", "height_ratio_factor_weight" }, config.heightRatioWeight);
-		config.queryMixFactor = asDouble(object, { "queryMixFactor", "queryFactor", "workloadFactor", "query_mix_factor" }, config.queryMixFactor);
-
-		if (config.maxCapacity > 0 && config.minCapacity > 0 && config.maxCapacity < config.minCapacity)
-			throw std::runtime_error("adaptiveLeafCapacity maxCapacity must be >= minCapacity");
-		if (config.queryMixFactor <= 0.0)
-			throw std::runtime_error("adaptiveLeafCapacity queryMixFactor must be positive");
-
-		return config;
-	}
-
-	SchemaLevelConfig parseLevel(const boost::json::object& object)
-	{
-		SchemaLevelConfig level;
-		level.typeName = asString(object, "type", level.typeName);
-		level.primitiveKind = Config::parseSchemaPrimitiveKind(level.typeName);
-		level.typeName = Config::schemaPrimitiveKindName(level.primitiveKind);
-		level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level.primitiveKind);
-		level.type = level.cpuFallbackType;
-		level.numLevels = asSize(object, "numLevels", level.numLevels);
-		level.leafCapacity = asSize(object, "leafCapacity", level.leafCapacity);
-		level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
-		level.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level.minPrimitivesToSplit);
-		level.axisPolicy = asString(object, "axisPolicy", level.axisPolicy);
-		normalizeLevelAxisPolicy(level);
-		if (const boost::json::value* conditionValue = object.if_contains("condition"))
+		if (const boost::json::value* adaptiveValue = object.if_contains(key))
 		{
-			if (!conditionValue->is_object())
-				throw std::runtime_error("Schema level condition must be an object");
-			level.condition = parseLevelCondition(conditionValue->as_object());
+			if (!adaptiveValue->is_object())
+				throw std::runtime_error("adaptiveLeafCapacity must be an object");
+			level.adaptiveLeafCapacity = parseAdaptiveLeafCapacity(adaptiveValue->as_object());
+			break;
 		}
-		for (const char* key : { "adaptiveLeafCapacity", "leafCapacityAdaptation", "adaptiveCapacity" })
-		{
-			if (const boost::json::value* adaptiveValue = object.if_contains(key))
-			{
-				if (!adaptiveValue->is_object())
-					throw std::runtime_error("adaptiveLeafCapacity must be an object");
-				level.adaptiveLeafCapacity = parseAdaptiveLeafCapacity(adaptiveValue->as_object());
-				break;
-			}
-		}
-
-		if (level.numLevels == 0)
-			throw std::runtime_error("Schema level numLevels must be greater than zero");
-
-		return level;
 	}
 
-	BuildPolicy parseBuildPolicy(const boost::json::object& object)
-	{
-		BuildPolicy policy;
-		policy.maxDepth = asSize(object, "maxDepth", policy.maxDepth);
-		policy.leafCapacity = asSize(object, "leafCapacity", policy.leafCapacity);
-		policy.minPrimitivesToSplit = asSize(object, "minPointsToSplit", policy.minPrimitivesToSplit);
-		policy.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", policy.minPrimitivesToSplit);
-		policy.collapseSingleChild = asBool(object, "collapseSingleChild", policy.collapseSingleChild);
-		policy.removeEmptyNodes = asBool(object, "removeEmptyNodes", policy.removeEmptyNodes);
-		policy.allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy.allowOverlapDuplication);
-		policy.enableLeafMicroIndexes = asBool(object, "enableLeafMicroIndexes", policy.enableLeafMicroIndexes);
-		policy.enableLeafMicroIndexes = asBool(object, "leafMicroIndexes", policy.enableLeafMicroIndexes);
-		policy.leafMicroIndexThreshold = asSize(object, "leafMicroIndexThreshold", policy.leafMicroIndexThreshold);
-		policy.leafMicroIndexThreshold = asSize(object, "microIndexThreshold", policy.leafMicroIndexThreshold);
-		return policy;
-	}
+	if (level.numLevels == 0)
+		throw std::runtime_error("Schema level numLevels must be greater than zero");
+
+	return level;
+}
+
+static BuildPolicy parseBuildPolicy(const boost::json::object& object)
+{
+	BuildPolicy policy;
+	policy.maxDepth = asSize(object, "maxDepth", policy.maxDepth);
+	policy.leafCapacity = asSize(object, "leafCapacity", policy.leafCapacity);
+	policy.minPrimitivesToSplit = asSize(object, "minPointsToSplit", policy.minPrimitivesToSplit);
+	policy.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", policy.minPrimitivesToSplit);
+	policy.collapseSingleChild = asBool(object, "collapseSingleChild", policy.collapseSingleChild);
+	policy.removeEmptyNodes = asBool(object, "removeEmptyNodes", policy.removeEmptyNodes);
+	policy.allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy.allowOverlapDuplication);
+	policy.enableLeafMicroIndexes = asBool(object, "enableLeafMicroIndexes", policy.enableLeafMicroIndexes);
+	policy.enableLeafMicroIndexes = asBool(object, "leafMicroIndexes", policy.enableLeafMicroIndexes);
+	policy.leafMicroIndexThreshold = asSize(object, "leafMicroIndexThreshold", policy.leafMicroIndexThreshold);
+	policy.leafMicroIndexThreshold = asSize(object, "microIndexThreshold", policy.leafMicroIndexThreshold);
+	return policy;
 }
 
 bool SchemaLevelCondition::empty() const

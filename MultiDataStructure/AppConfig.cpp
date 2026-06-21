@@ -1,146 +1,143 @@
 #include "stdafx.h"
 #include "AppConfig.h"
 
-namespace
+// Parses a single rung spec of the form `name:queries:scoreMode:advance`. queries=0 means
+// "use workload default"; scoreMode is `visit` or `latency`; advance=0 means "promote all
+// candidates" (only meaningful for the last rung).
+static bool parseRungSpec(const std::string& token, Experiments::RungSpec& outRung)
 {
-	// Parses a single rung spec of the form `name:queries:scoreMode:advance`. queries=0 means
-	// "use workload default"; scoreMode is `visit` or `latency`; advance=0 means "promote all
-	// candidates" (only meaningful for the last rung).
-	bool parseRungSpec(const std::string& token, Experiments::RungSpec& outRung)
+	std::vector<std::string> parts;
+	size_t start = 0;
+	while (start <= token.size())
 	{
-		std::vector<std::string> parts;
-		size_t start = 0;
-		while (start <= token.size())
-		{
-			const size_t end = token.find(':', start);
-			parts.push_back(token.substr(start, end == std::string::npos ? std::string::npos : end - start));
-			if (end == std::string::npos)
-				break;
-			start = end + 1;
-		}
-		if (parts.size() < 3)
-			return false;
+		const size_t end = token.find(':', start);
+		parts.push_back(token.substr(start, end == std::string::npos ? std::string::npos : end - start));
+		if (end == std::string::npos)
+			break;
+		start = end + 1;
+	}
+	if (parts.size() < 3)
+		return false;
 
-		outRung.name = parts[0];
-		try { outRung.queryCountOverride = static_cast<size_t>(std::stoull(parts[1])); }
+	outRung.name = parts[0];
+	try { outRung.queryCountOverride = static_cast<size_t>(std::stoull(parts[1])); }
+	catch (...) { return false; }
+
+	const std::string& mode = parts[2];
+	if (mode == "visit" || mode == "visit-proxy" || mode == "proxy")
+	{
+		outRung.useVisitProxy = true;
+		if (outRung.visitProxyAlpha <= 0.0)
+			outRung.visitProxyAlpha = 0.1;
+	}
+	else if (mode == "latency")
+	{
+		outRung.useVisitProxy = false;
+	}
+	else
+	{
+		return false;
+	}
+
+	if (parts.size() >= 4 && !parts[3].empty())
+	{
+		try { outRung.advanceTopK = static_cast<size_t>(std::stoull(parts[3])); }
 		catch (...) { return false; }
+	}
+	return true;
+}
 
-		const std::string& mode = parts[2];
-		if (mode == "visit" || mode == "visit-proxy" || mode == "proxy")
-		{
-			outRung.useVisitProxy = true;
-			if (outRung.visitProxyAlpha <= 0.0)
-				outRung.visitProxyAlpha = 0.1;
-		}
-		else if (mode == "latency")
-		{
-			outRung.useVisitProxy = false;
-		}
-		else
-		{
-			return false;
-		}
-
-		if (parts.size() >= 4 && !parts[3].empty())
-		{
-			try { outRung.advanceTopK = static_cast<size_t>(std::stoull(parts[3])); }
-			catch (...) { return false; }
-		}
+// Parses `--rungs` argument: comma-separated rung specs.
+static bool parseRungSchedule(const std::string& argument, std::vector<Experiments::RungSpec>& outRungs)
+{
+	outRungs.clear();
+	if (argument.empty())
 		return true;
-	}
 
-	// Parses `--rungs` argument: comma-separated rung specs.
-	bool parseRungSchedule(const std::string& argument, std::vector<Experiments::RungSpec>& outRungs)
+	size_t start = 0;
+	while (start <= argument.size())
 	{
-		outRungs.clear();
-		if (argument.empty())
-			return true;
-
-		size_t start = 0;
-		while (start <= argument.size())
+		const size_t end = argument.find(',', start);
+		const std::string token = argument.substr(start, end == std::string::npos ? std::string::npos : end - start);
+		if (!token.empty())
 		{
-			const size_t end = argument.find(',', start);
-			const std::string token = argument.substr(start, end == std::string::npos ? std::string::npos : end - start);
-			if (!token.empty())
-			{
-				Experiments::RungSpec rung;
-				if (!parseRungSpec(token, rung))
-					return false;
-				outRungs.push_back(std::move(rung));
-			}
-			if (end == std::string::npos)
-				break;
-			start = end + 1;
+			Experiments::RungSpec rung;
+			if (!parseRungSpec(token, rung))
+				return false;
+			outRungs.push_back(std::move(rung));
 		}
-		return true;
+		if (end == std::string::npos)
+			break;
+		start = end + 1;
 	}
+	return true;
+}
 
-	bool pathExists(const std::filesystem::path& path)
+static bool pathExists(const std::filesystem::path& path)
+{
+	std::error_code error;
+	return std::filesystem::exists(path, error);
+}
+
+static void addAncestorSearchRoots(std::vector<std::filesystem::path>& roots, std::filesystem::path start)
+{
+	if (start.empty())
+		return;
+
+	std::error_code error;
+	start = std::filesystem::absolute(start, error);
+	if (error)
+		return;
+
+	if (start.has_filename() && start.extension() == ".exe")
+		start = start.parent_path();
+
+	for (;;)
 	{
-		std::error_code error;
-		return std::filesystem::exists(path, error);
+		const std::filesystem::path normalized = start.lexically_normal();
+		const auto alreadyAdded = std::find(roots.begin(), roots.end(), normalized);
+		if (alreadyAdded == roots.end())
+			roots.push_back(normalized);
+
+		if (!start.has_parent_path() || start == start.parent_path())
+			break;
+
+		start = start.parent_path();
 	}
+}
 
-	void addAncestorSearchRoots(std::vector<std::filesystem::path>& roots, std::filesystem::path start)
+static std::string trimCopy(const std::string& value)
+{
+	const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
+	const auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); }).base();
+	if (first >= last)
+		return {};
+	return std::string(first, last);
+}
+
+static std::vector<std::string> splitPathList(const std::string& value)
+{
+	std::vector<std::string> paths;
+	std::string current;
+	for (const char c : value)
 	{
-		if (start.empty())
-			return;
-
-		std::error_code error;
-		start = std::filesystem::absolute(start, error);
-		if (error)
-			return;
-
-		if (start.has_filename() && start.extension() == ".exe")
-			start = start.parent_path();
-
-		for (;;)
+		if (c == ';' || c == ',')
 		{
-			const std::filesystem::path normalized = start.lexically_normal();
-			const auto alreadyAdded = std::find(roots.begin(), roots.end(), normalized);
-			if (alreadyAdded == roots.end())
-				roots.push_back(normalized);
-
-			if (!start.has_parent_path() || start == start.parent_path())
-				break;
-
-			start = start.parent_path();
-		}
-	}
-
-	std::string trimCopy(const std::string& value)
-	{
-		const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
-		const auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-		if (first >= last)
-			return {};
-		return std::string(first, last);
-	}
-
-	std::vector<std::string> splitPathList(const std::string& value)
-	{
-		std::vector<std::string> paths;
-		std::string current;
-		for (const char c : value)
-		{
-			if (c == ';' || c == ',')
-			{
-				std::string path = trimCopy(current);
-				if (!path.empty())
-					paths.push_back(std::move(path));
-				current.clear();
-				continue;
-			}
-
-			current.push_back(c);
+			std::string path = trimCopy(current);
+			if (!path.empty())
+				paths.push_back(std::move(path));
+			current.clear();
+			continue;
 		}
 
-		std::string path = trimCopy(current);
-		if (!path.empty())
-			paths.push_back(std::move(path));
-
-		return paths;
+		current.push_back(c);
 	}
+
+	std::string path = trimCopy(current);
+	if (!path.empty())
+		paths.push_back(std::move(path));
+
+	return paths;
 }
 
 AppConfig::AppConfig()

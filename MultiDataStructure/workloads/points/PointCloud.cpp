@@ -1,239 +1,236 @@
 #include "../../stdafx.h"
 #include "PointCloud.h"
 
-namespace
+static constexpr char CACHE_MAGIC[8] = { 'M', 'D', 'S', 'P', 'C', '0', '1', '\0' };
+static constexpr uint32_t CACHE_VERSION = 3;
+static constexpr uint32_t POSITION_ONLY_CACHE_VERSION = 3;
+static constexpr uint32_t LEGACY_POSITION_ONLY_CACHE_VERSION = 2;
+static constexpr uint32_t LEGACY_FULL_POINT_CACHE_VERSION = 1;
+
+struct BinaryHeaderPrefix
 {
-	constexpr char CACHE_MAGIC[8] = { 'M', 'D', 'S', 'P', 'C', '0', '1', '\0' };
-	constexpr uint32_t CACHE_VERSION = 3;
-	constexpr uint32_t POSITION_ONLY_CACHE_VERSION = 3;
-	constexpr uint32_t LEGACY_POSITION_ONLY_CACHE_VERSION = 2;
-	constexpr uint32_t LEGACY_FULL_POINT_CACHE_VERSION = 1;
+	char magic[8] = {};
+	uint32_t version = CACHE_VERSION;
+	uint64_t sourceSize = 0;
+	int64_t sourceWriteTime = 0;
+	uint64_t numPoints = 0;
+};
 
-	struct BinaryHeaderPrefix
+struct BinaryHeaderMetadata
+{
+	double origin[3] = { 0.0, 0.0, 0.0 };
+	double scale[3] = { 1.0, 1.0, 1.0 };
+};
+
+struct BinaryHeader
+{
+	BinaryHeaderPrefix prefix;
+	BinaryHeaderMetadata metadata;
+};
+
+struct BinaryPoint
+{
+	float x = 0.0f;
+	float y = 0.0f;
+	float z = 0.0f;
+};
+
+struct LegacyBinaryPoint
+{
+	float x = 0.0f;
+	float y = 0.0f;
+	float z = 0.0f;
+	float intensity = 0.0f;
+	uint32_t classification = 0;
+	uint64_t id = 0;
+};
+
+static_assert(sizeof(BinaryPoint) == sizeof(PointPrimitive), "Binary point cache must match the position-only point payload.");
+
+static std::string trim(const std::string& value)
+{
+	const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
+	const auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); }).base();
+	if (begin >= end)
+		return {};
+
+	return std::string(begin, end);
+}
+
+static std::string lowerExtension(const std::string& filename)
+{
+	std::filesystem::path path(filename);
+	std::string extension = path.extension().string();
+	std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return extension;
+}
+
+static std::string lowerString(std::string value)
+{
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return value;
+}
+
+static bool tryParseFloat(const std::string& token, float& value)
+{
+	try
 	{
-		char magic[8] = {};
-		uint32_t version = CACHE_VERSION;
-		uint64_t sourceSize = 0;
-		int64_t sourceWriteTime = 0;
-		uint64_t numPoints = 0;
-	};
-
-	struct BinaryHeaderMetadata
-	{
-		double origin[3] = { 0.0, 0.0, 0.0 };
-		double scale[3] = { 1.0, 1.0, 1.0 };
-	};
-
-	struct BinaryHeader
-	{
-		BinaryHeaderPrefix prefix;
-		BinaryHeaderMetadata metadata;
-	};
-
-	struct BinaryPoint
-	{
-		float x = 0.0f;
-		float y = 0.0f;
-		float z = 0.0f;
-	};
-
-	struct LegacyBinaryPoint
-	{
-		float x = 0.0f;
-		float y = 0.0f;
-		float z = 0.0f;
-		float intensity = 0.0f;
-		uint32_t classification = 0;
-		uint64_t id = 0;
-	};
-
-	static_assert(sizeof(BinaryPoint) == sizeof(PointPrimitive), "Binary point cache must match the position-only point payload.");
-
-	std::string trim(const std::string& value)
-	{
-		const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
-		const auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-		if (begin >= end)
-			return {};
-
-		return std::string(begin, end);
+		const std::string trimmed = trim(token);
+		size_t parsed = 0;
+		value = std::stof(trimmed, &parsed);
+		return parsed == trimmed.size();
 	}
-
-	std::string lowerExtension(const std::string& filename)
+	catch (...)
 	{
-		std::filesystem::path path(filename);
-		std::string extension = path.extension().string();
-		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		return extension;
+		return false;
 	}
+}
 
-	std::string lowerString(std::string value)
+static bool tryParseSize(const std::string& token, size_t& value)
+{
+	try
 	{
-		std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		return value;
-	}
-
-	bool tryParseFloat(const std::string& token, float& value)
-	{
-		try
-		{
-			const std::string trimmed = trim(token);
-			size_t parsed = 0;
-			value = std::stof(trimmed, &parsed);
-			return parsed == trimmed.size();
-		}
-		catch (...)
-		{
+		const std::string trimmed = trim(token);
+		size_t parsed = 0;
+		const unsigned long long parsedValue = std::stoull(trimmed, &parsed);
+		if (parsed != trimmed.size())
 			return false;
-		}
-	}
 
-	bool tryParseSize(const std::string& token, size_t& value)
+		value = static_cast<size_t>(parsedValue);
+		return true;
+	}
+	catch (...)
 	{
-		try
-		{
-			const std::string trimmed = trim(token);
-			size_t parsed = 0;
-			const unsigned long long parsedValue = std::stoull(trimmed, &parsed);
-			if (parsed != trimmed.size())
-				return false;
-
-			value = static_cast<size_t>(parsedValue);
-			return true;
-		}
-		catch (...)
-		{
-			return false;
-		}
+		return false;
 	}
+}
 
-	std::vector<std::string> splitCSV(const std::string& line)
+static std::vector<std::string> splitCSV(const std::string& line)
+{
+	std::vector<std::string> tokens;
+	std::stringstream stream(line);
+	std::string token;
+	while (std::getline(stream, token, ','))
+		tokens.push_back(trim(token));
+
+	return tokens;
+}
+
+static std::vector<std::string> splitWhitespace(const std::string& line)
+{
+	std::vector<std::string> tokens;
+	std::stringstream stream(line);
+	std::string token;
+	while (stream >> token)
+		tokens.push_back(token);
+
+	return tokens;
+}
+
+static int findPropertyIndex(const std::vector<std::string>& names, const std::vector<std::string>& candidates)
+{
+	for (size_t index = 0; index < names.size(); ++index)
 	{
-		std::vector<std::string> tokens;
-		std::stringstream stream(line);
-		std::string token;
-		while (std::getline(stream, token, ','))
-			tokens.push_back(trim(token));
-
-		return tokens;
+		const std::string name = lowerString(names[index]);
+		if (std::find(candidates.begin(), candidates.end(), name) != candidates.end())
+			return static_cast<int>(index);
 	}
 
-	std::vector<std::string> splitWhitespace(const std::string& line)
-	{
-		std::vector<std::string> tokens;
-		std::stringstream stream(line);
-		std::string token;
-		while (stream >> token)
-			tokens.push_back(token);
+	return -1;
+}
 
-		return tokens;
-	}
+template <typename T>
+static T readScalarAt(std::ifstream& file, std::streamoff offset, const std::string& label)
+{
+	T value{};
+	file.seekg(offset, std::ios::beg);
+	file.read(reinterpret_cast<char*>(&value), sizeof(T));
+	if (!file)
+		throw std::runtime_error("Invalid LAS header while reading " + label);
 
-	int findPropertyIndex(const std::vector<std::string>& names, const std::vector<std::string>& candidates)
-	{
-		for (size_t index = 0; index < names.size(); ++index)
-		{
-			const std::string name = lowerString(names[index]);
-			if (std::find(candidates.begin(), candidates.end(), name) != candidates.end())
-				return static_cast<int>(index);
-		}
+	return value;
+}
 
-		return -1;
-	}
+template <typename T>
+static T readScalarFromRecord(const std::vector<char>& record, size_t offset, const std::string& label)
+{
+	if (offset + sizeof(T) > record.size())
+		throw std::runtime_error("Invalid LAS point record while reading " + label);
 
-	template <typename T>
-	T readScalarAt(std::ifstream& file, std::streamoff offset, const std::string& label)
-	{
-		T value{};
-		file.seekg(offset, std::ios::beg);
-		file.read(reinterpret_cast<char*>(&value), sizeof(T));
-		if (!file)
-			throw std::runtime_error("Invalid LAS header while reading " + label);
+	T value{};
+	std::memcpy(&value, record.data() + offset, sizeof(T));
+	return value;
+}
 
-		return value;
-	}
+static PointPrimitive makePoint(float x, float y, float z, float = 0.0f, uint32_t = 0, uint64_t = 0)
+{
+	PointPrimitive point;
+	point.position = glm::vec3(x, y, z);
+	return point;
+}
 
-	template <typename T>
-	T readScalarFromRecord(const std::vector<char>& record, size_t offset, const std::string& label)
-	{
-		if (offset + sizeof(T) > record.size())
-			throw std::runtime_error("Invalid LAS point record while reading " + label);
+static uint64_t fileSize(const std::string& filename)
+{
+	return static_cast<uint64_t>(std::filesystem::file_size(filename));
+}
 
-		T value{};
-		std::memcpy(&value, record.data() + offset, sizeof(T));
-		return value;
-	}
+static int64_t fileWriteTime(const std::string& filename)
+{
+	return static_cast<int64_t>(std::filesystem::last_write_time(filename).time_since_epoch().count());
+}
 
-	PointPrimitive makePoint(float x, float y, float z, float = 0.0f, uint32_t = 0, uint64_t = 0)
-	{
-		PointPrimitive point;
-		point.position = glm::vec3(x, y, z);
-		return point;
-	}
+static BinaryHeader makeHeader(const std::string& sourcePath, size_t numPoints, const PointCloud::CoordinateFrame& frame)
+{
+	BinaryHeader header;
+	std::memcpy(header.prefix.magic, CACHE_MAGIC, sizeof(header.prefix.magic));
+	header.prefix.version = CACHE_VERSION;
+	header.prefix.sourceSize = fileSize(sourcePath);
+	header.prefix.sourceWriteTime = fileWriteTime(sourcePath);
+	header.prefix.numPoints = static_cast<uint64_t>(numPoints);
+	header.metadata.origin[0] = frame.origin.x;
+	header.metadata.origin[1] = frame.origin.y;
+	header.metadata.origin[2] = frame.origin.z;
+	header.metadata.scale[0] = frame.scale.x;
+	header.metadata.scale[1] = frame.scale.y;
+	header.metadata.scale[2] = frame.scale.z;
+	return header;
+}
 
-	uint64_t fileSize(const std::string& filename)
-	{
-		return static_cast<uint64_t>(std::filesystem::file_size(filename));
-	}
+static bool headerMatchesSource(const BinaryHeaderPrefix& header, const std::string& sourcePath)
+{
+	return std::memcmp(header.magic, CACHE_MAGIC, sizeof(header.magic)) == 0 &&
+		(header.version == POSITION_ONLY_CACHE_VERSION ||
+		 header.version == LEGACY_POSITION_ONLY_CACHE_VERSION ||
+		 header.version == LEGACY_FULL_POINT_CACHE_VERSION) &&
+		header.sourceSize == fileSize(sourcePath) &&
+		header.sourceWriteTime == fileWriteTime(sourcePath);
+}
 
-	int64_t fileWriteTime(const std::string& filename)
-	{
-		return static_cast<int64_t>(std::filesystem::last_write_time(filename).time_since_epoch().count());
-	}
+static PointCloud::CoordinateFrame frameFromMetadata(const BinaryHeaderMetadata& metadata)
+{
+	PointCloud::CoordinateFrame frame;
+	frame.origin = glm::dvec3(metadata.origin[0], metadata.origin[1], metadata.origin[2]);
+	frame.scale = glm::dvec3(metadata.scale[0], metadata.scale[1], metadata.scale[2]);
+	return frame;
+}
 
-	BinaryHeader makeHeader(const std::string& sourcePath, size_t numPoints, const PointCloud::CoordinateFrame& frame)
-	{
-		BinaryHeader header;
-		std::memcpy(header.prefix.magic, CACHE_MAGIC, sizeof(header.prefix.magic));
-		header.prefix.version = CACHE_VERSION;
-		header.prefix.sourceSize = fileSize(sourcePath);
-		header.prefix.sourceWriteTime = fileWriteTime(sourcePath);
-		header.prefix.numPoints = static_cast<uint64_t>(numPoints);
-		header.metadata.origin[0] = frame.origin.x;
-		header.metadata.origin[1] = frame.origin.y;
-		header.metadata.origin[2] = frame.origin.z;
-		header.metadata.scale[0] = frame.scale.x;
-		header.metadata.scale[1] = frame.scale.y;
-		header.metadata.scale[2] = frame.scale.z;
-		return header;
-	}
+static BinaryPoint toBinaryPoint(const PointPrimitive& point)
+{
+	BinaryPoint binaryPoint;
+	binaryPoint.x = point.position.x;
+	binaryPoint.y = point.position.y;
+	binaryPoint.z = point.position.z;
+	return binaryPoint;
+}
 
-	bool headerMatchesSource(const BinaryHeaderPrefix& header, const std::string& sourcePath)
-	{
-		return std::memcmp(header.magic, CACHE_MAGIC, sizeof(header.magic)) == 0 &&
-			(header.version == POSITION_ONLY_CACHE_VERSION ||
-			 header.version == LEGACY_POSITION_ONLY_CACHE_VERSION ||
-			 header.version == LEGACY_FULL_POINT_CACHE_VERSION) &&
-			header.sourceSize == fileSize(sourcePath) &&
-			header.sourceWriteTime == fileWriteTime(sourcePath);
-	}
+static PointPrimitive fromBinaryPoint(const BinaryPoint& binaryPoint)
+{
+	return makePoint(binaryPoint.x, binaryPoint.y, binaryPoint.z);
+}
 
-	PointCloud::CoordinateFrame frameFromMetadata(const BinaryHeaderMetadata& metadata)
-	{
-		PointCloud::CoordinateFrame frame;
-		frame.origin = glm::dvec3(metadata.origin[0], metadata.origin[1], metadata.origin[2]);
-		frame.scale = glm::dvec3(metadata.scale[0], metadata.scale[1], metadata.scale[2]);
-		return frame;
-	}
-
-	BinaryPoint toBinaryPoint(const PointPrimitive& point)
-	{
-		BinaryPoint binaryPoint;
-		binaryPoint.x = point.position.x;
-		binaryPoint.y = point.position.y;
-		binaryPoint.z = point.position.z;
-		return binaryPoint;
-	}
-
-	PointPrimitive fromBinaryPoint(const BinaryPoint& binaryPoint)
-	{
-		return makePoint(binaryPoint.x, binaryPoint.y, binaryPoint.z);
-	}
-
-	PointPrimitive fromLegacyBinaryPoint(const LegacyBinaryPoint& binaryPoint)
-	{
-		return makePoint(binaryPoint.x, binaryPoint.y, binaryPoint.z);
-	}
+static PointPrimitive fromLegacyBinaryPoint(const LegacyBinaryPoint& binaryPoint)
+{
+	return makePoint(binaryPoint.x, binaryPoint.y, binaryPoint.z);
 }
 
 PointCloud PointCloud::load(const std::string& filename, const LoadOptions& options)

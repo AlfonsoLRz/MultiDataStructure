@@ -4,176 +4,173 @@
 #include "PointSpatialIndex.h"
 #include "RegularGrid.h"
 
-namespace
+// Upper bound on cells in a single RegularGrid level, derived the same way
+// `chooseGridShape` derives `targetCells`: divUp(pointCount, leafCapacity). The actual cell
+// count after `chooseGridShape` rounds up may exceed this by at most a small factor (one
+// extra cell per active axis), so we add a 1.25x safety margin.
+static size_t estimateCellsForLevel(size_t pointCount, size_t leafCapacity)
 {
-	// Upper bound on cells in a single RegularGrid level, derived the same way
-	// `chooseGridShape` derives `targetCells`: divUp(pointCount, leafCapacity). The actual cell
-	// count after `chooseGridShape` rounds up may exceed this by at most a small factor (one
-	// extra cell per active axis), so we add a 1.25x safety margin.
-	size_t estimateCellsForLevel(size_t pointCount, size_t leafCapacity)
+	if (pointCount == 0 || leafCapacity == 0)
+		return 0;
+	const size_t target = (pointCount + leafCapacity - 1) / leafCapacity;
+	const size_t margin = target + target / 4;
+	return std::max<size_t>(1, margin);
+}
+
+static size_t leafCapacityForSchema(const SchemaConfig& schema)
+{
+	size_t leafCapacity = schema.buildPolicy.leafCapacity;
+	if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
+		leafCapacity = schema.levels.front().leafCapacity;
+
+	return std::max<size_t>(1, leafCapacity);
+}
+
+// Was clamped to 4 historically to keep memory bounded on cards we couldn't measure. With
+// the VRAM auto-detection + aggregate memory pre-check now in place, the build path throws
+// early when a schema would exceed the budget, so the cap can be relaxed. 12 lets `hg6` /
+// `hg9` / `hg12` schemas actually realize their requested level count (previously they
+// silently truncated to 4 and the schema name lied about reality).
+static constexpr size_t MaxHGridLevels = 12;
+
+static size_t hgridLevelCountForSchema(const SchemaConfig& schema)
+{
+	size_t configuredDepth = schema.buildPolicy.maxDepth;
+	if (configuredDepth == 0)
+		configuredDepth = schema.totalLevels();
+	if (configuredDepth == 0)
+		configuredDepth = 3;
+
+	const size_t clamped = std::clamp(configuredDepth, static_cast<size_t>(2), MaxHGridLevels);
+	if (clamped != configuredDepth)
 	{
-		if (pointCount == 0 || leafCapacity == 0)
-			return 0;
-		const size_t target = (pointCount + leafCapacity - 1) / leafCapacity;
-		const size_t margin = target + target / 4;
-		return std::max<size_t>(1, margin);
+		std::cerr << "    HGrid: requested " << configuredDepth
+			<< " levels, clamped to " << clamped
+			<< " (range [2, " << MaxHGridLevels << "])\n";
 	}
+	return clamped;
+}
 
-	size_t leafCapacityForSchema(const SchemaConfig& schema)
+static size_t scaledLeafCapacity(size_t baseLeafCapacity, size_t level, size_t levelCount)
+{
+	const size_t remaining = levelCount - 1 - level;
+	size_t factor = 1;
+	for (size_t i = 0; i < remaining; ++i)
 	{
-		size_t leafCapacity = schema.buildPolicy.leafCapacity;
-		if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
-			leafCapacity = schema.levels.front().leafCapacity;
-
-		return std::max<size_t>(1, leafCapacity);
-	}
-
-	// Was clamped to 4 historically to keep memory bounded on cards we couldn't measure. With
-	// the VRAM auto-detection + aggregate memory pre-check now in place, the build path throws
-	// early when a schema would exceed the budget, so the cap can be relaxed. 12 lets `hg6` /
-	// `hg9` / `hg12` schemas actually realize their requested level count (previously they
-	// silently truncated to 4 and the schema name lied about reality).
-	constexpr size_t MaxHGridLevels = 12;
-
-	size_t hgridLevelCountForSchema(const SchemaConfig& schema)
-	{
-		size_t configuredDepth = schema.buildPolicy.maxDepth;
-		if (configuredDepth == 0)
-			configuredDepth = schema.totalLevels();
-		if (configuredDepth == 0)
-			configuredDepth = 3;
-
-		const size_t clamped = std::clamp(configuredDepth, static_cast<size_t>(2), MaxHGridLevels);
-		if (clamped != configuredDepth)
-		{
-			std::cerr << "    HGrid: requested " << configuredDepth
-				<< " levels, clamped to " << clamped
-				<< " (range [2, " << MaxHGridLevels << "])\n";
-		}
-		return clamped;
-	}
-
-	size_t scaledLeafCapacity(size_t baseLeafCapacity, size_t level, size_t levelCount)
-	{
-		const size_t remaining = levelCount - 1 - level;
-		size_t factor = 1;
-		for (size_t i = 0; i < remaining; ++i)
-		{
-			if (factor > std::numeric_limits<size_t>::max() / 4)
-				return std::numeric_limits<size_t>::max();
-			factor *= 4;
-		}
-
-		if (baseLeafCapacity > std::numeric_limits<size_t>::max() / factor)
+		if (factor > std::numeric_limits<size_t>::max() / 4)
 			return std::numeric_limits<size_t>::max();
-		return std::max<size_t>(1, baseLeafCapacity * factor);
+		factor *= 4;
 	}
 
-	SchemaConfig schemaForLevel(const SchemaConfig& base, size_t leafCapacity)
+	if (baseLeafCapacity > std::numeric_limits<size_t>::max() / factor)
+		return std::numeric_limits<size_t>::max();
+	return std::max<size_t>(1, baseLeafCapacity * factor);
+}
+
+static SchemaConfig schemaForLevel(const SchemaConfig& base, size_t leafCapacity)
+{
+	SchemaConfig schema = base;
+	schema.buildPolicy.leafCapacity = leafCapacity;
+	schema.buildPolicy.minPrimitivesToSplit = std::max<size_t>(2, leafCapacity / 4);
+	if (schema.levels.empty())
 	{
-		SchemaConfig schema = base;
-		schema.buildPolicy.leafCapacity = leafCapacity;
-		schema.buildPolicy.minPrimitivesToSplit = std::max<size_t>(2, leafCapacity / 4);
-		if (schema.levels.empty())
-		{
-			SchemaLevelConfig level;
-			level.type = MultiDataStructure::DataStructureLevel::BvhNode;
-			level.typeName = "BVH";
-			level.numLevels = 1;
-			level.leafCapacity = leafCapacity;
-			level.minPrimitivesToSplit = schema.buildPolicy.minPrimitivesToSplit;
-			schema.levels.push_back(level);
-		}
-		else
-		{
-			schema.levels.front().leafCapacity = leafCapacity;
-			schema.levels.front().minPrimitivesToSplit = schema.buildPolicy.minPrimitivesToSplit;
-		}
-		return schema;
+		SchemaLevelConfig level;
+		level.type = MultiDataStructure::DataStructureLevel::BvhNode;
+		level.typeName = "BVH";
+		level.numLevels = 1;
+		level.leafCapacity = leafCapacity;
+		level.minPrimitivesToSplit = schema.buildPolicy.minPrimitivesToSplit;
+		schema.levels.push_back(level);
 	}
-
-	PointGpu::Options regularGridOptions(const PointGpu::Options& options)
+	else
 	{
-		PointGpu::Options gridOptions = options;
-		gridOptions.builder = "regular_grid";
-		return gridOptions;
+		schema.levels.front().leafCapacity = leafCapacity;
+		schema.levels.front().minPrimitivesToSplit = schema.buildPolicy.minPrimitivesToSplit;
 	}
+	return schema;
+}
 
-	bool intersectsGrid(
-		float queryMinX,
-		float queryMinY,
-		float queryMinZ,
-		float queryMaxX,
-		float queryMaxY,
-		float queryMaxZ,
-		const AABB& bounds)
+static PointGpu::Options regularGridOptions(const PointGpu::Options& options)
+{
+	PointGpu::Options gridOptions = options;
+	gridOptions.builder = "regular_grid";
+	return gridOptions;
+}
+
+static bool intersectsGrid(
+	float queryMinX,
+	float queryMinY,
+	float queryMinZ,
+	float queryMaxX,
+	float queryMaxY,
+	float queryMaxZ,
+	const AABB& bounds)
+{
+	const glm::vec3 min = bounds.min();
+	const glm::vec3 max = bounds.max();
+	return queryMaxX >= min.x && queryMinX <= max.x &&
+		queryMaxY >= min.y && queryMinY <= max.y &&
+		queryMaxZ >= min.z && queryMinZ <= max.z;
+}
+
+static uint32_t clampCellCoordinate(float value, float minValue, float extent, uint32_t dimension)
+{
+	if (dimension <= 1 || extent <= 0.0f)
+		return 0;
+
+	const float normalized = (value - minValue) / extent;
+	const int coordinate = static_cast<int>(std::floor(normalized * static_cast<float>(dimension)));
+	return static_cast<uint32_t>(std::clamp(coordinate, 0, static_cast<int>(dimension) - 1));
+}
+
+static size_t estimatedVisitedCells(const PointGpu::Query& query, const AABB& bounds, const glm::uvec3& dimensions)
+{
+	float queryMinX = query.bounds.min().x;
+	float queryMinY = query.bounds.min().y;
+	float queryMinZ = query.bounds.min().z;
+	float queryMaxX = query.bounds.max().x;
+	float queryMaxY = query.bounds.max().y;
+	float queryMaxZ = query.bounds.max().z;
+	if (query.type == PointGpu::QueryType::Radius)
 	{
-		const glm::vec3 min = bounds.min();
-		const glm::vec3 max = bounds.max();
-		return queryMaxX >= min.x && queryMinX <= max.x &&
-			queryMaxY >= min.y && queryMinY <= max.y &&
-			queryMaxZ >= min.z && queryMinZ <= max.z;
+		queryMinX = query.center.x - query.radius;
+		queryMinY = query.center.y - query.radius;
+		queryMinZ = query.center.z - query.radius;
+		queryMaxX = query.center.x + query.radius;
+		queryMaxY = query.center.y + query.radius;
+		queryMaxZ = query.center.z + query.radius;
 	}
 
-	uint32_t clampCellCoordinate(float value, float minValue, float extent, uint32_t dimension)
+	if (!intersectsGrid(queryMinX, queryMinY, queryMinZ, queryMaxX, queryMaxY, queryMaxZ, bounds))
+		return 0;
+
+	const glm::vec3 min = bounds.min();
+	const glm::vec3 extent = glm::max(bounds.size(), glm::vec3(0.0f));
+	const uint32_t x0 = clampCellCoordinate(queryMinX, min.x, extent.x, dimensions.x);
+	const uint32_t y0 = clampCellCoordinate(queryMinY, min.y, extent.y, dimensions.y);
+	const uint32_t z0 = clampCellCoordinate(queryMinZ, min.z, extent.z, dimensions.z);
+	const uint32_t x1 = clampCellCoordinate(queryMaxX, min.x, extent.x, dimensions.x);
+	const uint32_t y1 = clampCellCoordinate(queryMaxY, min.y, extent.y, dimensions.y);
+	const uint32_t z1 = clampCellCoordinate(queryMaxZ, min.z, extent.z, dimensions.z);
+	return static_cast<size_t>(x1 - x0 + 1) *
+		static_cast<size_t>(y1 - y0 + 1) *
+		static_cast<size_t>(z1 - z0 + 1);
+}
+
+static Experiments::QueryMetrics summarizeGpuSamples(const std::vector<PointGpu::QuerySample>& samples)
+{
+	std::vector<PointSpatialIndex::QueryStats> cpuSamples;
+	cpuSamples.reserve(samples.size());
+	for (const PointGpu::QuerySample& sample : samples)
 	{
-		if (dimension <= 1 || extent <= 0.0f)
-			return 0;
-
-		const float normalized = (value - minValue) / extent;
-		const int coordinate = static_cast<int>(std::floor(normalized * static_cast<float>(dimension)));
-		return static_cast<uint32_t>(std::clamp(coordinate, 0, static_cast<int>(dimension) - 1));
+		PointSpatialIndex::QueryStats stats;
+		stats.visitedNodes = sample.visitedNodes;
+		stats.testedPoints = sample.testedPoints;
+		stats.returnedPoints = sample.returnedPoints;
+		stats.elapsedMs = sample.elapsedMs;
+		cpuSamples.push_back(stats);
 	}
-
-	size_t estimatedVisitedCells(const PointGpu::Query& query, const AABB& bounds, const glm::uvec3& dimensions)
-	{
-		float queryMinX = query.bounds.min().x;
-		float queryMinY = query.bounds.min().y;
-		float queryMinZ = query.bounds.min().z;
-		float queryMaxX = query.bounds.max().x;
-		float queryMaxY = query.bounds.max().y;
-		float queryMaxZ = query.bounds.max().z;
-		if (query.type == PointGpu::QueryType::Radius)
-		{
-			queryMinX = query.center.x - query.radius;
-			queryMinY = query.center.y - query.radius;
-			queryMinZ = query.center.z - query.radius;
-			queryMaxX = query.center.x + query.radius;
-			queryMaxY = query.center.y + query.radius;
-			queryMaxZ = query.center.z + query.radius;
-		}
-
-		if (!intersectsGrid(queryMinX, queryMinY, queryMinZ, queryMaxX, queryMaxY, queryMaxZ, bounds))
-			return 0;
-
-		const glm::vec3 min = bounds.min();
-		const glm::vec3 extent = glm::max(bounds.size(), glm::vec3(0.0f));
-		const uint32_t x0 = clampCellCoordinate(queryMinX, min.x, extent.x, dimensions.x);
-		const uint32_t y0 = clampCellCoordinate(queryMinY, min.y, extent.y, dimensions.y);
-		const uint32_t z0 = clampCellCoordinate(queryMinZ, min.z, extent.z, dimensions.z);
-		const uint32_t x1 = clampCellCoordinate(queryMaxX, min.x, extent.x, dimensions.x);
-		const uint32_t y1 = clampCellCoordinate(queryMaxY, min.y, extent.y, dimensions.y);
-		const uint32_t z1 = clampCellCoordinate(queryMaxZ, min.z, extent.z, dimensions.z);
-		return static_cast<size_t>(x1 - x0 + 1) *
-			static_cast<size_t>(y1 - y0 + 1) *
-			static_cast<size_t>(z1 - z0 + 1);
-	}
-
-	Experiments::QueryMetrics summarizeGpuSamples(const std::vector<PointGpu::QuerySample>& samples)
-	{
-		std::vector<PointSpatialIndex::QueryStats> cpuSamples;
-		cpuSamples.reserve(samples.size());
-		for (const PointGpu::QuerySample& sample : samples)
-		{
-			PointSpatialIndex::QueryStats stats;
-			stats.visitedNodes = sample.visitedNodes;
-			stats.testedPoints = sample.testedPoints;
-			stats.returnedPoints = sample.returnedPoints;
-			stats.elapsedMs = sample.elapsedMs;
-			cpuSamples.push_back(stats);
-		}
-		return Experiments::summarizeQueryStats(cpuSamples);
-	}
+	return Experiments::summarizeQueryStats(cpuSamples);
 }
 
 struct PointGpu::HGrid::DeviceState

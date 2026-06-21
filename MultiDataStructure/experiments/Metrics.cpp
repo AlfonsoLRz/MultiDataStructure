@@ -1,150 +1,144 @@
 #include "../stdafx.h"
 #include "Metrics.h"
 
-namespace
+static double boundsVolume(const AABB& bounds)
 {
-	double boundsVolume(const AABB& bounds)
-	{
-		const glm::vec3 size = bounds.size();
-		if (size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f)
-			return 0.0;
-		return static_cast<double>(size.x) * static_cast<double>(size.y) * static_cast<double>(size.z);
-	}
+	const glm::vec3 size = bounds.size();
+	if (size.x <= 0.0f || size.y <= 0.0f || size.z <= 0.0f)
+		return 0.0;
+	return static_cast<double>(size.x) * static_cast<double>(size.y) * static_cast<double>(size.z);
+}
 
-	const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig* schema, const PointSpatialIndex::Node& node)
-	{
-		if (!schema || schema->levels.empty() || schema->totalLevels() == 0)
-			return nullptr;
+static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig* schema, const PointSpatialIndex::Node& node)
+{
+	if (!schema || schema->levels.empty() || schema->totalLevels() == 0)
+		return nullptr;
 
-		const size_t schemaDepth = std::min(node.schemaDepth, schema->totalLevels() - 1);
-		return &schema->levelForDepth(schemaDepth);
-	}
+	const size_t schemaDepth = std::min(node.schemaDepth, schema->totalLevels() - 1);
+	return &schema->levelForDepth(schemaDepth);
+}
 
-	size_t expectedFanoutForNode(const PointSpatialIndex::Node& node, const SchemaConfig* schema)
+static size_t expectedFanoutForNode(const PointSpatialIndex::Node& node, const SchemaConfig* schema)
+{
+	if (const SchemaLevelConfig* level = schemaLevelForNode(schema, node))
 	{
-		if (const SchemaLevelConfig* level = schemaLevelForNode(schema, node))
+		const SchemaPrimitiveKind kind = level->primitiveKind;
+		switch (kind)
 		{
-			const SchemaPrimitiveKind kind = level->primitiveKind;
-			switch (kind)
-			{
-			case SchemaPrimitiveKind::QuadTree:
-				return 4;
-			case SchemaPrimitiveKind::RegularGrid:
-				return 27;
-			case SchemaPrimitiveKind::HGrid:
-				return 64;
-			case SchemaPrimitiveKind::KDTree:
-			case SchemaPrimitiveKind::BVH:
-			case SchemaPrimitiveKind::BIH:
-			case SchemaPrimitiveKind::LBVH:
-				return 2;
-			case SchemaPrimitiveKind::Octree:
-			case SchemaPrimitiveKind::KarrasOctree:
-			case SchemaPrimitiveKind::Mixed:
-			default:
-				return 8;
-			}
-		}
-
-		switch (node.type)
-		{
-		case MultiDataStructure::DataStructureLevel::QuadTreeNode:
+		case SchemaPrimitiveKind::QuadTree:
 			return 4;
-		case MultiDataStructure::DataStructureLevel::KDTreeNode:
-		case MultiDataStructure::DataStructureLevel::BvhNode:
+		case SchemaPrimitiveKind::RegularGrid:
+			return 27;
+		case SchemaPrimitiveKind::HGrid:
+			return 64;
+		case SchemaPrimitiveKind::KDTree:
+		case SchemaPrimitiveKind::BVH:
+		case SchemaPrimitiveKind::BIH:
+		case SchemaPrimitiveKind::LBVH:
 			return 2;
-		case MultiDataStructure::DataStructureLevel::OctreeNode:
+		case SchemaPrimitiveKind::Octree:
+		case SchemaPrimitiveKind::KarrasOctree:
+		case SchemaPrimitiveKind::Mixed:
 		default:
 			return 8;
 		}
 	}
 
-	struct TreeHealthAccumulator
+	switch (node.type)
 	{
-		std::vector<size_t> occupancies;
-		std::map<size_t, size_t> fanoutCounts;
-		size_t totalDepth = 0;
-		size_t internalNodes = 0;
-		size_t totalExpectedChildren = 0;
-		size_t totalPresentChildren = 0;
-		size_t singleChildNodeCount = 0;
-		double tightVolumeRatioSum = 0.0;
-		size_t tightVolumeRatioSamples = 0;
-		size_t microIndexedLeaves = 0;
-		size_t microIndexedPoints = 0;
-	};
+	case MultiDataStructure::DataStructureLevel::QuadTreeNode:
+		return 4;
+	case MultiDataStructure::DataStructureLevel::KDTreeNode:
+	case MultiDataStructure::DataStructureLevel::BvhNode:
+		return 2;
+	case MultiDataStructure::DataStructureLevel::OctreeNode:
+	default:
+		return 8;
+	}
+}
 
-	void collectTreeHealth(const PointSpatialIndex::Node* node, const SchemaConfig* schema, TreeHealthAccumulator& accumulator)
+struct TreeHealthAccumulator
+{
+	std::vector<size_t> occupancies;
+	std::map<size_t, size_t> fanoutCounts;
+	size_t totalDepth = 0;
+	size_t internalNodes = 0;
+	size_t totalExpectedChildren = 0;
+	size_t totalPresentChildren = 0;
+	size_t singleChildNodeCount = 0;
+	double tightVolumeRatioSum = 0.0;
+	size_t tightVolumeRatioSamples = 0;
+	size_t microIndexedLeaves = 0;
+	size_t microIndexedPoints = 0;
+};
+
+static void collectTreeHealth(const PointSpatialIndex::Node* node, const SchemaConfig* schema, TreeHealthAccumulator& accumulator)
+{
+	if (!node)
+		return;
+
+	accumulator.totalDepth += node->depth;
+
+	const double nodeVolume = boundsVolume(node->bounds);
+	if (nodeVolume > 0.0 && node->subtreePointCount > 0)
 	{
-		if (!node)
-			return;
-
-		accumulator.totalDepth += node->depth;
-
-		const double nodeVolume = boundsVolume(node->bounds);
-		if (nodeVolume > 0.0 && node->subtreePointCount > 0)
-		{
-			const double tightVolume = boundsVolume(node->tightBounds);
-			accumulator.tightVolumeRatioSum += std::clamp(tightVolume / nodeVolume, 0.0, 1.0);
-			++accumulator.tightVolumeRatioSamples;
-		}
-
-		if (node->isLeaf())
-		{
-			accumulator.occupancies.push_back(node->pointCount);
-			if (node->microIndex)
-			{
-				++accumulator.microIndexedLeaves;
-				accumulator.microIndexedPoints += node->pointCount;
-			}
-			return;
-		}
-
-		const size_t fanout = node->children.size();
-		++accumulator.fanoutCounts[fanout];
-		++accumulator.internalNodes;
-		if (fanout == 1)
-			++accumulator.singleChildNodeCount;
-
-		const size_t expected = std::max(expectedFanoutForNode(*node, schema), fanout);
-		accumulator.totalExpectedChildren += expected;
-		accumulator.totalPresentChildren += fanout;
-
-		for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->children)
-			collectTreeHealth(child.get(), schema, accumulator);
+		const double tightVolume = boundsVolume(node->tightBounds);
+		accumulator.tightVolumeRatioSum += std::clamp(tightVolume / nodeVolume, 0.0, 1.0);
+		++accumulator.tightVolumeRatioSamples;
 	}
 
-	double percentile(std::vector<double> values, double p)
+	if (node->isLeaf())
 	{
-		if (values.empty())
-			return 0.0;
-
-		std::sort(values.begin(), values.end());
-		const double clamped = std::clamp(p, 0.0, 1.0);
-		const size_t index = static_cast<size_t>(std::ceil(clamped * static_cast<double>(values.size())) - 1.0);
-		return values[std::min(index, values.size() - 1)];
-	}
-
-	std::string formatFanoutSummary(const std::map<size_t, size_t>& fanoutCounts)
-	{
-		std::ostringstream output;
-		bool first = true;
-		for (const auto& [fanout, count] : fanoutCounts)
+		accumulator.occupancies.push_back(node->pointCount);
+		if (node->microIndex)
 		{
-			if (!first)
-				output << ';';
-			first = false;
-			output << fanout << ':' << count;
+			++accumulator.microIndexedLeaves;
+			accumulator.microIndexedPoints += node->pointCount;
 		}
-		return output.str();
+		return;
 	}
 
-	Experiments::BuildMetrics collectBuildMetricsImpl(
-		const PointSpatialIndex::Stats& stats,
-		const PointSpatialIndex::Node* root,
-		double buildTimeMs,
-		const SchemaConfig* schema)
+	const size_t fanout = node->children.size();
+	++accumulator.fanoutCounts[fanout];
+	++accumulator.internalNodes;
+	if (fanout == 1)
+		++accumulator.singleChildNodeCount;
+
+	const size_t expected = std::max(expectedFanoutForNode(*node, schema), fanout);
+	accumulator.totalExpectedChildren += expected;
+	accumulator.totalPresentChildren += fanout;
+
+	for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->children)
+		collectTreeHealth(child.get(), schema, accumulator);
+}
+
+static double percentile(std::vector<double> values, double p)
+{
+	if (values.empty())
+		return 0.0;
+
+	std::sort(values.begin(), values.end());
+	const double clamped = std::clamp(p, 0.0, 1.0);
+	const size_t index = static_cast<size_t>(std::ceil(clamped * static_cast<double>(values.size())) - 1.0);
+	return values[std::min(index, values.size() - 1)];
+}
+
+static std::string formatFanoutSummary(const std::map<size_t, size_t>& fanoutCounts)
+{
+	std::ostringstream output;
+	bool first = true;
+	for (const auto& [fanout, count] : fanoutCounts)
 	{
+		if (!first)
+			output << ';';
+		first = false;
+		output << fanout << ':' << count;
+	}
+	return output.str();
+}
+
+static Experiments::BuildMetrics collectBuildMetricsImpl(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs, const SchemaConfig* schema)
+{
 	Experiments::BuildMetrics metrics;
 	metrics.buildTimeMs = buildTimeMs;
 	metrics.numNodes = stats.numNodes;
@@ -197,7 +191,6 @@ namespace
 		metrics.memoryEstimateBytes += metrics.microIndexedLeaves * 64 * sizeof(uint32_t);
 	}
 	return metrics;
-	}
 }
 
 Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs)
@@ -205,11 +198,7 @@ Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialInd
 	return collectBuildMetricsImpl(stats, root, buildTimeMs, nullptr);
 }
 
-Experiments::BuildMetrics Experiments::collectBuildMetrics(
-	const PointSpatialIndex::Stats& stats,
-	const PointSpatialIndex::Node* root,
-	double buildTimeMs,
-	const SchemaConfig& schema)
+Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs, const SchemaConfig& schema)
 {
 	return collectBuildMetricsImpl(stats, root, buildTimeMs, &schema);
 }
@@ -244,8 +233,7 @@ Experiments::QueryMetrics Experiments::summarizeQueryStats(const std::vector<Poi
 	metrics.averageTestedPoints = static_cast<double>(metrics.totalTestedPoints) / queryCount;
 	metrics.averageReturnedPoints = static_cast<double>(metrics.totalReturnedPoints) / queryCount;
 	metrics.averageFullyContainedNodes = static_cast<double>(metrics.totalFullyContainedNodes) / queryCount;
-	// Single batch: the reliability summary degenerates to the point estimate. Multi-repeat callers
-	// overwrite these via the schema-search profilers when measurementRepeats > 1.
+	// Single batch: reliability summary degenerates to the point estimate; multi-repeat callers overwrite via the schema-search profilers.
 	metrics.measurementRepeats = 1;
 	metrics.latencyMeanMs = metrics.averageLatencyMs;
 	metrics.latencyStdDevMs = 0.0;
