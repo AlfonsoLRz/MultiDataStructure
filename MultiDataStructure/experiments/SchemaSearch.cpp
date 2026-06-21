@@ -1165,6 +1165,12 @@ namespace
 		});
 	}
 
+	// CUDA MixedTree has no occupancy-entropy gate; drop those thresholds so a CUDA search samples GPU-runnable schemas instead of silently falling back to the CPU.
+	void restrictConditionDomainToGpuSafe(Experiments::ConditionDomain& domain)
+	{
+		domain.occupancyEntropyThresholds.clear();
+	}
+
 	std::string schemaConditionSummary(const SchemaConfig& schema)
 	{
 		std::ostringstream output;
@@ -5921,6 +5927,8 @@ namespace
 		}
 
 		Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front().cloud, autoOptions.proxyPointCap);
+		if (useCudaEvaluator(options))
+			restrictConditionDomainToGpuSafe(domain);
 		std::cout << "  auto-conditions: domain from " << domain.samplePoints << " sampled points, "
 			<< domain.sketchNodes << " sketch nodes\n";
 		std::cout << "    point thresholds: " << domain.pointThresholds.size()
@@ -6603,7 +6611,9 @@ namespace
 				<< ", budget " << evolution.refineThresholdsEvaluations << " evals/candidate, sigma0 "
 				<< evolution.refineThresholdsSigma0 << '\n';
 
-			const Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front().dataset->cloud, options.autoConditions.proxyPointCap > 0 ? options.autoConditions.proxyPointCap : 262144);
+			Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front().dataset->cloud, options.autoConditions.proxyPointCap > 0 ? options.autoConditions.proxyPointCap : 262144);
+			if (useCudaEvaluator(options))
+				restrictConditionDomainToGpuSafe(domain);
 
 			Experiments::ThresholdRefinementOptions refinerOptions;
 			refinerOptions.enabled = true;
@@ -8178,6 +8188,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 		std::cout << "  warning: generated adaptive leaf capacity is CPU-only for now; disabling it for CUDA evaluation\n";
 		resolvedOptions.generation.adaptiveLeafCapacity = false;
 	}
+	if (evaluatorResolution.usingCuda && (resolvedOptions.generation.conditionalLevels || resolvedOptions.autoConditions.enabled))
+		std::cout << "  note: occupancy-entropy gates are CPU-only; excluded from CUDA schema generation\n";
 
 	Experiments::EvaluationCache ownedScoreCache;
 	if (!resolvedOptions.scoreCachePath.empty() && resolvedOptions.scoreCache == nullptr)
@@ -8214,6 +8226,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 			resolvedOptions.autoConditions.proxyPointCap > 0
 				? resolvedOptions.autoConditions.proxyPointCap
 				: size_t(262144));
+		if (useCudaEvaluator(resolvedOptions))
+			restrictConditionDomainToGpuSafe(sharedConditionDomain.value());
 		std::cout << "  condition domain from '" << datasets.front().name
 			<< "': " << sharedConditionDomain->pointThresholds.size() << " point, "
 			<< sharedConditionDomain->densityThresholds.size() << " density, "
@@ -8367,6 +8381,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 							std::cout << ", gpu build " << record.gpuBuildMs
 								<< " ms, upload " << record.gpuUploadMs
 								<< " ms, gpu query " << record.gpuQueryMs << " ms";
+						else if (useCudaEvaluator(resolvedOptions))
+							std::cout << ", cpu fallback (GPU-unsupported feature)";
 						std::cout << '\n';
 					}
 				}

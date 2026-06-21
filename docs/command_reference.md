@@ -175,7 +175,7 @@ Small-to-medium 3D volume-query search. This uses AABB range queries only, with 
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_small_medium.csv --best-csv results/alhambra_volume_small_medium_best.csv --no-pause
 ```
 
-Generated conditional schema search. Later generated blocks may include local node predicates, so sibling branches can skip or enter different nested blocks:
+Generated conditional schema search. Later generated blocks may include local node predicates, so sibling branches can skip or enter different nested blocks. Occupancy-entropy gates are CPU-only like adaptive leaf capacity, so under `--evaluator cuda` they are excluded from generation/mutation (the run prints a note) and any explicitly supplied entropy/adaptive schema is benchmarked on the CPU and tagged `cpu fallback (GPU-unsupported feature)` in the leaderboard:
 
 ```powershell
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --generated-conditional --generated-condition-probability 0.5 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0 --score-imbalance-weight 0 --csv results/alhambra_volume_conditional.csv --best-csv results/alhambra_volume_conditional_best.csv --no-pause
