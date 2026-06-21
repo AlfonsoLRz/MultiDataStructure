@@ -45,17 +45,13 @@ namespace Experiments
 		size_t totalTestedPoints = 0;
 		size_t totalReturnedPoints = 0;
 		size_t totalFullyContainedNodes = 0;
-		// Measurement-reliability fields. These describe run-to-run timing noise of the SAME query
-		// batch executed `measurementRepeats` times (re-timed, not re-drawn). They are distinct from
-		// the multi-seed confirmation fields on SchemaSearchRecord, which re-draw the query set.
-		// With a single batch they degenerate to the point estimate: mean == averageLatencyMs,
-		// stddev == 0, CI == [mean, mean]. Populated across repeats by the schema-search profilers.
+		// Run-to-run timing noise over measurementRepeats re-timed batches; point estimate when 1.
 		size_t measurementRepeats = 1;
-		double latencyMeanMs = 0.0;       // mean of per-repeat batch-average latencies
-		double latencyStdDevMs = 0.0;     // population standard deviation across repeats
-		double latencyCoeffVar = 0.0;     // latencyStdDevMs / latencyMeanMs (0 when mean <= 0)
-		double latencyCiLowMs = 0.0;      // 2.5th percentile, bootstrap CI across repeats
-		double latencyCiHighMs = 0.0;     // 97.5th percentile, bootstrap CI across repeats
+		double latencyMeanMs = 0.0;
+		double latencyStdDevMs = 0.0;
+		double latencyCoeffVar = 0.0;
+		double latencyCiLowMs = 0.0;
+		double latencyCiHighMs = 0.0;
 	};
 
 	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs);

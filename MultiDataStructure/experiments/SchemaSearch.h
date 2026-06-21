@@ -16,10 +16,7 @@ namespace Experiments
 		std::string path;
 		SchemaConfig config;
 		bool generated = false;
-		// Marks canonical single-block controls (pure QuadTree, Octree, KDTree, BVH, etc.).
-		// Baselines are force-promoted through every auto-condition stage so the operator can
-		// always see how the naive structures perform on the full cloud, even if their proxy-stage
-		// rank is poor.
+		// Canonical single-block control; force-promoted through every auto-condition stage.
 		bool isBaseline = false;
 	};
 
@@ -37,9 +34,7 @@ namespace Experiments
 		double adaptiveLeafProbability = 0.25;
 		uint32_t seed = 1337;
 		std::string outputDirectory = "results/generated_schemas";
-		// "auto" resolves at schema-search startup: CPU discovery gets query_minimal_cpu,
-		// CUDA measurement gets cuda_query_full. Explicit values are query_minimal_cpu,
-		// cuda_query_full, and all.
+		// "auto" resolves to query_minimal_cpu for CPU discovery, cuda_query_full for CUDA.
 		std::string primitiveProfile = "auto";
 	};
 
@@ -51,14 +46,9 @@ namespace Experiments
 		std::vector<double> extentXThresholds;
 		std::vector<double> extentYThresholds;
 		std::vector<double> extentZThresholds;
-		// Phase B3 anisotropy thresholds. Quantiles of `1 - shortExtent / longExtent` computed
-		// over the 8x8x8 sketch cells during `estimateConditionDomain`. Empty when the cloud's
-		// shape didn't produce enough variation for the quantile estimator (very uniform clouds).
+		// Anisotropy quantiles (1 - shortExtent/longExtent) over the sketch; empty for uniform clouds.
 		std::vector<double> anisotropyThresholds;
-		// Phase B3 occupancy-entropy thresholds. Per-node entropy is normalized to [0, 1] by
-		// dividing by ln(64) (a 4x4x4 sub-grid is used at evaluation time). The domain is
-		// populated from a fixed [0.1, 0.9] range plus the cloud's own 8x8x8 normalized entropy
-		// so per-cloud tuning still has an anchor.
+		// Occupancy-entropy thresholds, normalized to [0,1]; seeded from [0.1,0.9] plus the cloud sketch.
 		std::vector<double> occupancyEntropyThresholds;
 		size_t samplePoints = 0;
 		size_t sketchNodes = 0;
@@ -83,10 +73,7 @@ namespace Experiments
 		double lambdaBuild = 0.0;
 		double lambdaMemory = 0.0;
 		double lambdaImbalance = 0.0;
-		// When useVisitProxy is set, the score is computed from cheap deterministic kernel counters
-		// (averageVisitedNodes + visitProxyAlpha * averageTestedPoints) instead of wall-clock query
-		// latency. Useful for screening stages where many candidates must be ranked without
-		// committing to a noisy latency measurement.
+		// Score from cheap kernel counters (visitedNodes + alpha*testedPoints) instead of wall-clock latency.
 		bool useVisitProxy = false;
 		double visitProxyAlpha = 0.1;
 	};
@@ -109,21 +96,16 @@ namespace Experiments
 		ScoreWeights scoreWeights;
 	};
 
-	// One rung in a successive-halving / multi-fidelity schedule. The batch flows R0 -> R1 -> ... ;
-	// each rung evaluates its input candidates at its own fidelity, then keeps the top
-	// `advanceTopK` to feed the next rung. The final rung's ranked output is the archive update.
+	// One rung in a successive-halving schedule; each rung keeps the top advanceTopK for the next.
 	struct RungSpec
 	{
 		std::string name = "rung";
-		// 0 means "use the workload profile's own numQueries". A positive value overrides it for
-		// this rung only (e.g. 4 for the cheap proxy, 64 for confirmation).
+		// 0 = use the workload's numQueries; positive overrides for this rung (e.g. 4 proxy, 64 confirm).
 		size_t queryCountOverride = 0;
-		// When true, this rung scores candidates by the cheap deterministic visit-proxy
-		// (averageVisitedNodes + alpha * averageTestedPoints) instead of wall-clock latency.
+		// Score this rung by the cheap visit-proxy instead of wall-clock latency.
 		bool useVisitProxy = false;
 		double visitProxyAlpha = 0.1;
-		// Number of candidates to promote to the next rung. 0 = promote all (only meaningful for
-		// the last rung).
+		// Candidates promoted to the next rung; 0 = promote all.
 		size_t advanceTopK = 0;
 	};
 
@@ -155,30 +137,19 @@ namespace Experiments
 		double mutationRate = 0.65;
 		double randomImmigrationRate = 0.20;
 		uint32_t seed = 1337;
-		// Multi-fidelity rung schedule applied to each evaluated batch. Empty = today's flat
-		// evaluate-all-then-mutate behavior.
+		// Multi-fidelity rung schedule per batch; empty = flat evaluate-all-then-mutate.
 		RungSchedule rungSchedule;
-		// Continuous-threshold post-pass over the GA archive. Disabled by default. The full
-		// settings struct (sigma, evaluation budget, etc.) is defined in ThresholdRefiner.h to
-		// keep that header self-contained, but the on/off flag and top-K live here so callers
-		// don't need to include the refiner header just to wire the GA.
+		// Continuous-threshold post-pass over the GA archive (settings in ThresholdRefiner.h).
 		bool refineThresholds = false;
 		size_t refineThresholdsTopK = 4;
 		size_t refineThresholdsEvaluations = 60;
 		double refineThresholdsSigma0 = 0.3;
 		uint32_t refineThresholdsSeed = 1337;
-		// Phase B4 diversity controls.
-		// Two-parent crossover: probability that a child is built by splicing two elite parents'
-		// level lists instead of mutating one. 0 = pure mutation (legacy behavior).
+		// Two-parent crossover probability; 0 = pure mutation.
 		double crossoverRate = 0.4;
-		// NSGA-II elite ranking: when true, elites are picked by non-dominated-sort + crowding
-		// distance over the four Pareto objectives instead of the scalar aggregateScore.
-		// Intrinsically preserves diversity across the front.
+		// Pick elites by NSGA-II non-dominated-sort + crowding instead of scalar aggregateScore.
 		bool useNsga2Ranking = true;
-		// Diagnostic-guided repair mutations. When enabled, each generation first creates a few
-		// children from measured archive entries by classifying their build/query bottleneck
-		// (high leaf occupancy, high tested-points, high visited-nodes, high full-containment,
-		// etc.) and applying a targeted schema edit before falling back to random mutation.
+		// Diagnostic-guided repair mutations from measured bottlenecks before random mutation.
 		bool repairMutations = false;
 		size_t repairTopK = 4;
 		size_t repairPerCandidate = 2;
@@ -201,20 +172,13 @@ namespace Experiments
 		std::string rankModelPath;
 		std::string csvPath = "results/schema_search.csv";
 		std::string bestCsvPath = "results/schema_search_best.csv";
-		// Optional Phase C1 Pareto-front CSV. One row per non-dominated candidate per
-		// (dataset, workload) group with the `pareto_rank` column. Empty = skip.
+		// Pareto-front CSV (one non-dominated row per dataset/workload, with pareto_rank); empty = skip.
 		std::string paretoCsvPath;
-		// Optional Markdown explanation report. Empty = skip. The report is generated from the
-		// measured SchemaSearchRecord rows after baseline annotation.
+		// Markdown explanation report; empty = skip.
 		std::string explainReportPath;
-		// Optional per-query CSV trace. Empty = disabled. When enabled, cached score rows are
-		// bypassed so the trace reflects queries actually executed in this run.
+		// Per-query CSV trace; empty = disabled (bypasses the score cache so the trace is real).
 		std::string queryTracePath;
-		// Phase C2 multi-seed confirmation. When >= 2, the top-K candidates per (dataset, workload)
-		// are re-measured with N distinct query seeds and their record fields are updated with
-		// mean ± 95% bootstrap CI on (avgLatencyMs, p95LatencyMs, gpuBuildMs). The Pareto
-		// dominance check then uses the seed-averaged mean instead of the single-seed point
-		// estimate. 0 or 1 disables (one-shot single-seed measurement).
+		// >= 2 re-measures the top-K per dataset/workload with N seeds and records mean + 95% CI.
 		size_t confirmSeeds = 0;
 		size_t confirmTopK = 4;
 		bool includeSyntheticDatasets = true;
@@ -253,23 +217,13 @@ namespace Experiments
 		size_t parallelDispatch = 1;
 		bool enableLeafMicroIndexes = false;
 		size_t leafMicroIndexThreshold = 512;
-		// Measurement-reliability repeats. When >= 2, each candidate's query batch is re-timed this
-		// many times (same queries, no rebuild) and the per-repeat batch-average latency mean,
-		// standard deviation, coefficient of variation, and 95% bootstrap CI are recorded on
-		// queryMetrics. 1 keeps the original one-shot timing. This measures timing noise, which is
-		// complementary to confirmSeeds (which re-draws the query set).
+		// >= 2 re-times each candidate's batch N times and records latency mean/stddev/CV/95% CI (timing noise).
 		size_t measurementRepeats = 1;
-		// Optional sidecar CSV for the proxy/latency rank-correlation report (one row per
-		// dataset/workload). Empty = stdout summary only. The report is always printed to stdout.
+		// Sidecar CSV for the proxy/latency correlation report; empty = stdout only.
 		std::string proxyCorrelationCsvPath;
-		// When true and --benchmark-top is set without a rank model, pick the K candidates to measure
-		// by the zero-build estimateSchemaQueryCost (cheapest predicted first) instead of an arbitrary
-		// first-K prefix. A model-free cheap pre-filter; validate trust via reportEstimatedCostCorrelation.
+		// With --benchmark-top and no rank model, keep the K cheapest candidates by the zero-build estimate.
 		bool estimatePrefilter = false;
-		// When true (and CUDA is available), after the search build canonical schemas on both the CPU
-		// index and the GPU MixedTree and compare per-query returned-point counts on a deterministic
-		// range/radius sample. Surfaces CPU<->GPU disagreement that the separate evaluators would
-		// otherwise hide. Writes results/parity_report.csv and a stdout summary.
+		// Build canonical schemas on CPU and GPU and compare per-query returned counts (results/parity_report.csv).
 		bool verifyParity = false;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
@@ -326,13 +280,9 @@ namespace Experiments
 		std::string bestBaselineSchema;
 		double bestBaselineScore = 0.0;
 		double relativeSpeedupVsBaseline = 0.0;
-		// Phase C1 Pareto-front tagging. -1 = not on the (dataset, workload) front; otherwise the
-		// 0-indexed rank by avgLatencyMs among non-dominated peers. Populated by
-		// `selectParetoRecords`; unset after a bare measurement run.
+		// Pareto-front rank by avgLatencyMs among non-dominated peers; -1 = not on the front.
 		int paretoRank = -1;
-		// Phase C2 multi-seed confirmation. `confirmSeedsUsed` > 0 means the three latency / build
-		// statistics below were computed across that many distinct query seeds; otherwise they are
-		// left at 0.0 and consumers fall back to `queryMetrics.averageLatencyMs` etc.
+		// > 0 means the latency/build CI fields below were computed across that many query seeds.
 		size_t confirmSeedsUsed = 0;
 		double latencyMean = 0.0;
 		double latencyCiLow = 0.0;
@@ -343,21 +293,11 @@ namespace Experiments
 		double gpuBuildMean = 0.0;
 		double gpuBuildCiLow = 0.0;
 		double gpuBuildCiHigh = 0.0;
-		// True when this record's (dataset, workload) winner is separated from its runner-up by
-		// non-overlapping latency confidence intervals (see `confidentlyBetter`). Set by
-		// `annotateRankingConfidence`. Defaults to false: with single-shot measurement (no
-		// --measure-repeats and no --confirm-seeds) confidence cannot be established, which is the
-		// honest answer and nudges the operator toward repeated measurement.
+		// Winner's latency CI is separated from the runner-up's (see confidentlyBetter); false when single-shot.
 		bool rankingConfident = false;
-		// True for the Pareto-front knee of this record's (dataset, workload) group: the entry
-		// closest to the normalized ideal across (latency, build, memory, imbalance). Set by
-		// selectParetoRecords; it is the recommended balanced compromise when no single objective
-		// dominates the decision.
+		// Pareto-front knee: entry closest to the normalized ideal across latency/build/memory/imbalance.
 		bool paretoKnee = false;
-		// Zero-build heuristic estimate of average per-query work (see estimateSchemaQueryCost),
-		// computed from the schema + cloud features without constructing the index. Stored so it can
-		// be validated against measured latency (reportEstimatedCostCorrelation) and, once trusted,
-		// used as a cheap pre-filter on generated candidates.
+		// Zero-build per-query cost estimate from schema + cloud features (see estimateSchemaQueryCost).
 		double estimatedQueryCost = 0.0;
 	};
 
