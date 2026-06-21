@@ -1444,5 +1444,38 @@ namespace BaselineTests
 			expect(knee == "balanced", "pareto knee is the balanced compromise");
 			expect(fastest == "fast", "pareto rank 0 is the lowest-latency entry");
 		}
+
+		// Zero-build query-cost estimate: coarser leaves test more points per query, so they cost
+		// more even though they visit fewer nodes; a structureless schema estimates a full scan.
+		{
+			Experiments::PointCloudFeatures features;
+			features.numPoints = 1000000;
+			Experiments::WorkloadFeatures workload;
+			workload.queryScaleMean = 0.1;
+			workload.wRange = 1.0;
+
+			auto octreeWithCapacity = [](size_t cap) {
+				SchemaConfig schema;
+				schema.name = "octree_cap";
+				SchemaLevelConfig level;
+				level.primitiveKind = SchemaPrimitiveKind::Octree;
+				level.typeName = "Octree";
+				level.numLevels = 10;
+				level.leafCapacity = cap;
+				schema.levels.push_back(level);
+				schema.buildPolicy.leafCapacity = cap;
+				return schema;
+			};
+
+			const double fine = Experiments::estimateSchemaQueryCost(octreeWithCapacity(16), features, workload, 0.1);
+			const double coarse = Experiments::estimateSchemaQueryCost(octreeWithCapacity(4096), features, workload, 0.1);
+			expect(fine > 0.0 && coarse > 0.0, "estimated query cost is positive");
+			expect(coarse > fine, "coarser leaves test more points per query (higher estimated cost)");
+
+			SchemaConfig empty;
+			empty.name = "empty";
+			expect(nearlyEqual(Experiments::estimateSchemaQueryCost(empty, features, workload, 0.1), 1000000.0),
+				"structureless schema estimates a full scan");
+		}
 	}
 }

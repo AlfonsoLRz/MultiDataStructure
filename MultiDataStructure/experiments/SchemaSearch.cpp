@@ -3428,6 +3428,8 @@ namespace
 			record.scoreImbalancePenalty);
 		record.pointFeatures = pointFeatures;
 		record.workloadFeatures = workloadFeatures;
+		record.estimatedQueryCost = Experiments::estimateSchemaQueryCost(
+			effectiveConfig, pointFeatures, workloadFeatures, record.weights.visitProxyAlpha);
 		record.backend = backend;
 		record.knnBackend = record.knnQueries == 0
 			? "none"
@@ -3654,7 +3656,8 @@ namespace
 			<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
-			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident\n";
+			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
+			<< "estimated_query_cost\n";
 	}
 
 	void writeSearchRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
@@ -3795,7 +3798,8 @@ namespace
 				<< record.queryMetrics.latencyCoeffVar << ','
 				<< record.queryMetrics.latencyCiLowMs << ','
 				<< record.queryMetrics.latencyCiHighMs << ','
-				<< (record.rankingConfident ? 1 : 0) << '\n';
+				<< (record.rankingConfident ? 1 : 0) << ','
+				<< record.estimatedQueryCost << '\n';
 		}
 	}
 
@@ -3836,7 +3840,8 @@ namespace
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 			<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
-			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident\n";
+			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
+			<< "estimated_query_cost\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : bestRecords)
 		{
@@ -3942,7 +3947,8 @@ namespace
 				<< record.queryMetrics.latencyCoeffVar << ','
 				<< record.queryMetrics.latencyCiLowMs << ','
 				<< record.queryMetrics.latencyCiHighMs << ','
-				<< (record.rankingConfident ? 1 : 0) << '\n';
+				<< (record.rankingConfident ? 1 : 0) << ','
+				<< record.estimatedQueryCost << '\n';
 		}
 	}
 
@@ -3971,7 +3977,8 @@ namespace
 			<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 			<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 			<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
-			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident\n";
+			<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
+			<< "estimated_query_cost\n";
 		output << std::fixed << std::setprecision(6);
 		for (const Experiments::SchemaSearchRecord& record : front)
 		{
@@ -4035,7 +4042,8 @@ namespace
 				<< record.queryMetrics.latencyCoeffVar << ','
 				<< record.queryMetrics.latencyCiLowMs << ','
 				<< record.queryMetrics.latencyCiHighMs << ','
-				<< (record.rankingConfident ? 1 : 0) << '\n';
+				<< (record.rankingConfident ? 1 : 0) << ','
+				<< record.estimatedQueryCost << '\n';
 		}
 	}
 
@@ -7613,6 +7621,131 @@ void Experiments::reportProxyLatencyCorrelation(const std::vector<SchemaSearchRe
 
 namespace
 {
+	// Spatial branching factor and partitioned dimensionality for a primitive, used to turn a leaf
+	// count into a per-axis leaf count and an internal-node multiplier.
+	std::pair<double, int> primitiveBranchingAndDims(SchemaPrimitiveKind kind)
+	{
+		switch (kind)
+		{
+		case SchemaPrimitiveKind::QuadTree:     return { 4.0, 2 };
+		case SchemaPrimitiveKind::Octree:       return { 8.0, 3 };
+		case SchemaPrimitiveKind::KarrasOctree: return { 8.0, 3 };
+		case SchemaPrimitiveKind::KDTree:       return { 2.0, 3 };
+		case SchemaPrimitiveKind::BVH:
+		case SchemaPrimitiveKind::LBVH:
+		case SchemaPrimitiveKind::BIH:          return { 2.0, 3 };
+		case SchemaPrimitiveKind::RegularGrid:  return { 27.0, 3 };
+		case SchemaPrimitiveKind::HGrid:        return { 8.0, 3 };
+		case SchemaPrimitiveKind::Mixed:        return { 8.0, 3 };
+		default:                                return { 8.0, 3 };
+		}
+	}
+}
+
+double Experiments::estimateSchemaQueryCost(
+	const SchemaConfig& schema,
+	const PointCloudFeatures& features,
+	const WorkloadFeatures& workload,
+	double visitProxyAlpha)
+{
+	const double n = std::max(1.0, static_cast<double>(features.numPoints));
+	if (schema.levels.empty())
+		return n; // no structure: a query scans the whole cloud
+
+	const SchemaLevelConfig& leafBlock = schema.levels.back();
+	const auto [branching, dims] = primitiveBranchingAndDims(leafBlock.primitiveKind);
+
+	size_t totalDepth = 0;
+	for (const SchemaLevelConfig& level : schema.levels)
+		totalDepth += std::max<size_t>(1, level.numLevels);
+	totalDepth = std::min<size_t>(totalDepth, 24); // cap to keep pow() finite
+
+	size_t leafCapacity = leafBlock.leafCapacity > 0 ? leafBlock.leafCapacity : schema.buildPolicy.leafCapacity;
+	leafCapacity = std::max<size_t>(1, leafCapacity);
+
+	// Leaves: as many as needed to reach ~leafCapacity per leaf, but no more than the depth allows.
+	const double maxLeaves = std::pow(branching, static_cast<double>(totalDepth));
+	const double idealLeaves = n / static_cast<double>(leafCapacity);
+	const double leaves = std::max(1.0, std::min(idealLeaves, maxLeaves));
+	const double avgLeafPop = n / leaves;
+	const double leavesPerSide = std::pow(leaves, 1.0 / static_cast<double>(dims));
+	const double scale = std::clamp(workload.queryScaleMean, 0.0, 1.0);
+
+	// A volume query of side `scale` per axis touches ~(scale * leavesPerSide + 1) leaves per axis;
+	// internal ancestors add a geometric b/(b-1) factor.
+	const double volumeVisitedLeaves = std::min(leaves, std::pow(scale * leavesPerSide + 1.0, static_cast<double>(dims)));
+	const double volumeTested = volumeVisitedLeaves * avgLeafPop;
+	const double internalFactor = branching > 1.0 ? branching / (branching - 1.0) : static_cast<double>(totalDepth);
+	const double volumeVisitedNodes = volumeVisitedLeaves * internalFactor;
+	const double volumeCost = volumeVisitedNodes + visitProxyAlpha * volumeTested;
+
+	// KNN: descend to a leaf then expand to a couple of neighbouring leaves.
+	const double knnCost = static_cast<double>(totalDepth)
+		+ visitProxyAlpha * (2.0 * avgLeafPop + static_cast<double>(workload.knnK));
+
+	const double wSum = workload.wRange + workload.wRadius + workload.wKnn;
+	if (wSum <= 0.0)
+		return volumeCost;
+	return (workload.wRange * volumeCost + workload.wRadius * volumeCost + workload.wKnn * knnCost) / wSum;
+}
+
+void Experiments::reportEstimatedCostCorrelation(const std::vector<SchemaSearchRecord>& records, const std::string& csvPath)
+{
+	struct CostGroup
+	{
+		std::vector<double> estimate;
+		std::vector<double> latency;
+	};
+
+	std::map<std::pair<std::string, std::string>, CostGroup> groups;
+	for (const SchemaSearchRecord& record : records)
+	{
+		if (record.weights.useVisitProxy)
+			continue;
+		const double latency = record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
+			? record.latencyMean
+			: record.queryMetrics.averageLatencyMs;
+		if (latency <= 0.0 || record.estimatedQueryCost <= 0.0)
+			continue;
+		CostGroup& group = groups[{ record.datasetName, record.workloadName }];
+		group.estimate.push_back(record.estimatedQueryCost);
+		group.latency.push_back(latency);
+	}
+
+	if (groups.empty())
+		return;
+
+	std::cout << "  zero-build cost estimate vs latency rank correlation (Spearman):\n";
+	std::ofstream csv;
+	const bool writeCsv = !csvPath.empty();
+	if (writeCsv)
+	{
+		createParentDirectory(csvPath);
+		csv.open(csvPath);
+		if (csv.is_open())
+			csv << "dataset_name,workload_name,num_candidates,spearman_rho\n";
+	}
+
+	for (const auto& [key, group] : groups)
+	{
+		if (group.estimate.size() < 3)
+		{
+			std::cout << "    [" << key.first << " / " << key.second << "] n/a ("
+				<< group.estimate.size() << " candidate(s))\n";
+			continue;
+		}
+		const double rho = Experiments::spearmanRankCorrelation(group.estimate, group.latency);
+		std::cout << "    [" << key.first << " / " << key.second << "] rho="
+			<< std::fixed << std::setprecision(3) << rho
+			<< " over " << group.estimate.size() << " candidates\n";
+		if (writeCsv && csv.is_open())
+			csv << csvEscape(key.first) << ',' << csvEscape(key.second) << ','
+				<< group.estimate.size() << ',' << rho << '\n';
+	}
+}
+
+namespace
+{
 	struct ParetoMetrics
 	{
 		double avgLatencyMs = 0.0;
@@ -8209,6 +8342,7 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	annotateBaselineComparisons(records);
 	annotateRankingConfidence(records);
 	reportProxyLatencyCorrelation(records, resolvedOptions.proxyCorrelationCsvPath);
+	reportEstimatedCostCorrelation(records, std::string());
 	reportParetoKnee(records);
 	if (resolvedOptions.deepNestedSearch)
 		reportDeepNestedOutcome(records);

@@ -350,6 +350,11 @@ namespace Experiments
 		// selectParetoRecords; it is the recommended balanced compromise when no single objective
 		// dominates the decision.
 		bool paretoKnee = false;
+		// Zero-build heuristic estimate of average per-query work (see estimateSchemaQueryCost),
+		// computed from the schema + cloud features without constructing the index. Stored so it can
+		// be validated against measured latency (reportEstimatedCostCorrelation) and, once trusted,
+		// used as a cheap pre-filter on generated candidates.
+		double estimatedQueryCost = 0.0;
 	};
 
 	struct SchemaRepairDiagnostics
@@ -439,6 +444,23 @@ namespace Experiments
 	// writes one row per group. High rho means the proxy can be trusted to pre-rank candidates; low
 	// means the cheap rungs may be discarding good schemas.
 	void reportProxyLatencyCorrelation(const std::vector<SchemaSearchRecord>& records, const std::string& csvPath);
+
+	// Zero-build heuristic estimate of average per-query work for a schema on a cloud, WITHOUT
+	// building the index. Returns a "visited-nodes + alpha * tested-points"-style cost. Assumes a
+	// roughly uniform distribution and that the structure subdivides until leaves hold about
+	// leafCapacity points; the deepest block drives the leaf geometry. Intended as a cheap
+	// pre-ranking signal, not an accurate timing predictor — validate with
+	// reportEstimatedCostCorrelation before trusting it on a dataset.
+	double estimateSchemaQueryCost(
+		const SchemaConfig& schema,
+		const PointCloudFeatures& features,
+		const WorkloadFeatures& workload,
+		double visitProxyAlpha = 0.1);
+
+	// Per (dataset, workload), reports the Spearman correlation between the zero-build
+	// estimatedQueryCost and measured latency over the real-latency records. High rho means the
+	// estimate can pre-filter generated candidates before any build is paid for.
+	void reportEstimatedCostCorrelation(const std::vector<SchemaSearchRecord>& records, const std::string& csvPath);
 
 	// Returns the non-dominated set per (dataset, workload) group over the four-tuple
 	// (avgLatencyMs, buildTimeMs, memoryMb, imbalancePenalty). Each returned record carries its
