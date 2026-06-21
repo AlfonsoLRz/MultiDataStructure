@@ -59,7 +59,7 @@
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <OpenMPSupport>true</OpenMPSupport>
       <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir);tinybvh/;progressbar/include/;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir);</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <EnableModules>true</EnableModules>
@@ -85,7 +85,7 @@
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <OpenMPSupport>true</OpenMPSupport>
       <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir);tinybvh/;progressbar/include/;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir);</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <EnableModules>true</EnableModules>
@@ -124,12 +124,8 @@
     <ClInclude Include="..\tests\BaselineTests.h" />
     <ClInclude Include="AABB.h" />
     <ClInclude Include="AppConfig.h" />
-    <ClInclude Include="ApplicationState.h" />
     <ClInclude Include="Bvh.h" />
     <ClInclude Include="bvh_kernels.cuh" />
-    <ClInclude Include="Camera.h" />
-    <ClInclude Include="CameraProjection.h" />
-    <ClInclude Include="ChronoUtilities.h" />
     <ClInclude Include="core\BuildPolicy.h" />
     <ClInclude Include="core\Config.h" />
     <ClInclude Include="experiments\EvaluationCache.h" />
@@ -141,26 +137,14 @@
     <ClInclude Include="experiments\ThresholdRefiner.h" />
     <ClInclude Include="CudaHelper.h" />
     <ClInclude Include="cuda_globals.cuh" />
-    <ClInclude Include="GeometricUtilities.h" />
     <ClInclude Include="GPUStructs.h" />
-    <ClInclude Include="Image.h" />
     <ClInclude Include="KdTree.h" />
-    <ClInclude Include="Material.h" />
-    <ClInclude Include="Model3D.h" />
     <ClInclude Include="morton_encoding_kernels.cuh" />
     <ClInclude Include="MultiDataStructure.h" />
     <ClInclude Include="Octree.h" />
-    <ClInclude Include="progressbar\include\progressbar.hpp" />
     <ClInclude Include="QuadTree.h" />
     <ClInclude Include="Ray.h" />
-    <ClInclude Include="SceneContent.h" />
     <ClInclude Include="stdafx.h" />
-    <ClInclude Include="ExternalBvh.h" />
-    <ClCompile Include="tinybvh\tiny_bvh.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
-    </ClCompile>
-    <ClInclude Include="TriangleMesh.h" />
     <ClInclude Include="ui\OptimizerGui.h" />
     <ClInclude Include="workloads\points\PointBenchmark.h" />
     <ClInclude Include="workloads\points\BIH.h" />
@@ -197,8 +181,6 @@
     <ClCompile Include="..\tests\test_tree_cleanup.cpp" />
     <ClCompile Include="AABB.cpp" />
     <ClCompile Include="AppConfig.cpp" />
-    <ClCompile Include="Camera.cpp" />
-    <ClCompile Include="CameraProjection.cpp" />
     <ClCompile Include="core\BuildPolicy.cpp" />
     <ClCompile Include="core\Config.cpp" />
     <ClCompile Include="experiments\EvaluationCache.cpp" />
@@ -209,21 +191,14 @@
     <ClCompile Include="experiments\SurrogateAcquisition.cpp" />
     <ClCompile Include="experiments\ThresholdRefiner.cpp" />
     <ClCompile Include="CudaHelper.cpp" />
-    <ClCompile Include="GeometricUtilities.cpp" />
     <ClCompile Include="GPUStructs.cpp" />
-    <ClCompile Include="Image.cpp" />
     <ClCompile Include="KdTree.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Material.cpp" />
-    <ClCompile Include="Model3D.cpp" />
     <ClCompile Include="MultiDataStructure.cpp" />
     <ClCompile Include="Octree.cpp" />
     <ClCompile Include="QuadTree.cpp" />
     <ClCompile Include="Ray.cpp" />
-    <ClCompile Include="SceneContent.cpp" />
     <ClCompile Include="stdafx.cpp" />
-    <ClCompile Include="ExternalBvh.cpp" />
-    <ClCompile Include="TriangleMesh.cpp" />
     <ClCompile Include="ui\OptimizerGui.cpp" />
     <ClCompile Include="workloads\points\BIH.cpp" />
     <ClCompile Include="workloads\points\HGrid.cpp" />

@@ -1,6 +1,6 @@
 # Architecture
 
-This repository is moving from a triangle/ray prototype toward a point-cloud spatial-index framework inspired by nested LiDAR indexing.
+This repository is a point-cloud spatial-index framework inspired by nested LiDAR indexing. The original triangle/ray-tracing rendering prototype has been removed; a small legacy `MultiDataStructure` meta-structure is retained only for the shared `DataStructureLevel`/`LevelConfig` types and two unit tests (see below).
 
 ## Current Layout
 
@@ -52,7 +52,7 @@ tests/
   test_schema_search.cpp
 ```
 
-Legacy triangle/rendering files still exist in the repository, but `main.cpp` and the Visual Studio project no longer include the triangle benchmark workload.
+The triangle benchmark and 3D-rendering files (`TriangleBenchmark.*`, `ExternalBvh.*`, `TriangleMesh.*`, `Model3D.*`, `Material.*`, `Camera*.*`, `Image.*`, `SceneContent.*`, `GeometricUtilities.*`) and the vendored `tinybvh/` and `progressbar/` libraries have been removed. The `MultiDataStructure.*`, `QuadTree.*`, `Octree.*`, `KdTree.*`, and `Bvh.*` files listed above are the retained legacy meta-structure, kept because `core/Config` reuses its `DataStructureLevel`/`LevelConfig` types and `tests/test_tree_cleanup.cpp` + `tests/test_level_schedule.cpp` still cover it.
 
 ## Application Entry Point
 
@@ -92,7 +92,7 @@ The current generic spatial-index pieces are still physically in the project roo
 
 `core/Config.*` parses JSON schema files into `SchemaConfig`. The parser supports `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, `HGrid`, and `Mixed` schema names. GPU-specific aliases keep their primitive identity for CUDA replay while carrying an explicit CPU fallback family. `QuadTree` levels can set `axisPolicy` to `xy`, `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, or `ignore_z`; point-cloud schemas default to `xy`.
 
-Some root-level core APIs still carry triangle/ray concepts from the original prototype. New work should prefer the point workload boundary unless a legacy API is being deliberately retired or generalized.
+The retained legacy meta-structure APIs still carry triangle/ray concepts from the original prototype (e.g. `SpatialDSNode::intersects(Ray)`), but they are unused by the point path. New work should prefer the point workload boundary; a future cleanup can extract `DataStructureLevel`/`LevelConfig` into `core/` and retire the meta-structure entirely.
 
 ## Point Workload
 

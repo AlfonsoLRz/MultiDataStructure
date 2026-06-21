@@ -10,9 +10,6 @@
     <Filter Include="cuda">
       <UniqueIdentifier>{65d73b47-273b-4616-a684-a80a64861831}</UniqueIdentifier>
     </Filter>
-    <Filter Include="tinybvh">
-      <UniqueIdentifier>{69378f8f-87c1-4663-8eaf-c46bb5929887}</UniqueIdentifier>
-    </Filter>
     <Filter Include="tests">
       <UniqueIdentifier>{4e3cd670-cfe7-4d57-8176-e992d62c5077}</UniqueIdentifier>
     </Filter>
@@ -42,20 +39,12 @@
     <ClInclude Include="AppConfig.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="Camera.h">
-      <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="GeometricUtilities.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="GPUStructs.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="Material.h">
-      <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="Model3D.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="MultiDataStructure.h">
       <Filter>headers</Filter>
@@ -63,20 +52,14 @@
     <ClInclude Include="Ray.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="SceneContent.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="stdafx.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="ApplicationState.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="Bvh.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="TriangleMesh.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="bvh_kernels.cuh">
       <Filter>cuda</Filter>
@@ -87,8 +70,6 @@
     <ClInclude Include="cuda_globals.cuh">
       <Filter>cuda</Filter>
     </ClInclude>
-    <ClInclude Include="CameraProjection.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="CudaHelper.h">
       <Filter>headers</Filter>
@@ -96,11 +77,7 @@
     <ClInclude Include="QuadTree.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="Image.h">
-      <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="ExternalBvh.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="KdTree.h">
       <Filter>headers</Filter>
@@ -108,11 +85,7 @@
     <ClInclude Include="Octree.h">
       <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="progressbar\include\progressbar.hpp">
-      <Filter>headers</Filter>
     </ClInclude>
-    <ClInclude Include="ChronoUtilities.h">
-      <Filter>headers</Filter>
     </ClInclude>
     <ClInclude Include="core\BuildPolicy.h">
       <Filter>core</Filter>
@@ -245,11 +218,7 @@
     <ClCompile Include="AppConfig.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="Camera.cpp">
-      <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="GeometricUtilities.cpp">
-      <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="GPUStructs.cpp">
       <Filter>source</Filter>
@@ -257,11 +226,7 @@
     <ClCompile Include="main.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="Material.cpp">
-      <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="Model3D.cpp">
-      <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="MultiDataStructure.cpp">
       <Filter>source</Filter>
@@ -269,17 +234,11 @@
     <ClCompile Include="Ray.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="SceneContent.cpp">
-      <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="stdafx.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="TriangleMesh.cpp">
-      <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="CameraProjection.cpp">
-      <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="CudaHelper.cpp">
       <Filter>source</Filter>
@@ -287,11 +246,7 @@
     <ClCompile Include="QuadTree.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="Image.cpp">
-      <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="ExternalBvh.cpp">
-      <Filter>source</Filter>
     </ClCompile>
     <ClCompile Include="Octree.cpp">
       <Filter>source</Filter>
@@ -299,7 +254,6 @@
     <ClCompile Include="KdTree.cpp">
       <Filter>source</Filter>
     </ClCompile>
-    <ClCompile Include="tinybvh\tiny_bvh.h" />
     <ClCompile Include="core\BuildPolicy.cpp">
       <Filter>core</Filter>
     </ClCompile>

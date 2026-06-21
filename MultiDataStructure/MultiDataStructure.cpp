@@ -1,8 +1,6 @@
 #include "stdafx.h"
 #include "MultiDataStructure.h"
 
-#include "progressbar.hpp"
-
 //
 
 MultiDataStructure::MultiDataStructure(const std::vector<LevelConfig>& levels) :

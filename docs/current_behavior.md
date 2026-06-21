@@ -277,7 +277,9 @@ The built-in tests compare these against brute force on a deterministic sparse/d
 
 ## Legacy Triangle Code
 
-The executable no longer exposes the triangle/ray benchmark, and `TriangleBenchmark.*` is no longer included in the Visual Studio project. Older triangle and rendering files may still exist as reference code while the project moves toward point-cloud indexing, but the maintained run path is point-first.
+The triangle/ray-tracing and 3D-rendering prototype has been removed from the repository and the Visual Studio project: `TriangleBenchmark.*`, `ExternalBvh.*`, `TriangleMesh.*`, `Model3D.*`, `Material.*`, `Camera*.*`, `Image.*`, `SceneContent.*`, `GeometricUtilities.*`, `ApplicationState.h`, `ChronoUtilities.h`, and the vendored `tinybvh/` and `progressbar/` libraries are gone.
+
+The legacy `MultiDataStructure` meta-structure class and its `KdTree`/`Octree`/`QuadTree`/`Bvh` node types are intentionally retained: the point-cloud schema layer (`core/Config`) reuses the `MultiDataStructure::DataStructureLevel` enum and `LevelConfig` struct, and `tests/test_tree_cleanup.cpp` and `tests/test_level_schedule.cpp` still exercise the meta-structure. `Ray.*` and `AABB.*` are also retained because the point workload depends on `AABB` (which includes `Ray`). Fully decoupling the point schema layer from the legacy meta-structure is future work.
 
 ## Current Limitations
 
@@ -291,4 +293,4 @@ The executable no longer exposes the triangle/ray benchmark, and `TriangleBenchm
 - `PointCloud::bounds()` and generated query coordinates are local-space. Use `PointCloud::toWorldPosition()` or the JSON `dataset.coordinate_frame` metadata to reconstruct LAS/world coordinates.
 - The `.mdspc` cache stores local positions plus coordinate-frame metadata and is invalidated using the source file size and last-write timestamp.
 - JSON logging is intentionally lightweight and hand-written.
-- Some generic core files still expose legacy triangle/ray APIs from the original prototype.
+- The retained legacy `MultiDataStructure` meta-structure still exposes triangle/ray APIs from the original prototype (e.g. `SpatialDSNode::intersects(Ray)`); these are unused by the point path and only kept alive by the two meta-structure unit tests.
