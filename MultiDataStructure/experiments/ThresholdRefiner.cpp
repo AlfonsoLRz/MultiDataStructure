@@ -8,9 +8,9 @@
 
 struct DomainBound
 {
-	bool valid = false;
-	double lo = 0.0;
-	double hi = 0.0;
+	bool _valid = false;
+	double _lo = 0.0;
+	double _hi = 0.0;
 };
 
 template <typename TValue>
@@ -19,15 +19,15 @@ static DomainBound boundsOf(const std::vector<TValue>& sortedValues)
 	DomainBound bound;
 	if (sortedValues.empty())
 		return bound;
-	bound.valid = sortedValues.front() != sortedValues.back();
-	bound.lo = static_cast<double>(sortedValues.front());
-	bound.hi = static_cast<double>(sortedValues.back());
+	bound._valid = sortedValues.front() != sortedValues.back();
+	bound._lo = static_cast<double>(sortedValues.front());
+	bound._hi = static_cast<double>(sortedValues.back());
 	// Degenerate bound: skip — there's nothing to refine.
-	if (!bound.valid)
+	if (!bound._valid)
 		return bound;
 	// Defensive ordering: front < back is expected for sorted domains but guard anyway.
-	if (bound.lo > bound.hi)
-		std::swap(bound.lo, bound.hi);
+	if (bound._lo > bound._hi)
+		std::swap(bound._lo, bound._hi);
 	return bound;
 }
 
@@ -83,30 +83,30 @@ static void addDimensionIfActive(
 	if (!optional.has_value())
 		return;
 	const DomainBound bound = bounds();
-	if (!bound.valid)
+	if (!bound._valid)
 		return;
 
 	Experiments::RefinementDimension dim;
-	dim.levelIndex = levelIndex;
+	dim._levelIndex = levelIndex;
 	dim.field = fieldName;
 	dim.integerValued = integerValued;
 	dim.logScale = logScale;
-	dim.lo = bound.lo;
-	dim.hi = bound.hi;
+	dim._lo = bound._lo;
+	dim._hi = bound._hi;
 	dim.current = static_cast<double>(optional.value());
 	// Snap a current value outside the tightened domain back into range so the initial encoding lands in [0,1].
-	dim.current = std::clamp(dim.current, dim.lo, dim.hi);
+	dim.current = std::clamp(dim.current, dim._lo, dim._hi);
 	outDims.push_back(dim);
 }
 
 static double encode(const Experiments::RefinementDimension& dim, double value)
 {
-	return dim.logScale ? encodeLog(value, dim.lo, dim.hi) : encodeLinear(value, dim.lo, dim.hi);
+	return dim.logScale ? encodeLog(value, dim._lo, dim._hi) : encodeLinear(value, dim._lo, dim._hi);
 }
 
 static double decode(const Experiments::RefinementDimension& dim, double x)
 {
-	double v = dim.logScale ? decodeLog(x, dim.lo, dim.hi) : decodeLinear(x, dim.lo, dim.hi);
+	double v = dim.logScale ? decodeLog(x, dim._lo, dim._hi) : decodeLinear(x, dim._lo, dim._hi);
 	if (dim.integerValued)
 		v = std::round(v);
 	return v;
@@ -115,37 +115,37 @@ static double decode(const Experiments::RefinementDimension& dim, double x)
 static void writeDimensionInto(SchemaLevelCondition& condition, const std::string& field, double value)
 {
 	if (field == "minPoints")
-		condition.minPoints = static_cast<size_t>(std::max(0.0, value));
+		condition._minPoints = static_cast<size_t>(std::max(0.0, value));
 	else if (field == "maxPoints")
-		condition.maxPoints = static_cast<size_t>(std::max(0.0, value));
+		condition._maxPoints = static_cast<size_t>(std::max(0.0, value));
 	else if (field == "minDensity")
-		condition.minDensity = value;
+		condition._minDensity = value;
 	else if (field == "maxDensity")
-		condition.maxDensity = value;
+		condition._maxDensity = value;
 	else if (field == "minHeightRatio")
-		condition.minHeightRatio = value;
+		condition._minHeightRatio = value;
 	else if (field == "maxHeightRatio")
-		condition.maxHeightRatio = value;
+		condition._maxHeightRatio = value;
 	else if (field == "minExtentX")
-		condition.minExtentX = value;
+		condition._minExtentX = value;
 	else if (field == "maxExtentX")
-		condition.maxExtentX = value;
+		condition._maxExtentX = value;
 	else if (field == "minExtentY")
-		condition.minExtentY = value;
+		condition._minExtentY = value;
 	else if (field == "maxExtentY")
-		condition.maxExtentY = value;
+		condition._maxExtentY = value;
 	else if (field == "minExtentZ")
-		condition.minExtentZ = value;
+		condition._minExtentZ = value;
 	else if (field == "maxExtentZ")
-		condition.maxExtentZ = value;
+		condition._maxExtentZ = value;
 	else if (field == "minAnisotropy")
-		condition.minAnisotropy = std::clamp(value, 0.0, 1.0);
+		condition._minAnisotropy = std::clamp(value, 0.0, 1.0);
 	else if (field == "maxAnisotropy")
-		condition.maxAnisotropy = std::clamp(value, 0.0, 1.0);
+		condition._maxAnisotropy = std::clamp(value, 0.0, 1.0);
 	else if (field == "minOccupancyEntropy")
-		condition.minOccupancyEntropy = std::clamp(value, 0.0, 1.0);
+		condition._minOccupancyEntropy = std::clamp(value, 0.0, 1.0);
 	else if (field == "maxOccupancyEntropy")
-		condition.maxOccupancyEntropy = std::clamp(value, 0.0, 1.0);
+		condition._maxOccupancyEntropy = std::clamp(value, 0.0, 1.0);
 }
 
 namespace Experiments
@@ -155,68 +155,68 @@ namespace Experiments
 		const ConditionDomain& domain)
 	{
 		std::vector<RefinementDimension> dims;
-		const DomainBound pointBound = boundsOf(domain.pointThresholds);
-		const DomainBound densityBound = boundsOf(domain.densityThresholds);
-		const DomainBound heightBound = boundsOf(domain.heightRatioThresholds);
-		const DomainBound extentXBound = boundsOf(domain.extentXThresholds);
-		const DomainBound extentYBound = boundsOf(domain.extentYThresholds);
-		const DomainBound extentZBound = boundsOf(domain.extentZThresholds);
-		const DomainBound anisotropyBound = boundsOf(domain.anisotropyThresholds);
-		const DomainBound entropyBound = boundsOf(domain.occupancyEntropyThresholds);
+		const DomainBound pointBound = boundsOf(domain._pointThresholds);
+		const DomainBound densityBound = boundsOf(domain._densityThresholds);
+		const DomainBound heightBound = boundsOf(domain._heightRatioThresholds);
+		const DomainBound extentXBound = boundsOf(domain._extentXThresholds);
+		const DomainBound extentYBound = boundsOf(domain._extentYThresholds);
+		const DomainBound extentZBound = boundsOf(domain._extentZThresholds);
+		const DomainBound anisotropyBound = boundsOf(domain._anisotropyThresholds);
+		const DomainBound entropyBound = boundsOf(domain._occupancyEntropyThresholds);
 
-		for (size_t levelIndex = 0; levelIndex < candidate.config.levels.size(); ++levelIndex)
+		for (size_t levelIndex = 0; levelIndex < candidate._config._levels.size(); ++levelIndex)
 		{
-			const SchemaLevelCondition& condition = candidate.config.levels[levelIndex].condition;
+			const SchemaLevelCondition& condition = candidate._config._levels[levelIndex]._condition;
 			if (condition.empty())
 				continue;
 
 			addDimensionIfActive(dims, levelIndex, "minPoints", true, true,
-				[&]() -> const std::optional<size_t>& { return condition.minPoints; },
+				[&]() -> const std::optional<size_t>& { return condition._minPoints; },
 				[&]() { return pointBound; });
 			addDimensionIfActive(dims, levelIndex, "maxPoints", true, true,
-				[&]() -> const std::optional<size_t>& { return condition.maxPoints; },
+				[&]() -> const std::optional<size_t>& { return condition._maxPoints; },
 				[&]() { return pointBound; });
 			addDimensionIfActive(dims, levelIndex, "minDensity", false, false,
-				[&]() -> const std::optional<double>& { return condition.minDensity; },
+				[&]() -> const std::optional<double>& { return condition._minDensity; },
 				[&]() { return densityBound; });
 			addDimensionIfActive(dims, levelIndex, "maxDensity", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxDensity; },
+				[&]() -> const std::optional<double>& { return condition._maxDensity; },
 				[&]() { return densityBound; });
 			addDimensionIfActive(dims, levelIndex, "minHeightRatio", false, false,
-				[&]() -> const std::optional<double>& { return condition.minHeightRatio; },
+				[&]() -> const std::optional<double>& { return condition._minHeightRatio; },
 				[&]() { return heightBound; });
 			addDimensionIfActive(dims, levelIndex, "maxHeightRatio", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxHeightRatio; },
+				[&]() -> const std::optional<double>& { return condition._maxHeightRatio; },
 				[&]() { return heightBound; });
 			addDimensionIfActive(dims, levelIndex, "minExtentX", false, false,
-				[&]() -> const std::optional<double>& { return condition.minExtentX; },
+				[&]() -> const std::optional<double>& { return condition._minExtentX; },
 				[&]() { return extentXBound; });
 			addDimensionIfActive(dims, levelIndex, "maxExtentX", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxExtentX; },
+				[&]() -> const std::optional<double>& { return condition._maxExtentX; },
 				[&]() { return extentXBound; });
 			addDimensionIfActive(dims, levelIndex, "minExtentY", false, false,
-				[&]() -> const std::optional<double>& { return condition.minExtentY; },
+				[&]() -> const std::optional<double>& { return condition._minExtentY; },
 				[&]() { return extentYBound; });
 			addDimensionIfActive(dims, levelIndex, "maxExtentY", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxExtentY; },
+				[&]() -> const std::optional<double>& { return condition._maxExtentY; },
 				[&]() { return extentYBound; });
 			addDimensionIfActive(dims, levelIndex, "minExtentZ", false, false,
-				[&]() -> const std::optional<double>& { return condition.minExtentZ; },
+				[&]() -> const std::optional<double>& { return condition._minExtentZ; },
 				[&]() { return extentZBound; });
 			addDimensionIfActive(dims, levelIndex, "maxExtentZ", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxExtentZ; },
+				[&]() -> const std::optional<double>& { return condition._maxExtentZ; },
 				[&]() { return extentZBound; });
 			addDimensionIfActive(dims, levelIndex, "minAnisotropy", false, false,
-				[&]() -> const std::optional<double>& { return condition.minAnisotropy; },
+				[&]() -> const std::optional<double>& { return condition._minAnisotropy; },
 				[&]() { return anisotropyBound; });
 			addDimensionIfActive(dims, levelIndex, "maxAnisotropy", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxAnisotropy; },
+				[&]() -> const std::optional<double>& { return condition._maxAnisotropy; },
 				[&]() { return anisotropyBound; });
 			addDimensionIfActive(dims, levelIndex, "minOccupancyEntropy", false, false,
-				[&]() -> const std::optional<double>& { return condition.minOccupancyEntropy; },
+				[&]() -> const std::optional<double>& { return condition._minOccupancyEntropy; },
 				[&]() { return entropyBound; });
 			addDimensionIfActive(dims, levelIndex, "maxOccupancyEntropy", false, false,
-				[&]() -> const std::optional<double>& { return condition.maxOccupancyEntropy; },
+				[&]() -> const std::optional<double>& { return condition._maxOccupancyEntropy; },
 				[&]() { return entropyBound; });
 		}
 
@@ -233,9 +233,9 @@ namespace Experiments
 		for (size_t i = 0; i < writeCount; ++i)
 		{
 			const RefinementDimension& dim = dimensions[i];
-			if (dim.levelIndex >= refined.levels.size())
+			if (dim._levelIndex >= refined._levels.size())
 				continue;
-			writeDimensionInto(refined.levels[dim.levelIndex].condition, dim.field, values[i]);
+			writeDimensionInto(refined._levels[dim._levelIndex]._condition, dim.field, values[i]);
 		}
 		return refined;
 	}
@@ -247,32 +247,32 @@ namespace Experiments
 		const ThresholdScoreFn& scoreFn)
 	{
 		ThresholdRefinementResult result;
-		result.refinedCandidate = candidate;
-		result.initialScore = scoreFn ? scoreFn(candidate) : std::numeric_limits<double>::infinity();
-		result.refinedScore = result.initialScore;
-		result.evaluationsUsed = scoreFn ? 1 : 0;
+		result._refinedCandidate = candidate;
+		result._initialScore = scoreFn ? scoreFn(candidate) : std::numeric_limits<double>::infinity();
+		result._refinedScore = result._initialScore;
+		result._evaluationsUsed = scoreFn ? 1 : 0;
 
 		const std::vector<RefinementDimension> dims = collectRefinementDimensions(candidate, domain);
-		result.dimensions = dims.size();
-		if (dims.empty() || !scoreFn || options.maxEvaluations <= 1)
+		result._dimensions = dims.size();
+		if (dims.empty() || !scoreFn || options._maxEvaluations <= 1)
 			return result;
 
 		const size_t n = dims.size();
 		const size_t autoLambda = static_cast<size_t>(std::max(4.0, 4.0 + 3.0 * std::log(static_cast<double>(n))));
-		const size_t lambda = options.populationLambda > 0 ? options.populationLambda : autoLambda;
+		const size_t lambda = options._populationLambda > 0 ? options._populationLambda : autoLambda;
 		if (lambda == 0)
 			return result;
 
-		std::mt19937 rng(options.seed);
+		std::mt19937 rng(options._seed);
 		std::normal_distribution<double> noise(0.0, 1.0);
 
 		std::vector<double> bestX(n, 0.0);
 		for (size_t i = 0; i < n; ++i)
 			bestX[i] = encode(dims[i], dims[i].current);
 
-		double sigma = std::clamp(options.sigma0, options.sigmaMin, options.sigmaMax);
-		double bestScore = result.initialScore;
-		size_t evaluationsUsed = result.evaluationsUsed;
+		double sigma = std::clamp(options._sigma0, options._sigmaMin, options._sigmaMax);
+		double bestScore = result._initialScore;
+		size_t evaluationsUsed = result._evaluationsUsed;
 
 		auto decodeVector = [&](const std::vector<double>& x) {
 			std::vector<double> decoded(n);
@@ -283,10 +283,10 @@ namespace Experiments
 
 		auto scoreVector = [&](const std::vector<double>& x, size_t generation, size_t childIndex) {
 			const std::vector<double> decoded = decodeVector(x);
-			SchemaConfig refinedConfig = applyRefinementVector(candidate.config, dims, decoded);
+			SchemaConfig refinedConfig = applyRefinementVector(candidate._config, dims, decoded);
 			const std::string prefix = "refined_g" + std::to_string(generation) + "_c" + std::to_string(childIndex);
-			SchemaCandidate childCandidate = materializeSchemaCandidate(refinedConfig, prefix, options.outputDirectory);
-			childCandidate.generated = true;
+			SchemaCandidate childCandidate = materializeSchemaCandidate(refinedConfig, prefix, options._outputDirectory);
+			childCandidate._generated = true;
 			return std::pair<double, SchemaCandidate>{ scoreFn(childCandidate), std::move(childCandidate) };
 		};
 
@@ -294,10 +294,10 @@ namespace Experiments
 		size_t generation = 0;
 		const auto refinementStart = std::chrono::steady_clock::now();
 		auto lastLogTime = refinementStart;
-		std::cout << "      refining " << options.maxEvaluations << "-eval budget, "
+		std::cout << "      refining " << options._maxEvaluations << "-eval budget, "
 			<< n << " active dim(s), lambda " << lambda
-			<< ", sigma0 " << options.sigma0 << '\n';
-		while (evaluationsUsed + lambda <= options.maxEvaluations)
+			<< ", sigma0 " << options._sigma0 << '\n';
+		while (evaluationsUsed + lambda <= options._maxEvaluations)
 		{
 			++generation;
 			double bestChildScore = std::numeric_limits<double>::infinity();
@@ -323,23 +323,23 @@ namespace Experiments
 			{
 				bestScore = bestChildScore;
 				bestX = bestChildX;
-				result.refinedCandidate = std::move(bestChildCandidate);
+				result._refinedCandidate = std::move(bestChildCandidate);
 				// 1/5-rule heuristic: expand sigma when an offspring improved on the parent, contract otherwise.
-				sigma = std::min(sigma * 1.5, options.sigmaMax);
+				sigma = std::min(sigma * 1.5, options._sigmaMax);
 			}
 			else
 			{
-				sigma = std::max(sigma * 0.8, options.sigmaMin);
+				sigma = std::max(sigma * 0.8, options._sigmaMin);
 			}
 
 			// Throttled per-generation progress line so the GUI doesn't appear to hang during the refiner's expensive full-build evaluations.
 			const auto now = std::chrono::steady_clock::now();
 			const double sinceLastLog = std::chrono::duration<double>(now - lastLogTime).count();
-			if (sinceLastLog >= 2.0 || evaluationsUsed >= options.maxEvaluations)
+			if (sinceLastLog >= 2.0 || evaluationsUsed >= options._maxEvaluations)
 			{
 				const double elapsedSec = std::chrono::duration<double>(now - refinementStart).count();
 				std::cout << "        refine gen " << generation
-					<< " eval " << evaluationsUsed << "/" << options.maxEvaluations
+					<< " eval " << evaluationsUsed << "/" << options._maxEvaluations
 					<< " best " << bestScore
 					<< " sigma " << sigma
 					<< " (" << elapsedSec << " s elapsed)\n";
@@ -347,8 +347,8 @@ namespace Experiments
 			}
 		}
 
-		result.refinedScore = bestScore;
-		result.evaluationsUsed = evaluationsUsed;
+		result._refinedScore = bestScore;
+		result._evaluationsUsed = evaluationsUsed;
 		return result;
 	}
 }

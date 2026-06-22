@@ -22,9 +22,9 @@ namespace
 
 	size_t leafCapacityForSchema(const SchemaConfig& schema)
 	{
-		size_t leafCapacity = schema.buildPolicy.leafCapacity;
-		if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
-			leafCapacity = schema.levels.front().leafCapacity;
+		size_t leafCapacity = schema._buildPolicy._leafCapacity;
+		if (!schema._levels.empty() && schema._levels.front()._leafCapacity > 0)
+			leafCapacity = schema._levels.front()._leafCapacity;
 
 		return std::max<size_t>(1, leafCapacity);
 	}
@@ -44,20 +44,20 @@ namespace
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
 	{
 		DeviceQuery result{};
-		result.type = static_cast<int>(query.type);
-		const glm::vec3 min = query.bounds.min();
-		const glm::vec3 max = query.bounds.max();
-		result.minX = min.x;
-		result.minY = min.y;
-		result.minZ = min.z;
-		result.maxX = max.x;
-		result.maxY = max.y;
-		result.maxZ = max.z;
-		result.centerX = query.center.x;
-		result.centerY = query.center.y;
-		result.centerZ = query.center.z;
-		result.radius = query.radius;
-		result.knnK = static_cast<uint32_t>(std::min<size_t>(query.k, std::numeric_limits<uint32_t>::max()));
+		result._type = static_cast<int>(query._type);
+		const glm::vec3 min = query._bounds.min();
+		const glm::vec3 max = query._bounds.max();
+		result._minX = min.x;
+		result._minY = min.y;
+		result._minZ = min.z;
+		result._maxX = max.x;
+		result._maxY = max.y;
+		result._maxZ = max.z;
+		result._centerX = query.center.x;
+		result._centerY = query.center.y;
+		result._centerZ = query.center.z;
+		result._radius = query._radius;
+		result._knnK = static_cast<uint32_t>(std::min<size_t>(query._k, std::numeric_limits<uint32_t>::max()));
 		return result;
 	}
 
@@ -68,10 +68,10 @@ namespace
 		for (const PointGpu::QuerySample& sample : samples)
 		{
 			PointSpatialIndex::QueryStats stats;
-			stats.visitedNodes = sample.visitedNodes;
-			stats.testedPoints = sample.testedPoints;
-			stats.returnedPoints = sample.returnedPoints;
-			stats.elapsedMs = sample.elapsedMs;
+			stats._visitedNodes = sample._visitedNodes;
+			stats._testedPoints = sample._testedPoints;
+			stats._returnedPoints = sample._returnedPoints;
+			stats._elapsedMs = sample._elapsedMs;
 			cpuSamples.push_back(stats);
 		}
 		return Experiments::summarizeQueryStats(cpuSamples);
@@ -135,35 +135,35 @@ namespace
 
 	__device__ bool rangeIntersectsNode(const LinearNode& node, const DeviceQuery& query)
 	{
-		return node.minX <= query.maxX && node.maxX >= query.minX &&
-			node.minY <= query.maxY && node.maxY >= query.minY &&
-			node.minZ <= query.maxZ && node.maxZ >= query.minZ;
+		return node._minX <= query._maxX && node._maxX >= query._minX &&
+			node._minY <= query._maxY && node._maxY >= query._minY &&
+			node._minZ <= query._maxZ && node._maxZ >= query._minZ;
 	}
 
 	__device__ bool pointInsideRange(const DevicePoint& point, const DeviceQuery& query)
 	{
-		return point.x >= query.minX && point.x <= query.maxX &&
-			point.y >= query.minY && point.y <= query.maxY &&
-			point.z >= query.minZ && point.z <= query.maxZ;
+		return point.x >= query._minX && point.x <= query._maxX &&
+			point.y >= query._minY && point.y <= query._maxY &&
+			point.z >= query._minZ && point.z <= query._maxZ;
 	}
 
 	__device__ float distanceSquaredToNode(const LinearNode& node, const DeviceQuery& query)
 	{
-		const float x = fminf(fmaxf(query.centerX, node.minX), node.maxX);
-		const float y = fminf(fmaxf(query.centerY, node.minY), node.maxY);
-		const float z = fminf(fmaxf(query.centerZ, node.minZ), node.maxZ);
-		const float dx = query.centerX - x;
-		const float dy = query.centerY - y;
-		const float dz = query.centerZ - z;
+		const float x = fminf(fmaxf(query._centerX, node._minX), node._maxX);
+		const float y = fminf(fmaxf(query._centerY, node._minY), node._maxY);
+		const float z = fminf(fmaxf(query._centerZ, node._minZ), node._maxZ);
+		const float dx = query._centerX - x;
+		const float dy = query._centerY - y;
+		const float dz = query._centerZ - z;
 		return dx * dx + dy * dy + dz * dz;
 	}
 
 	__device__ bool pointInsideRadius(const DevicePoint& point, const DeviceQuery& query)
 	{
-		const float dx = point.x - query.centerX;
-		const float dy = point.y - query.centerY;
-		const float dz = point.z - query.centerZ;
-		return dx * dx + dy * dy + dz * dz <= query.radius * query.radius;
+		const float dx = point.x - query._centerX;
+		const float dy = point.y - query._centerY;
+		const float dz = point.z - query._centerZ;
+		return dx * dx + dy * dy + dz * dz <= query._radius * query._radius;
 	}
 
 	__global__ void initializePointKeysKernel(
@@ -208,15 +208,15 @@ namespace
 			return;
 
 		LinearNode node{};
-		node.minX = 3.402823466e+38F;
-		node.minY = 3.402823466e+38F;
-		node.minZ = 3.402823466e+38F;
-		node.maxX = -3.402823466e+38F;
-		node.maxY = -3.402823466e+38F;
-		node.maxZ = -3.402823466e+38F;
-		node.left = -1;
-		node.right = -1;
-		node.parent = -1;
+		node._minX = 3.402823466e+38F;
+		node._minY = 3.402823466e+38F;
+		node._minZ = 3.402823466e+38F;
+		node._maxX = -3.402823466e+38F;
+		node._maxY = -3.402823466e+38F;
+		node._maxZ = -3.402823466e+38F;
+		node._left = -1;
+		node._right = -1;
+		node._parent = -1;
 		nodes[nodeIndex] = node;
 	}
 
@@ -234,9 +234,9 @@ namespace
 		const int nodeIndex = internalCount + leafIndex;
 		const size_t pointOffset = static_cast<size_t>(leafIndex) * leafCapacity;
 		const size_t remaining = pointOffset < pointCount ? pointCount - pointOffset : 0;
-		nodes[nodeIndex].pointOffset = static_cast<uint32_t>(pointOffset);
-		nodes[nodeIndex].pointCount = static_cast<uint32_t>(min(leafCapacity, remaining));
-		nodes[nodeIndex].flags = 1;
+		nodes[nodeIndex]._pointOffset = static_cast<uint32_t>(pointOffset);
+		nodes[nodeIndex]._pointCount = static_cast<uint32_t>(min(leafCapacity, remaining));
+		nodes[nodeIndex]._flags = 1;
 	}
 
 	__global__ void buildRadixTreeKernel(const uint64_t* leafKeys, int leafCount, LinearNode* nodes)
@@ -282,11 +282,11 @@ namespace
 		const int leftChild = split == first ? internalCount + split : split;
 		const int rightChild = split + 1 == last ? internalCount + split + 1 : split + 1;
 
-		nodes[internalIndex].left = leftChild;
-		nodes[internalIndex].right = rightChild;
-		nodes[internalIndex].flags = 0;
-		nodes[leftChild].parent = internalIndex;
-		nodes[rightChild].parent = internalIndex;
+		nodes[internalIndex]._left = leftChild;
+		nodes[internalIndex]._right = rightChild;
+		nodes[internalIndex]._flags = 0;
+		nodes[leftChild]._parent = internalIndex;
+		nodes[rightChild]._parent = internalIndex;
 	}
 
 	__global__ void computeLeafBoundsKernel(
@@ -310,9 +310,9 @@ namespace
 		float maxY = -3.402823466e+38F;
 		float maxZ = -3.402823466e+38F;
 
-		for (uint32_t i = 0; i < node.pointCount; ++i)
+		for (uint32_t i = 0; i < node._pointCount; ++i)
 		{
-			const uint32_t pointIndex = sortedIndices[node.pointOffset + i];
+			const uint32_t pointIndex = sortedIndices[node._pointOffset + i];
 			const DevicePoint point = points[pointIndex];
 			minX = fminf(minX, point.x);
 			minY = fminf(minY, point.y);
@@ -322,12 +322,12 @@ namespace
 			maxZ = fmaxf(maxZ, point.z);
 		}
 
-		node.minX = minX;
-		node.minY = minY;
-		node.minZ = minZ;
-		node.maxX = maxX;
-		node.maxY = maxY;
-		node.maxZ = maxZ;
+		node._minX = minX;
+		node._minY = minY;
+		node._minZ = minZ;
+		node._maxX = maxX;
+		node._maxY = maxY;
+		node._maxZ = maxZ;
 	}
 
 	__global__ void computeInternalBoundsKernel(LinearNode* nodes, int* counters, int leafCount)
@@ -341,7 +341,7 @@ namespace
 
 		while (true)
 		{
-			const int parent = nodes[current].parent;
+			const int parent = nodes[current]._parent;
 			if (parent < 0)
 				return;
 
@@ -350,17 +350,17 @@ namespace
 			if (previous == 0)
 				return;
 
-			const int left = nodes[parent].left;
-			const int right = nodes[parent].right;
+			const int left = nodes[parent]._left;
+			const int right = nodes[parent]._right;
 			const LinearNode leftNode = nodes[left];
 			const LinearNode rightNode = nodes[right];
 
-			nodes[parent].minX = fminf(leftNode.minX, rightNode.minX);
-			nodes[parent].minY = fminf(leftNode.minY, rightNode.minY);
-			nodes[parent].minZ = fminf(leftNode.minZ, rightNode.minZ);
-			nodes[parent].maxX = fmaxf(leftNode.maxX, rightNode.maxX);
-			nodes[parent].maxY = fmaxf(leftNode.maxY, rightNode.maxY);
-			nodes[parent].maxZ = fmaxf(leftNode.maxZ, rightNode.maxZ);
+			nodes[parent]._minX = fminf(leftNode._minX, rightNode._minX);
+			nodes[parent]._minY = fminf(leftNode._minY, rightNode._minY);
+			nodes[parent]._minZ = fminf(leftNode._minZ, rightNode._minZ);
+			nodes[parent]._maxX = fmaxf(leftNode._maxX, rightNode._maxX);
+			nodes[parent]._maxY = fmaxf(leftNode._maxY, rightNode._maxY);
+			nodes[parent]._maxZ = fmaxf(leftNode._maxZ, rightNode._maxZ);
 			current = parent;
 		}
 	}
@@ -380,7 +380,7 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 		{
 			samples[queryIndex] = DeviceQuerySample{};
 			return;
@@ -401,20 +401,20 @@ namespace
 			const LinearNode node = nodes[nodeIndex];
 			++visited;
 
-			const bool intersects = query.type == 2
-				? distanceSquaredToNode(node, query) <= query.radius * query.radius
+			const bool intersects = query._type == 2
+				? distanceSquaredToNode(node, query) <= query._radius * query._radius
 				: rangeIntersectsNode(node, query);
 			if (!intersects)
 				continue;
 
-			if (node.flags == 1)
+			if (node._flags == 1)
 			{
-				for (uint32_t i = 0; i < node.pointCount; ++i)
+				for (uint32_t i = 0; i < node._pointCount; ++i)
 				{
 					++tested;
-					const uint32_t pointIndex = sortedIndices[node.pointOffset + i];
+					const uint32_t pointIndex = sortedIndices[node._pointOffset + i];
 					const DevicePoint point = points[pointIndex];
-					const bool inside = query.type == 2
+					const bool inside = query._type == 2
 						? pointInsideRadius(point, query)
 						: pointInsideRange(point, query);
 					if (inside)
@@ -423,47 +423,47 @@ namespace
 				continue;
 			}
 
-			if (node.left >= 0 && stackSize < QueryStackSize)
-				stack[stackSize++] = node.left;
-			if (node.right >= 0 && stackSize < QueryStackSize)
-				stack[stackSize++] = node.right;
+			if (node._left >= 0 && stackSize < QueryStackSize)
+				stack[stackSize++] = node._left;
+			if (node._right >= 0 && stackSize < QueryStackSize)
+				stack[stackSize++] = node._right;
 		}
 
 		const unsigned long long end = clock64();
 		DeviceQuerySample sample{};
-		sample.visitedNodes = visited;
-		sample.testedPoints = tested;
-		sample.returnedPoints = returned;
-		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+		sample._visitedNodes = visited;
+		sample._testedPoints = tested;
+		sample._returnedPoints = returned;
+		sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
 }
 
 struct PointGpu::LBVH::DeviceState
 {
-	DevicePoint* points = nullptr;
-	uint64_t* keys = nullptr;
-	uint64_t* sortedKeys = nullptr;
-	uint64_t* leafKeys = nullptr;
-	uint32_t* indices = nullptr;
-	uint32_t* sortedIndices = nullptr;
-	LinearNode* nodes = nullptr;
-	int* boundsCounters = nullptr;
-	DeviceQuery* queryBuffer = nullptr;
-	DeviceQuerySample* sampleBuffer = nullptr;
-	void* sortTemporary = nullptr;
-	size_t sortTemporaryBytes = 0;
-	size_t queryCapacity = 0;
-	size_t pointCount = 0;
-	size_t leafCount = 0;
-	size_t nodeCount = 0;
-	size_t leafCapacity = 1;
-	size_t baseMemoryBytes = 0;
-	size_t memoryBytes = 0;
-	int device = 0;
-	std::string builder = "lbvh";
-	const PointCloud* cloud = nullptr;
-	bool sortedReady = false;
+	DevicePoint* _points = nullptr;
+	uint64_t* _keys = nullptr;
+	uint64_t* _sortedKeys = nullptr;
+	uint64_t* _leafKeys = nullptr;
+	uint32_t* _indices = nullptr;
+	uint32_t* _sortedIndices = nullptr;
+	LinearNode* _nodes = nullptr;
+	int* _boundsCounters = nullptr;
+	DeviceQuery* _queryBuffer = nullptr;
+	DeviceQuerySample* _sampleBuffer = nullptr;
+	void* _sortTemporary = nullptr;
+	size_t _sortTemporaryBytes = 0;
+	size_t _queryCapacity = 0;
+	size_t _pointCount = 0;
+	size_t _leafCount = 0;
+	size_t _nodeCount = 0;
+	size_t _leafCapacity = 1;
+	size_t _baseMemoryBytes = 0;
+	size_t _memoryBytes = 0;
+	int _device = 0;
+	std::string _builder = "lbvh";
+	const PointCloud* _cloud = nullptr;
+	bool _sortedReady = false;
 };
 
 namespace
@@ -493,23 +493,23 @@ namespace
 	template <typename State>
 	void releaseQueryBuffers(State& state)
 	{
-		cudaFree(state.queryBuffer);
-		cudaFree(state.sampleBuffer);
-		state.queryBuffer = nullptr;
-		state.sampleBuffer = nullptr;
-		state.queryCapacity = 0;
+		cudaFree(state._queryBuffer);
+		cudaFree(state._sampleBuffer);
+		state._queryBuffer = nullptr;
+		state._sampleBuffer = nullptr;
+		state._queryCapacity = 0;
 	}
 
 	template <typename State>
 	void ensureQueryBuffers(State& state, size_t capacity)
 	{
-		if (state.queryCapacity >= capacity && state.queryBuffer && state.sampleBuffer)
+		if (state._queryCapacity >= capacity && state._queryBuffer && state._sampleBuffer)
 			return;
 
 		releaseQueryBuffers(state);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
-		state.queryCapacity = capacity;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._queryBuffer), sizeof(DeviceQuery) * capacity));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._sampleBuffer), sizeof(DeviceQuerySample) * capacity));
+		state._queryCapacity = capacity;
 	}
 }
 
@@ -527,28 +527,28 @@ PointGpu::LBVH::~LBVH()
 void PointGpu::LBVH::release()
 {
 	releaseTree();
-	cudaFree(_state->points);
-	cudaFree(_state->keys);
-	cudaFree(_state->sortedKeys);
-	cudaFree(_state->indices);
-	cudaFree(_state->sortedIndices);
-	cudaFree(_state->sortTemporary);
+	cudaFree(_state->_points);
+	cudaFree(_state->_keys);
+	cudaFree(_state->_sortedKeys);
+	cudaFree(_state->_indices);
+	cudaFree(_state->_sortedIndices);
+	cudaFree(_state->_sortTemporary);
 	releaseQueryBuffers(*_state);
 	*_state = DeviceState();
 }
 
 void PointGpu::LBVH::releaseTree()
 {
-	cudaFree(_state->leafKeys);
-	cudaFree(_state->nodes);
-	cudaFree(_state->boundsCounters);
-	_state->leafKeys = nullptr;
-	_state->nodes = nullptr;
-	_state->boundsCounters = nullptr;
-	_state->leafCount = 0;
-	_state->nodeCount = 0;
-	_state->leafCapacity = 1;
-	_state->memoryBytes = _state->baseMemoryBytes;
+	cudaFree(_state->_leafKeys);
+	cudaFree(_state->_nodes);
+	cudaFree(_state->_boundsCounters);
+	_state->_leafKeys = nullptr;
+	_state->_nodes = nullptr;
+	_state->_boundsCounters = nullptr;
+	_state->_leafCount = 0;
+	_state->_nodeCount = 0;
+	_state->_leafCapacity = 1;
+	_state->_memoryBytes = _state->_baseMemoryBytes;
 }
 
 bool PointGpu::LBVH::isAvailable(std::string* error)
@@ -584,7 +584,7 @@ int PointGpu::LBVH::deviceCount()
 
 PointGpu::BuildResult PointGpu::LBVH::build(const PointCloud& cloud, const SchemaConfig& schema, const Options& options)
 {
-	if (options.builder != "lbvh")
+	if (options._builder != "lbvh")
 		throw std::runtime_error("LBVH evaluator currently supports --cuda-builder lbvh only; mixed CUDA build is a later milestone.");
 	if (cloud.size() > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
 		throw std::runtime_error("LBVH currently supports up to 2^32 - 1 points.");
@@ -594,20 +594,20 @@ PointGpu::BuildResult PointGpu::LBVH::build(const PointCloud& cloud, const Schem
 		throw std::runtime_error("CUDA point evaluator is unavailable: " + availabilityError);
 
 	const int count = deviceCount();
-	const int device = options.device >= 0 ? std::min(options.device, count - 1) : 0;
+	const int device = options._device >= 0 ? std::min(options._device, count - 1) : 0;
 	CudaHelper::checkError(cudaSetDevice(device));
 
 	const bool canReuseSortedPoints =
-		_state->sortedReady &&
-		_state->cloud == &cloud &&
-		_state->pointCount == cloud.size() &&
-		_state->device == device;
+		_state->_sortedReady &&
+		_state->_cloud == &cloud &&
+		_state->_pointCount == cloud.size() &&
+		_state->_device == device;
 
 	if (!canReuseSortedPoints)
 	{
-		if (_state->points || _state->nodes)
+		if (_state->_points || _state->_nodes)
 		{
-			CudaHelper::checkError(cudaSetDevice(_state->device));
+			CudaHelper::checkError(cudaSetDevice(_state->_device));
 			release();
 			CudaHelper::checkError(cudaSetDevice(device));
 		}
@@ -621,17 +621,17 @@ PointGpu::BuildResult PointGpu::LBVH::build(const PointCloud& cloud, const Schem
 		releaseTree();
 	}
 
-	_state->pointCount = cloud.size();
-	_state->leafCapacity = leafCapacityForSchema(schema);
-	_state->leafCount = cloud.empty() ? 0 : divUp(cloud.size(), _state->leafCapacity);
-	_state->nodeCount = _state->leafCount == 0 ? 0 : 2 * _state->leafCount - 1;
-	_state->device = device;
-	_state->builder = options.builder;
-	_state->cloud = &cloud;
+	_state->_pointCount = cloud.size();
+	_state->_leafCapacity = leafCapacityForSchema(schema);
+	_state->_leafCount = cloud.empty() ? 0 : divUp(cloud.size(), _state->_leafCapacity);
+	_state->_nodeCount = _state->_leafCount == 0 ? 0 : 2 * _state->_leafCount - 1;
+	_state->_device = device;
+	_state->_builder = options._builder;
+	_state->_cloud = &cloud;
 
 	BuildResult result;
-	result.device = device;
-	result.builder = options.builder;
+	result._device = device;
+	result._builder = options._builder;
 
 	if (cloud.empty())
 		return result;
@@ -644,45 +644,45 @@ PointGpu::BuildResult PointGpu::LBVH::build(const PointCloud& cloud, const Schem
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
-		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_points), sizeof(DevicePoint) * _state->_pointCount));
+		CudaHelper::checkError(cudaMemcpy(_state->_points, cloud.points().data(), sizeof(DevicePoint) * _state->_pointCount, cudaMemcpyHostToDevice));
+		result._uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
 
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->keys), sizeof(uint64_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->sortedKeys), sizeof(uint64_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->indices), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->sortedIndices), sizeof(uint32_t) * _state->pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_keys), sizeof(uint64_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_sortedKeys), sizeof(uint64_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_indices), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_sortedIndices), sizeof(uint32_t) * _state->_pointCount));
 
 		CudaHelper::checkError(cub::DeviceRadixSort::SortPairs(
 			nullptr,
-			_state->sortTemporaryBytes,
-			_state->keys,
-			_state->sortedKeys,
-			_state->indices,
-			_state->sortedIndices,
-			static_cast<int>(_state->pointCount)));
-		CudaHelper::checkError(cudaMalloc(&_state->sortTemporary, _state->sortTemporaryBytes));
+			_state->_sortTemporaryBytes,
+			_state->_keys,
+			_state->_sortedKeys,
+			_state->_indices,
+			_state->_sortedIndices,
+			static_cast<int>(_state->_pointCount)));
+		CudaHelper::checkError(cudaMalloc(&_state->_sortTemporary, _state->_sortTemporaryBytes));
 
-		_state->baseMemoryBytes =
-			sizeof(DevicePoint) * _state->pointCount +
-			sizeof(uint64_t) * _state->pointCount * 2 +
-			sizeof(uint32_t) * _state->pointCount * 2 +
-			_state->sortTemporaryBytes;
+		_state->_baseMemoryBytes =
+			sizeof(DevicePoint) * _state->_pointCount +
+			sizeof(uint64_t) * _state->_pointCount * 2 +
+			sizeof(uint32_t) * _state->_pointCount * 2 +
+			_state->_sortTemporaryBytes;
 	}
 
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->leafKeys), sizeof(uint64_t) * _state->leafCount));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodes), sizeof(LinearNode) * _state->nodeCount));
-	if (_state->leafCount > 1)
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->boundsCounters), sizeof(int) * (_state->leafCount - 1)));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_leafKeys), sizeof(uint64_t) * _state->_leafCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_nodes), sizeof(LinearNode) * _state->_nodeCount));
+	if (_state->_leafCount > 1)
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_boundsCounters), sizeof(int) * (_state->_leafCount - 1)));
 
-	_state->memoryBytes =
-		_state->baseMemoryBytes +
-		sizeof(uint64_t) * _state->leafCount +
-		sizeof(LinearNode) * _state->nodeCount +
-		sizeof(int) * (_state->leafCount > 1 ? _state->leafCount - 1 : 0);
-	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
+	_state->_memoryBytes =
+		_state->_baseMemoryBytes +
+		sizeof(uint64_t) * _state->_leafCount +
+		sizeof(LinearNode) * _state->_nodeCount +
+		sizeof(int) * (_state->_leafCount > 1 ? _state->_leafCount - 1 : 0);
+	checkMemoryBudget(_state->_memoryBytes, options._memoryBudgetMb);
 
 	cudaEvent_t buildBegin = nullptr;
 	cudaEvent_t buildEnd = nullptr;
@@ -690,122 +690,122 @@ PointGpu::BuildResult PointGpu::LBVH::build(const PointCloud& cloud, const Schem
 
 	if (!canReuseSortedPoints)
 	{
-		const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->pointCount, ThreadsPerBlock)));
+		const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->_pointCount, ThreadsPerBlock)));
 		initializePointKeysKernel<<<pointBlocks, ThreadsPerBlock>>>(
-			_state->points,
-			_state->pointCount,
+			_state->_points,
+			_state->_pointCount,
 			boundsMin.x,
 			boundsMin.y,
 			boundsMin.z,
 			extent.x,
 			extent.y,
 			extent.z,
-			_state->keys,
-			_state->indices);
+			_state->_keys,
+			_state->_indices);
 		CudaHelper::synchronize("initializePointKeysKernel");
 
 		CudaHelper::checkError(cub::DeviceRadixSort::SortPairs(
-			_state->sortTemporary,
-			_state->sortTemporaryBytes,
-			_state->keys,
-			_state->sortedKeys,
-			_state->indices,
-			_state->sortedIndices,
-			static_cast<int>(_state->pointCount)));
+			_state->_sortTemporary,
+			_state->_sortTemporaryBytes,
+			_state->_keys,
+			_state->_sortedKeys,
+			_state->_indices,
+			_state->_sortedIndices,
+			static_cast<int>(_state->_pointCount)));
 		CudaHelper::synchronize("cub::DeviceRadixSort::SortPairs");
-		_state->sortedReady = true;
+		_state->_sortedReady = true;
 	}
 
-	const dim3 nodeBlocks(static_cast<unsigned int>(divUp(_state->nodeCount, ThreadsPerBlock)));
-	initializeNodesKernel<<<nodeBlocks, ThreadsPerBlock>>>(_state->nodes, static_cast<int>(_state->nodeCount));
+	const dim3 nodeBlocks(static_cast<unsigned int>(divUp(_state->_nodeCount, ThreadsPerBlock)));
+	initializeNodesKernel<<<nodeBlocks, ThreadsPerBlock>>>(_state->_nodes, static_cast<int>(_state->_nodeCount));
 	CudaHelper::synchronize("initializeNodesKernel");
 
-	const dim3 leafBlocks(static_cast<unsigned int>(divUp(_state->leafCount, ThreadsPerBlock)));
+	const dim3 leafBlocks(static_cast<unsigned int>(divUp(_state->_leafCount, ThreadsPerBlock)));
 	initializeLeafKeysKernel<<<leafBlocks, ThreadsPerBlock>>>(
-		_state->sortedKeys,
-		_state->pointCount,
-		_state->leafCapacity,
-		_state->leafCount,
-		_state->leafKeys);
+		_state->_sortedKeys,
+		_state->_pointCount,
+		_state->_leafCapacity,
+		_state->_leafCount,
+		_state->_leafKeys);
 	CudaHelper::synchronize("initializeLeafKeysKernel");
 
 	initializeLeavesKernel<<<leafBlocks, ThreadsPerBlock>>>(
-		_state->nodes,
-		_state->pointCount,
-		_state->leafCapacity,
-		static_cast<int>(_state->leafCount));
+		_state->_nodes,
+		_state->_pointCount,
+		_state->_leafCapacity,
+		static_cast<int>(_state->_leafCount));
 	CudaHelper::synchronize("initializeLeavesKernel");
 
-	if (_state->leafCount > 1)
+	if (_state->_leafCount > 1)
 	{
-		const dim3 internalBlocks(static_cast<unsigned int>(divUp(_state->leafCount - 1, ThreadsPerBlock)));
+		const dim3 internalBlocks(static_cast<unsigned int>(divUp(_state->_leafCount - 1, ThreadsPerBlock)));
 		buildRadixTreeKernel<<<internalBlocks, ThreadsPerBlock>>>(
-			_state->leafKeys,
-			static_cast<int>(_state->leafCount),
-			_state->nodes);
+			_state->_leafKeys,
+			static_cast<int>(_state->_leafCount),
+			_state->_nodes);
 		CudaHelper::synchronize("buildRadixTreeKernel");
 	}
 
 	computeLeafBoundsKernel<<<leafBlocks, ThreadsPerBlock>>>(
-		_state->points,
-		_state->sortedIndices,
-		_state->nodes,
-		static_cast<int>(_state->leafCount));
+		_state->_points,
+		_state->_sortedIndices,
+		_state->_nodes,
+		static_cast<int>(_state->_leafCount));
 	CudaHelper::synchronize("computeLeafBoundsKernel");
 
-	if (_state->leafCount > 1)
+	if (_state->_leafCount > 1)
 	{
-		CudaHelper::checkError(cudaMemset(_state->boundsCounters, 0, sizeof(int) * (_state->leafCount - 1)));
+		CudaHelper::checkError(cudaMemset(_state->_boundsCounters, 0, sizeof(int) * (_state->_leafCount - 1)));
 		computeInternalBoundsKernel<<<leafBlocks, ThreadsPerBlock>>>(
-			_state->nodes,
-			_state->boundsCounters,
-			static_cast<int>(_state->leafCount));
+			_state->_nodes,
+			_state->_boundsCounters,
+			static_cast<int>(_state->_leafCount));
 		CudaHelper::synchronize("computeInternalBoundsKernel");
 	}
 
-	result.gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
+	result._gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
 	cudaEventDestroy(buildBegin);
 	cudaEventDestroy(buildEnd);
 
-	result.gpuMemoryBytes = _state->memoryBytes;
-	result.metrics.buildTimeMs = result.gpuBuildTimeMs;
-	result.metrics.numNodes = _state->nodeCount;
-	result.metrics.numLeaves = _state->leafCount;
-	result.metrics.indexedPoints = _state->pointCount;
-	result.metrics.maxDepth = lbvhMaxDepth(_state->leafCount);
-	result.metrics.averageLeafOccupancy = _state->leafCount > 0
-		? static_cast<double>(_state->pointCount) / static_cast<double>(_state->leafCount)
+	result._gpuMemoryBytes = _state->_memoryBytes;
+	result._metrics._buildTimeMs = result._gpuBuildTimeMs;
+	result._metrics._numNodes = _state->_nodeCount;
+	result._metrics._numLeaves = _state->_leafCount;
+	result._metrics._indexedPoints = _state->_pointCount;
+	result._metrics._maxDepth = lbvhMaxDepth(_state->_leafCount);
+	result._metrics._averageLeafOccupancy = _state->_leafCount > 0
+		? static_cast<double>(_state->_pointCount) / static_cast<double>(_state->_leafCount)
 		: 0.0;
-	result.metrics.maxLeafOccupancy = std::min(_state->leafCapacity, _state->pointCount);
-	result.metrics.memoryEstimateBytes = _state->memoryBytes;
+	result._metrics._maxLeafOccupancy = std::min(_state->_leafCapacity, _state->_pointCount);
+	result._metrics._memoryEstimateBytes = _state->_memoryBytes;
 	return result;
 }
 
 PointGpu::QueryResult PointGpu::LBVH::query(const std::vector<Query>& queries, const Options& options) const
 {
-	if (!_state || _state->nodeCount == 0 || queries.empty())
+	if (!_state || _state->_nodeCount == 0 || queries.empty())
 		return {};
 
-	CudaHelper::checkError(cudaSetDevice(_state->device));
+	CudaHelper::checkError(cudaSetDevice(_state->_device));
 
 	QueryResult result;
-	result.samples.reserve(queries.size());
+	result._samples.reserve(queries.size());
 	for (const Query& query : queries)
 	{
-		if (query.type == QueryType::Radius)
-			++result.radiusQueries;
-		else if (query.type == QueryType::CountRange)
-			++result.countRangeQueries;
-		else if (query.type == QueryType::Knn)
-			++result.knnQueries;
+		if (query._type == QueryType::Radius)
+			++result._radiusQueries;
+		else if (query._type == QueryType::CountRange)
+			++result._countRangeQueries;
+		else if (query._type == QueryType::Knn)
+			++result._knnQueries;
 		else
-			++result.rangeQueries;
+			++result._rangeQueries;
 	}
 
-	const size_t batchSize = options.queryBatchSize > 0
-		? std::max<size_t>(1, options.queryBatchSize)
+	const size_t batchSize = options._queryBatchSize > 0
+		? std::max<size_t>(1, options._queryBatchSize)
 		: queries.size();
-	const float clockRate = deviceClockRateKHz(_state->device);
+	const float clockRate = deviceClockRateKHz(_state->_device);
 
 	ensureQueryBuffers(*_state, batchSize);
 
@@ -823,70 +823,70 @@ PointGpu::QueryResult PointGpu::LBVH::query(const std::vector<Query>& queries, c
 		for (size_t i = 0; i < currentBatch; ++i)
 			hostQueries.push_back(makeDeviceQuery(queries[offset + i]));
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
-			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
+			return query._type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
 
-		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->_queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
 		const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
 		queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
-			_state->points,
-			_state->sortedIndices,
-			_state->nodes,
-			_state->pointCount,
-			_state->queryBuffer,
+			_state->_points,
+			_state->_sortedIndices,
+			_state->_nodes,
+			_state->_pointCount,
+			_state->_queryBuffer,
 			currentBatch,
 			clockRate,
-			_state->sampleBuffer);
+			_state->_sampleBuffer);
 		CudaHelper::synchronize("queryKernel");
 		if (batchHasKnn)
 		{
 			PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
-				_state->points,
-				_state->pointCount,
-				_state->queryBuffer,
+				_state->_points,
+				_state->_pointCount,
+				_state->_queryBuffer,
 				currentBatch,
 				clockRate,
-				_state->sampleBuffer);
+				_state->_sampleBuffer);
 			CudaHelper::synchronize("knnQueryKernel");
 		}
 
 		hostSamples.resize(currentBatch);
-		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->_sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
 		for (const DeviceQuerySample& sample : hostSamples)
 		{
 			QuerySample converted;
-			converted.visitedNodes = static_cast<size_t>(sample.visitedNodes);
-			converted.testedPoints = static_cast<size_t>(sample.testedPoints);
-			converted.returnedPoints = static_cast<size_t>(sample.returnedPoints);
-			converted.elapsedMs = sample.elapsedMs;
-			result.samples.push_back(converted);
+			converted._visitedNodes = static_cast<size_t>(sample._visitedNodes);
+			converted._testedPoints = static_cast<size_t>(sample._testedPoints);
+			converted._returnedPoints = static_cast<size_t>(sample._returnedPoints);
+			converted._elapsedMs = sample._elapsedMs;
+			result._samples.push_back(converted);
 		}
 	}
 
-	result.gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
+	result._gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
 	cudaEventDestroy(queryBegin);
 	cudaEventDestroy(queryEnd);
 
-	result.metrics = summarizeGpuSamples(result.samples);
+	result._metrics = summarizeGpuSamples(result._samples);
 	return result;
 }
 
 bool PointGpu::LBVH::built() const
 {
-	return _state && _state->nodeCount > 0;
+	return _state && _state->_nodeCount > 0;
 }
 
 size_t PointGpu::LBVH::pointCount() const
 {
-	return _state ? _state->pointCount : 0;
+	return _state ? _state->_pointCount : 0;
 }
 
 size_t PointGpu::LBVH::nodeCount() const
 {
-	return _state ? _state->nodeCount : 0;
+	return _state ? _state->_nodeCount : 0;
 }
 
 size_t PointGpu::LBVH::leafCount() const
 {
-	return _state ? _state->leafCount : 0;
+	return _state ? _state->_leafCount : 0;
 }

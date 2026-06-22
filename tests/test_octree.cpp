@@ -11,21 +11,21 @@ namespace BaselineTests
 		SchemaConfig makeOctreeSchema()
 		{
 			SchemaLevelConfig level;
-			level.type = MultiDataStructure::DataStructureLevel::OctreeNode;
-			level.typeName = "Octree";
-			level.numLevels = 5;
-			level.leafCapacity = 16;
-			level.minPrimitivesToSplit = 4;
+			level._type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			level._typeName = "Octree";
+			level._numLevels = 5;
+			level._leafCapacity = 16;
+			level._minPrimitivesToSplit = 4;
 
 			SchemaConfig schema;
-			schema.name = "octree_test";
-			schema.levels.push_back(level);
-			schema.buildPolicy.maxDepth = 5;
-			schema.buildPolicy.leafCapacity = 16;
-			schema.buildPolicy.minPrimitivesToSplit = 4;
-			schema.buildPolicy.collapseSingleChild = true;
-			schema.buildPolicy.removeEmptyNodes = true;
-			schema.buildPolicy.allowOverlapDuplication = false;
+			schema._name = "octree_test";
+			schema._levels.push_back(level);
+			schema._buildPolicy._maxDepth = 5;
+			schema._buildPolicy._leafCapacity = 16;
+			schema._buildPolicy._minPrimitivesToSplit = 4;
+			schema._buildPolicy._collapseSingleChild = true;
+			schema._buildPolicy._removeEmptyNodes = true;
+			schema._buildPolicy._allowOverlapDuplication = false;
 			return schema;
 		}
 
@@ -67,44 +67,44 @@ namespace BaselineTests
 		const PointCloud cloud = SyntheticPointClouds::generateSparseDenseMixture(64, 128, 41);
 		PointGpu::Octree index;
 		PointGpu::Options options;
-		options.builder = builder;
+		options._builder = builder;
 		const PointGpu::BuildResult build = index.build(cloud, makeOctreeSchema(), options);
-		expect(build.metrics.indexedPoints == cloud.size(), label + " indexes every point");
-		expect(build.metrics.numLeaves > 0, label + " creates leaves");
-		expect(build.metrics.numNodes >= build.metrics.numLeaves, label + " creates a valid node array");
+		expect(build._metrics._indexedPoints == cloud.size(), label + " indexes every point");
+		expect(build._metrics._numLeaves > 0, label + " creates leaves");
+		expect(build._metrics._numNodes >= build._metrics._numLeaves, label + " creates a valid node array");
 
 		std::vector<PointGpu::Query> queries;
 
 		PointGpu::Query range;
-		range.type = PointGpu::QueryType::Range;
-		range.bounds = AABB(glm::vec3(7.0f, -7.0f, 2.0f), glm::vec3(9.0f, -5.0f, 4.0f));
+		range._type = PointGpu::QueryType::Range;
+		range._bounds = AABB(glm::vec3(7.0f, -7.0f, 2.0f), glm::vec3(9.0f, -5.0f, 4.0f));
 		queries.push_back(range);
 
 		PointGpu::Query countRange = range;
-		countRange.type = PointGpu::QueryType::CountRange;
+		countRange._type = PointGpu::QueryType::CountRange;
 		queries.push_back(countRange);
 
 		PointGpu::Query radius;
-		radius.type = PointGpu::QueryType::Radius;
+		radius._type = PointGpu::QueryType::Radius;
 		radius.center = glm::vec3(8.0f, -6.0f, 3.0f);
-		radius.radius = 2.0f;
+		radius._radius = 2.0f;
 		queries.push_back(radius);
 
 		PointGpu::Query knn;
-		knn.type = PointGpu::QueryType::Knn;
+		knn._type = PointGpu::QueryType::Knn;
 		knn.center = glm::vec3(8.0f, -6.0f, 3.0f);
-		knn.k = 7;
+		knn._k = 7;
 		queries.push_back(knn);
 
 		const PointGpu::QueryResult result = index.query(queries, options);
-		expect(result.samples.size() == queries.size(), label + " returns one sample per query");
-		expect(result.samples[0].returnedPoints == bruteForceRangeCount(cloud, range.bounds), label + " range count matches brute force");
-		expect(result.samples[1].returnedPoints == bruteForceRangeCount(cloud, countRange.bounds), label + " count-range matches brute force");
-		expect(result.samples[2].returnedPoints == bruteForceRadiusCount(cloud, radius.center, radius.radius), label + " radius count matches brute force");
-		expect(result.samples[3].returnedPoints == std::min(knn.k, cloud.size()), label + " KNN returns requested neighbor count");
-		expect(result.samples[3].testedPoints == cloud.size(), label + " KNN scans the GPU point buffer");
-		expect(result.knnQueries == 1, label + " counts KNN queries");
-		expect(result.metrics.totalQueries == queries.size(), label + " summarizes query samples");
+		expect(result._samples.size() == queries.size(), label + " returns one sample per query");
+		expect(result._samples[0]._returnedPoints == bruteForceRangeCount(cloud, range._bounds), label + " range count matches brute force");
+		expect(result._samples[1]._returnedPoints == bruteForceRangeCount(cloud, countRange._bounds), label + " count-range matches brute force");
+		expect(result._samples[2]._returnedPoints == bruteForceRadiusCount(cloud, radius.center, radius._radius), label + " radius count matches brute force");
+		expect(result._samples[3]._returnedPoints == std::min(knn._k, cloud.size()), label + " KNN returns requested neighbor count");
+		expect(result._samples[3]._testedPoints == cloud.size(), label + " KNN scans the GPU point buffer");
+		expect(result._knnQueries == 1, label + " counts KNN queries");
+		expect(result._metrics._totalQueries == queries.size(), label + " summarizes query samples");
 	}
 
 	void runOctreeTests()

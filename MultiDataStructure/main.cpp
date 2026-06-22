@@ -11,7 +11,7 @@ int main(int argc, char* argv[])
 	try
 	{
 		const AppConfig config = AppConfig::parse(argc, argv);
-		if (config.showHelp)
+		if (config._showHelp)
 		{
 			AppConfig::printHelp(std::cout);
 			return 0;
@@ -20,19 +20,19 @@ int main(int argc, char* argv[])
 		if (config.wantsTests())
 			return runBaselineTests();
 
-		if (config.mode == "points")
-			return PointBenchmark::run(config.pointOptions);
+		if (config._mode == "points")
+			return PointBenchmark::run(config._pointOptions);
 
-		if (config.mode == "schema-search")
-			return Experiments::runSchemaSearch(config.schemaSearchOptions);
+		if (config._mode == "schema-search")
+			return Experiments::runSchemaSearch(config._schemaSearchOptions);
 
-		if (config.mode == "evaluate-one")
-			return Experiments::runEvaluateOne(config.schemaSearchOptions);
+		if (config._mode == "evaluate-one")
+			return Experiments::runEvaluateOne(config._schemaSearchOptions);
 
-		if (config.mode == "gui")
+		if (config._mode == "gui")
 			return OptimizerGui::run();
 
-		throw std::invalid_argument("Unsupported mode: " + config.mode + ". Use --mode gui, --mode points, --mode schema-search, --mode evaluate-one, or --run-tests");
+		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode evaluate-one, or --run-tests");
 	}
 	catch (const std::exception& exception)
 	{

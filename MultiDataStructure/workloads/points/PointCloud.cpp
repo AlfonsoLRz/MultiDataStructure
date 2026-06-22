@@ -10,22 +10,22 @@ static constexpr uint32_t LEGACY_FULL_POINT_CACHE_VERSION = 1;
 struct BinaryHeaderPrefix
 {
 	char magic[8] = {};
-	uint32_t version = CACHE_VERSION;
-	uint64_t sourceSize = 0;
-	int64_t sourceWriteTime = 0;
-	uint64_t numPoints = 0;
+	uint32_t _version = CACHE_VERSION;
+	uint64_t _sourceSize = 0;
+	int64_t _sourceWriteTime = 0;
+	uint64_t _numPoints = 0;
 };
 
 struct BinaryHeaderMetadata
 {
 	double origin[3] = { 0.0, 0.0, 0.0 };
-	double scale[3] = { 1.0, 1.0, 1.0 };
+	double _scale[3] = { 1.0, 1.0, 1.0 };
 };
 
 struct BinaryHeader
 {
-	BinaryHeaderPrefix prefix;
-	BinaryHeaderMetadata metadata;
+	BinaryHeaderPrefix _prefix;
+	BinaryHeaderMetadata _metadata;
 };
 
 struct BinaryPoint
@@ -40,9 +40,9 @@ struct LegacyBinaryPoint
 	float x = 0.0f;
 	float y = 0.0f;
 	float z = 0.0f;
-	float intensity = 0.0f;
-	uint32_t classification = 0;
-	uint64_t id = 0;
+	float _intensity = 0.0f;
+	uint32_t _classification = 0;
+	uint64_t _id = 0;
 };
 
 static_assert(sizeof(BinaryPoint) == sizeof(PointPrimitive), "Binary point cache must match the position-only point payload.");
@@ -182,35 +182,35 @@ static int64_t fileWriteTime(const std::string& filename)
 static BinaryHeader makeHeader(const std::string& sourcePath, size_t numPoints, const PointCloud::CoordinateFrame& frame)
 {
 	BinaryHeader header;
-	std::memcpy(header.prefix.magic, CACHE_MAGIC, sizeof(header.prefix.magic));
-	header.prefix.version = CACHE_VERSION;
-	header.prefix.sourceSize = fileSize(sourcePath);
-	header.prefix.sourceWriteTime = fileWriteTime(sourcePath);
-	header.prefix.numPoints = static_cast<uint64_t>(numPoints);
-	header.metadata.origin[0] = frame.origin.x;
-	header.metadata.origin[1] = frame.origin.y;
-	header.metadata.origin[2] = frame.origin.z;
-	header.metadata.scale[0] = frame.scale.x;
-	header.metadata.scale[1] = frame.scale.y;
-	header.metadata.scale[2] = frame.scale.z;
+	std::memcpy(header._prefix.magic, CACHE_MAGIC, sizeof(header._prefix.magic));
+	header._prefix._version = CACHE_VERSION;
+	header._prefix._sourceSize = fileSize(sourcePath);
+	header._prefix._sourceWriteTime = fileWriteTime(sourcePath);
+	header._prefix._numPoints = static_cast<uint64_t>(numPoints);
+	header._metadata.origin[0] = frame.origin.x;
+	header._metadata.origin[1] = frame.origin.y;
+	header._metadata.origin[2] = frame.origin.z;
+	header._metadata._scale[0] = frame._scale.x;
+	header._metadata._scale[1] = frame._scale.y;
+	header._metadata._scale[2] = frame._scale.z;
 	return header;
 }
 
 static bool headerMatchesSource(const BinaryHeaderPrefix& header, const std::string& sourcePath)
 {
 	return std::memcmp(header.magic, CACHE_MAGIC, sizeof(header.magic)) == 0 &&
-		(header.version == POSITION_ONLY_CACHE_VERSION ||
-		 header.version == LEGACY_POSITION_ONLY_CACHE_VERSION ||
-		 header.version == LEGACY_FULL_POINT_CACHE_VERSION) &&
-		header.sourceSize == fileSize(sourcePath) &&
-		header.sourceWriteTime == fileWriteTime(sourcePath);
+		(header._version == POSITION_ONLY_CACHE_VERSION ||
+		 header._version == LEGACY_POSITION_ONLY_CACHE_VERSION ||
+		 header._version == LEGACY_FULL_POINT_CACHE_VERSION) &&
+		header._sourceSize == fileSize(sourcePath) &&
+		header._sourceWriteTime == fileWriteTime(sourcePath);
 }
 
 static PointCloud::CoordinateFrame frameFromMetadata(const BinaryHeaderMetadata& metadata)
 {
 	PointCloud::CoordinateFrame frame;
 	frame.origin = glm::dvec3(metadata.origin[0], metadata.origin[1], metadata.origin[2]);
-	frame.scale = glm::dvec3(metadata.scale[0], metadata.scale[1], metadata.scale[2]);
+	frame._scale = glm::dvec3(metadata._scale[0], metadata._scale[1], metadata._scale[2]);
 	return frame;
 }
 
@@ -236,7 +236,7 @@ static PointPrimitive fromLegacyBinaryPoint(const LegacyBinaryPoint& binaryPoint
 PointCloud PointCloud::load(const std::string& filename, const LoadOptions& options)
 {
 	const std::filesystem::path cachePath = cachePathFor(filename);
-	if (options.useBinaryCache && !options.rebuildBinaryCache)
+	if (options._useBinaryCache && !options._rebuildBinaryCache)
 	{
 		PointCloud cachedCloud;
 		if (cachedCloud.tryLoadBinaryCache(filename, cachePath))
@@ -249,7 +249,7 @@ PointCloud PointCloud::load(const std::string& filename, const LoadOptions& opti
 	cloud._loadedFromCache = false;
 	cloud.recomputeStats();
 
-	if (options.useBinaryCache)
+	if (options._useBinaryCache)
 	{
 		try
 		{
@@ -293,18 +293,18 @@ const PointCloud::CoordinateFrame& PointCloud::coordinateFrame() const
 
 glm::dvec3 PointCloud::toWorldPosition(const glm::vec3& localPosition) const
 {
-	return _coordinateFrame.origin + glm::dvec3(localPosition) * _coordinateFrame.scale;
+	return _coordinateFrame.origin + glm::dvec3(localPosition) * _coordinateFrame._scale;
 }
 
 glm::vec3 PointCloud::toLocalPosition(const glm::dvec3& worldPosition) const
 {
-	const glm::dvec3 local = (worldPosition - _coordinateFrame.origin) / _coordinateFrame.scale;
+	const glm::dvec3 local = (worldPosition - _coordinateFrame.origin) / _coordinateFrame._scale;
 	return glm::vec3(local);
 }
 
 AABB PointCloud::bounds() const
 {
-	return _stats.bounds;
+	return _stats._bounds;
 }
 
 glm::vec3 PointCloud::coordinateRange() const
@@ -314,7 +314,7 @@ glm::vec3 PointCloud::coordinateRange() const
 
 float PointCloud::approximateDensity() const
 {
-	return _stats.approximateDensity;
+	return _stats._approximateDensity;
 }
 
 bool PointCloud::loadedFromCache() const
@@ -362,14 +362,14 @@ void PointCloud::recomputeStats()
 
 void PointCloud::updateStatsForPoint(const PointPrimitive& point)
 {
-	_stats.numPoints = _points.size();
-	_stats.bounds.update(point.position);
-	_stats.coordinateRange = _stats.bounds.size();
+	_stats._numPoints = _points.size();
+	_stats._bounds.update(point.position);
+	_stats.coordinateRange = _stats._bounds.size();
 
 	const float volume = _stats.coordinateRange.x * _stats.coordinateRange.y * _stats.coordinateRange.z;
-	_stats.approximateDensity = 0.0f;
+	_stats._approximateDensity = 0.0f;
 	if (volume > std::numeric_limits<float>::epsilon())
-		_stats.approximateDensity = static_cast<float>(_stats.numPoints) / volume;
+		_stats._approximateDensity = static_cast<float>(_stats._numPoints) / volume;
 }
 
 bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::filesystem::path& cachePath)
@@ -386,11 +386,11 @@ bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::fi
 	if (!file || !headerMatchesSource(header, sourcePath))
 		return false;
 
-	if (header.numPoints > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
+	if (header._numPoints > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
 		return false;
 
 	_coordinateFrame = CoordinateFrame();
-	if (header.version == POSITION_ONLY_CACHE_VERSION)
+	if (header._version == POSITION_ONLY_CACHE_VERSION)
 	{
 		BinaryHeaderMetadata metadata;
 		file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
@@ -400,9 +400,9 @@ bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::fi
 	}
 
 	_points.clear();
-	const size_t pointCount = static_cast<size_t>(header.numPoints);
+	const size_t pointCount = static_cast<size_t>(header._numPoints);
 	_points.reserve(pointCount);
-	if (header.version == POSITION_ONLY_CACHE_VERSION)
+	if (header._version == POSITION_ONLY_CACHE_VERSION)
 	{
 		_points.resize(pointCount);
 		if (!_points.empty())
@@ -410,7 +410,7 @@ bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::fi
 		if (!file)
 			return false;
 	}
-	else if (header.version == LEGACY_POSITION_ONLY_CACHE_VERSION)
+	else if (header._version == LEGACY_POSITION_ONLY_CACHE_VERSION)
 	{
 		_points.resize(pointCount);
 		if (!_points.empty())
@@ -418,7 +418,7 @@ bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::fi
 		if (!file)
 			return false;
 	}
-	else if (header.version == LEGACY_FULL_POINT_CACHE_VERSION)
+	else if (header._version == LEGACY_FULL_POINT_CACHE_VERSION)
 	{
 		constexpr size_t ChunkPoints = 1 << 20;
 		std::vector<LegacyBinaryPoint> chunk;
@@ -736,7 +736,7 @@ PointCloud PointCloud::loadLAS(const std::string& filename)
 
 	PointCloud cloud;
 	cloud.reserve(static_cast<size_t>(pointCount));
-	cloud._coordinateFrame.scale = glm::dvec3(1.0);
+	cloud._coordinateFrame._scale = glm::dvec3(1.0);
 
 	bool originInitialized = false;
 	const bool headerBoundsLookValid =

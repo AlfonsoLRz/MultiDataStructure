@@ -21,25 +21,25 @@ namespace
 
 	size_t leafCapacityForSchema(const SchemaConfig& schema)
 	{
-		size_t leafCapacity = schema.buildPolicy.leafCapacity;
-		if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
-			leafCapacity = schema.levels.front().leafCapacity;
+		size_t leafCapacity = schema._buildPolicy._leafCapacity;
+		if (!schema._levels.empty() && schema._levels.front()._leafCapacity > 0)
+			leafCapacity = schema._levels.front()._leafCapacity;
 
 		return std::max<size_t>(1, leafCapacity);
 	}
 
 	size_t minSplitForSchema(const SchemaConfig& schema)
 	{
-		size_t minSplit = schema.buildPolicy.minPrimitivesToSplit;
-		if (!schema.levels.empty() && schema.levels.front().minPrimitivesToSplit > 0)
-			minSplit = schema.levels.front().minPrimitivesToSplit;
+		size_t minSplit = schema._buildPolicy._minPrimitivesToSplit;
+		if (!schema._levels.empty() && schema._levels.front()._minPrimitivesToSplit > 0)
+			minSplit = schema._levels.front()._minPrimitivesToSplit;
 
 		return std::max<size_t>(2, minSplit);
 	}
 
 	size_t maxDepthForSchema(const SchemaConfig& schema)
 	{
-		size_t maxDepth = schema.buildPolicy.maxDepth;
+		size_t maxDepth = schema._buildPolicy._maxDepth;
 		if (maxDepth == 0)
 			maxDepth = schema.totalLevels();
 		if (maxDepth == 0)
@@ -52,11 +52,11 @@ namespace
 	// Reads the first level's axisPolicy; "round_robin" else LongestExtent (also for blank/unknown).
 	PointGpu::KdAxisPolicy axisPolicyFromSchema(const SchemaConfig& schema)
 	{
-		for (const SchemaLevelConfig& level : schema.levels)
+		for (const SchemaLevelConfig& level : schema._levels)
 		{
-			if (level.axisPolicy.empty())
+			if (level._axisPolicy.empty())
 				continue;
-			std::string normalized = level.axisPolicy;
+			std::string normalized = level._axisPolicy;
 			std::transform(normalized.begin(), normalized.end(), normalized.begin(),
 				[](unsigned char c) { return std::tolower(c); });
 			normalized.erase(std::remove(normalized.begin(), normalized.end(), '_'), normalized.end());
@@ -89,20 +89,20 @@ namespace
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
 	{
 		DeviceQuery result{};
-		result.type = static_cast<int>(query.type);
-		const glm::vec3 min = query.bounds.min();
-		const glm::vec3 max = query.bounds.max();
-		result.minX = min.x;
-		result.minY = min.y;
-		result.minZ = min.z;
-		result.maxX = max.x;
-		result.maxY = max.y;
-		result.maxZ = max.z;
-		result.centerX = query.center.x;
-		result.centerY = query.center.y;
-		result.centerZ = query.center.z;
-		result.radius = query.radius;
-		result.knnK = static_cast<uint32_t>(std::min<size_t>(query.k, std::numeric_limits<uint32_t>::max()));
+		result._type = static_cast<int>(query._type);
+		const glm::vec3 min = query._bounds.min();
+		const glm::vec3 max = query._bounds.max();
+		result._minX = min.x;
+		result._minY = min.y;
+		result._minZ = min.z;
+		result._maxX = max.x;
+		result._maxY = max.y;
+		result._maxZ = max.z;
+		result._centerX = query.center.x;
+		result._centerY = query.center.y;
+		result._centerZ = query.center.z;
+		result._radius = query._radius;
+		result._knnK = static_cast<uint32_t>(std::min<size_t>(query._k, std::numeric_limits<uint32_t>::max()));
 		return result;
 	}
 
@@ -113,10 +113,10 @@ namespace
 		for (const PointGpu::QuerySample& sample : samples)
 		{
 			PointSpatialIndex::QueryStats stats;
-			stats.visitedNodes = sample.visitedNodes;
-			stats.testedPoints = sample.testedPoints;
-			stats.returnedPoints = sample.returnedPoints;
-			stats.elapsedMs = sample.elapsedMs;
+			stats._visitedNodes = sample._visitedNodes;
+			stats._testedPoints = sample._testedPoints;
+			stats._returnedPoints = sample._returnedPoints;
+			stats._elapsedMs = sample._elapsedMs;
 			cpuSamples.push_back(stats);
 		}
 		return Experiments::summarizeQueryStats(cpuSamples);
@@ -144,11 +144,11 @@ namespace
 
 	__device__ int splitAxisForNode(const LinearNode& node)
 	{
-		if (node.flags & kAxisStoredBit)
-			return static_cast<int>((node.flags & kAxisMask) >> kAxisShift);
-		const float extentX = node.maxX - node.minX;
-		const float extentY = node.maxY - node.minY;
-		const float extentZ = node.maxZ - node.minZ;
+		if (node._flags & kAxisStoredBit)
+			return static_cast<int>((node._flags & kAxisMask) >> kAxisShift);
+		const float extentX = node._maxX - node._minX;
+		const float extentY = node._maxY - node._minY;
+		const float extentZ = node._maxZ - node._minZ;
 		if (extentX >= extentY && extentX >= extentZ)
 			return 0;
 		if (extentY >= extentZ)
@@ -159,10 +159,10 @@ namespace
 	__device__ float splitPlaneForNode(const LinearNode& node, int axis)
 	{
 		if (axis == 0)
-			return (node.minX + node.maxX) * 0.5f;
+			return (node._minX + node._maxX) * 0.5f;
 		if (axis == 1)
-			return (node.minY + node.maxY) * 0.5f;
-		return (node.minZ + node.maxZ) * 0.5f;
+			return (node._minY + node._maxY) * 0.5f;
+		return (node._minZ + node._maxZ) * 0.5f;
 	}
 
 	__device__ float coordinateForAxis(const DevicePoint& point, int axis)
@@ -193,35 +193,35 @@ namespace
 
 	__device__ bool rangeIntersectsNode(const LinearNode& node, const DeviceQuery& query)
 	{
-		return node.minX <= query.maxX && node.maxX >= query.minX &&
-			node.minY <= query.maxY && node.maxY >= query.minY &&
-			node.minZ <= query.maxZ && node.maxZ >= query.minZ;
+		return node._minX <= query._maxX && node._maxX >= query._minX &&
+			node._minY <= query._maxY && node._maxY >= query._minY &&
+			node._minZ <= query._maxZ && node._maxZ >= query._minZ;
 	}
 
 	__device__ bool pointInsideRange(const DevicePoint& point, const DeviceQuery& query)
 	{
-		return point.x >= query.minX && point.x <= query.maxX &&
-			point.y >= query.minY && point.y <= query.maxY &&
-			point.z >= query.minZ && point.z <= query.maxZ;
+		return point.x >= query._minX && point.x <= query._maxX &&
+			point.y >= query._minY && point.y <= query._maxY &&
+			point.z >= query._minZ && point.z <= query._maxZ;
 	}
 
 	__device__ float distanceSquaredToNode(const LinearNode& node, const DeviceQuery& query)
 	{
-		const float x = fminf(fmaxf(query.centerX, node.minX), node.maxX);
-		const float y = fminf(fmaxf(query.centerY, node.minY), node.maxY);
-		const float z = fminf(fmaxf(query.centerZ, node.minZ), node.maxZ);
-		const float dx = query.centerX - x;
-		const float dy = query.centerY - y;
-		const float dz = query.centerZ - z;
+		const float x = fminf(fmaxf(query._centerX, node._minX), node._maxX);
+		const float y = fminf(fmaxf(query._centerY, node._minY), node._maxY);
+		const float z = fminf(fmaxf(query._centerZ, node._minZ), node._maxZ);
+		const float dx = query._centerX - x;
+		const float dy = query._centerY - y;
+		const float dz = query._centerZ - z;
 		return dx * dx + dy * dy + dz * dz;
 	}
 
 	__device__ bool pointInsideRadius(const DevicePoint& point, const DeviceQuery& query)
 	{
-		const float dx = point.x - query.centerX;
-		const float dy = point.y - query.centerY;
-		const float dz = point.z - query.centerZ;
-		return dx * dx + dy * dy + dz * dz <= query.radius * query.radius;
+		const float dx = point.x - query._centerX;
+		const float dy = point.y - query._centerY;
+		const float dz = point.z - query._centerZ;
+		return dx * dx + dy * dy + dz * dz <= query._radius * query._radius;
 	}
 
 	__global__ void initializeIndicesKernel(uint32_t* indices, size_t pointCount)
@@ -240,18 +240,18 @@ namespace
 			return;
 
 		LinearNode node{};
-		node.minX = 3.402823466e+38F;
-		node.minY = 3.402823466e+38F;
-		node.minZ = 3.402823466e+38F;
-		node.maxX = -3.402823466e+38F;
-		node.maxY = -3.402823466e+38F;
-		node.maxZ = -3.402823466e+38F;
-		node.left = -1;
-		node.right = -1;
-		node.parent = -1;
-		node.pointOffset = 0;
-		node.pointCount = 0;
-		node.flags = 0;
+		node._minX = 3.402823466e+38F;
+		node._minY = 3.402823466e+38F;
+		node._minZ = 3.402823466e+38F;
+		node._maxX = -3.402823466e+38F;
+		node._maxY = -3.402823466e+38F;
+		node._maxZ = -3.402823466e+38F;
+		node._left = -1;
+		node._right = -1;
+		node._parent = -1;
+		node._pointOffset = 0;
+		node._pointCount = 0;
+		node._flags = 0;
 		nodes[nodeIndex] = node;
 	}
 
@@ -267,20 +267,20 @@ namespace
 		int axisPolicy)
 	{
 		LinearNode root{};
-		root.minX = minX;
-		root.minY = minY;
-		root.minZ = minZ;
-		root.maxX = maxX;
-		root.maxY = maxY;
-		root.maxZ = maxZ;
-		root.left = -1;
-		root.right = -1;
-		root.parent = -1;
-		root.pointOffset = 0;
-		root.pointCount = static_cast<uint32_t>(pointCount);
+		root._minX = minX;
+		root._minY = minY;
+		root._minZ = minZ;
+		root._maxX = maxX;
+		root._maxY = maxY;
+		root._maxZ = maxZ;
+		root._left = -1;
+		root._right = -1;
+		root._parent = -1;
+		root._pointOffset = 0;
+		root._pointCount = static_cast<uint32_t>(pointCount);
 		// Root depth 0; round-robin root axis is X, rewritten by the split kernel when it splits.
 		const bool storeAxis = axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin);
-		root.flags = encodeNodeFlags(true /*temporarily leaf*/, 0, storeAxis, 0u);
+		root._flags = encodeNodeFlags(true /*temporarily leaf*/, 0, storeAxis, 0u);
 		nodes[0] = root;
 	}
 
@@ -300,21 +300,21 @@ namespace
 
 		const size_t nodeIndex = nodeStart + localNode;
 		LinearNode node = nodes[nodeIndex];
-		if (node.pointCount == 0 || node.pointCount <= leafCapacity || node.pointCount < minSplit)
+		if (node._pointCount == 0 || node._pointCount <= leafCapacity || node._pointCount < minSplit)
 		{
 			if (threadIdx.x == 0)
 			{
-				nodes[nodeIndex].left = -1;
-				nodes[nodeIndex].right = -1;
-				nodes[nodeIndex].flags = node.pointCount > 0 ? 1u : 0u;
+				nodes[nodeIndex]._left = -1;
+				nodes[nodeIndex]._right = -1;
+				nodes[nodeIndex]._flags = node._pointCount > 0 ? 1u : 0u;
 			}
 			return;
 		}
 
 		uint32_t localLeft = 0;
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			if (pointGoesLeft(points[pointIndex], node))
 				++localLeft;
 		}
@@ -338,18 +338,18 @@ namespace
 
 		const size_t nodeIndex = nodeStart + localNode;
 		LinearNode node = nodes[nodeIndex];
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			return;
 
 		const bool storeAxis = axisPolicy == static_cast<int>(PointGpu::KdAxisPolicy::RoundRobin);
 		const uint32_t leftCount = leftCounts[nodeIndex];
-		const uint32_t rightCount = node.pointCount - leftCount;
+		const uint32_t rightCount = node._pointCount - leftCount;
 		if (leftCount == 0 || rightCount == 0)
 		{
-			nodes[nodeIndex].left = -1;
-			nodes[nodeIndex].right = -1;
+			nodes[nodeIndex]._left = -1;
+			nodes[nodeIndex]._right = -1;
 			// Mark leaf, preserve depth, drop the axis-stored bit (no split happened here).
-			nodes[nodeIndex].flags = encodeNodeFlags(true, 0, false, depth);
+			nodes[nodeIndex]._flags = encodeNodeFlags(true, 0, false, depth);
 			return;
 		}
 
@@ -363,46 +363,46 @@ namespace
 		const float plane = splitPlaneForNode(node, axis);
 		const int leftIndex = static_cast<int>(nodeIndex * 2 + 1);
 		const int rightIndex = leftIndex + 1;
-		nodes[nodeIndex].left = leftIndex;
-		nodes[nodeIndex].right = rightIndex;
-		nodes[nodeIndex].flags = encodeNodeFlags(false, axis, storeAxis, depth);
+		nodes[nodeIndex]._left = leftIndex;
+		nodes[nodeIndex]._right = rightIndex;
+		nodes[nodeIndex]._flags = encodeNodeFlags(false, axis, storeAxis, depth);
 
 		LinearNode left = node;
-		left.left = -1;
-		left.right = -1;
-		left.parent = static_cast<int>(nodeIndex);
-		left.pointOffset = node.pointOffset;
-		left.pointCount = leftCount;
-		left.flags = encodeNodeFlags(true, 0, false, depth + 1u);
+		left._left = -1;
+		left._right = -1;
+		left._parent = static_cast<int>(nodeIndex);
+		left._pointOffset = node._pointOffset;
+		left._pointCount = leftCount;
+		left._flags = encodeNodeFlags(true, 0, false, depth + 1u);
 
 		LinearNode right = node;
-		right.left = -1;
-		right.right = -1;
-		right.parent = static_cast<int>(nodeIndex);
-		right.pointOffset = node.pointOffset + leftCount;
-		right.pointCount = rightCount;
-		right.flags = encodeNodeFlags(true, 0, false, depth + 1u);
+		right._left = -1;
+		right._right = -1;
+		right._parent = static_cast<int>(nodeIndex);
+		right._pointOffset = node._pointOffset + leftCount;
+		right._pointCount = rightCount;
+		right._flags = encodeNodeFlags(true, 0, false, depth + 1u);
 
 		if (axis == 0)
 		{
-			left.maxX = plane;
-			right.minX = plane;
+			left._maxX = plane;
+			right._minX = plane;
 		}
 		else if (axis == 1)
 		{
-			left.maxY = plane;
-			right.minY = plane;
+			left._maxY = plane;
+			right._minY = plane;
 		}
 		else
 		{
-			left.maxZ = plane;
-			right.minZ = plane;
+			left._maxZ = plane;
+			right._minZ = plane;
 		}
 
 		nodes[leftIndex] = left;
 		nodes[rightIndex] = right;
-		writeCursors[leftIndex] = left.pointOffset;
-		writeCursors[rightIndex] = right.pointOffset;
+		writeCursors[leftIndex] = left._pointOffset;
+		writeCursors[rightIndex] = right._pointOffset;
 	}
 
 	__global__ void partitionIndicesKernel(
@@ -420,13 +420,13 @@ namespace
 
 		const size_t nodeIndex = nodeStart + localNode;
 		const LinearNode node = nodes[nodeIndex];
-		if (node.pointCount == 0 || node.left < 0 || node.right < 0)
+		if (node._pointCount == 0 || node._left < 0 || node._right < 0)
 			return;
 
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
-			const int childIndex = pointGoesLeft(points[pointIndex], node) ? node.left : node.right;
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
+			const int childIndex = pointGoesLeft(points[pointIndex], node) ? node._left : node._right;
 			const uint32_t writeOffset = atomicAdd(&writeCursors[childIndex], 1u);
 			outputIndices[writeOffset] = pointIndex;
 		}
@@ -445,7 +445,7 @@ namespace
 
 		const size_t nodeIndex = nodeStart + localNode;
 		const LinearNode node = nodes[nodeIndex];
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			return;
 
 		float minX = 3.402823466e+38F;
@@ -455,9 +455,9 @@ namespace
 		float maxY = -3.402823466e+38F;
 		float maxZ = -3.402823466e+38F;
 
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			const DevicePoint point = points[pointIndex];
 			minX = fminf(minX, point.x);
 			minY = fminf(minY, point.y);
@@ -497,12 +497,12 @@ namespace
 
 		if (threadIdx.x == 0)
 		{
-			nodes[nodeIndex].minX = sharedMinX[0];
-			nodes[nodeIndex].minY = sharedMinY[0];
-			nodes[nodeIndex].minZ = sharedMinZ[0];
-			nodes[nodeIndex].maxX = sharedMaxX[0];
-			nodes[nodeIndex].maxY = sharedMaxY[0];
-			nodes[nodeIndex].maxZ = sharedMaxZ[0];
+			nodes[nodeIndex]._minX = sharedMinX[0];
+			nodes[nodeIndex]._minY = sharedMinY[0];
+			nodes[nodeIndex]._minZ = sharedMinZ[0];
+			nodes[nodeIndex]._maxX = sharedMaxX[0];
+			nodes[nodeIndex]._maxY = sharedMaxY[0];
+			nodes[nodeIndex]._maxZ = sharedMaxZ[0];
 		}
 	}
 
@@ -521,7 +521,7 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 		{
 			samples[queryIndex] = DeviceQuerySample{};
 			return;
@@ -540,12 +540,12 @@ namespace
 		{
 			const int nodeIndex = stack[--stackSize];
 			const LinearNode node = nodes[nodeIndex];
-			if (node.pointCount == 0)
+			if (node._pointCount == 0)
 				continue;
 
 			bool intersects = false;
-			if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
-				intersects = distanceSquaredToNode(node, query) <= query.radius * query.radius;
+			if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
+				intersects = distanceSquaredToNode(node, query) <= query._radius * query._radius;
 			else
 				intersects = rangeIntersectsNode(node, query);
 
@@ -553,13 +553,13 @@ namespace
 				continue;
 
 			++visited;
-			if (node.left < 0 || node.right < 0)
+			if (node._left < 0 || node._right < 0)
 			{
-				for (uint32_t i = 0; i < node.pointCount; ++i)
+				for (uint32_t i = 0; i < node._pointCount; ++i)
 				{
 					++tested;
-					const DevicePoint point = points[indices[node.pointOffset + i]];
-					if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+					const DevicePoint point = points[indices[node._pointOffset + i]];
+					if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 					{
 						if (pointInsideRadius(point, query))
 							++returned;
@@ -574,17 +574,17 @@ namespace
 
 			if (stackSize + 2 <= QueryStackSize)
 			{
-				stack[stackSize++] = node.left;
-				stack[stackSize++] = node.right;
+				stack[stackSize++] = node._left;
+				stack[stackSize++] = node._right;
 			}
 		}
 
 		const unsigned long long end = clock64();
 		DeviceQuerySample sample{};
-		sample.visitedNodes = visited;
-		sample.testedPoints = tested;
-		sample.returnedPoints = returned;
-		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+		sample._visitedNodes = visited;
+		sample._testedPoints = tested;
+		sample._returnedPoints = returned;
+		sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
 
@@ -604,11 +604,11 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type != static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type != static_cast<int>(PointGpu::QueryType::Knn))
 			return;
 
 		const unsigned long long begin = clock64();
-		const uint32_t requestedK = query.knnK;
+		const uint32_t requestedK = query._knnK;
 		const uint32_t trackedK = requestedK < PointGpu::MaxTrackedKnnK ? requestedK : PointGpu::MaxTrackedKnnK;
 
 		__shared__ int stack[QueryStackSize];
@@ -649,7 +649,7 @@ namespace
 				break;
 
 			const LinearNode node = nodes[nodeIndex];
-			bool processNode = node.pointCount > 0;
+			bool processNode = node._pointCount > 0;
 			if (processNode)
 			{
 				const float lowerBound = distanceSquaredToNode(node, query);
@@ -663,7 +663,7 @@ namespace
 			if (!processNode)
 				continue;
 
-			if (node.left < 0 || node.right < 0)
+			if (node._left < 0 || node._right < 0)
 			{
 				float localDistances[PointGpu::MaxTrackedKnnK];
 				uint32_t localIndices[PointGpu::MaxTrackedKnnK];
@@ -674,9 +674,9 @@ namespace
 					localIndices[i] = UINT_MAX;
 				}
 
-				for (uint32_t i = threadIdx.x; i < node.pointCount; i += blockDim.x)
+				for (uint32_t i = threadIdx.x; i < node._pointCount; i += blockDim.x)
 				{
-					const uint32_t pointIndex = indices[node.pointOffset + i];
+					const uint32_t pointIndex = indices[node._pointOffset + i];
 					const float distanceSquared = PointGpu::pointDistanceSquared(points[pointIndex], query);
 					PointGpu::insertKnnHit(localDistances, localIndices, localFound, trackedK, distanceSquared, pointIndex);
 				}
@@ -692,7 +692,7 @@ namespace
 
 				if (threadIdx.x == 0)
 				{
-					tested += node.pointCount;
+					tested += node._pointCount;
 					for (uint32_t thread = 0; thread < blockDim.x; ++thread)
 					{
 						const uint32_t count = candidateCounts[thread];
@@ -715,31 +715,31 @@ namespace
 
 			if (threadIdx.x == 0)
 			{
-				const float leftDistance = node.left >= 0 ? distanceSquaredToNode(nodes[node.left], query) : 3.402823466e+38F;
-				const float rightDistance = node.right >= 0 ? distanceSquaredToNode(nodes[node.right], query) : 3.402823466e+38F;
+				const float leftDistance = node._left >= 0 ? distanceSquaredToNode(nodes[node._left], query) : 3.402823466e+38F;
+				const float rightDistance = node._right >= 0 ? distanceSquaredToNode(nodes[node._right], query) : 3.402823466e+38F;
 				const float worst = PointGpu::worstKnnDistance(bestDistances, bestFound, trackedK);
-				const bool pushLeft = node.left >= 0 && leftDistance <= worst;
-				const bool pushRight = node.right >= 0 && rightDistance <= worst;
+				const bool pushLeft = node._left >= 0 && leftDistance <= worst;
+				const bool pushRight = node._right >= 0 && rightDistance <= worst;
 				if (pushLeft && pushRight)
 				{
 					if (leftDistance <= rightDistance)
 					{
-						if (stackSize < QueryStackSize) stack[stackSize++] = node.right;
-						if (stackSize < QueryStackSize) stack[stackSize++] = node.left;
+						if (stackSize < QueryStackSize) stack[stackSize++] = node._right;
+						if (stackSize < QueryStackSize) stack[stackSize++] = node._left;
 					}
 					else
 					{
-						if (stackSize < QueryStackSize) stack[stackSize++] = node.left;
-						if (stackSize < QueryStackSize) stack[stackSize++] = node.right;
+						if (stackSize < QueryStackSize) stack[stackSize++] = node._left;
+						if (stackSize < QueryStackSize) stack[stackSize++] = node._right;
 					}
 				}
 				else if (pushLeft)
 				{
-					if (stackSize < QueryStackSize) stack[stackSize++] = node.left;
+					if (stackSize < QueryStackSize) stack[stackSize++] = node._left;
 				}
 				else if (pushRight)
 				{
-					if (stackSize < QueryStackSize) stack[stackSize++] = node.right;
+					if (stackSize < QueryStackSize) stack[stackSize++] = node._right;
 				}
 			}
 			__syncthreads();
@@ -757,10 +757,10 @@ namespace
 
 			const unsigned long long end = clock64();
 			DeviceQuerySample sample{};
-			sample.visitedNodes = visited;
-			sample.testedPoints = tested;
-			sample.returnedPoints = bestFound;
-			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			sample._visitedNodes = visited;
+			sample._testedPoints = tested;
+			sample._returnedPoints = bestFound;
+			sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 			samples[queryIndex] = sample;
 		}
 	}
@@ -768,30 +768,30 @@ namespace
 
 struct PointGpu::KDTree::DeviceState
 {
-	DevicePoint* points = nullptr;
-	uint32_t* indices = nullptr;
-	uint32_t* tempIndices = nullptr;
-	LinearNode* nodes = nullptr;
-	uint32_t* leftCounts = nullptr;
-	uint32_t* writeCursors = nullptr;
-	DeviceQuery* queryBuffer = nullptr;
-	DeviceQuerySample* sampleBuffer = nullptr;
-	uint32_t* knnIndexBuffer = nullptr;
-	float* knnDistanceBuffer = nullptr;
-	size_t pointCount = 0;
-	size_t nodeCapacity = 0;
-	size_t actualNodes = 0;
-	size_t actualLeaves = 0;
-	size_t leafCapacity = 1;
-	size_t minSplit = 2;
-	size_t maxDepth = 0;
-	size_t queryCapacity = 0;
-	size_t knnCapacity = 0;
-	size_t baseMemoryBytes = 0;
-	size_t memoryBytes = 0;
-	int device = 0;
-	const PointCloud* cloud = nullptr;
-	bool pointsReady = false;
+	DevicePoint* _points = nullptr;
+	uint32_t* _indices = nullptr;
+	uint32_t* _tempIndices = nullptr;
+	LinearNode* _nodes = nullptr;
+	uint32_t* _leftCounts = nullptr;
+	uint32_t* _writeCursors = nullptr;
+	DeviceQuery* _queryBuffer = nullptr;
+	DeviceQuerySample* _sampleBuffer = nullptr;
+	uint32_t* _knnIndexBuffer = nullptr;
+	float* _knnDistanceBuffer = nullptr;
+	size_t _pointCount = 0;
+	size_t _nodeCapacity = 0;
+	size_t _actualNodes = 0;
+	size_t _actualLeaves = 0;
+	size_t _leafCapacity = 1;
+	size_t _minSplit = 2;
+	size_t _maxDepth = 0;
+	size_t _queryCapacity = 0;
+	size_t _knnCapacity = 0;
+	size_t _baseMemoryBytes = 0;
+	size_t _memoryBytes = 0;
+	int _device = 0;
+	const PointCloud* _cloud = nullptr;
+	bool _pointsReady = false;
 };
 
 namespace
@@ -821,41 +821,41 @@ namespace
 	template <typename State>
 	void releaseQueryBuffers(State& state)
 	{
-		cudaFree(state.queryBuffer);
-		cudaFree(state.sampleBuffer);
-		cudaFree(state.knnIndexBuffer);
-		cudaFree(state.knnDistanceBuffer);
-		state.queryBuffer = nullptr;
-		state.sampleBuffer = nullptr;
-		state.knnIndexBuffer = nullptr;
-		state.knnDistanceBuffer = nullptr;
-		state.queryCapacity = 0;
-		state.knnCapacity = 0;
+		cudaFree(state._queryBuffer);
+		cudaFree(state._sampleBuffer);
+		cudaFree(state._knnIndexBuffer);
+		cudaFree(state._knnDistanceBuffer);
+		state._queryBuffer = nullptr;
+		state._sampleBuffer = nullptr;
+		state._knnIndexBuffer = nullptr;
+		state._knnDistanceBuffer = nullptr;
+		state._queryCapacity = 0;
+		state._knnCapacity = 0;
 	}
 
 	template <typename State>
 	void ensureQueryBuffers(State& state, size_t capacity)
 	{
-		if (state.queryCapacity >= capacity && state.queryBuffer && state.sampleBuffer)
+		if (state._queryCapacity >= capacity && state._queryBuffer && state._sampleBuffer)
 			return;
 
 		releaseQueryBuffers(state);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
-		state.queryCapacity = capacity;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._queryBuffer), sizeof(DeviceQuery) * capacity));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._sampleBuffer), sizeof(DeviceQuerySample) * capacity));
+		state._queryCapacity = capacity;
 	}
 
 	template <typename State>
 	void ensureKnnBuffers(State& state, size_t capacity)
 	{
-		if (state.knnCapacity >= capacity && state.knnIndexBuffer && state.knnDistanceBuffer)
+		if (state._knnCapacity >= capacity && state._knnIndexBuffer && state._knnDistanceBuffer)
 			return;
 
-		cudaFree(state.knnIndexBuffer);
-		cudaFree(state.knnDistanceBuffer);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.knnIndexBuffer), sizeof(uint32_t) * capacity * PointGpu::MaxTrackedKnnK));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.knnDistanceBuffer), sizeof(float) * capacity * PointGpu::MaxTrackedKnnK));
-		state.knnCapacity = capacity;
+		cudaFree(state._knnIndexBuffer);
+		cudaFree(state._knnDistanceBuffer);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._knnIndexBuffer), sizeof(uint32_t) * capacity * PointGpu::MaxTrackedKnnK));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._knnDistanceBuffer), sizeof(float) * capacity * PointGpu::MaxTrackedKnnK));
+		state._knnCapacity = capacity;
 	}
 
 	std::string normalizeKnnBackend(std::string backend)
@@ -869,7 +869,7 @@ namespace
 
 	bool requestsBruteForceKnn(const PointGpu::Options& options)
 	{
-		const std::string backend = normalizeKnnBackend(options.knnBackend);
+		const std::string backend = normalizeKnnBackend(options._knnBackend);
 		return backend == "bruteforce" ||
 			backend == "brute_force" ||
 			backend == "gpu_bruteforce_knn" ||
@@ -881,14 +881,14 @@ namespace
 		if (requestsBruteForceKnn(options))
 			return false;
 
-		const std::string backend = normalizeKnnBackend(options.knnBackend);
+		const std::string backend = normalizeKnnBackend(options._knnBackend);
 		if (!(backend.empty() || backend == "auto" || backend == "tree" || backend == "gpu_tree_knn"))
 			return false;
 
 		for (const DeviceQuery& query : queries)
 		{
-			if (query.type == static_cast<int>(PointGpu::QueryType::Knn) &&
-				query.knnK > PointGpu::MaxTrackedKnnK)
+			if (query._type == static_cast<int>(PointGpu::QueryType::Knn) &&
+				query._knnK > PointGpu::MaxTrackedKnnK)
 			{
 				return false;
 			}
@@ -911,25 +911,25 @@ PointGpu::KDTree::~KDTree()
 void PointGpu::KDTree::release()
 {
 	releaseTree();
-	cudaFree(_state->points);
-	cudaFree(_state->indices);
-	cudaFree(_state->tempIndices);
+	cudaFree(_state->_points);
+	cudaFree(_state->_indices);
+	cudaFree(_state->_tempIndices);
 	releaseQueryBuffers(*_state);
 	*_state = DeviceState();
 }
 
 void PointGpu::KDTree::releaseTree()
 {
-	cudaFree(_state->nodes);
-	cudaFree(_state->leftCounts);
-	cudaFree(_state->writeCursors);
-	_state->nodes = nullptr;
-	_state->leftCounts = nullptr;
-	_state->writeCursors = nullptr;
-	_state->nodeCapacity = 0;
-	_state->actualNodes = 0;
-	_state->actualLeaves = 0;
-	_state->memoryBytes = _state->baseMemoryBytes;
+	cudaFree(_state->_nodes);
+	cudaFree(_state->_leftCounts);
+	cudaFree(_state->_writeCursors);
+	_state->_nodes = nullptr;
+	_state->_leftCounts = nullptr;
+	_state->_writeCursors = nullptr;
+	_state->_nodeCapacity = 0;
+	_state->_actualNodes = 0;
+	_state->_actualLeaves = 0;
+	_state->_memoryBytes = _state->_baseMemoryBytes;
 }
 
 bool PointGpu::KDTree::isAvailable(std::string* error)
@@ -965,7 +965,7 @@ int PointGpu::KDTree::deviceCount()
 
 PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const SchemaConfig& schema, const Options& options)
 {
-	const std::string builder = options.builder.empty() ? "kdtree" : options.builder;
+	const std::string builder = options._builder.empty() ? "kdtree" : options._builder;
 	const bool buildBIH = isBIHBuilder(builder);
 	if (!isKDTreeBuilder(builder) && !buildBIH)
 		throw std::runtime_error("KDTree evaluator supports --cuda-builder kdtree, kd_tree, kd, bih, interval_hierarchy, or binary_interval_hierarchy.");
@@ -977,20 +977,20 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 		throw std::runtime_error("CUDA point evaluator is unavailable: " + availabilityError);
 
 	const int count = deviceCount();
-	const int device = options.device >= 0 ? std::min(options.device, count - 1) : 0;
+	const int device = options._device >= 0 ? std::min(options._device, count - 1) : 0;
 	CudaHelper::checkError(cudaSetDevice(device));
 
 	const bool canReusePoints =
-		_state->pointsReady &&
-		_state->cloud == &cloud &&
-		_state->pointCount == cloud.size() &&
-		_state->device == device;
+		_state->_pointsReady &&
+		_state->_cloud == &cloud &&
+		_state->_pointCount == cloud.size() &&
+		_state->_device == device;
 
 	if (!canReusePoints)
 	{
-		if (_state->points || _state->nodes)
+		if (_state->_points || _state->_nodes)
 		{
-			CudaHelper::checkError(cudaSetDevice(_state->device));
+			CudaHelper::checkError(cudaSetDevice(_state->_device));
 			release();
 			CudaHelper::checkError(cudaSetDevice(device));
 		}
@@ -1004,16 +1004,16 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 		releaseTree();
 	}
 
-	_state->pointCount = cloud.size();
-	_state->leafCapacity = leafCapacityForSchema(schema);
-	_state->minSplit = minSplitForSchema(schema);
-	_state->maxDepth = maxDepthForSchema(schema);
-	_state->device = device;
-	_state->cloud = &cloud;
+	_state->_pointCount = cloud.size();
+	_state->_leafCapacity = leafCapacityForSchema(schema);
+	_state->_minSplit = minSplitForSchema(schema);
+	_state->_maxDepth = maxDepthForSchema(schema);
+	_state->_device = device;
+	_state->_cloud = &cloud;
 
 	BuildResult result;
-	result.device = device;
-	result.builder = buildBIH ? "bih" : "kdtree";
+	result._device = device;
+	result._builder = buildBIH ? "bih" : "kdtree";
 
 	if (cloud.empty())
 		return result;
@@ -1026,49 +1026,49 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
-		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_points), sizeof(DevicePoint) * _state->_pointCount));
+		CudaHelper::checkError(cudaMemcpy(_state->_points, cloud.points().data(), sizeof(DevicePoint) * _state->_pointCount, cudaMemcpyHostToDevice));
+		result._uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
 
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->indices), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->tempIndices), sizeof(uint32_t) * _state->pointCount));
-		_state->baseMemoryBytes =
-			sizeof(DevicePoint) * _state->pointCount +
-			sizeof(uint32_t) * _state->pointCount * 2;
-		_state->pointsReady = true;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_indices), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_tempIndices), sizeof(uint32_t) * _state->_pointCount));
+		_state->_baseMemoryBytes =
+			sizeof(DevicePoint) * _state->_pointCount +
+			sizeof(uint32_t) * _state->_pointCount * 2;
+		_state->_pointsReady = true;
 	}
 
-	_state->nodeCapacity = nodeCapacityForDepth(_state->maxDepth);
-	_state->memoryBytes =
-		_state->baseMemoryBytes +
-		sizeof(LinearNode) * _state->nodeCapacity +
-		sizeof(uint32_t) * _state->nodeCapacity * 2;
-	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb, buildBIH ? "BIH" : "KDTree");
+	_state->_nodeCapacity = nodeCapacityForDepth(_state->_maxDepth);
+	_state->_memoryBytes =
+		_state->_baseMemoryBytes +
+		sizeof(LinearNode) * _state->_nodeCapacity +
+		sizeof(uint32_t) * _state->_nodeCapacity * 2;
+	checkMemoryBudget(_state->_memoryBytes, options._memoryBudgetMb, buildBIH ? "BIH" : "KDTree");
 
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodes), sizeof(LinearNode) * _state->nodeCapacity));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->leftCounts), sizeof(uint32_t) * _state->nodeCapacity));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->nodeCapacity));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_nodes), sizeof(LinearNode) * _state->_nodeCapacity));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_leftCounts), sizeof(uint32_t) * _state->_nodeCapacity));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_writeCursors), sizeof(uint32_t) * _state->_nodeCapacity));
 
 	cudaEvent_t buildBegin = nullptr;
 	cudaEvent_t buildEnd = nullptr;
 	CudaHelper::startTimer(buildBegin, buildEnd);
 
-	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->pointCount, ThreadsPerBlock)));
-	initializeIndicesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->indices, _state->pointCount);
+	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->_pointCount, ThreadsPerBlock)));
+	initializeIndicesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->_indices, _state->_pointCount);
 	CudaHelper::synchronize("initializeKdIndicesKernel");
 
-	const dim3 nodeBlocks(static_cast<unsigned int>(divUp(_state->nodeCapacity, ThreadsPerBlock)));
-	initializeNodesKernel<<<nodeBlocks, ThreadsPerBlock>>>(_state->nodes, _state->nodeCapacity);
+	const dim3 nodeBlocks(static_cast<unsigned int>(divUp(_state->_nodeCapacity, ThreadsPerBlock)));
+	initializeNodesKernel<<<nodeBlocks, ThreadsPerBlock>>>(_state->_nodes, _state->_nodeCapacity);
 	CudaHelper::synchronize("initializeKdNodesKernel");
 
 	// Schema per-level axisPolicy wins over the options default; falls back to LongestExtent.
 	const PointGpu::KdAxisPolicy resolvedPolicy = axisPolicyFromSchema(schema);
 	const int axisPolicy = static_cast<int>(resolvedPolicy);
 	initializeRootKernel<<<1, 1>>>(
-		_state->nodes,
-		_state->pointCount,
+		_state->_nodes,
+		_state->_pointCount,
 		boundsMin.x,
 		boundsMin.y,
 		boundsMin.z,
@@ -1078,72 +1078,72 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 		axisPolicy);
 	CudaHelper::synchronize("initializeKdRootKernel");
 
-	for (size_t depth = 0; depth < _state->maxDepth; ++depth)
+	for (size_t depth = 0; depth < _state->_maxDepth; ++depth)
 	{
 		const size_t nodeStart = nodeStartForDepth(depth);
 		const size_t levelNodeCount = nodeCountForDepth(depth);
-		CudaHelper::checkError(cudaMemset(_state->leftCounts + nodeStart, 0, sizeof(uint32_t) * levelNodeCount));
+		CudaHelper::checkError(cudaMemset(_state->_leftCounts + nodeStart, 0, sizeof(uint32_t) * levelNodeCount));
 
 		countSplitsKernel<<<static_cast<unsigned int>(levelNodeCount), ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->nodes,
+			_state->_points,
+			_state->_indices,
+			_state->_nodes,
 			nodeStart,
 			levelNodeCount,
-			static_cast<uint32_t>(_state->leafCapacity),
-			static_cast<uint32_t>(_state->minSplit),
-			_state->leftCounts);
+			static_cast<uint32_t>(_state->_leafCapacity),
+			static_cast<uint32_t>(_state->_minSplit),
+			_state->_leftCounts);
 		CudaHelper::synchronize("countKdSplitsKernel");
 
 		const dim3 levelBlocks(static_cast<unsigned int>(divUp(levelNodeCount, ThreadsPerBlock)));
 		prepareSplitNodesKernel<<<levelBlocks, ThreadsPerBlock>>>(
-			_state->nodes,
+			_state->_nodes,
 			nodeStart,
 			levelNodeCount,
-			_state->leftCounts,
-			_state->writeCursors,
+			_state->_leftCounts,
+			_state->_writeCursors,
 			axisPolicy,
 			static_cast<uint32_t>(depth));
 		CudaHelper::synchronize("prepareKdSplitNodesKernel");
 
 		CudaHelper::checkError(cudaMemcpy(
-			_state->tempIndices,
-			_state->indices,
-			sizeof(uint32_t) * _state->pointCount,
+			_state->_tempIndices,
+			_state->_indices,
+			sizeof(uint32_t) * _state->_pointCount,
 			cudaMemcpyDeviceToDevice));
 
 		partitionIndicesKernel<<<static_cast<unsigned int>(levelNodeCount), ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->tempIndices,
-			_state->nodes,
+			_state->_points,
+			_state->_indices,
+			_state->_tempIndices,
+			_state->_nodes,
 			nodeStart,
 			levelNodeCount,
-			_state->writeCursors);
+			_state->_writeCursors);
 		CudaHelper::synchronize("partitionKdIndicesKernel");
 
-		std::swap(_state->indices, _state->tempIndices);
+		std::swap(_state->_indices, _state->_tempIndices);
 
 		if (buildBIH)
 		{
 			const size_t childStart = nodeStartForDepth(depth + 1);
 			const size_t childLevelNodeCount = nodeCountForDepth(depth + 1);
 			refitNodeBoundsKernel<<<static_cast<unsigned int>(childLevelNodeCount), ThreadsPerBlock>>>(
-				_state->points,
-				_state->indices,
-				_state->nodes,
+				_state->_points,
+				_state->_indices,
+				_state->_nodes,
 				childStart,
 				childLevelNodeCount);
 			CudaHelper::synchronize("refitBihNodeBoundsKernel");
 		}
 	}
 
-	result.gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
+	result._gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
 	cudaEventDestroy(buildBegin);
 	cudaEventDestroy(buildEnd);
 
-	std::vector<LinearNode> hostNodes(_state->nodeCapacity);
-	CudaHelper::checkError(cudaMemcpy(hostNodes.data(), _state->nodes, sizeof(LinearNode) * _state->nodeCapacity, cudaMemcpyDeviceToHost));
+	std::vector<LinearNode> hostNodes(_state->_nodeCapacity);
+	CudaHelper::checkError(cudaMemcpy(hostNodes.data(), _state->_nodes, sizeof(LinearNode) * _state->_nodeCapacity, cudaMemcpyDeviceToHost));
 
 	size_t maxLeafOccupancy = 0;
 	size_t indexedPoints = 0;
@@ -1151,61 +1151,61 @@ PointGpu::BuildResult PointGpu::KDTree::build(const PointCloud& cloud, const Sch
 	for (size_t nodeIndex = 0; nodeIndex < hostNodes.size(); ++nodeIndex)
 	{
 		const LinearNode& node = hostNodes[nodeIndex];
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			continue;
 
-		++_state->actualNodes;
+		++_state->_actualNodes;
 		const size_t depth = static_cast<size_t>(std::floor(std::log2(static_cast<double>(nodeIndex + 1))));
 		deepestNode = std::max(deepestNode, depth);
-		if (node.left < 0 || node.right < 0)
+		if (node._left < 0 || node._right < 0)
 		{
-			++_state->actualLeaves;
-			indexedPoints += node.pointCount;
-			maxLeafOccupancy = std::max<size_t>(maxLeafOccupancy, node.pointCount);
+			++_state->_actualLeaves;
+			indexedPoints += node._pointCount;
+			maxLeafOccupancy = std::max<size_t>(maxLeafOccupancy, node._pointCount);
 		}
 	}
 
-	result.gpuMemoryBytes = _state->memoryBytes;
-	result.metrics.buildTimeMs = result.gpuBuildTimeMs;
-	result.metrics.numNodes = _state->actualNodes;
-	result.metrics.numLeaves = _state->actualLeaves;
-	result.metrics.indexedPoints = indexedPoints;
-	result.metrics.maxDepth = deepestNode;
-	result.metrics.averageLeafOccupancy = _state->actualLeaves > 0
-		? static_cast<double>(indexedPoints) / static_cast<double>(_state->actualLeaves)
+	result._gpuMemoryBytes = _state->_memoryBytes;
+	result._metrics._buildTimeMs = result._gpuBuildTimeMs;
+	result._metrics._numNodes = _state->_actualNodes;
+	result._metrics._numLeaves = _state->_actualLeaves;
+	result._metrics._indexedPoints = indexedPoints;
+	result._metrics._maxDepth = deepestNode;
+	result._metrics._averageLeafOccupancy = _state->_actualLeaves > 0
+		? static_cast<double>(indexedPoints) / static_cast<double>(_state->_actualLeaves)
 		: 0.0;
-	result.metrics.maxLeafOccupancy = maxLeafOccupancy;
-	result.metrics.memoryEstimateBytes = _state->memoryBytes;
+	result._metrics._maxLeafOccupancy = maxLeafOccupancy;
+	result._metrics._memoryEstimateBytes = _state->_memoryBytes;
 	return result;
 }
 
 PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries, const Options& options) const
 {
-	if (!_state || _state->actualNodes == 0 || queries.empty())
+	if (!_state || _state->_actualNodes == 0 || queries.empty())
 		return {};
 
-	CudaHelper::checkError(cudaSetDevice(_state->device));
+	CudaHelper::checkError(cudaSetDevice(_state->_device));
 
 	QueryResult result;
-	result.samples.reserve(queries.size());
-	result.knnPointIndices.resize(queries.size());
-	result.knnDistancesSquared.resize(queries.size());
+	result._samples.reserve(queries.size());
+	result._knnPointIndices.resize(queries.size());
+	result._knnDistancesSquared.resize(queries.size());
 	for (const Query& query : queries)
 	{
-		if (query.type == QueryType::Radius)
-			++result.radiusQueries;
-		else if (query.type == QueryType::CountRange)
-			++result.countRangeQueries;
-		else if (query.type == QueryType::Knn)
-			++result.knnQueries;
+		if (query._type == QueryType::Radius)
+			++result._radiusQueries;
+		else if (query._type == QueryType::CountRange)
+			++result._countRangeQueries;
+		else if (query._type == QueryType::Knn)
+			++result._knnQueries;
 		else
-			++result.rangeQueries;
+			++result._rangeQueries;
 	}
 
-	const size_t batchSize = options.queryBatchSize > 0
-		? std::max<size_t>(1, options.queryBatchSize)
+	const size_t batchSize = options._queryBatchSize > 0
+		? std::max<size_t>(1, options._queryBatchSize)
 		: queries.size();
-	const float clockRate = deviceClockRateKHz(_state->device);
+	const float clockRate = deviceClockRateKHz(_state->_device);
 
 	ensureQueryBuffers(*_state, batchSize);
 
@@ -1223,23 +1223,23 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 		for (size_t i = 0; i < currentBatch; ++i)
 			hostQueries.push_back(makeDeviceQuery(queries[offset + i]));
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
-			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
+			return query._type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
 		const bool useTreeKnn = batchHasKnn && canUseTreeKnn(hostQueries, options);
 		if (batchHasKnn)
-			result.knnBackend = useTreeKnn ? "gpu_tree_knn" : "gpu_bruteforce_knn";
+			result._knnBackend = useTreeKnn ? "gpu_tree_knn" : "gpu_bruteforce_knn";
 
-		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->_queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
 		const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
 		queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->nodes,
-			_state->pointCount,
-			_state->queryBuffer,
+			_state->_points,
+			_state->_indices,
+			_state->_nodes,
+			_state->_pointCount,
+			_state->_queryBuffer,
 			currentBatch,
 			clockRate,
-			_state->sampleBuffer);
+			_state->_sampleBuffer);
 		CudaHelper::synchronize("kdQueryKernel");
 		if (batchHasKnn)
 		{
@@ -1247,32 +1247,32 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 			{
 				ensureKnnBuffers(*_state, currentBatch);
 				treeKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock>>>(
-					_state->points,
-					_state->indices,
-					_state->nodes,
-					_state->queryBuffer,
+					_state->_points,
+					_state->_indices,
+					_state->_nodes,
+					_state->_queryBuffer,
 					currentBatch,
 					clockRate,
-					_state->sampleBuffer,
-					_state->knnIndexBuffer,
-					_state->knnDistanceBuffer);
+					_state->_sampleBuffer,
+					_state->_knnIndexBuffer,
+					_state->_knnDistanceBuffer);
 				CudaHelper::synchronize("kdTreeKnnQueryKernel");
 			}
 			else
 			{
 				PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
-					_state->points,
-					_state->pointCount,
-					_state->queryBuffer,
+					_state->_points,
+					_state->_pointCount,
+					_state->_queryBuffer,
 					currentBatch,
 					clockRate,
-					_state->sampleBuffer);
+					_state->_sampleBuffer);
 				CudaHelper::synchronize("kdBruteForceKnnQueryKernel");
 			}
 		}
 
 		hostSamples.resize(currentBatch);
-		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->_sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
 		std::vector<uint32_t> hostKnnIndices;
 		std::vector<float> hostKnnDistances;
 		if (batchHasKnn && useTreeKnn)
@@ -1281,12 +1281,12 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 			hostKnnDistances.resize(currentBatch * PointGpu::MaxTrackedKnnK);
 			CudaHelper::checkError(cudaMemcpy(
 				hostKnnIndices.data(),
-				_state->knnIndexBuffer,
+				_state->_knnIndexBuffer,
 				sizeof(uint32_t) * hostKnnIndices.size(),
 				cudaMemcpyDeviceToHost));
 			CudaHelper::checkError(cudaMemcpy(
 				hostKnnDistances.data(),
-				_state->knnDistanceBuffer,
+				_state->_knnDistanceBuffer,
 				sizeof(float) * hostKnnDistances.size(),
 				cudaMemcpyDeviceToHost));
 		}
@@ -1295,52 +1295,52 @@ PointGpu::QueryResult PointGpu::KDTree::query(const std::vector<Query>& queries,
 		{
 			const DeviceQuerySample& sample = hostSamples[sampleIndex];
 			QuerySample converted;
-			converted.visitedNodes = static_cast<size_t>(sample.visitedNodes);
-			converted.testedPoints = static_cast<size_t>(sample.testedPoints);
-			converted.returnedPoints = static_cast<size_t>(sample.returnedPoints);
-			converted.elapsedMs = sample.elapsedMs;
-			result.samples.push_back(converted);
+			converted._visitedNodes = static_cast<size_t>(sample._visitedNodes);
+			converted._testedPoints = static_cast<size_t>(sample._testedPoints);
+			converted._returnedPoints = static_cast<size_t>(sample._returnedPoints);
+			converted._elapsedMs = sample._elapsedMs;
+			result._samples.push_back(converted);
 
 			const size_t globalQueryIndex = offset + sampleIndex;
-			if (useTreeKnn && hostQueries[sampleIndex].type == static_cast<int>(PointGpu::QueryType::Knn))
+			if (useTreeKnn && hostQueries[sampleIndex]._type == static_cast<int>(PointGpu::QueryType::Knn))
 			{
 				const size_t outputBase = sampleIndex * PointGpu::MaxTrackedKnnK;
-				const size_t outputCount = std::min<size_t>(converted.returnedPoints, PointGpu::MaxTrackedKnnK);
-				result.knnPointIndices[globalQueryIndex].reserve(outputCount);
-				result.knnDistancesSquared[globalQueryIndex].reserve(outputCount);
+				const size_t outputCount = std::min<size_t>(converted._returnedPoints, PointGpu::MaxTrackedKnnK);
+				result._knnPointIndices[globalQueryIndex].reserve(outputCount);
+				result._knnDistancesSquared[globalQueryIndex].reserve(outputCount);
 				for (size_t i = 0; i < outputCount; ++i)
 				{
-					result.knnPointIndices[globalQueryIndex].push_back(hostKnnIndices[outputBase + i]);
-					result.knnDistancesSquared[globalQueryIndex].push_back(hostKnnDistances[outputBase + i]);
+					result._knnPointIndices[globalQueryIndex].push_back(hostKnnIndices[outputBase + i]);
+					result._knnDistancesSquared[globalQueryIndex].push_back(hostKnnDistances[outputBase + i]);
 				}
 			}
 		}
 	}
 
-	result.gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
+	result._gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
 	cudaEventDestroy(queryBegin);
 	cudaEventDestroy(queryEnd);
 
-	result.metrics = summarizeGpuSamples(result.samples);
+	result._metrics = summarizeGpuSamples(result._samples);
 	return result;
 }
 
 bool PointGpu::KDTree::built() const
 {
-	return _state && _state->actualNodes > 0;
+	return _state && _state->_actualNodes > 0;
 }
 
 size_t PointGpu::KDTree::pointCount() const
 {
-	return _state ? _state->pointCount : 0;
+	return _state ? _state->_pointCount : 0;
 }
 
 size_t PointGpu::KDTree::nodeCount() const
 {
-	return _state ? _state->actualNodes : 0;
+	return _state ? _state->_actualNodes : 0;
 }
 
 size_t PointGpu::KDTree::leafCount() const
 {
-	return _state ? _state->actualLeaves : 0;
+	return _state ? _state->_actualLeaves : 0;
 }

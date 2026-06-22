@@ -144,8 +144,8 @@ static void addOccupancyFeatures(
 		entropy -= probability * std::log(probability);
 	}
 
-	features.occupancyRatio8 = static_cast<double>(occupied) / static_cast<double>(counts.size());
-	features.occupancyEntropy8 = entropy;
+	features._occupancyRatio8 = static_cast<double>(occupied) / static_cast<double>(counts.size());
+	features._occupancyEntropy8 = entropy;
 
 	if (occupied == 0)
 		return;
@@ -160,15 +160,15 @@ static void addOccupancyFeatures(
 		variance += delta * delta;
 	}
 	variance /= static_cast<double>(occupied);
-	features.densityCv8 = mean > EPSILON ? std::sqrt(variance) / mean : 0.0;
+	features._densityCv8 = mean > EPSILON ? std::sqrt(variance) / mean : 0.0;
 }
 
 static std::array<double, 3> normalizedWorkloadWeights(const Experiments::WorkloadProfile& profile)
 {
 	std::array<double, 3> weights = {
-		std::max(0.0, profile.rangeWeight),
-		std::max(0.0, profile.radiusWeight),
-		std::max(0.0, profile.knnWeight),
+		std::max(0.0, profile._rangeWeight),
+		std::max(0.0, profile._radiusWeight),
+		std::max(0.0, profile._knnWeight),
 	};
 
 	const double total = weights[0] + weights[1] + weights[2];
@@ -184,38 +184,38 @@ static std::array<double, 3> normalizedWorkloadWeights(const Experiments::Worklo
 Experiments::PointCloudFeatures Experiments::extractPointCloudFeatures(const PointCloud& cloud, size_t maxSampleSize, uint32_t seed)
 {
 	PointCloudFeatures features;
-	features.numPoints = cloud.size();
+	features._numPoints = cloud.size();
 	if (cloud.empty() || maxSampleSize == 0)
 		return features;
 
 	const std::vector<size_t> sample = deterministicSampleIndices(cloud.size(), maxSampleSize, seed);
-	features.sampleSize = sample.size();
+	features._sampleSize = sample.size();
 
 	const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.0f));
-	features.bboxX = range.x;
-	features.bboxY = range.y;
-	features.bboxZ = range.z;
-	features.aspectXY = safeDivide(features.bboxX, features.bboxY);
-	features.aspectXZ = safeDivide(features.bboxX, features.bboxZ);
-	features.aspectYZ = safeDivide(features.bboxY, features.bboxZ);
-	features.heightRange = features.bboxZ;
+	features._bboxX = range.x;
+	features._bboxY = range.y;
+	features._bboxZ = range.z;
+	features._aspectXY = safeDivide(features._bboxX, features._bboxY);
+	features._aspectXZ = safeDivide(features._bboxX, features._bboxZ);
+	features._aspectYZ = safeDivide(features._bboxY, features._bboxZ);
+	features._heightRange = features._bboxZ;
 
-	const double volume = features.bboxX * features.bboxY * features.bboxZ;
+	const double volume = features._bboxX * features._bboxY * features._bboxZ;
 	if (volume > EPSILON)
 	{
-		features.densityBbox = static_cast<double>(features.numPoints) / volume;
+		features._densityBbox = static_cast<double>(features._numPoints) / volume;
 	}
 	else
 	{
 		const double area = std::max({
-			features.bboxX * features.bboxY,
-			features.bboxX * features.bboxZ,
-			features.bboxY * features.bboxZ,
+			features._bboxX * features._bboxY,
+			features._bboxX * features._bboxZ,
+			features._bboxY * features._bboxZ,
 		});
-		const double fallbackExtent = std::max({ features.bboxX, features.bboxY, features.bboxZ, 1.0 });
-		features.densityBbox = area > EPSILON
-			? static_cast<double>(features.numPoints) / area
-			: static_cast<double>(features.numPoints) / fallbackExtent;
+		const double fallbackExtent = std::max({ features._bboxX, features._bboxY, features._bboxZ, 1.0 });
+		features._densityBbox = area > EPSILON
+			? static_cast<double>(features._numPoints) / area
+			: static_cast<double>(features._numPoints) / fallbackExtent;
 	}
 
 	double sumZ = 0.0;
@@ -227,7 +227,7 @@ Experiments::PointCloudFeatures Experiments::extractPointCloudFeatures(const Poi
 		mean += glm::dvec3(position);
 	}
 
-	features.heightMean = sumZ / static_cast<double>(sample.size());
+	features._heightMean = sumZ / static_cast<double>(sample.size());
 	mean /= static_cast<double>(sample.size());
 
 	double heightVariance = 0.0;
@@ -241,7 +241,7 @@ Experiments::PointCloudFeatures Experiments::extractPointCloudFeatures(const Poi
 	for (const size_t pointIndex : sample)
 	{
 		const glm::dvec3 position(cloud.points()[pointIndex].position);
-		const double zDelta = position.z - features.heightMean;
+		const double zDelta = position.z - features._heightMean;
 		heightVariance += zDelta * zDelta;
 
 		const glm::dvec3 delta = position - mean;
@@ -254,7 +254,7 @@ Experiments::PointCloudFeatures Experiments::extractPointCloudFeatures(const Poi
 	}
 
 	const double invCount = 1.0 / static_cast<double>(sample.size());
-	features.heightStd = std::sqrt(heightVariance * invCount);
+	features._heightStd = std::sqrt(heightVariance * invCount);
 
 	const std::array<double, 3> eigenvalues = covarianceEigenvalues(
 		c00 * invCount,
@@ -263,23 +263,23 @@ Experiments::PointCloudFeatures Experiments::extractPointCloudFeatures(const Poi
 		c11 * invCount,
 		c12 * invCount,
 		c22 * invCount);
-	features.covEig0 = eigenvalues[0];
-	features.covEig1 = eigenvalues[1];
-	features.covEig2 = eigenvalues[2];
+	features._covEig0 = eigenvalues[0];
+	features._covEig1 = eigenvalues[1];
+	features._covEig2 = eigenvalues[2];
 
-	if (features.covEig0 > EPSILON)
+	if (features._covEig0 > EPSILON)
 	{
-		features.linearity = (features.covEig0 - features.covEig1) / features.covEig0;
-		features.planarity = (features.covEig1 - features.covEig2) / features.covEig0;
-		features.scattering = features.covEig2 / features.covEig0;
+		features._linearity = (features._covEig0 - features._covEig1) / features._covEig0;
+		features._planarity = (features._covEig1 - features._covEig2) / features._covEig0;
+		features._scattering = features._covEig2 / features._covEig0;
 	}
 
 	addOccupancyFeatures(features, cloud, sample);
 
-	const double horizontalExtent = std::max({ features.bboxX, features.bboxY, EPSILON });
-	const double heightRatio = safeDivide(features.bboxZ, horizontalExtent);
-	features.verticalityScore = clamp01(heightRatio * (features.planarity + features.linearity));
-	features.flatnessScore = clamp01((1.0 - clamp01(heightRatio)) * (features.planarity + (1.0 - features.scattering)) * 0.5);
+	const double horizontalExtent = std::max({ features._bboxX, features._bboxY, EPSILON });
+	const double heightRatio = safeDivide(features._bboxZ, horizontalExtent);
+	features._verticalityScore = clamp01(heightRatio * (features._planarity + features._linearity));
+	features._flatnessScore = clamp01((1.0 - clamp01(heightRatio)) * (features._planarity + (1.0 - features._scattering)) * 0.5);
 
 	return features;
 }
@@ -288,37 +288,37 @@ Experiments::WorkloadFeatures Experiments::extractWorkloadFeatures(const Workloa
 {
 	WorkloadFeatures features;
 	const std::array<double, 3> normalized = normalizedWorkloadWeights(profile);
-	features.wRange = normalized[0];
-	features.wRadius = normalized[1];
-	features.wKnn = normalized[2];
-	features.knnK = profile.knnK;
-	features.numQueries = profile.numQueries;
-	features.rangeScaleMin = std::min(profile.rangeScaleMin, profile.rangeScaleMax);
-	features.rangeScaleMax = std::max(profile.rangeScaleMin, profile.rangeScaleMax);
-	features.radiusScaleMin = std::min(profile.radiusScaleMin, profile.radiusScaleMax);
-	features.radiusScaleMax = std::max(profile.radiusScaleMin, profile.radiusScaleMax);
-	features.buildWeight = weights.lambdaBuild;
-	features.memoryWeight = weights.lambdaMemory;
+	features._wRange = normalized[0];
+	features._wRadius = normalized[1];
+	features._wKnn = normalized[2];
+	features._knnK = profile._knnK;
+	features._numQueries = profile._numQueries;
+	features._rangeScaleMin = std::min(profile._rangeScaleMin, profile._rangeScaleMax);
+	features._rangeScaleMax = std::max(profile._rangeScaleMin, profile._rangeScaleMax);
+	features._radiusScaleMin = std::min(profile._radiusScaleMin, profile._radiusScaleMax);
+	features._radiusScaleMax = std::max(profile._radiusScaleMin, profile._radiusScaleMax);
+	features._buildWeight = weights._lambdaBuild;
+	features._memoryWeight = weights._lambdaMemory;
 
-	if (profile.numQueries == 0)
+	if (profile._numQueries == 0)
 		return features;
 
-	std::mt19937 rng(profile.querySeed);
+	std::mt19937 rng(profile._querySeed);
 	std::discrete_distribution<size_t> queryType(normalized.begin(), normalized.end());
 
 	std::vector<double> scales;
-	scales.reserve(profile.numQueries);
-	for (size_t i = 0; i < profile.numQueries; ++i)
+	scales.reserve(profile._numQueries);
+	for (size_t i = 0; i < profile._numQueries; ++i)
 	{
 		const size_t type = queryType(rng);
 		if (type == 0)
 		{
-			std::uniform_real_distribution<double> distribution(features.rangeScaleMin, features.rangeScaleMax);
+			std::uniform_real_distribution<double> distribution(features._rangeScaleMin, features._rangeScaleMax);
 			scales.push_back(distribution(rng));
 		}
 		else if (type == 1)
 		{
-			std::uniform_real_distribution<double> distribution(features.radiusScaleMin, features.radiusScaleMax);
+			std::uniform_real_distribution<double> distribution(features._radiusScaleMin, features._radiusScaleMax);
 			scales.push_back(distribution(rng));
 		}
 		else
@@ -327,13 +327,13 @@ Experiments::WorkloadFeatures Experiments::extractWorkloadFeatures(const Workloa
 		}
 	}
 
-	features.queryScaleMean = std::accumulate(scales.begin(), scales.end(), 0.0) / static_cast<double>(scales.size());
+	features._queryScaleMean = std::accumulate(scales.begin(), scales.end(), 0.0) / static_cast<double>(scales.size());
 	double variance = 0.0;
 	for (const double scale : scales)
 	{
-		const double delta = scale - features.queryScaleMean;
+		const double delta = scale - features._queryScaleMean;
 		variance += delta * delta;
 	}
-	features.queryScaleStd = std::sqrt(variance / static_cast<double>(scales.size()));
+	features._queryScaleStd = std::sqrt(variance / static_cast<double>(scales.size()));
 	return features;
 }

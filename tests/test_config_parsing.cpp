@@ -25,26 +25,26 @@ namespace BaselineTests
 			index.build(cloud, schema);
 			const PointSpatialIndex::Stats stats = index.stats();
 
-			expect(stats.numNodes >= 1, label + " creates at least one node");
-			expect(stats.numLeaves >= 1, label + " creates at least one leaf");
-			expect(stats.numPoints == cloud.size(), label + " preserves point count without duplication");
+			expect(stats._numNodes >= 1, label + " creates at least one node");
+			expect(stats._numLeaves >= 1, label + " creates at least one leaf");
+			expect(stats._numPoints == cloud.size(), label + " preserves point count without duplication");
 		}
 	}
 
 	void runConfigParsingTests()
 	{
 		const SchemaConfig octree = loadSchema("octree");
-		expect(octree.name == "octree_default", "octree schema name parsed");
-		expect(octree.levels.size() == 1, "octree schema has one level block");
+		expect(octree._name == "octree_default", "octree schema name parsed");
+		expect(octree._levels.size() == 1, "octree schema has one level block");
 		expect(octree.totalLevels() == 8, "octree schema total levels parsed");
-		expect(octree.levels[0].type == MultiDataStructure::DataStructureLevel::OctreeNode, "octree type parsed");
-		expect(octree.levels[0].primitiveKind == SchemaPrimitiveKind::Octree, "octree primitive kind parsed");
-		expect(octree.levels[0].cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "octree CPU fallback parsed");
-		expect(octree.buildPolicy.allowOverlapDuplication == false, "point schema disables overlap duplication");
+		expect(octree._levels[0]._type == MultiDataStructure::DataStructureLevel::OctreeNode, "octree type parsed");
+		expect(octree._levels[0]._primitiveKind == SchemaPrimitiveKind::Octree, "octree primitive kind parsed");
+		expect(octree._levels[0]._cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "octree CPU fallback parsed");
+		expect(octree._buildPolicy._allowOverlapDuplication == false, "point schema disables overlap duplication");
 
 		const SchemaConfig quadtree = loadSchema("quadtree");
-		expect(quadtree.levels[0].type == MultiDataStructure::DataStructureLevel::QuadTreeNode, "quadtree type parsed");
-		expect(quadtree.levels[0].axisPolicy == "xy", "quadtree defaults to XY axis policy");
+		expect(quadtree._levels[0]._type == MultiDataStructure::DataStructureLevel::QuadTreeNode, "quadtree type parsed");
+		expect(quadtree._levels[0]._axisPolicy == "xy", "quadtree defaults to XY axis policy");
 
 		const char* quadtreeXzJson = R"json(
 		{
@@ -63,14 +63,14 @@ namespace BaselineTests
 		}
 		)json";
 		const SchemaConfig quadtreeXz = Config::parseSchemaConfig(quadtreeXzJson, "quadtree_xz");
-		expect(quadtreeXz.levels[0].axisPolicy == "xz", "quadtree parses explicit XZ axis policy");
+		expect(quadtreeXz._levels[0]._axisPolicy == "xz", "quadtree parses explicit XZ axis policy");
 
 		const SchemaConfig kdtree = loadSchema("kdtree");
-		expect(kdtree.levels[0].type == MultiDataStructure::DataStructureLevel::KDTreeNode, "kd-tree type parsed");
-		expect(kdtree.levels[0].axisPolicy == "median_longest_axis", "kd-tree axis policy parsed");
+		expect(kdtree._levels[0]._type == MultiDataStructure::DataStructureLevel::KDTreeNode, "kd-tree type parsed");
+		expect(kdtree._levels[0]._axisPolicy == "median_longest_axis", "kd-tree axis policy parsed");
 
 		const SchemaConfig hybrid = loadSchema("quadtree_octree");
-		expect(hybrid.levels.size() == 2, "hybrid schema has two level blocks");
+		expect(hybrid._levels.size() == 2, "hybrid schema has two level blocks");
 		expect(hybrid.totalLevels() == 8, "hybrid total levels parsed");
 
 		const std::vector<MultiDataStructure::LevelConfig> legacyLevels = hybrid.toLevelConfigs();
@@ -122,11 +122,11 @@ namespace BaselineTests
 		bool skippedOctreeEnteredKdTree = false;
 		if (conditionalRoot)
 		{
-			for (const std::unique_ptr<PointSpatialIndex::Node>& child : conditionalRoot->children)
+			for (const std::unique_ptr<PointSpatialIndex::Node>& child : conditionalRoot->_children)
 			{
 				if (child &&
-					child->schemaDepth == 3 &&
-					child->type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+					child->_schemaDepth == 3 &&
+					child->_type == MultiDataStructure::DataStructureLevel::KDTreeNode)
 				{
 					skippedOctreeEnteredKdTree = true;
 					break;
@@ -161,11 +161,11 @@ namespace BaselineTests
 		PointSpatialIndex wideIndex;
 		wideIndex.build(wideTerrain, Config::parseSchemaConfig(quadtreeSplitJson, "quadtree_xy_split"));
 		const PointSpatialIndex::Node* wideRoot = wideIndex.root();
-		expect(wideRoot != nullptr && wideRoot->children.size() == 4, "quadtree XY split creates four root children");
-		if (wideRoot && !wideRoot->children.empty())
+		expect(wideRoot != nullptr && wideRoot->_children.size() == 4, "quadtree XY split creates four root children");
+		if (wideRoot && !wideRoot->_children.empty())
 		{
-			const glm::vec3 rootSize = wideRoot->bounds.size();
-			const glm::vec3 childSize = wideRoot->children.front()->bounds.size();
+			const glm::vec3 rootSize = wideRoot->_bounds.size();
+			const glm::vec3 childSize = wideRoot->_children.front()->_bounds.size();
 			expect(childSize.x < rootSize.x && childSize.y < rootSize.y,
 				"quadtree default splits X and Y for terrain-shaped clouds");
 			expect(nearlyEqual(childSize.z, rootSize.z),
@@ -193,23 +193,23 @@ namespace BaselineTests
 		}
 		)json";
 		const SchemaConfig gpuFlavors = Config::parseSchemaConfig(gpuFlavorJson, "gpu_flavors");
-		expect(gpuFlavors.levels[0].type == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH parses as KD-compatible family");
-		expect(gpuFlavors.levels[0].primitiveKind == SchemaPrimitiveKind::BIH, "BIH primitive kind is preserved");
-		expect(gpuFlavors.levels[0].cpuFallbackType == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH CPU fallback is explicit");
-		expect(gpuFlavors.levels[0].typeName == "BIH", "BIH schema name is preserved");
-		expect(gpuFlavors.levels[1].type == MultiDataStructure::DataStructureLevel::OctreeNode, "KarrasOctree parses as Octree-compatible family");
-		expect(gpuFlavors.levels[1].primitiveKind == SchemaPrimitiveKind::KarrasOctree, "KarrasOctree primitive kind is preserved");
-		expect(gpuFlavors.levels[1].typeName == "KarrasOctree", "KarrasOctree schema name is preserved");
-		expect(gpuFlavors.levels[2].type == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH parses as BVH-compatible family");
-		expect(gpuFlavors.levels[2].primitiveKind == SchemaPrimitiveKind::LBVH, "LBVH primitive kind is preserved");
-		expect(gpuFlavors.levels[2].cpuFallbackType == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH CPU fallback is explicit");
-		expect(gpuFlavors.levels[3].type == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid parses as Octree-compatible family");
-		expect(gpuFlavors.levels[3].primitiveKind == SchemaPrimitiveKind::RegularGrid, "RegularGrid primitive kind is preserved");
-		expect(gpuFlavors.levels[3].cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid CPU fallback is explicit");
-		expect(gpuFlavors.levels[3].typeName == "RegularGrid", "RegularGrid schema name is preserved");
-		expect(gpuFlavors.levels[4].type == MultiDataStructure::DataStructureLevel::OctreeNode, "HGrid parses as Octree-compatible family");
-		expect(gpuFlavors.levels[4].primitiveKind == SchemaPrimitiveKind::HGrid, "HGrid primitive kind is preserved");
-		expect(gpuFlavors.levels[4].typeName == "HGrid", "HGrid schema name is preserved");
+		expect(gpuFlavors._levels[0]._type == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH parses as KD-compatible family");
+		expect(gpuFlavors._levels[0]._primitiveKind == SchemaPrimitiveKind::BIH, "BIH primitive kind is preserved");
+		expect(gpuFlavors._levels[0]._cpuFallbackType == MultiDataStructure::DataStructureLevel::KDTreeNode, "BIH CPU fallback is explicit");
+		expect(gpuFlavors._levels[0]._typeName == "BIH", "BIH schema name is preserved");
+		expect(gpuFlavors._levels[1]._type == MultiDataStructure::DataStructureLevel::OctreeNode, "KarrasOctree parses as Octree-compatible family");
+		expect(gpuFlavors._levels[1]._primitiveKind == SchemaPrimitiveKind::KarrasOctree, "KarrasOctree primitive kind is preserved");
+		expect(gpuFlavors._levels[1]._typeName == "KarrasOctree", "KarrasOctree schema name is preserved");
+		expect(gpuFlavors._levels[2]._type == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH parses as BVH-compatible family");
+		expect(gpuFlavors._levels[2]._primitiveKind == SchemaPrimitiveKind::LBVH, "LBVH primitive kind is preserved");
+		expect(gpuFlavors._levels[2]._cpuFallbackType == MultiDataStructure::DataStructureLevel::BvhNode, "LBVH CPU fallback is explicit");
+		expect(gpuFlavors._levels[3]._type == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid parses as Octree-compatible family");
+		expect(gpuFlavors._levels[3]._primitiveKind == SchemaPrimitiveKind::RegularGrid, "RegularGrid primitive kind is preserved");
+		expect(gpuFlavors._levels[3]._cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "RegularGrid CPU fallback is explicit");
+		expect(gpuFlavors._levels[3]._typeName == "RegularGrid", "RegularGrid schema name is preserved");
+		expect(gpuFlavors._levels[4]._type == MultiDataStructure::DataStructureLevel::OctreeNode, "HGrid parses as Octree-compatible family");
+		expect(gpuFlavors._levels[4]._primitiveKind == SchemaPrimitiveKind::HGrid, "HGrid primitive kind is preserved");
+		expect(gpuFlavors._levels[4]._typeName == "HGrid", "HGrid schema name is preserved");
 
 		const char* mixedJson = R"json(
 		{
@@ -220,8 +220,8 @@ namespace BaselineTests
 		}
 		)json";
 		const SchemaConfig mixedPrimitive = Config::parseSchemaConfig(mixedJson, "mixed_primitive");
-		expect(mixedPrimitive.levels[0].primitiveKind == SchemaPrimitiveKind::Mixed, "Mixed primitive kind is parsed");
-		expect(mixedPrimitive.levels[0].cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "Mixed CPU fallback is explicit");
+		expect(mixedPrimitive._levels[0]._primitiveKind == SchemaPrimitiveKind::Mixed, "Mixed primitive kind is parsed");
+		expect(mixedPrimitive._levels[0]._cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "Mixed CPU fallback is explicit");
 
 		const char* noSplitJson = R"json(
 		{
@@ -259,12 +259,12 @@ namespace BaselineTests
 
 		PointSpatialIndex noSplitIndex;
 		noSplitIndex.build(cloud, Config::parseSchemaConfig(noSplitJson, "no_split"));
-		expect(noSplitIndex.stats().numNodes == 1, "large leaf capacity prevents point subdivision");
+		expect(noSplitIndex.stats()._numNodes == 1, "large leaf capacity prevents point subdivision");
 
 		PointSpatialIndex splitIndex;
 		splitIndex.build(cloud, Config::parseSchemaConfig(splitJson, "split"));
-		expect(splitIndex.stats().numNodes > 1, "small leaf capacity allows point subdivision");
-		expect(splitIndex.stats().numPoints == cloud.size(), "policy-controlled split preserves point count");
+		expect(splitIndex.stats()._numNodes > 1, "small leaf capacity allows point subdivision");
+		expect(splitIndex.stats()._numPoints == cloud.size(), "policy-controlled split preserves point count");
 
 		PointCloud adaptiveCloud;
 		for (int x = 0; x < 6; ++x)
@@ -329,21 +329,21 @@ namespace BaselineTests
 		}
 		)json";
 		const SchemaConfig adaptiveSchema = Config::parseSchemaConfig(adaptiveJson, "adaptive_density");
-		expect(adaptiveSchema.levels[0].adaptiveLeafCapacity.enabled, "adaptive leaf capacity parses enabled flag");
-		expect(adaptiveSchema.levels[0].adaptiveLeafCapacity.minCapacity == 2, "adaptive leaf capacity parses minimum capacity");
-		expect(nearlyEqual(static_cast<float>(adaptiveSchema.levels[0].adaptiveLeafCapacity.densityWeight), 2.0f),
+		expect(adaptiveSchema._levels[0]._adaptiveLeafCapacity._enabled, "adaptive leaf capacity parses enabled flag");
+		expect(adaptiveSchema._levels[0]._adaptiveLeafCapacity._minCapacity == 2, "adaptive leaf capacity parses minimum capacity");
+		expect(nearlyEqual(static_cast<float>(adaptiveSchema._levels[0]._adaptiveLeafCapacity._densityWeight), 2.0f),
 			"adaptive leaf capacity parses density weight");
 
 		PointSpatialIndex adaptiveStaticIndex;
 		adaptiveStaticIndex.build(adaptiveCloud, Config::parseSchemaConfig(adaptiveStaticJson, "adaptive_static_control"));
 		PointSpatialIndex adaptiveIndex;
 		adaptiveIndex.build(adaptiveCloud, adaptiveSchema);
-		expect(adaptiveIndex.stats().numPoints == adaptiveCloud.size(), "adaptive leaf capacity preserves point count");
+		expect(adaptiveIndex.stats()._numPoints == adaptiveCloud.size(), "adaptive leaf capacity preserves point count");
 		const PointSpatialIndex::Stats adaptiveStaticStats = adaptiveStaticIndex.stats();
 		const PointSpatialIndex::Stats adaptiveStats = adaptiveIndex.stats();
-		expect(adaptiveIndex.stats().numNodes > adaptiveStaticIndex.stats().numNodes,
+		expect(adaptiveIndex.stats()._numNodes > adaptiveStaticIndex.stats()._numNodes,
 			"adaptive leaf capacity shrinks dense-node leaves and creates a deeper local split: static=" +
-			std::to_string(adaptiveStaticStats.numNodes) + ", adaptive=" + std::to_string(adaptiveStats.numNodes));
+			std::to_string(adaptiveStaticStats._numNodes) + ", adaptive=" + std::to_string(adaptiveStats._numNodes));
 
 		const char* conditionalFalseJson = R"json(
 		{
@@ -400,8 +400,8 @@ namespace BaselineTests
 		)json";
 
 		const SchemaConfig conditionalFalse = Config::parseSchemaConfig(conditionalFalseJson, "conditional_false");
-		expect(conditionalFalse.levels[1].condition.minHeightRatio.has_value(), "schema condition parses height ratio");
-		expect(conditionalFalse.levels[1].condition.minPoints.has_value(), "schema condition parses min points");
+		expect(conditionalFalse._levels[1]._condition._minHeightRatio.has_value(), "schema condition parses height ratio");
+		expect(conditionalFalse._levels[1]._condition._minPoints.has_value(), "schema condition parses min points");
 
 		PointSpatialIndex conditionalFalseIndex;
 		conditionalFalseIndex.build(cloud, conditionalFalse);
@@ -409,8 +409,8 @@ namespace BaselineTests
 		PointSpatialIndex conditionalTrueIndex;
 		conditionalTrueIndex.build(cloud, Config::parseSchemaConfig(conditionalTrueJson, "conditional_true"));
 
-		expect(conditionalFalseIndex.stats().numPoints == cloud.size(), "conditional false build preserves point count");
-		expect(conditionalTrueIndex.stats().numPoints == cloud.size(), "conditional true build preserves point count");
-		expect(conditionalTrueIndex.stats().maxDepth > conditionalFalseIndex.stats().maxDepth, "matching schema condition unfolds deeper levels");
+		expect(conditionalFalseIndex.stats()._numPoints == cloud.size(), "conditional false build preserves point count");
+		expect(conditionalTrueIndex.stats()._numPoints == cloud.size(), "conditional true build preserves point count");
+		expect(conditionalTrueIndex.stats()._maxDepth > conditionalFalseIndex.stats()._maxDepth, "matching schema condition unfolds deeper levels");
 	}
 }

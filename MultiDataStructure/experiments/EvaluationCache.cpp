@@ -86,127 +86,127 @@ static std::string asString(const boost::json::object& object, const char* key, 
 static boost::json::object encodeBuildMetrics(const Experiments::BuildMetrics& metrics)
 {
 	boost::json::object out;
-	out["buildTimeMs"] = metrics.buildTimeMs;
-	out["numNodes"] = metrics.numNodes;
-	out["numLeaves"] = metrics.numLeaves;
-	out["indexedPoints"] = metrics.indexedPoints;
-	out["maxDepth"] = metrics.maxDepth;
-	out["averageLeafOccupancy"] = metrics.averageLeafOccupancy;
-	out["maxLeafOccupancy"] = metrics.maxLeafOccupancy;
-	out["leafOccupancyP50"] = metrics.leafOccupancyP50;
-	out["leafOccupancyP90"] = metrics.leafOccupancyP90;
-	out["leafOccupancyP99"] = metrics.leafOccupancyP99;
-	out["averageDepth"] = metrics.averageDepth;
-	out["averageFanout"] = metrics.averageFanout;
-	out["maxFanout"] = metrics.maxFanout;
-	out["emptyChildRatio"] = metrics.emptyChildRatio;
-	out["singleChildNodeCount"] = metrics.singleChildNodeCount;
-	out["meanTightBoundsVolumeRatio"] = metrics.meanTightBoundsVolumeRatio;
-	out["microIndexedLeaves"] = metrics.microIndexedLeaves;
-	out["microIndexedPoints"] = metrics.microIndexedPoints;
-	out["nodeFanoutSummary"] = metrics.nodeFanoutSummary;
-	out["memoryEstimateBytes"] = metrics.memoryEstimateBytes;
+	out["buildTimeMs"] = metrics._buildTimeMs;
+	out["numNodes"] = metrics._numNodes;
+	out["numLeaves"] = metrics._numLeaves;
+	out["indexedPoints"] = metrics._indexedPoints;
+	out["maxDepth"] = metrics._maxDepth;
+	out["averageLeafOccupancy"] = metrics._averageLeafOccupancy;
+	out["maxLeafOccupancy"] = metrics._maxLeafOccupancy;
+	out["leafOccupancyP50"] = metrics._leafOccupancyP50;
+	out["leafOccupancyP90"] = metrics._leafOccupancyP90;
+	out["leafOccupancyP99"] = metrics._leafOccupancyP99;
+	out["averageDepth"] = metrics._averageDepth;
+	out["averageFanout"] = metrics._averageFanout;
+	out["maxFanout"] = metrics._maxFanout;
+	out["emptyChildRatio"] = metrics._emptyChildRatio;
+	out["singleChildNodeCount"] = metrics._singleChildNodeCount;
+	out["meanTightBoundsVolumeRatio"] = metrics._meanTightBoundsVolumeRatio;
+	out["microIndexedLeaves"] = metrics._microIndexedLeaves;
+	out["microIndexedPoints"] = metrics._microIndexedPoints;
+	out["nodeFanoutSummary"] = metrics._nodeFanoutSummary;
+	out["memoryEstimateBytes"] = metrics._memoryEstimateBytes;
 	return out;
 }
 
 static void decodeBuildMetrics(const boost::json::object& source, Experiments::BuildMetrics& out)
 {
-	out.buildTimeMs = asDouble(source, "buildTimeMs");
-	out.numNodes = asSize(source, "numNodes");
-	out.numLeaves = asSize(source, "numLeaves");
-	out.indexedPoints = asSize(source, "indexedPoints");
-	out.maxDepth = asSize(source, "maxDepth");
-	out.averageLeafOccupancy = asDouble(source, "averageLeafOccupancy");
-	out.maxLeafOccupancy = asSize(source, "maxLeafOccupancy");
-	out.leafOccupancyP50 = asDouble(source, "leafOccupancyP50");
-	out.leafOccupancyP90 = asDouble(source, "leafOccupancyP90");
-	out.leafOccupancyP99 = asDouble(source, "leafOccupancyP99");
-	out.averageDepth = asDouble(source, "averageDepth");
-	out.averageFanout = asDouble(source, "averageFanout");
-	out.maxFanout = asSize(source, "maxFanout");
-	out.emptyChildRatio = asDouble(source, "emptyChildRatio");
-	out.singleChildNodeCount = asSize(source, "singleChildNodeCount");
-	out.meanTightBoundsVolumeRatio = asDouble(source, "meanTightBoundsVolumeRatio");
-	out.microIndexedLeaves = asSize(source, "microIndexedLeaves");
-	out.microIndexedPoints = asSize(source, "microIndexedPoints");
-	out.nodeFanoutSummary = asString(source, "nodeFanoutSummary");
-	out.memoryEstimateBytes = asSize(source, "memoryEstimateBytes");
+	out._buildTimeMs = asDouble(source, "buildTimeMs");
+	out._numNodes = asSize(source, "numNodes");
+	out._numLeaves = asSize(source, "numLeaves");
+	out._indexedPoints = asSize(source, "indexedPoints");
+	out._maxDepth = asSize(source, "maxDepth");
+	out._averageLeafOccupancy = asDouble(source, "averageLeafOccupancy");
+	out._maxLeafOccupancy = asSize(source, "maxLeafOccupancy");
+	out._leafOccupancyP50 = asDouble(source, "leafOccupancyP50");
+	out._leafOccupancyP90 = asDouble(source, "leafOccupancyP90");
+	out._leafOccupancyP99 = asDouble(source, "leafOccupancyP99");
+	out._averageDepth = asDouble(source, "averageDepth");
+	out._averageFanout = asDouble(source, "averageFanout");
+	out._maxFanout = asSize(source, "maxFanout");
+	out._emptyChildRatio = asDouble(source, "emptyChildRatio");
+	out._singleChildNodeCount = asSize(source, "singleChildNodeCount");
+	out._meanTightBoundsVolumeRatio = asDouble(source, "meanTightBoundsVolumeRatio");
+	out._microIndexedLeaves = asSize(source, "microIndexedLeaves");
+	out._microIndexedPoints = asSize(source, "microIndexedPoints");
+	out._nodeFanoutSummary = asString(source, "nodeFanoutSummary");
+	out._memoryEstimateBytes = asSize(source, "memoryEstimateBytes");
 }
 
 static boost::json::object encodeQueryMetrics(const Experiments::QueryMetrics& metrics)
 {
 	boost::json::object out;
-	out["totalQueries"] = metrics.totalQueries;
-	out["totalLatencyMs"] = metrics.totalLatencyMs;
-	out["averageLatencyMs"] = metrics.averageLatencyMs;
-	out["medianLatencyMs"] = metrics.medianLatencyMs;
-	out["p95LatencyMs"] = metrics.p95LatencyMs;
-	out["throughputQueriesPerSecond"] = metrics.throughputQueriesPerSecond;
-	out["averageVisitedNodes"] = metrics.averageVisitedNodes;
-	out["averageTestedPoints"] = metrics.averageTestedPoints;
-	out["averageReturnedPoints"] = metrics.averageReturnedPoints;
-	out["averageFullyContainedNodes"] = metrics.averageFullyContainedNodes;
-	out["totalVisitedNodes"] = metrics.totalVisitedNodes;
-	out["totalTestedPoints"] = metrics.totalTestedPoints;
-	out["totalReturnedPoints"] = metrics.totalReturnedPoints;
-	out["totalFullyContainedNodes"] = metrics.totalFullyContainedNodes;
+	out["totalQueries"] = metrics._totalQueries;
+	out["totalLatencyMs"] = metrics._totalLatencyMs;
+	out["averageLatencyMs"] = metrics._averageLatencyMs;
+	out["medianLatencyMs"] = metrics._medianLatencyMs;
+	out["p95LatencyMs"] = metrics._p95LatencyMs;
+	out["throughputQueriesPerSecond"] = metrics._throughputQueriesPerSecond;
+	out["averageVisitedNodes"] = metrics._averageVisitedNodes;
+	out["averageTestedPoints"] = metrics._averageTestedPoints;
+	out["averageReturnedPoints"] = metrics._averageReturnedPoints;
+	out["averageFullyContainedNodes"] = metrics._averageFullyContainedNodes;
+	out["totalVisitedNodes"] = metrics._totalVisitedNodes;
+	out["totalTestedPoints"] = metrics._totalTestedPoints;
+	out["totalReturnedPoints"] = metrics._totalReturnedPoints;
+	out["totalFullyContainedNodes"] = metrics._totalFullyContainedNodes;
 	return out;
 }
 
 static void decodeQueryMetrics(const boost::json::object& source, Experiments::QueryMetrics& out)
 {
-	out.totalQueries = asSize(source, "totalQueries");
-	out.totalLatencyMs = asDouble(source, "totalLatencyMs");
-	out.averageLatencyMs = asDouble(source, "averageLatencyMs");
-	out.medianLatencyMs = asDouble(source, "medianLatencyMs");
-	out.p95LatencyMs = asDouble(source, "p95LatencyMs");
-	out.throughputQueriesPerSecond = asDouble(source, "throughputQueriesPerSecond");
-	out.averageVisitedNodes = asDouble(source, "averageVisitedNodes");
-	out.averageTestedPoints = asDouble(source, "averageTestedPoints");
-	out.averageReturnedPoints = asDouble(source, "averageReturnedPoints");
-	out.averageFullyContainedNodes = asDouble(source, "averageFullyContainedNodes");
-	out.totalVisitedNodes = asSize(source, "totalVisitedNodes");
-	out.totalTestedPoints = asSize(source, "totalTestedPoints");
-	out.totalReturnedPoints = asSize(source, "totalReturnedPoints");
-	out.totalFullyContainedNodes = asSize(source, "totalFullyContainedNodes");
+	out._totalQueries = asSize(source, "totalQueries");
+	out._totalLatencyMs = asDouble(source, "totalLatencyMs");
+	out._averageLatencyMs = asDouble(source, "averageLatencyMs");
+	out._medianLatencyMs = asDouble(source, "medianLatencyMs");
+	out._p95LatencyMs = asDouble(source, "p95LatencyMs");
+	out._throughputQueriesPerSecond = asDouble(source, "throughputQueriesPerSecond");
+	out._averageVisitedNodes = asDouble(source, "averageVisitedNodes");
+	out._averageTestedPoints = asDouble(source, "averageTestedPoints");
+	out._averageReturnedPoints = asDouble(source, "averageReturnedPoints");
+	out._averageFullyContainedNodes = asDouble(source, "averageFullyContainedNodes");
+	out._totalVisitedNodes = asSize(source, "totalVisitedNodes");
+	out._totalTestedPoints = asSize(source, "totalTestedPoints");
+	out._totalReturnedPoints = asSize(source, "totalReturnedPoints");
+	out._totalFullyContainedNodes = asSize(source, "totalFullyContainedNodes");
 }
 
 static boost::json::object encodeRecord(const std::string& canonicalKey, const Experiments::SchemaSearchRecord& record)
 {
 	boost::json::object out;
 	out["key"] = canonicalKey;
-	out["build"] = encodeBuildMetrics(record.buildMetrics);
-	out["query"] = encodeQueryMetrics(record.queryMetrics);
-	out["rangeQuery"] = encodeQueryMetrics(record.rangeMetrics);
-	out["countRangeQuery"] = encodeQueryMetrics(record.countRangeMetrics);
-	out["radiusQuery"] = encodeQueryMetrics(record.radiusMetrics);
-	out["knnQuery"] = encodeQueryMetrics(record.knnMetrics);
-	out["rangeQueries"] = record.rangeQueries;
-	out["countRangeQueries"] = record.countRangeQueries;
-	out["radiusQueries"] = record.radiusQueries;
-	out["knnQueries"] = record.knnQueries;
-	out["queryStrataSummary"] = record.queryStrataSummary;
-	out["score"] = record.score;
-	out["scoreMemoryMb"] = record.scoreMemoryMb;
-	out["scoreImbalancePenalty"] = record.scoreImbalancePenalty;
-	out["scoreMode"] = record.scoreMode;
-	out["scoreStage"] = record.scoreStage;
-	out["scoreIsFinalLatency"] = record.scoreIsFinalLatency;
-	out["backend"] = record.backend;
-	out["knnBackend"] = record.knnBackend;
-	out["cudaDevice"] = record.cudaDevice;
-	out["cudaBuilder"] = record.cudaBuilder;
-	out["gpuUploadMs"] = record.gpuUploadMs;
-	out["gpuBuildMs"] = record.gpuBuildMs;
-	out["gpuQueryMs"] = record.gpuQueryMs;
-	out["gpuMemoryBytes"] = record.gpuMemoryBytes;
-	out["conditionalLevels"] = record.conditionalLevels;
-	out["conditionFields"] = record.conditionFields;
-	out["conditionSummary"] = record.conditionSummary;
-	out["isBaseline"] = record.isBaseline;
-	out["activeStructureTypes"] = record.activeStructureTypes;
-	out["nestedActiveFraction"] = record.nestedActiveFraction;
-	out["activeStructureSummary"] = record.activeStructureSummary;
+	out["build"] = encodeBuildMetrics(record._buildMetrics);
+	out["query"] = encodeQueryMetrics(record._queryMetrics);
+	out["rangeQuery"] = encodeQueryMetrics(record._rangeMetrics);
+	out["countRangeQuery"] = encodeQueryMetrics(record._countRangeMetrics);
+	out["radiusQuery"] = encodeQueryMetrics(record._radiusMetrics);
+	out["knnQuery"] = encodeQueryMetrics(record._knnMetrics);
+	out["rangeQueries"] = record._rangeQueries;
+	out["countRangeQueries"] = record._countRangeQueries;
+	out["radiusQueries"] = record._radiusQueries;
+	out["knnQueries"] = record._knnQueries;
+	out["queryStrataSummary"] = record._queryStrataSummary;
+	out["score"] = record._score;
+	out["scoreMemoryMb"] = record._scoreMemoryMb;
+	out["scoreImbalancePenalty"] = record._scoreImbalancePenalty;
+	out["scoreMode"] = record._scoreMode;
+	out["scoreStage"] = record._scoreStage;
+	out["scoreIsFinalLatency"] = record._scoreIsFinalLatency;
+	out["backend"] = record._backend;
+	out["knnBackend"] = record._knnBackend;
+	out["cudaDevice"] = record._cudaDevice;
+	out["cudaBuilder"] = record._cudaBuilder;
+	out["gpuUploadMs"] = record._gpuUploadMs;
+	out["gpuBuildMs"] = record._gpuBuildMs;
+	out["gpuQueryMs"] = record._gpuQueryMs;
+	out["gpuMemoryBytes"] = record._gpuMemoryBytes;
+	out["conditionalLevels"] = record._conditionalLevels;
+	out["conditionFields"] = record._conditionFields;
+	out["conditionSummary"] = record._conditionSummary;
+	out["isBaseline"] = record._isBaseline;
+	out["activeStructureTypes"] = record._activeStructureTypes;
+	out["nestedActiveFraction"] = record._nestedActiveFraction;
+	out["activeStructureSummary"] = record._activeStructureSummary;
 	return out;
 }
 
@@ -214,64 +214,64 @@ static void decodeRecord(const boost::json::object& source, Experiments::SchemaS
 {
 	const boost::json::value* build = find(source, "build");
 	if (build && build->is_object())
-		decodeBuildMetrics(build->as_object(), out.buildMetrics);
+		decodeBuildMetrics(build->as_object(), out._buildMetrics);
 
 	const boost::json::value* query = find(source, "query");
 	if (query && query->is_object())
-		decodeQueryMetrics(query->as_object(), out.queryMetrics);
+		decodeQueryMetrics(query->as_object(), out._queryMetrics);
 
 	const boost::json::value* rangeQuery = find(source, "rangeQuery");
 	if (rangeQuery && rangeQuery->is_object())
-		decodeQueryMetrics(rangeQuery->as_object(), out.rangeMetrics);
+		decodeQueryMetrics(rangeQuery->as_object(), out._rangeMetrics);
 	const boost::json::value* countRangeQuery = find(source, "countRangeQuery");
 	if (countRangeQuery && countRangeQuery->is_object())
-		decodeQueryMetrics(countRangeQuery->as_object(), out.countRangeMetrics);
+		decodeQueryMetrics(countRangeQuery->as_object(), out._countRangeMetrics);
 	const boost::json::value* radiusQuery = find(source, "radiusQuery");
 	if (radiusQuery && radiusQuery->is_object())
-		decodeQueryMetrics(radiusQuery->as_object(), out.radiusMetrics);
+		decodeQueryMetrics(radiusQuery->as_object(), out._radiusMetrics);
 	const boost::json::value* knnQuery = find(source, "knnQuery");
 	if (knnQuery && knnQuery->is_object())
-		decodeQueryMetrics(knnQuery->as_object(), out.knnMetrics);
+		decodeQueryMetrics(knnQuery->as_object(), out._knnMetrics);
 
-	out.rangeQueries = asSize(source, "rangeQueries");
-	out.countRangeQueries = asSize(source, "countRangeQueries");
-	out.radiusQueries = asSize(source, "radiusQueries");
-	out.knnQueries = asSize(source, "knnQueries");
-	out.queryStrataSummary = asString(source, "queryStrataSummary");
-	out.score = asDouble(source, "score");
-	out.scoreMemoryMb = asDouble(source, "scoreMemoryMb");
-	out.scoreImbalancePenalty = asDouble(source, "scoreImbalancePenalty");
-	out.scoreMode = asString(source, "scoreMode", out.scoreMode);
-	out.scoreStage = asString(source, "scoreStage", out.scoreStage);
+	out._rangeQueries = asSize(source, "rangeQueries");
+	out._countRangeQueries = asSize(source, "countRangeQueries");
+	out._radiusQueries = asSize(source, "radiusQueries");
+	out._knnQueries = asSize(source, "knnQueries");
+	out._queryStrataSummary = asString(source, "queryStrataSummary");
+	out._score = asDouble(source, "score");
+	out._scoreMemoryMb = asDouble(source, "scoreMemoryMb");
+	out._scoreImbalancePenalty = asDouble(source, "scoreImbalancePenalty");
+	out._scoreMode = asString(source, "scoreMode", out._scoreMode);
+	out._scoreStage = asString(source, "scoreStage", out._scoreStage);
 	const boost::json::value* finalLatency = find(source, "scoreIsFinalLatency");
 	if (finalLatency && finalLatency->is_bool())
-		out.scoreIsFinalLatency = finalLatency->as_bool();
-	out.backend = asString(source, "backend", "cpu");
-	out.knnBackend = asString(source, "knnBackend", out.knnBackend);
+		out._scoreIsFinalLatency = finalLatency->as_bool();
+	out._backend = asString(source, "backend", "cpu");
+	out._knnBackend = asString(source, "knnBackend", out._knnBackend);
 	const boost::json::value* device = find(source, "cudaDevice");
 	if (device && device->is_int64())
-		out.cudaDevice = static_cast<int>(device->as_int64());
-	out.cudaBuilder = asString(source, "cudaBuilder");
-	out.gpuUploadMs = asDouble(source, "gpuUploadMs");
-	out.gpuBuildMs = asDouble(source, "gpuBuildMs");
-	out.gpuQueryMs = asDouble(source, "gpuQueryMs");
-	out.gpuMemoryBytes = asSize(source, "gpuMemoryBytes");
-	out.conditionalLevels = asSize(source, "conditionalLevels");
-	out.conditionFields = asSize(source, "conditionFields");
-	out.conditionSummary = asString(source, "conditionSummary");
+		out._cudaDevice = static_cast<int>(device->as_int64());
+	out._cudaBuilder = asString(source, "cudaBuilder");
+	out._gpuUploadMs = asDouble(source, "gpuUploadMs");
+	out._gpuBuildMs = asDouble(source, "gpuBuildMs");
+	out._gpuQueryMs = asDouble(source, "gpuQueryMs");
+	out._gpuMemoryBytes = asSize(source, "gpuMemoryBytes");
+	out._conditionalLevels = asSize(source, "conditionalLevels");
+	out._conditionFields = asSize(source, "conditionFields");
+	out._conditionSummary = asString(source, "conditionSummary");
 	const boost::json::value* baseline = find(source, "isBaseline");
 	if (baseline && baseline->is_bool())
-		out.isBaseline = baseline->as_bool();
-	out.activeStructureTypes = asSize(source, "activeStructureTypes");
-	out.nestedActiveFraction = asDouble(source, "nestedActiveFraction");
-	out.activeStructureSummary = asString(source, "activeStructureSummary");
+		out._isBaseline = baseline->as_bool();
+	out._activeStructureTypes = asSize(source, "activeStructureTypes");
+	out._nestedActiveFraction = asDouble(source, "nestedActiveFraction");
+	out._activeStructureSummary = asString(source, "activeStructureSummary");
 }
 
 namespace Experiments
 {
 	std::string EvaluationCacheKey::canonical() const
 	{
-		return schemaSignature + "|" + datasetFingerprint + "|" + workloadFingerprint + "|" + evaluatorFingerprint;
+		return _schemaSignature + "|" + _datasetFingerprint + "|" + _workloadFingerprint + "|" + _evaluatorFingerprint;
 	}
 
 	EvaluationCache::EvaluationCache() = default;
@@ -343,7 +343,7 @@ namespace Experiments
 				continue;
 
 			Entry entry;
-			decodeRecord(object, entry.record);
+			decodeRecord(object, entry._record);
 			_entries[keyText] = std::move(entry);
 		}
 		return true;
@@ -363,48 +363,48 @@ namespace Experiments
 			return false;
 		}
 
-		const SchemaSearchRecord& cached = it->second.record;
+		const SchemaSearchRecord& cached = it->second._record;
 		// Preserve caller-provided context (names, weights, counts) filled at the call site after lookup.
-		const std::string datasetName = std::move(outRecord.datasetName);
-		const std::string datasetSource = std::move(outRecord.datasetSource);
-		const size_t numPoints = outRecord.numPoints;
-		const std::string workloadName = std::move(outRecord.workloadName);
-		const double rangeWeight = outRecord.rangeWeight;
-		const double radiusWeight = outRecord.radiusWeight;
-		const double knnWeight = outRecord.knnWeight;
-		const size_t numQueries = outRecord.numQueries;
-		const size_t knnK = outRecord.knnK;
-		const uint32_t querySeed = outRecord.querySeed;
-		const std::string schemaName = std::move(outRecord.schemaName);
-		const std::string schemaPath = std::move(outRecord.schemaPath);
-		const bool isBaseline = outRecord.isBaseline;
-		const ScoreWeights weights = outRecord.weights;
-		const std::string scoreMode = outRecord.scoreMode;
-		const std::string scoreStage = outRecord.scoreStage;
-		const bool scoreIsFinalLatency = outRecord.scoreIsFinalLatency;
-		const PointCloudFeatures pointFeatures = outRecord.pointFeatures;
-		const WorkloadFeatures workloadFeatures = outRecord.workloadFeatures;
+		const std::string datasetName = std::move(outRecord._datasetName);
+		const std::string datasetSource = std::move(outRecord._datasetSource);
+		const size_t numPoints = outRecord._numPoints;
+		const std::string workloadName = std::move(outRecord._workloadName);
+		const double rangeWeight = outRecord._rangeWeight;
+		const double radiusWeight = outRecord._radiusWeight;
+		const double knnWeight = outRecord._knnWeight;
+		const size_t numQueries = outRecord._numQueries;
+		const size_t knnK = outRecord._knnK;
+		const uint32_t querySeed = outRecord._querySeed;
+		const std::string schemaName = std::move(outRecord._schemaName);
+		const std::string schemaPath = std::move(outRecord._schemaPath);
+		const bool isBaseline = outRecord._isBaseline;
+		const ScoreWeights weights = outRecord._weights;
+		const std::string scoreMode = outRecord._scoreMode;
+		const std::string scoreStage = outRecord._scoreStage;
+		const bool scoreIsFinalLatency = outRecord._scoreIsFinalLatency;
+		const PointCloudFeatures pointFeatures = outRecord._pointFeatures;
+		const WorkloadFeatures workloadFeatures = outRecord._workloadFeatures;
 
 		outRecord = cached;
-		outRecord.datasetName = datasetName;
-		outRecord.datasetSource = datasetSource;
-		outRecord.numPoints = numPoints;
-		outRecord.workloadName = workloadName;
-		outRecord.rangeWeight = rangeWeight;
-		outRecord.radiusWeight = radiusWeight;
-		outRecord.knnWeight = knnWeight;
-		outRecord.numQueries = numQueries;
-		outRecord.knnK = knnK;
-		outRecord.querySeed = querySeed;
-		outRecord.schemaName = schemaName;
-		outRecord.schemaPath = schemaPath;
-		outRecord.isBaseline = isBaseline;
-		outRecord.weights = weights;
-		outRecord.scoreMode = scoreMode;
-		outRecord.scoreStage = scoreStage;
-		outRecord.scoreIsFinalLatency = scoreIsFinalLatency;
-		outRecord.pointFeatures = pointFeatures;
-		outRecord.workloadFeatures = workloadFeatures;
+		outRecord._datasetName = datasetName;
+		outRecord._datasetSource = datasetSource;
+		outRecord._numPoints = numPoints;
+		outRecord._workloadName = workloadName;
+		outRecord._rangeWeight = rangeWeight;
+		outRecord._radiusWeight = radiusWeight;
+		outRecord._knnWeight = knnWeight;
+		outRecord._numQueries = numQueries;
+		outRecord._knnK = knnK;
+		outRecord._querySeed = querySeed;
+		outRecord._schemaName = schemaName;
+		outRecord._schemaPath = schemaPath;
+		outRecord._isBaseline = isBaseline;
+		outRecord._weights = weights;
+		outRecord._scoreMode = scoreMode;
+		outRecord._scoreStage = scoreStage;
+		outRecord._scoreIsFinalLatency = scoreIsFinalLatency;
+		outRecord._pointFeatures = pointFeatures;
+		outRecord._workloadFeatures = workloadFeatures;
 
 		_hits.fetch_add(1);
 		return true;
@@ -418,7 +418,7 @@ namespace Experiments
 		std::lock_guard<std::mutex> lock(_mutex);
 		const std::string canonicalKey = key.canonical();
 		Entry entry;
-		entry.record = record;
+		entry._record = record;
 		_entries[canonicalKey] = std::move(entry);
 		appendLine(canonicalKey, record);
 	}
@@ -449,40 +449,40 @@ namespace Experiments
 		const ScoreWeights& weights)
 	{
 		EvaluationCacheKey key;
-		key.schemaSignature = schemaSignature;
+		key._schemaSignature = schemaSignature;
 
 		std::ostringstream datasetText;
 		datasetText << datasetName << "|" << numPoints
 			<< "|" << formatDouble(bboxMin.x) << "," << formatDouble(bboxMin.y) << "," << formatDouble(bboxMin.z)
 			<< "|" << formatDouble(bboxMax.x) << "," << formatDouble(bboxMax.y) << "," << formatDouble(bboxMax.z);
-		key.datasetFingerprint = hex64(fnv1aString(datasetText.str()));
+		key._datasetFingerprint = hex64(fnv1aString(datasetText.str()));
 
 		std::ostringstream workloadText;
-		workloadText << workload.name
-			<< "|r=" << formatDouble(workload.rangeWeight, 4)
-			<< ",d=" << formatDouble(workload.radiusWeight, 4)
-			<< ",k=" << formatDouble(workload.knnWeight, 4)
-			<< "|rs=" << formatDouble(workload.rangeScaleMin, 4) << "-" << formatDouble(workload.rangeScaleMax, 4)
-			<< "|ds=" << formatDouble(workload.radiusScaleMin, 4) << "-" << formatDouble(workload.radiusScaleMax, 4)
-			<< "|n=" << workload.numQueries
-			<< "|kk=" << workload.knnK
-			<< "|seed=" << workload.querySeed
-			<< "|strata=" << (workload.stratifyQueries ? "1" : "0");
-		key.workloadFingerprint = hex64(fnv1aString(workloadText.str()));
+		workloadText << workload._name
+			<< "|r=" << formatDouble(workload._rangeWeight, 4)
+			<< ",d=" << formatDouble(workload._radiusWeight, 4)
+			<< ",k=" << formatDouble(workload._knnWeight, 4)
+			<< "|rs=" << formatDouble(workload._rangeScaleMin, 4) << "-" << formatDouble(workload._rangeScaleMax, 4)
+			<< "|ds=" << formatDouble(workload._radiusScaleMin, 4) << "-" << formatDouble(workload._radiusScaleMax, 4)
+			<< "|n=" << workload._numQueries
+			<< "|kk=" << workload._knnK
+			<< "|seed=" << workload._querySeed
+			<< "|strata=" << (workload._stratifyQueries ? "1" : "0");
+		key._workloadFingerprint = hex64(fnv1aString(workloadText.str()));
 
 		std::ostringstream evaluatorText;
 		evaluatorText << evaluatorBackend;
 		if (evaluatorBackend == "cuda" && !cudaBuilder.empty())
 			evaluatorText << ":" << cudaBuilder;
-		evaluatorText << "|ll=" << formatDouble(weights.lambdaLatency, 6)
-			<< "|lb=" << formatDouble(weights.lambdaBuild, 6)
-			<< "|lm=" << formatDouble(weights.lambdaMemory, 6)
-			<< "|li=" << formatDouble(weights.lambdaImbalance, 6);
+		evaluatorText << "|ll=" << formatDouble(weights._lambdaLatency, 6)
+			<< "|lb=" << formatDouble(weights._lambdaBuild, 6)
+			<< "|lm=" << formatDouble(weights._lambdaMemory, 6)
+			<< "|li=" << formatDouble(weights._lambdaImbalance, 6);
 		// Visit-proxy and latency score the same counters differently; this bit stops the proxy rung clobbering the latency rung's cached score.
-		evaluatorText << "|vp=" << (weights.useVisitProxy ? "1" : "0");
-		if (weights.useVisitProxy)
-			evaluatorText << "@" << formatDouble(weights.visitProxyAlpha, 6);
-		key.evaluatorFingerprint = hex64(fnv1aString(evaluatorText.str()));
+		evaluatorText << "|vp=" << (weights._useVisitProxy ? "1" : "0");
+		if (weights._useVisitProxy)
+			evaluatorText << "@" << formatDouble(weights._visitProxyAlpha, 6);
+		key._evaluatorFingerprint = hex64(fnv1aString(evaluatorText.str()));
 
 		return key;
 	}

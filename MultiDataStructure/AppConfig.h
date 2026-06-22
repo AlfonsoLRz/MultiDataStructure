@@ -48,11 +48,11 @@ namespace AppDefaults
 class AppConfig
 {
 public:
-	std::string mode = AppDefaults::DEFAULT_MODE;
-	bool runTests = AppDefaults::RUN_TESTS;
-	bool showHelp = false;
-	PointBenchmark::Options pointOptions;
-	Experiments::SchemaSearchOptions schemaSearchOptions;
+	std::string _mode = AppDefaults::DEFAULT_MODE;
+	bool _runTests = AppDefaults::RUN_TESTS;
+	bool _showHelp = false;
+	PointBenchmark::Options _pointOptions;
+	Experiments::SchemaSearchOptions _schemaSearchOptions;
 
 	AppConfig();
 

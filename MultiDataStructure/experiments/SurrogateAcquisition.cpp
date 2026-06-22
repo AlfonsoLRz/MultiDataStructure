@@ -6,13 +6,13 @@ namespace Experiments
 	SurrogateAcquisition loadSurrogateAcquisition(const std::string& modelPath)
 	{
 		SurrogateAcquisition acquisition;
-		acquisition.modelPath = modelPath;
+		acquisition._modelPath = modelPath;
 		if (modelPath.empty())
 			return acquisition;
 
 		try
 		{
-			acquisition.model = loadSchemaSelectorModel(modelPath);
+			acquisition._model = loadSchemaSelectorModel(modelPath);
 		}
 		catch (const std::exception& exception)
 		{
@@ -21,14 +21,14 @@ namespace Experiments
 		}
 
 		// Measured-best artifacts only know their one tuned schema, so they can't rank generated genomes; degrade gracefully rather than throw in the GA's hot path.
-		if (acquisition.model.measuredBestSelector)
+		if (acquisition._model._measuredBestSelector)
 		{
 			std::cerr << "  surrogate acquisition: '" << modelPath
 				<< "' is a measured_best_schema artifact; it cannot rank arbitrary generated genomes. Provide a linear or ONNX score ranker.\n";
 			return acquisition;
 		}
 
-		acquisition.active = true;
+		acquisition._active = true;
 		return acquisition;
 	}
 
@@ -41,12 +41,12 @@ namespace Experiments
 		const WorkloadProfile& workload,
 		uint32_t seed)
 	{
-		if (!acquisition.active || poolSize == 0 || topK == 0)
+		if (!acquisition._active || poolSize == 0 || topK == 0)
 			return {};
 
 		SchemaGenerationOptions poolOptions = generationOptions;
-		poolOptions.count = poolSize;
-		poolOptions.seed = seed;
+		poolOptions._count = poolSize;
+		poolOptions._seed = seed;
 		std::vector<SchemaCandidate> pool = generateSchemaCandidates(poolOptions);
 		if (pool.empty())
 			return {};
@@ -54,7 +54,7 @@ namespace Experiments
 		std::vector<CandidatePrediction> predictions;
 		try
 		{
-			predictions = scoreSchemaCandidates(acquisition.model, workload, cloud, pool);
+			predictions = scoreSchemaCandidates(acquisition._model, workload, cloud, pool);
 		}
 		catch (const std::exception& exception)
 		{
@@ -65,7 +65,7 @@ namespace Experiments
 		std::vector<size_t> order(pool.size());
 		std::iota(order.begin(), order.end(), size_t(0));
 		std::sort(order.begin(), order.end(), [&predictions](size_t a, size_t b) {
-			return predictions[a].predictedScore < predictions[b].predictedScore;
+			return predictions[a]._predictedScore < predictions[b]._predictedScore;
 		});
 
 		const size_t selectCount = std::min(topK, pool.size());

@@ -25,57 +25,57 @@ namespace PointGpu
 
 	struct Options
 	{
-		int device = -1;
-		std::string builder = "lbvh";
-		size_t queryBatchSize = 0;
-		size_t memoryBudgetMb = 0;
-		KdAxisPolicy kdAxisPolicy = KdAxisPolicy::LongestExtent;
+		int _device = -1;
+		std::string _builder = "lbvh";
+		size_t _queryBatchSize = 0;
+		size_t _memoryBudgetMb = 0;
+		KdAxisPolicy _kdAxisPolicy = KdAxisPolicy::LongestExtent;
 		// "auto" picks the native backend: KDTree/BIH use gpu_tree_knn for K <= MaxTrackedKnnK, else bruteforce.
-		std::string knnBackend = "auto";
+		std::string _knnBackend = "auto";
 	};
 
 	struct Query
 	{
-		QueryType type = QueryType::Range;
-		AABB bounds;
+		QueryType _type = QueryType::Range;
+		AABB _bounds;
 		glm::vec3 center = glm::vec3(0.0f);
-		float radius = 0.0f;
-		size_t k = 0;
+		float _radius = 0.0f;
+		size_t _k = 0;
 	};
 
 	struct QuerySample
 	{
-		size_t visitedNodes = 0;
-		size_t testedPoints = 0;
-		size_t returnedPoints = 0;
-		double elapsedMs = 0.0;
+		size_t _visitedNodes = 0;
+		size_t _testedPoints = 0;
+		size_t _returnedPoints = 0;
+		double _elapsedMs = 0.0;
 	};
 
 	struct BuildResult
 	{
-		Experiments::BuildMetrics metrics;
-		double uploadTimeMs = 0.0;
-		double gpuBuildTimeMs = 0.0;
-		size_t gpuMemoryBytes = 0;
-		int device = 0;
-		std::string builder = "lbvh";
-		size_t activeStructureTypes = 0;
-		double nestedActiveFraction = 0.0;
-		std::string activeStructureSummary;
+		Experiments::BuildMetrics _metrics;
+		double _uploadTimeMs = 0.0;
+		double _gpuBuildTimeMs = 0.0;
+		size_t _gpuMemoryBytes = 0;
+		int _device = 0;
+		std::string _builder = "lbvh";
+		size_t _activeStructureTypes = 0;
+		double _nestedActiveFraction = 0.0;
+		std::string _activeStructureSummary;
 	};
 
 	struct QueryResult
 	{
-		Experiments::QueryMetrics metrics;
-		double gpuQueryTimeMs = 0.0;
-		size_t rangeQueries = 0;
-		size_t countRangeQueries = 0;
-		size_t radiusQueries = 0;
-		size_t knnQueries = 0;
-		std::string knnBackend = "none";
-		std::vector<std::vector<uint32_t>> knnPointIndices;
-		std::vector<std::vector<float>> knnDistancesSquared;
-		std::vector<QuerySample> samples;
+		Experiments::QueryMetrics _metrics;
+		double _gpuQueryTimeMs = 0.0;
+		size_t _rangeQueries = 0;
+		size_t _countRangeQueries = 0;
+		size_t _radiusQueries = 0;
+		size_t _knnQueries = 0;
+		std::string _knnBackend = "none";
+		std::vector<std::vector<uint32_t>> _knnPointIndices;
+		std::vector<std::vector<float>> _knnDistancesSquared;
+		std::vector<QuerySample> _samples;
 	};
 
 	struct DevicePoint
@@ -89,37 +89,37 @@ namespace PointGpu
 
 	struct LinearNode
 	{
-		float minX;
-		float minY;
-		float minZ;
-		float maxX;
-		float maxY;
-		float maxZ;
-		int left;
-		int right;
-		int parent;
-		uint32_t pointOffset;
-		uint32_t pointCount;
+		float _minX;
+		float _minY;
+		float _minZ;
+		float _maxX;
+		float _maxY;
+		float _maxZ;
+		int _left;
+		int _right;
+		int _parent;
+		uint32_t _pointOffset;
+		uint32_t _pointCount;
 		// flags (KDTree/BIH): bit0 leaf; bits1..2 split axis (valid if bit3); bit3 axis stored; bits4..11 depth; bits12..31 reserved.
-		uint32_t flags;
+		uint32_t _flags;
 	};
 
 	struct LinearOctreeNode
 	{
-		float minX;
-		float minY;
-		float minZ;
-		float maxX;
-		float maxY;
-		float maxZ;
-		int parent;
-		int childBase;
-		uint32_t childMask;
-		uint32_t pointOffset;
-		uint32_t pointCount;
-		uint32_t flags;
-		uint32_t depth;
-		uint32_t schemaDepth;
+		float _minX;
+		float _minY;
+		float _minZ;
+		float _maxX;
+		float _maxY;
+		float _maxZ;
+		int _parent;
+		int _childBase;
+		uint32_t _childMask;
+		uint32_t _pointOffset;
+		uint32_t _pointCount;
+		uint32_t _flags;
+		uint32_t _depth;
+		uint32_t _schemaDepth;
 	};
 
 	using LinearQuadTreeNode = LinearOctreeNode;
@@ -127,26 +127,26 @@ namespace PointGpu
 
 	struct DeviceQuery
 	{
-		int type;
-		float minX;
-		float minY;
-		float minZ;
-		float maxX;
-		float maxY;
-		float maxZ;
-		float centerX;
-		float centerY;
-		float centerZ;
-		float radius;
-		uint32_t knnK;
+		int _type;
+		float _minX;
+		float _minY;
+		float _minZ;
+		float _maxX;
+		float _maxY;
+		float _maxZ;
+		float _centerX;
+		float _centerY;
+		float _centerZ;
+		float _radius;
+		uint32_t _knnK;
 	};
 
 	struct DeviceQuerySample
 	{
-		unsigned long long visitedNodes;
-		unsigned long long testedPoints;
-		unsigned long long returnedPoints;
-		float elapsedMs;
+		unsigned long long _visitedNodes;
+		unsigned long long _testedPoints;
+		unsigned long long _returnedPoints;
+		float _elapsedMs;
 	};
 
 #ifdef __CUDACC__
@@ -216,9 +216,9 @@ namespace PointGpu
 
 	__device__ inline float pointDistanceSquared(const DevicePoint& point, const DeviceQuery& query)
 	{
-		const float dx = point.x - query.centerX;
-		const float dy = point.y - query.centerY;
-		const float dz = point.z - query.centerZ;
+		const float dx = point.x - query._centerX;
+		const float dy = point.y - query._centerY;
+		const float dz = point.z - query._centerZ;
 		return dx * dx + dy * dy + dz * dz;
 	}
 
@@ -262,18 +262,18 @@ namespace PointGpu
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type != static_cast<int>(QueryType::Knn))
+		if (query._type != static_cast<int>(QueryType::Knn))
 			return;
 
 		const unsigned long long begin = clock64();
 		DeviceQuerySample sample{};
-		sample.visitedNodes = pointCount > 0 ? 1 : 0;
+		sample._visitedNodes = pointCount > 0 ? 1 : 0;
 
-		const uint32_t requestedK = query.knnK;
+		const uint32_t requestedK = query._knnK;
 		if (requestedK == 0 || pointCount == 0)
 		{
 			const unsigned long long end = clock64();
-			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 			if (threadIdx.x == 0)
 				samples[queryIndex] = sample;
 			return;
@@ -307,11 +307,11 @@ namespace PointGpu
 		if (threadIdx.x == 0)
 		{
 			const size_t requested = static_cast<size_t>(requestedK);
-			sample.testedPoints = static_cast<unsigned long long>(pointCount);
-			sample.returnedPoints = static_cast<unsigned long long>(pointCount < requested ? pointCount : requested);
+			sample._testedPoints = static_cast<unsigned long long>(pointCount);
+			sample._returnedPoints = static_cast<unsigned long long>(pointCount < requested ? pointCount : requested);
 			if (!(sharedChecksums[0] >= 0.0f))
-				sample.returnedPoints = 0;
-			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+				sample._returnedPoints = 0;
+			sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 			samples[queryIndex] = sample;
 		}
 	}

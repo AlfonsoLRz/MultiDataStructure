@@ -94,21 +94,21 @@ namespace BaselineTests
 		SchemaConfig makePrecisionSchema()
 		{
 			SchemaLevelConfig level;
-			level.type = MultiDataStructure::DataStructureLevel::KDTreeNode;
-			level.typeName = "KDTree";
-			level.numLevels = 4;
-			level.leafCapacity = 1;
-			level.minPrimitivesToSplit = 2;
+			level._type = MultiDataStructure::DataStructureLevel::KDTreeNode;
+			level._typeName = "KDTree";
+			level._numLevels = 4;
+			level._leafCapacity = 1;
+			level._minPrimitivesToSplit = 2;
 
 			SchemaConfig schema;
-			schema.name = "precision_point_query_test";
-			schema.levels.push_back(level);
-			schema.buildPolicy.maxDepth = 4;
-			schema.buildPolicy.leafCapacity = 1;
-			schema.buildPolicy.minPrimitivesToSplit = 2;
-			schema.buildPolicy.collapseSingleChild = false;
-			schema.buildPolicy.removeEmptyNodes = true;
-			schema.buildPolicy.allowOverlapDuplication = false;
+			schema._name = "precision_point_query_test";
+			schema._levels.push_back(level);
+			schema._buildPolicy._maxDepth = 4;
+			schema._buildPolicy._leafCapacity = 1;
+			schema._buildPolicy._minPrimitivesToSplit = 2;
+			schema._buildPolicy._collapseSingleChild = false;
+			schema._buildPolicy._removeEmptyNodes = true;
+			schema._buildPolicy._allowOverlapDuplication = false;
 			return schema;
 		}
 	}
@@ -241,9 +241,9 @@ namespace BaselineTests
 		const glm::vec3 queryCenter = utmCloud.points()[1].position;
 		const AABB tightBox(queryCenter - glm::vec3(0.002f), queryCenter + glm::vec3(0.002f));
 		const PointSpatialIndex::CountResult tightCount = precisionIndex.countRange(tightBox);
-		expect(tightCount.count == 1, "range/count query distinguishes centimeter-separated UTM points");
+		expect(tightCount._count == 1, "range/count query distinguishes centimeter-separated UTM points");
 		const PointSpatialIndex::QueryResult tightKnn = precisionIndex.knnQuery(queryCenter, 1);
-		expect(tightKnn.pointIndices.size() == 1 && tightKnn.pointIndices[0] == 1, "KNN distinguishes centimeter-separated UTM points");
+		expect(tightKnn._pointIndices.size() == 1 && tightKnn._pointIndices[0] == 1, "KNN distinguishes centimeter-separated UTM points");
 
 		const PointCloud flat = SyntheticPointClouds::generateFlatTerrain(128, 10.0f, 20.0f, 0.1f);
 		expect(flat.size() == 128, "flat terrain generator returns requested point count");

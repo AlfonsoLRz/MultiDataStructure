@@ -40,11 +40,11 @@ namespace BaselineTests
 		expect(threeBlock.getConfiguredNodeType(5) == Level::KDTreeNode, "level 5 remains in the third configured range");
 
 		BuildPolicy cappedPolicy;
-		cappedPolicy.maxDepth = 3;
+		cappedPolicy._maxDepth = 3;
 		const MultiDataStructure capped({
 			{ ._levelType = Level::QuadTreeNode, ._numLevels = 2 },
 			{ ._levelType = Level::OctreeNode, ._numLevels = 4 },
 		}, cappedPolicy);
-		expect(capped.getStats().numLevels == 3, "maxDepth caps total build levels without changing schedule boundaries");
+		expect(capped.getStats()._numLevels == 3, "maxDepth caps total build levels without changing schedule boundaries");
 	}
 }

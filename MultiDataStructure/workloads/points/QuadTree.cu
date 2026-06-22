@@ -22,25 +22,25 @@ namespace
 
 	size_t leafCapacityForSchema(const SchemaConfig& schema)
 	{
-		size_t leafCapacity = schema.buildPolicy.leafCapacity;
-		if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
-			leafCapacity = schema.levels.front().leafCapacity;
+		size_t leafCapacity = schema._buildPolicy._leafCapacity;
+		if (!schema._levels.empty() && schema._levels.front()._leafCapacity > 0)
+			leafCapacity = schema._levels.front()._leafCapacity;
 
 		return std::max<size_t>(1, leafCapacity);
 	}
 
 	size_t minSplitForSchema(const SchemaConfig& schema)
 	{
-		size_t minSplit = schema.buildPolicy.minPrimitivesToSplit;
-		if (!schema.levels.empty() && schema.levels.front().minPrimitivesToSplit > 0)
-			minSplit = schema.levels.front().minPrimitivesToSplit;
+		size_t minSplit = schema._buildPolicy._minPrimitivesToSplit;
+		if (!schema._levels.empty() && schema._levels.front()._minPrimitivesToSplit > 0)
+			minSplit = schema._levels.front()._minPrimitivesToSplit;
 
 		return std::max<size_t>(2, minSplit);
 	}
 
 	size_t maxDepthForSchema(const SchemaConfig& schema)
 	{
-		size_t maxDepth = schema.buildPolicy.maxDepth;
+		size_t maxDepth = schema._buildPolicy._maxDepth;
 		if (maxDepth == 0)
 			maxDepth = schema.totalLevels();
 		if (maxDepth == 0)
@@ -92,20 +92,20 @@ namespace
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
 	{
 		DeviceQuery result{};
-		result.type = static_cast<int>(query.type);
-		const glm::vec3 min = query.bounds.min();
-		const glm::vec3 max = query.bounds.max();
-		result.minX = min.x;
-		result.minY = min.y;
-		result.minZ = min.z;
-		result.maxX = max.x;
-		result.maxY = max.y;
-		result.maxZ = max.z;
-		result.centerX = query.center.x;
-		result.centerY = query.center.y;
-		result.centerZ = query.center.z;
-		result.radius = query.radius;
-		result.knnK = static_cast<uint32_t>(std::min<size_t>(query.k, std::numeric_limits<uint32_t>::max()));
+		result._type = static_cast<int>(query._type);
+		const glm::vec3 min = query._bounds.min();
+		const glm::vec3 max = query._bounds.max();
+		result._minX = min.x;
+		result._minY = min.y;
+		result._minZ = min.z;
+		result._maxX = max.x;
+		result._maxY = max.y;
+		result._maxZ = max.z;
+		result._centerX = query.center.x;
+		result._centerY = query.center.y;
+		result._centerZ = query.center.z;
+		result._radius = query._radius;
+		result._knnK = static_cast<uint32_t>(std::min<size_t>(query._k, std::numeric_limits<uint32_t>::max()));
 		return result;
 	}
 
@@ -116,10 +116,10 @@ namespace
 		for (const PointGpu::QuerySample& sample : samples)
 		{
 			PointSpatialIndex::QueryStats stats;
-			stats.visitedNodes = sample.visitedNodes;
-			stats.testedPoints = sample.testedPoints;
-			stats.returnedPoints = sample.returnedPoints;
-			stats.elapsedMs = sample.elapsedMs;
+			stats._visitedNodes = sample._visitedNodes;
+			stats._testedPoints = sample._testedPoints;
+			stats._returnedPoints = sample._returnedPoints;
+			stats._elapsedMs = sample._elapsedMs;
 			cpuSamples.push_back(stats);
 		}
 		return Experiments::summarizeQueryStats(cpuSamples);
@@ -127,65 +127,65 @@ namespace
 
 	__device__ uint32_t quadrantForPoint(const DevicePoint& point, const LinearQuadTreeNode& node)
 	{
-		const float midX = (node.minX + node.maxX) * 0.5f;
-		const float midY = (node.minY + node.maxY) * 0.5f;
+		const float midX = (node._minX + node._maxX) * 0.5f;
+		const float midY = (node._minY + node._maxY) * 0.5f;
 		return (point.x > midX ? 1u : 0u) |
 			(point.y > midY ? 2u : 0u);
 	}
 
 	__device__ LinearQuadTreeNode makeChildNode(const LinearQuadTreeNode& parent, uint32_t child, uint32_t offset, uint32_t count, int parentIndex)
 	{
-		const float midX = (parent.minX + parent.maxX) * 0.5f;
-		const float midY = (parent.minY + parent.maxY) * 0.5f;
+		const float midX = (parent._minX + parent._maxX) * 0.5f;
+		const float midY = (parent._minY + parent._maxY) * 0.5f;
 
 		LinearQuadTreeNode node{};
-		node.minX = (child & 1u) ? midX : parent.minX;
-		node.maxX = (child & 1u) ? parent.maxX : midX;
-		node.minY = (child & 2u) ? midY : parent.minY;
-		node.maxY = (child & 2u) ? parent.maxY : midY;
-		node.minZ = parent.minZ;
-		node.maxZ = parent.maxZ;
-		node.parent = parentIndex;
-		node.childBase = -1;
-		node.childMask = 0;
-		node.pointOffset = offset;
-		node.pointCount = count;
-		node.flags = count > 0 ? 1u : 0u;
-		node.depth = parent.depth + 1;
+		node._minX = (child & 1u) ? midX : parent._minX;
+		node._maxX = (child & 1u) ? parent._maxX : midX;
+		node._minY = (child & 2u) ? midY : parent._minY;
+		node._maxY = (child & 2u) ? parent._maxY : midY;
+		node._minZ = parent._minZ;
+		node._maxZ = parent._maxZ;
+		node._parent = parentIndex;
+		node._childBase = -1;
+		node._childMask = 0;
+		node._pointOffset = offset;
+		node._pointCount = count;
+		node._flags = count > 0 ? 1u : 0u;
+		node._depth = parent._depth + 1;
 		return node;
 	}
 
 	__device__ bool rangeIntersectsNode(const LinearQuadTreeNode& node, const DeviceQuery& query)
 	{
-		return node.minX <= query.maxX && node.maxX >= query.minX &&
-			node.minY <= query.maxY && node.maxY >= query.minY &&
-			node.minZ <= query.maxZ && node.maxZ >= query.minZ;
+		return node._minX <= query._maxX && node._maxX >= query._minX &&
+			node._minY <= query._maxY && node._maxY >= query._minY &&
+			node._minZ <= query._maxZ && node._maxZ >= query._minZ;
 	}
 
 	__device__ bool pointInsideRange(const DevicePoint& point, const DeviceQuery& query)
 	{
-		return point.x >= query.minX && point.x <= query.maxX &&
-			point.y >= query.minY && point.y <= query.maxY &&
-			point.z >= query.minZ && point.z <= query.maxZ;
+		return point.x >= query._minX && point.x <= query._maxX &&
+			point.y >= query._minY && point.y <= query._maxY &&
+			point.z >= query._minZ && point.z <= query._maxZ;
 	}
 
 	__device__ float distanceSquaredToNode(const LinearQuadTreeNode& node, const DeviceQuery& query)
 	{
-		const float x = fminf(fmaxf(query.centerX, node.minX), node.maxX);
-		const float y = fminf(fmaxf(query.centerY, node.minY), node.maxY);
-		const float z = fminf(fmaxf(query.centerZ, node.minZ), node.maxZ);
-		const float dx = query.centerX - x;
-		const float dy = query.centerY - y;
-		const float dz = query.centerZ - z;
+		const float x = fminf(fmaxf(query._centerX, node._minX), node._maxX);
+		const float y = fminf(fmaxf(query._centerY, node._minY), node._maxY);
+		const float z = fminf(fmaxf(query._centerZ, node._minZ), node._maxZ);
+		const float dx = query._centerX - x;
+		const float dy = query._centerY - y;
+		const float dz = query._centerZ - z;
 		return dx * dx + dy * dy + dz * dz;
 	}
 
 	__device__ bool pointInsideRadius(const DevicePoint& point, const DeviceQuery& query)
 	{
-		const float dx = point.x - query.centerX;
-		const float dy = point.y - query.centerY;
-		const float dz = point.z - query.centerZ;
-		return dx * dx + dy * dy + dz * dz <= query.radius * query.radius;
+		const float dx = point.x - query._centerX;
+		const float dy = point.y - query._centerY;
+		const float dz = point.z - query._centerZ;
+		return dx * dx + dy * dy + dz * dz <= query._radius * query._radius;
 	}
 
 	__global__ void initializeIndicesKernel(uint32_t* indices, size_t pointCount)
@@ -209,19 +209,19 @@ namespace
 		float maxZ)
 	{
 		LinearQuadTreeNode root{};
-		root.minX = minX;
-		root.minY = minY;
-		root.minZ = minZ;
-		root.maxX = maxX;
-		root.maxY = maxY;
-		root.maxZ = maxZ;
-		root.parent = -1;
-		root.childBase = -1;
-		root.childMask = 0;
-		root.pointOffset = 0;
-		root.pointCount = static_cast<uint32_t>(pointCount);
-		root.flags = 1;
-		root.depth = 0;
+		root._minX = minX;
+		root._minY = minY;
+		root._minZ = minZ;
+		root._maxX = maxX;
+		root._maxY = maxY;
+		root._maxZ = maxZ;
+		root._parent = -1;
+		root._childBase = -1;
+		root._childMask = 0;
+		root._pointOffset = 0;
+		root._pointCount = static_cast<uint32_t>(pointCount);
+		root._flags = 1;
+		root._depth = 0;
 		nodes[0] = root;
 		*nodeCounter = 1;
 	}
@@ -243,21 +243,21 @@ namespace
 
 		const size_t nodeIndex = levelStart + localNode;
 		LinearQuadTreeNode node = nodes[nodeIndex];
-		if (node.pointCount == 0 || node.pointCount <= leafCapacity || node.pointCount < minSplit || node.depth >= maxDepth)
+		if (node._pointCount == 0 || node._pointCount <= leafCapacity || node._pointCount < minSplit || node._depth >= maxDepth)
 		{
 			if (threadIdx.x == 0)
 			{
-				nodes[nodeIndex].childBase = -1;
-				nodes[nodeIndex].childMask = 0;
-				nodes[nodeIndex].flags = node.pointCount > 0 ? 1u : 0u;
+				nodes[nodeIndex]._childBase = -1;
+				nodes[nodeIndex]._childMask = 0;
+				nodes[nodeIndex]._flags = node._pointCount > 0 ? 1u : 0u;
 			}
 			return;
 		}
 
 		uint32_t localCounts[ChildCount] = {};
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			const uint32_t child = quadrantForPoint(points[pointIndex], node);
 			++localCounts[child];
 		}
@@ -285,7 +285,7 @@ namespace
 
 		const size_t nodeIndex = levelStart + localNode;
 		LinearQuadTreeNode node = nodes[nodeIndex];
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			return;
 
 		uint32_t nonEmptyChildren = 0;
@@ -301,9 +301,9 @@ namespace
 
 		if (nonEmptyChildren <= 1)
 		{
-			nodes[nodeIndex].childBase = -1;
-			nodes[nodeIndex].childMask = 0;
-			nodes[nodeIndex].flags = 1;
+			nodes[nodeIndex]._childBase = -1;
+			nodes[nodeIndex]._childMask = 0;
+			nodes[nodeIndex]._flags = 1;
 			return;
 		}
 
@@ -311,17 +311,17 @@ namespace
 		if (static_cast<size_t>(childBase) + ChildCount > nodeCapacity)
 		{
 			*overflowFlag = 1;
-			nodes[nodeIndex].childBase = -1;
-			nodes[nodeIndex].childMask = 0;
-			nodes[nodeIndex].flags = 1;
+			nodes[nodeIndex]._childBase = -1;
+			nodes[nodeIndex]._childMask = 0;
+			nodes[nodeIndex]._flags = 1;
 			return;
 		}
 
-		nodes[nodeIndex].childBase = static_cast<int>(childBase);
-		nodes[nodeIndex].childMask = childMask;
-		nodes[nodeIndex].flags = 0;
+		nodes[nodeIndex]._childBase = static_cast<int>(childBase);
+		nodes[nodeIndex]._childMask = childMask;
+		nodes[nodeIndex]._flags = 0;
 
-		uint32_t runningOffset = node.pointOffset;
+		uint32_t runningOffset = node._pointOffset;
 		for (uint32_t child = 0; child < ChildCount; ++child)
 		{
 			const uint32_t count = childCounts[localNode * ChildCount + child];
@@ -346,12 +346,12 @@ namespace
 
 		const size_t nodeIndex = levelStart + localNode;
 		const LinearQuadTreeNode node = nodes[nodeIndex];
-		if (node.pointCount == 0 || node.childBase < 0)
+		if (node._pointCount == 0 || node._childBase < 0)
 			return;
 
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			const uint32_t child = quadrantForPoint(points[pointIndex], node);
 			const uint32_t writeOffset = atomicAdd(&writeCursors[localNode * ChildCount + child], 1u);
 			outputIndices[writeOffset] = pointIndex;
@@ -373,7 +373,7 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 		{
 			samples[queryIndex] = DeviceQuerySample{};
 			return;
@@ -392,12 +392,12 @@ namespace
 		{
 			const int nodeIndex = stack[--stackSize];
 			const LinearQuadTreeNode node = nodes[nodeIndex];
-			if (node.pointCount == 0)
+			if (node._pointCount == 0)
 				continue;
 
 			bool intersects = false;
-			if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
-				intersects = distanceSquaredToNode(node, query) <= query.radius * query.radius;
+			if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
+				intersects = distanceSquaredToNode(node, query) <= query._radius * query._radius;
 			else
 				intersects = rangeIntersectsNode(node, query);
 
@@ -405,13 +405,13 @@ namespace
 				continue;
 
 			++visited;
-			if (node.childBase < 0)
+			if (node._childBase < 0)
 			{
-				for (uint32_t i = 0; i < node.pointCount; ++i)
+				for (uint32_t i = 0; i < node._pointCount; ++i)
 				{
 					++tested;
-					const DevicePoint point = points[indices[node.pointOffset + i]];
-					if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+					const DevicePoint point = points[indices[node._pointOffset + i]];
+					if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 					{
 						if (pointInsideRadius(point, query))
 							++returned;
@@ -426,50 +426,50 @@ namespace
 
 			for (uint32_t child = 0; child < ChildCount; ++child)
 			{
-				if ((node.childMask & (1u << child)) == 0)
+				if ((node._childMask & (1u << child)) == 0)
 					continue;
 				if (stackSize < QueryStackSize)
-					stack[stackSize++] = node.childBase + static_cast<int>(child);
+					stack[stackSize++] = node._childBase + static_cast<int>(child);
 			}
 		}
 
 		const unsigned long long end = clock64();
 		DeviceQuerySample sample{};
-		sample.visitedNodes = visited;
-		sample.testedPoints = tested;
-		sample.returnedPoints = returned;
-		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+		sample._visitedNodes = visited;
+		sample._testedPoints = tested;
+		sample._returnedPoints = returned;
+		sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
 }
 
 struct PointGpu::QuadTree::DeviceState
 {
-	DevicePoint* points = nullptr;
-	uint32_t* indices = nullptr;
-	uint32_t* tempIndices = nullptr;
-	LinearQuadTreeNode* nodes = nullptr;
-	uint32_t* childCounts = nullptr;
-	uint32_t* writeCursors = nullptr;
-	uint32_t* nodeCounter = nullptr;
-	uint32_t* overflowFlag = nullptr;
-	DeviceQuery* queryBuffer = nullptr;
-	DeviceQuerySample* sampleBuffer = nullptr;
-	size_t pointCount = 0;
-	size_t nodeCapacity = 0;
-	size_t allocatedNodes = 0;
-	size_t actualNodes = 0;
-	size_t actualLeaves = 0;
-	size_t leafCapacity = 1;
-	size_t minSplit = 2;
-	size_t maxDepth = 0;
-	size_t levelScratchNodeCapacity = 0;
-	size_t queryCapacity = 0;
-	size_t baseMemoryBytes = 0;
-	size_t memoryBytes = 0;
-	int device = 0;
-	const PointCloud* cloud = nullptr;
-	bool pointsReady = false;
+	DevicePoint* _points = nullptr;
+	uint32_t* _indices = nullptr;
+	uint32_t* _tempIndices = nullptr;
+	LinearQuadTreeNode* _nodes = nullptr;
+	uint32_t* _childCounts = nullptr;
+	uint32_t* _writeCursors = nullptr;
+	uint32_t* _nodeCounter = nullptr;
+	uint32_t* _overflowFlag = nullptr;
+	DeviceQuery* _queryBuffer = nullptr;
+	DeviceQuerySample* _sampleBuffer = nullptr;
+	size_t _pointCount = 0;
+	size_t _nodeCapacity = 0;
+	size_t _allocatedNodes = 0;
+	size_t _actualNodes = 0;
+	size_t _actualLeaves = 0;
+	size_t _leafCapacity = 1;
+	size_t _minSplit = 2;
+	size_t _maxDepth = 0;
+	size_t _levelScratchNodeCapacity = 0;
+	size_t _queryCapacity = 0;
+	size_t _baseMemoryBytes = 0;
+	size_t _memoryBytes = 0;
+	int _device = 0;
+	const PointCloud* _cloud = nullptr;
+	bool _pointsReady = false;
 };
 
 namespace
@@ -499,23 +499,23 @@ namespace
 	template <typename State>
 	void releaseQueryBuffers(State& state)
 	{
-		cudaFree(state.queryBuffer);
-		cudaFree(state.sampleBuffer);
-		state.queryBuffer = nullptr;
-		state.sampleBuffer = nullptr;
-		state.queryCapacity = 0;
+		cudaFree(state._queryBuffer);
+		cudaFree(state._sampleBuffer);
+		state._queryBuffer = nullptr;
+		state._sampleBuffer = nullptr;
+		state._queryCapacity = 0;
 	}
 
 	template <typename State>
 	void ensureQueryBuffers(State& state, size_t capacity)
 	{
-		if (state.queryCapacity >= capacity && state.queryBuffer && state.sampleBuffer)
+		if (state._queryCapacity >= capacity && state._queryBuffer && state._sampleBuffer)
 			return;
 
 		releaseQueryBuffers(state);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
-		state.queryCapacity = capacity;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._queryBuffer), sizeof(DeviceQuery) * capacity));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._sampleBuffer), sizeof(DeviceQuerySample) * capacity));
+		state._queryCapacity = capacity;
 	}
 }
 
@@ -533,31 +533,31 @@ PointGpu::QuadTree::~QuadTree()
 void PointGpu::QuadTree::release()
 {
 	releaseTree();
-	cudaFree(_state->points);
-	cudaFree(_state->indices);
-	cudaFree(_state->tempIndices);
+	cudaFree(_state->_points);
+	cudaFree(_state->_indices);
+	cudaFree(_state->_tempIndices);
 	releaseQueryBuffers(*_state);
 	*_state = DeviceState();
 }
 
 void PointGpu::QuadTree::releaseTree()
 {
-	cudaFree(_state->nodes);
-	cudaFree(_state->childCounts);
-	cudaFree(_state->writeCursors);
-	cudaFree(_state->nodeCounter);
-	cudaFree(_state->overflowFlag);
-	_state->nodes = nullptr;
-	_state->childCounts = nullptr;
-	_state->writeCursors = nullptr;
-	_state->nodeCounter = nullptr;
-	_state->overflowFlag = nullptr;
-	_state->nodeCapacity = 0;
-	_state->allocatedNodes = 0;
-	_state->actualNodes = 0;
-	_state->actualLeaves = 0;
-	_state->levelScratchNodeCapacity = 0;
-	_state->memoryBytes = _state->baseMemoryBytes;
+	cudaFree(_state->_nodes);
+	cudaFree(_state->_childCounts);
+	cudaFree(_state->_writeCursors);
+	cudaFree(_state->_nodeCounter);
+	cudaFree(_state->_overflowFlag);
+	_state->_nodes = nullptr;
+	_state->_childCounts = nullptr;
+	_state->_writeCursors = nullptr;
+	_state->_nodeCounter = nullptr;
+	_state->_overflowFlag = nullptr;
+	_state->_nodeCapacity = 0;
+	_state->_allocatedNodes = 0;
+	_state->_actualNodes = 0;
+	_state->_actualLeaves = 0;
+	_state->_levelScratchNodeCapacity = 0;
+	_state->_memoryBytes = _state->_baseMemoryBytes;
 }
 
 bool PointGpu::QuadTree::isAvailable(std::string* error)
@@ -593,7 +593,7 @@ int PointGpu::QuadTree::deviceCount()
 
 PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const SchemaConfig& schema, const Options& options)
 {
-	const std::string builder = options.builder.empty() ? "quadtree" : options.builder;
+	const std::string builder = options._builder.empty() ? "quadtree" : options._builder;
 	if (builder != "quadtree" && builder != "quad_tree" && builder != "qt")
 		throw std::runtime_error("QuadTree evaluator supports --cuda-builder quadtree, quad_tree, or qt.");
 	if (cloud.size() > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
@@ -604,20 +604,20 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 		throw std::runtime_error("CUDA point evaluator is unavailable: " + availabilityError);
 
 	const int count = deviceCount();
-	const int device = options.device >= 0 ? std::min(options.device, count - 1) : 0;
+	const int device = options._device >= 0 ? std::min(options._device, count - 1) : 0;
 	CudaHelper::checkError(cudaSetDevice(device));
 
 	const bool canReusePoints =
-		_state->pointsReady &&
-		_state->cloud == &cloud &&
-		_state->pointCount == cloud.size() &&
-		_state->device == device;
+		_state->_pointsReady &&
+		_state->_cloud == &cloud &&
+		_state->_pointCount == cloud.size() &&
+		_state->_device == device;
 
 	if (!canReusePoints)
 	{
-		if (_state->points || _state->nodes)
+		if (_state->_points || _state->_nodes)
 		{
-			CudaHelper::checkError(cudaSetDevice(_state->device));
+			CudaHelper::checkError(cudaSetDevice(_state->_device));
 			release();
 			CudaHelper::checkError(cudaSetDevice(device));
 		}
@@ -631,16 +631,16 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 		releaseTree();
 	}
 
-	_state->pointCount = cloud.size();
-	_state->leafCapacity = leafCapacityForSchema(schema);
-	_state->minSplit = minSplitForSchema(schema);
-	_state->maxDepth = maxDepthForSchema(schema);
-	_state->device = device;
-	_state->cloud = &cloud;
+	_state->_pointCount = cloud.size();
+	_state->_leafCapacity = leafCapacityForSchema(schema);
+	_state->_minSplit = minSplitForSchema(schema);
+	_state->_maxDepth = maxDepthForSchema(schema);
+	_state->_device = device;
+	_state->_cloud = &cloud;
 
 	BuildResult result;
-	result.device = device;
-	result.builder = "quadtree";
+	result._device = device;
+	result._builder = "quadtree";
 
 	if (cloud.empty())
 		return result;
@@ -653,47 +653,47 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
-		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_points), sizeof(DevicePoint) * _state->_pointCount));
+		CudaHelper::checkError(cudaMemcpy(_state->_points, cloud.points().data(), sizeof(DevicePoint) * _state->_pointCount, cudaMemcpyHostToDevice));
+		result._uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
 
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->indices), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->tempIndices), sizeof(uint32_t) * _state->pointCount));
-		_state->baseMemoryBytes =
-			sizeof(DevicePoint) * _state->pointCount +
-			sizeof(uint32_t) * _state->pointCount * 2;
-		_state->pointsReady = true;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_indices), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_tempIndices), sizeof(uint32_t) * _state->_pointCount));
+		_state->_baseMemoryBytes =
+			sizeof(DevicePoint) * _state->_pointCount +
+			sizeof(uint32_t) * _state->_pointCount * 2;
+		_state->_pointsReady = true;
 	}
 
-	_state->nodeCapacity = estimateNodeCapacity(_state->pointCount, _state->leafCapacity, _state->maxDepth);
-	_state->levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(_state->pointCount, _state->leafCapacity, _state->nodeCapacity);
-	_state->memoryBytes =
-		_state->baseMemoryBytes +
-		sizeof(LinearQuadTreeNode) * _state->nodeCapacity +
-		sizeof(uint32_t) * _state->levelScratchNodeCapacity * ChildCount * 2 +
+	_state->_nodeCapacity = estimateNodeCapacity(_state->_pointCount, _state->_leafCapacity, _state->_maxDepth);
+	_state->_levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(_state->_pointCount, _state->_leafCapacity, _state->_nodeCapacity);
+	_state->_memoryBytes =
+		_state->_baseMemoryBytes +
+		sizeof(LinearQuadTreeNode) * _state->_nodeCapacity +
+		sizeof(uint32_t) * _state->_levelScratchNodeCapacity * ChildCount * 2 +
 		sizeof(uint32_t) * 2;
-	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
+	checkMemoryBudget(_state->_memoryBytes, options._memoryBudgetMb);
 
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodes), sizeof(LinearQuadTreeNode) * _state->nodeCapacity));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->levelScratchNodeCapacity * ChildCount));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->levelScratchNodeCapacity * ChildCount));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodeCounter), sizeof(uint32_t)));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->overflowFlag), sizeof(uint32_t)));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_nodes), sizeof(LinearQuadTreeNode) * _state->_nodeCapacity));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_childCounts), sizeof(uint32_t) * _state->_levelScratchNodeCapacity * ChildCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_writeCursors), sizeof(uint32_t) * _state->_levelScratchNodeCapacity * ChildCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_nodeCounter), sizeof(uint32_t)));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_overflowFlag), sizeof(uint32_t)));
 
 	cudaEvent_t buildBegin = nullptr;
 	cudaEvent_t buildEnd = nullptr;
 	CudaHelper::startTimer(buildBegin, buildEnd);
 
-	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->pointCount, ThreadsPerBlock)));
-	initializeIndicesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->indices, _state->pointCount);
+	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->_pointCount, ThreadsPerBlock)));
+	initializeIndicesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->_indices, _state->_pointCount);
 	CudaHelper::synchronize("initializeQuadTreeIndicesKernel");
 
 	initializeRootKernel<<<1, 1>>>(
-		_state->nodes,
-		_state->nodeCounter,
-		_state->pointCount,
+		_state->_nodes,
+		_state->_nodeCounter,
+		_state->_pointCount,
 		boundsMin.x,
 		boundsMin.y,
 		boundsMin.z,
@@ -701,150 +701,150 @@ PointGpu::BuildResult PointGpu::QuadTree::build(const PointCloud& cloud, const S
 		boundsMax.y,
 		boundsMax.z);
 	CudaHelper::synchronize("initializeQuadTreeRootKernel");
-	CudaHelper::checkError(cudaMemset(_state->overflowFlag, 0, sizeof(uint32_t)));
+	CudaHelper::checkError(cudaMemset(_state->_overflowFlag, 0, sizeof(uint32_t)));
 
 	size_t levelStart = 0;
 	size_t levelCount = 1;
 	uint32_t currentNodeCount = 1;
-	for (size_t depth = 0; depth < _state->maxDepth && levelCount > 0; ++depth)
+	for (size_t depth = 0; depth < _state->_maxDepth && levelCount > 0; ++depth)
 	{
-		if (levelCount > _state->levelScratchNodeCapacity)
+		if (levelCount > _state->_levelScratchNodeCapacity)
 			throw std::runtime_error("QuadTree exceeded its level scratch budget. Increase leaf capacity or reduce max depth.");
 
 		CudaHelper::checkError(cudaMemset(
-			_state->childCounts,
+			_state->_childCounts,
 			0,
 			sizeof(uint32_t) * levelCount * ChildCount));
 		const dim3 prepareBlocks(static_cast<unsigned int>(divUp(levelCount, ThreadsPerBlock)));
 
 		countChildBucketsKernel<<<static_cast<unsigned int>(levelCount), ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->nodes,
+			_state->_points,
+			_state->_indices,
+			_state->_nodes,
 			levelStart,
 			levelCount,
-			static_cast<uint32_t>(_state->leafCapacity),
-			static_cast<uint32_t>(_state->minSplit),
-			static_cast<uint32_t>(_state->maxDepth),
-			_state->childCounts);
+			static_cast<uint32_t>(_state->_leafCapacity),
+			static_cast<uint32_t>(_state->_minSplit),
+			static_cast<uint32_t>(_state->_maxDepth),
+			_state->_childCounts);
 		CudaHelper::synchronize("countQuadTreeChildBucketsKernel");
 
 		const uint32_t previousNodeCount = currentNodeCount;
 
 		prepareChildrenKernel<<<prepareBlocks, ThreadsPerBlock>>>(
-			_state->nodes,
+			_state->_nodes,
 			levelStart,
 			levelCount,
-			_state->nodeCapacity,
-			_state->childCounts,
-			_state->writeCursors,
-			_state->nodeCounter,
-			_state->overflowFlag);
+			_state->_nodeCapacity,
+			_state->_childCounts,
+			_state->_writeCursors,
+			_state->_nodeCounter,
+			_state->_overflowFlag);
 		CudaHelper::synchronize("prepareQuadTreeChildrenKernel");
 
 		uint32_t overflow = 0;
-		CudaHelper::checkError(cudaMemcpy(&overflow, _state->overflowFlag, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(&overflow, _state->_overflowFlag, sizeof(uint32_t), cudaMemcpyDeviceToHost));
 		if (overflow != 0)
 			throw std::runtime_error("QuadTree exceeded its allocated node budget. Increase leaf capacity or reduce max depth.");
 
 		CudaHelper::checkError(cudaMemcpy(
-			_state->tempIndices,
-			_state->indices,
-			sizeof(uint32_t) * _state->pointCount,
+			_state->_tempIndices,
+			_state->_indices,
+			sizeof(uint32_t) * _state->_pointCount,
 			cudaMemcpyDeviceToDevice));
 
 		partitionIndicesKernel<<<static_cast<unsigned int>(levelCount), ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->tempIndices,
-			_state->nodes,
+			_state->_points,
+			_state->_indices,
+			_state->_tempIndices,
+			_state->_nodes,
 			levelStart,
 			levelCount,
-			_state->writeCursors);
+			_state->_writeCursors);
 		CudaHelper::synchronize("partitionQuadTreeIndicesKernel");
-		std::swap(_state->indices, _state->tempIndices);
+		std::swap(_state->_indices, _state->_tempIndices);
 
 		uint32_t nextNodeCount = 0;
-		CudaHelper::checkError(cudaMemcpy(&nextNodeCount, _state->nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(&nextNodeCount, _state->_nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
 		currentNodeCount = nextNodeCount;
 		levelStart = previousNodeCount;
 		levelCount = nextNodeCount > previousNodeCount
 			? static_cast<size_t>(nextNodeCount - previousNodeCount)
 			: 0;
-		_state->allocatedNodes = nextNodeCount;
+		_state->_allocatedNodes = nextNodeCount;
 	}
 
-	result.gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
+	result._gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
 	cudaEventDestroy(buildBegin);
 	cudaEventDestroy(buildEnd);
 
-	if (_state->allocatedNodes == 0)
+	if (_state->_allocatedNodes == 0)
 	{
 		uint32_t allocated = 0;
-		CudaHelper::checkError(cudaMemcpy(&allocated, _state->nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-		_state->allocatedNodes = allocated;
+		CudaHelper::checkError(cudaMemcpy(&allocated, _state->_nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		_state->_allocatedNodes = allocated;
 	}
 
-	std::vector<LinearQuadTreeNode> hostNodes(_state->allocatedNodes);
-	CudaHelper::checkError(cudaMemcpy(hostNodes.data(), _state->nodes, sizeof(LinearQuadTreeNode) * _state->allocatedNodes, cudaMemcpyDeviceToHost));
+	std::vector<LinearQuadTreeNode> hostNodes(_state->_allocatedNodes);
+	CudaHelper::checkError(cudaMemcpy(hostNodes.data(), _state->_nodes, sizeof(LinearQuadTreeNode) * _state->_allocatedNodes, cudaMemcpyDeviceToHost));
 
 	size_t maxLeafOccupancy = 0;
 	size_t indexedPoints = 0;
 	size_t deepestNode = 0;
 	for (const LinearQuadTreeNode& node : hostNodes)
 	{
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			continue;
 
-		++_state->actualNodes;
-		deepestNode = std::max<size_t>(deepestNode, node.depth);
-		if (node.childBase < 0)
+		++_state->_actualNodes;
+		deepestNode = std::max<size_t>(deepestNode, node._depth);
+		if (node._childBase < 0)
 		{
-			++_state->actualLeaves;
-			indexedPoints += node.pointCount;
-			maxLeafOccupancy = std::max<size_t>(maxLeafOccupancy, node.pointCount);
+			++_state->_actualLeaves;
+			indexedPoints += node._pointCount;
+			maxLeafOccupancy = std::max<size_t>(maxLeafOccupancy, node._pointCount);
 		}
 	}
 
-	result.gpuMemoryBytes = _state->memoryBytes;
-	result.metrics.buildTimeMs = result.gpuBuildTimeMs;
-	result.metrics.numNodes = _state->actualNodes;
-	result.metrics.numLeaves = _state->actualLeaves;
-	result.metrics.indexedPoints = indexedPoints;
-	result.metrics.maxDepth = deepestNode;
-	result.metrics.averageLeafOccupancy = _state->actualLeaves > 0
-		? static_cast<double>(indexedPoints) / static_cast<double>(_state->actualLeaves)
+	result._gpuMemoryBytes = _state->_memoryBytes;
+	result._metrics._buildTimeMs = result._gpuBuildTimeMs;
+	result._metrics._numNodes = _state->_actualNodes;
+	result._metrics._numLeaves = _state->_actualLeaves;
+	result._metrics._indexedPoints = indexedPoints;
+	result._metrics._maxDepth = deepestNode;
+	result._metrics._averageLeafOccupancy = _state->_actualLeaves > 0
+		? static_cast<double>(indexedPoints) / static_cast<double>(_state->_actualLeaves)
 		: 0.0;
-	result.metrics.maxLeafOccupancy = maxLeafOccupancy;
-	result.metrics.memoryEstimateBytes = _state->memoryBytes;
+	result._metrics._maxLeafOccupancy = maxLeafOccupancy;
+	result._metrics._memoryEstimateBytes = _state->_memoryBytes;
 	return result;
 }
 
 PointGpu::QueryResult PointGpu::QuadTree::query(const std::vector<Query>& queries, const Options& options) const
 {
-	if (!_state || _state->actualNodes == 0 || queries.empty())
+	if (!_state || _state->_actualNodes == 0 || queries.empty())
 		return {};
 
-	CudaHelper::checkError(cudaSetDevice(_state->device));
+	CudaHelper::checkError(cudaSetDevice(_state->_device));
 
 	QueryResult result;
-	result.samples.reserve(queries.size());
+	result._samples.reserve(queries.size());
 	for (const Query& query : queries)
 	{
-		if (query.type == QueryType::Radius)
-			++result.radiusQueries;
-		else if (query.type == QueryType::CountRange)
-			++result.countRangeQueries;
-		else if (query.type == QueryType::Knn)
-			++result.knnQueries;
+		if (query._type == QueryType::Radius)
+			++result._radiusQueries;
+		else if (query._type == QueryType::CountRange)
+			++result._countRangeQueries;
+		else if (query._type == QueryType::Knn)
+			++result._knnQueries;
 		else
-			++result.rangeQueries;
+			++result._rangeQueries;
 	}
 
-	const size_t batchSize = options.queryBatchSize > 0
-		? std::max<size_t>(1, options.queryBatchSize)
+	const size_t batchSize = options._queryBatchSize > 0
+		? std::max<size_t>(1, options._queryBatchSize)
 		: queries.size();
-	const float clockRate = deviceClockRateKHz(_state->device);
+	const float clockRate = deviceClockRateKHz(_state->_device);
 
 	ensureQueryBuffers(*_state, batchSize);
 
@@ -862,70 +862,70 @@ PointGpu::QueryResult PointGpu::QuadTree::query(const std::vector<Query>& querie
 		for (size_t i = 0; i < currentBatch; ++i)
 			hostQueries.push_back(makeDeviceQuery(queries[offset + i]));
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
-			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
+			return query._type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
 
-		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->_queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
 		const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
 		queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->nodes,
-			_state->pointCount,
-			_state->queryBuffer,
+			_state->_points,
+			_state->_indices,
+			_state->_nodes,
+			_state->_pointCount,
+			_state->_queryBuffer,
 			currentBatch,
 			clockRate,
-			_state->sampleBuffer);
+			_state->_sampleBuffer);
 		CudaHelper::synchronize("QuadTreeQueryKernel");
 		if (batchHasKnn)
 		{
 			PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
-				_state->points,
-				_state->pointCount,
-				_state->queryBuffer,
+				_state->_points,
+				_state->_pointCount,
+				_state->_queryBuffer,
 				currentBatch,
 				clockRate,
-				_state->sampleBuffer);
+				_state->_sampleBuffer);
 			CudaHelper::synchronize("QuadTreeKnnQueryKernel");
 		}
 
 		hostSamples.resize(currentBatch);
-		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->_sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
 		for (const DeviceQuerySample& sample : hostSamples)
 		{
 			QuerySample converted;
-			converted.visitedNodes = static_cast<size_t>(sample.visitedNodes);
-			converted.testedPoints = static_cast<size_t>(sample.testedPoints);
-			converted.returnedPoints = static_cast<size_t>(sample.returnedPoints);
-			converted.elapsedMs = sample.elapsedMs;
-			result.samples.push_back(converted);
+			converted._visitedNodes = static_cast<size_t>(sample._visitedNodes);
+			converted._testedPoints = static_cast<size_t>(sample._testedPoints);
+			converted._returnedPoints = static_cast<size_t>(sample._returnedPoints);
+			converted._elapsedMs = sample._elapsedMs;
+			result._samples.push_back(converted);
 		}
 	}
 
-	result.gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
+	result._gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
 	cudaEventDestroy(queryBegin);
 	cudaEventDestroy(queryEnd);
 
-	result.metrics = summarizeGpuSamples(result.samples);
+	result._metrics = summarizeGpuSamples(result._samples);
 	return result;
 }
 
 bool PointGpu::QuadTree::built() const
 {
-	return _state && _state->actualNodes > 0;
+	return _state && _state->_actualNodes > 0;
 }
 
 size_t PointGpu::QuadTree::pointCount() const
 {
-	return _state ? _state->pointCount : 0;
+	return _state ? _state->_pointCount : 0;
 }
 
 size_t PointGpu::QuadTree::nodeCount() const
 {
-	return _state ? _state->actualNodes : 0;
+	return _state ? _state->_actualNodes : 0;
 }
 
 size_t PointGpu::QuadTree::leafCount() const
 {
-	return _state ? _state->actualLeaves : 0;
+	return _state ? _state->_actualLeaves : 0;
 }

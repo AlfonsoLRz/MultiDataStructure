@@ -20,59 +20,59 @@ enum class SchemaPrimitiveKind
 
 struct SchemaLevelCondition
 {
-	std::optional<size_t> minPoints;
-	std::optional<size_t> maxPoints;
-	std::optional<double> minDensity;
-	std::optional<double> maxDensity;
-	std::optional<double> minHeightRatio;
-	std::optional<double> maxHeightRatio;
-	std::optional<double> minExtentX;
-	std::optional<double> maxExtentX;
-	std::optional<double> minExtentY;
-	std::optional<double> maxExtentY;
-	std::optional<double> minExtentZ;
-	std::optional<double> maxExtentZ;
+	std::optional<size_t> _minPoints;
+	std::optional<size_t> _maxPoints;
+	std::optional<double> _minDensity;
+	std::optional<double> _maxDensity;
+	std::optional<double> _minHeightRatio;
+	std::optional<double> _maxHeightRatio;
+	std::optional<double> _minExtentX;
+	std::optional<double> _maxExtentX;
+	std::optional<double> _minExtentY;
+	std::optional<double> _maxExtentY;
+	std::optional<double> _minExtentZ;
+	std::optional<double> _maxExtentZ;
 	// Per-node anisotropy `1 - shortExtent / longExtent`: 0 = cubic, 1 = elongated.
-	std::optional<double> minAnisotropy;
-	std::optional<double> maxAnisotropy;
+	std::optional<double> _minAnisotropy;
+	std::optional<double> _maxAnisotropy;
 	// Per-node Shannon entropy over a 4x4x4 sub-grid, normalized to [0, 1]: 0 = clustered, 1 = even.
-	std::optional<double> minOccupancyEntropy;
-	std::optional<double> maxOccupancyEntropy;
+	std::optional<double> _minOccupancyEntropy;
+	std::optional<double> _maxOccupancyEntropy;
 
 	bool empty() const;
 };
 
 struct AdaptiveLeafCapacityConfig
 {
-	bool enabled = false;
-	size_t minCapacity = 0;
-	size_t maxCapacity = 0;
-	double densityWeight = 0.0;
-	double anisotropyWeight = 0.0;
-	double heightRatioWeight = 0.0;
-	double queryMixFactor = 1.0;
+	bool _enabled = false;
+	size_t _minCapacity = 0;
+	size_t _maxCapacity = 0;
+	double _densityWeight = 0.0;
+	double _anisotropyWeight = 0.0;
+	double _heightRatioWeight = 0.0;
+	double _queryMixFactor = 1.0;
 };
 
 struct SchemaLevelConfig
 {
-	SchemaPrimitiveKind primitiveKind = SchemaPrimitiveKind::Octree;
-	MultiDataStructure::DataStructureLevel cpuFallbackType = MultiDataStructure::DataStructureLevel::OctreeNode;
+	SchemaPrimitiveKind _primitiveKind = SchemaPrimitiveKind::Octree;
+	MultiDataStructure::DataStructureLevel _cpuFallbackType = MultiDataStructure::DataStructureLevel::OctreeNode;
 	// Compatibility alias for older CPU/build code; prefer primitiveKind or cpuFallbackType.
-	MultiDataStructure::DataStructureLevel type = MultiDataStructure::DataStructureLevel::OctreeNode;
-	std::string typeName = "Octree";
-	size_t numLevels = 1;
-	size_t leafCapacity = 1;
-	size_t minPrimitivesToSplit = 2;
-	std::string axisPolicy;
-	SchemaLevelCondition condition;
-	AdaptiveLeafCapacityConfig adaptiveLeafCapacity;
+	MultiDataStructure::DataStructureLevel _type = MultiDataStructure::DataStructureLevel::OctreeNode;
+	std::string _typeName = "Octree";
+	size_t _numLevels = 1;
+	size_t _leafCapacity = 1;
+	size_t _minPrimitivesToSplit = 2;
+	std::string _axisPolicy;
+	SchemaLevelCondition _condition;
+	AdaptiveLeafCapacityConfig _adaptiveLeafCapacity;
 };
 
 struct SchemaConfig
 {
-	std::string name;
-	std::vector<SchemaLevelConfig> levels;
-	BuildPolicy buildPolicy;
+	std::string _name;
+	std::vector<SchemaLevelConfig> _levels;
+	BuildPolicy _buildPolicy;
 
 	size_t totalLevels() const;
 	std::vector<MultiDataStructure::LevelConfig> toLevelConfigs() const;

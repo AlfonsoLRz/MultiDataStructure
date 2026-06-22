@@ -51,23 +51,23 @@ namespace BaselineTests
 		)json";
 
 		const Experiments::WorkloadProfile profile = Experiments::parseWorkloadProfile(workloadJson, "focused_knn");
-		expect(profile.name == "focused_knn", "schema search parses workload name");
-		expect(nearlyEqual(profile.rangeWeight, 0.2), "schema search parses range workload weight");
-		expect(nearlyEqual(profile.radiusWeight, 0.1), "schema search parses radius workload weight");
-		expect(nearlyEqual(profile.knnWeight, 0.7), "schema search parses knn workload weight");
-		expect(profile.knnK == 12, "schema search parses workload knn k");
-		expect(profile.numQueries == 42, "schema search parses workload query count");
-		expect(profile.querySeed == 99, "schema search parses workload query seed");
-		expect(profile.stratifyQueries, "schema search parses query stratification flag");
-		expect(nearlyEqual(profile.rangeScaleMin, 0.02), "schema search parses range scale min");
-		expect(nearlyEqual(profile.rangeScaleMax, 0.25), "schema search parses range scale max");
-		expect(nearlyEqual(profile.radiusScaleMin, 0.03), "schema search parses radius scale min");
-		expect(nearlyEqual(profile.radiusScaleMax, 0.12), "schema search parses radius scale max");
-		expect(profile.hasScoreWeights, "schema search parses workload-local score weights");
-		expect(nearlyEqual(profile.scoreWeights.lambdaLatency, 1.0), "schema search parses workload latency score weight");
-		expect(nearlyEqual(profile.scoreWeights.lambdaBuild, 0.25), "schema search parses workload build score weight");
-		expect(nearlyEqual(profile.scoreWeights.lambdaMemory, 0.5), "schema search parses workload memory score weight");
-		expect(nearlyEqual(profile.scoreWeights.lambdaImbalance, 0.75), "schema search parses workload imbalance score weight");
+		expect(profile._name == "focused_knn", "schema search parses workload name");
+		expect(nearlyEqual(profile._rangeWeight, 0.2), "schema search parses range workload weight");
+		expect(nearlyEqual(profile._radiusWeight, 0.1), "schema search parses radius workload weight");
+		expect(nearlyEqual(profile._knnWeight, 0.7), "schema search parses knn workload weight");
+		expect(profile._knnK == 12, "schema search parses workload knn k");
+		expect(profile._numQueries == 42, "schema search parses workload query count");
+		expect(profile._querySeed == 99, "schema search parses workload query seed");
+		expect(profile._stratifyQueries, "schema search parses query stratification flag");
+		expect(nearlyEqual(profile._rangeScaleMin, 0.02), "schema search parses range scale min");
+		expect(nearlyEqual(profile._rangeScaleMax, 0.25), "schema search parses range scale max");
+		expect(nearlyEqual(profile._radiusScaleMin, 0.03), "schema search parses radius scale min");
+		expect(nearlyEqual(profile._radiusScaleMax, 0.12), "schema search parses radius scale max");
+		expect(profile._hasScoreWeights, "schema search parses workload-local score weights");
+		expect(nearlyEqual(profile._scoreWeights._lambdaLatency, 1.0), "schema search parses workload latency score weight");
+		expect(nearlyEqual(profile._scoreWeights._lambdaBuild, 0.25), "schema search parses workload build score weight");
+		expect(nearlyEqual(profile._scoreWeights._lambdaMemory, 0.5), "schema search parses workload memory score weight");
+		expect(nearlyEqual(profile._scoreWeights._lambdaImbalance, 0.75), "schema search parses workload imbalance score weight");
 
 		const Experiments::WorkloadProfile proxyProfile = Experiments::parseWorkloadProfile(R"json(
 		{
@@ -78,26 +78,26 @@ namespace BaselineTests
 		  }
 		}
 		)json", "proxy_weighted");
-		expect(proxyProfile.hasScoreWeights && proxyProfile.scoreWeights.useVisitProxy,
+		expect(proxyProfile._hasScoreWeights && proxyProfile._scoreWeights._useVisitProxy,
 			"schema search workload score weights can request visit-proxy scoring");
-		expect(nearlyEqual(proxyProfile.scoreWeights.visitProxyAlpha, 0.25),
+		expect(nearlyEqual(proxyProfile._scoreWeights._visitProxyAlpha, 0.25),
 			"schema search parses tested-points proxy weight as visit-proxy alpha");
 
 		Experiments::BuildMetrics buildMetrics;
-		buildMetrics.buildTimeMs = 10.0;
-		buildMetrics.memoryEstimateBytes = 2 * 1024 * 1024;
-		buildMetrics.averageLeafOccupancy = 4.0;
-		buildMetrics.maxLeafOccupancy = 12;
+		buildMetrics._buildTimeMs = 10.0;
+		buildMetrics._memoryEstimateBytes = 2 * 1024 * 1024;
+		buildMetrics._averageLeafOccupancy = 4.0;
+		buildMetrics._maxLeafOccupancy = 12;
 
 		Experiments::QueryMetrics queryMetrics;
-		queryMetrics.averageLatencyMs = 2.0;
+		queryMetrics._averageLatencyMs = 2.0;
 
 		double memoryMb = 0.0;
 		double imbalancePenalty = 0.0;
 		Experiments::ScoreWeights scoreWeights;
-		scoreWeights.lambdaBuild = 0.001;
-		scoreWeights.lambdaMemory = 0.01;
-		scoreWeights.lambdaImbalance = 0.01;
+		scoreWeights._lambdaBuild = 0.001;
+		scoreWeights._lambdaMemory = 0.01;
+		scoreWeights._lambdaImbalance = 0.01;
 		const double score = Experiments::computeSchemaSearchScore(
 			buildMetrics,
 			queryMetrics,
@@ -110,7 +110,7 @@ namespace BaselineTests
 		expect(nearlyEqual(score, 2.06), "schema search score combines latency, build, memory, and imbalance");
 
 		Experiments::ScoreWeights latencyScaleWeights;
-		latencyScaleWeights.lambdaLatency = 0.5;
+		latencyScaleWeights._lambdaLatency = 0.5;
 		double scaledMemoryMb = 0.0;
 		double scaledImbalancePenalty = 0.0;
 		const double scaledScore = Experiments::computeSchemaSearchScore(
@@ -133,12 +133,12 @@ namespace BaselineTests
 
 		// Visit-count surrogate substitutes deterministic counters for noisy latency.
 		Experiments::QueryMetrics visitMetrics;
-		visitMetrics.averageLatencyMs = 99.0;        // ignored when surrogate is on
-		visitMetrics.averageVisitedNodes = 25.0;
-		visitMetrics.averageTestedPoints = 100.0;
+		visitMetrics._averageLatencyMs = 99.0;        // ignored when surrogate is on
+		visitMetrics._averageVisitedNodes = 25.0;
+		visitMetrics._averageTestedPoints = 100.0;
 		Experiments::ScoreWeights visitWeights;
-		visitWeights.useVisitProxy = true;
-		visitWeights.visitProxyAlpha = 0.2;
+		visitWeights._useVisitProxy = true;
+		visitWeights._visitProxyAlpha = 0.2;
 		double visitMemoryMb = 0.0;
 		double visitImbalance = 0.0;
 		const double visitScore = Experiments::computeSchemaSearchScore(
@@ -152,169 +152,169 @@ namespace BaselineTests
 		// Diagnostic-guided repair mutations emit targeted schema edits from measured failure modes.
 		{
 			Experiments::SchemaCandidate parent;
-			parent.config.name = "repair_parent";
-			parent.config.levels.resize(1);
-			parent.config.levels[0].type = MultiDataStructure::DataStructureLevel::OctreeNode;
-			parent.config.levels[0].typeName = "Octree";
-			parent.config.levels[0].numLevels = 4;
-			parent.config.levels[0].leafCapacity = 1024;
-			parent.config.levels[0].minPrimitivesToSplit = 256;
-			parent.config.buildPolicy.maxDepth = 8;
-			parent.config.buildPolicy.leafCapacity = 1024;
-			parent.config.buildPolicy.minPrimitivesToSplit = 256;
+			parent._config._name = "repair_parent";
+			parent._config._levels.resize(1);
+			parent._config._levels[0]._type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			parent._config._levels[0]._typeName = "Octree";
+			parent._config._levels[0]._numLevels = 4;
+			parent._config._levels[0]._leafCapacity = 1024;
+			parent._config._levels[0]._minPrimitivesToSplit = 256;
+			parent._config._buildPolicy._maxDepth = 8;
+			parent._config._buildPolicy._leafCapacity = 1024;
+			parent._config._buildPolicy._minPrimitivesToSplit = 256;
 
 			Experiments::SchemaSearchRecord measured;
-			measured.numPoints = 10000;
-			measured.knnWeight = 0.7;
-			measured.buildMetrics.averageLeafOccupancy = 32.0;
-			measured.buildMetrics.maxLeafOccupancy = 4096;
-			measured.buildMetrics.numNodes = 20;
-			measured.buildMetrics.numLeaves = 10;
-			measured.buildMetrics.maxDepth = 4;
-			measured.queryMetrics.averageVisitedNodes = 4.0;
-			measured.queryMetrics.averageTestedPoints = 512.0;
+			measured._numPoints = 10000;
+			measured._knnWeight = 0.7;
+			measured._buildMetrics._averageLeafOccupancy = 32.0;
+			measured._buildMetrics._maxLeafOccupancy = 4096;
+			measured._buildMetrics._numNodes = 20;
+			measured._buildMetrics._numLeaves = 10;
+			measured._buildMetrics._maxDepth = 4;
+			measured._queryMetrics._averageVisitedNodes = 4.0;
+			measured._queryMetrics._averageTestedPoints = 512.0;
 
 			Experiments::SchemaGenerationOptions repairOptions;
-			repairOptions.maxDepth = 8;
-			repairOptions.maxBlocks = 3;
-			repairOptions.minLeafCapacity = 32;
-			repairOptions.maxLeafCapacity = 4096;
-			repairOptions.outputDirectory.clear();
-			repairOptions.primitiveProfile = "query_minimal_cpu";
+			repairOptions._maxDepth = 8;
+			repairOptions._maxBlocks = 3;
+			repairOptions._minLeafCapacity = 32;
+			repairOptions._maxLeafCapacity = 4096;
+			repairOptions._outputDirectory.clear();
+			repairOptions._primitiveProfile = "query_minimal_cpu";
 
 			Experiments::ConditionDomain domain;
-			domain.pointThresholds = { 64, 128, 256, 512, 1024 };
+			domain._pointThresholds = { 64, 128, 256, 512, 1024 };
 
 			const Experiments::SchemaRepairDiagnostics diagnostics =
 				Experiments::diagnoseSchemaRepair(parent, { measured });
-			expect(diagnostics.highLeafOccupancy, "repair diagnosis detects high leaf occupancy");
-			expect(diagnostics.testedPointDominated, "repair diagnosis detects tested-point-heavy queries");
+			expect(diagnostics._highLeafOccupancy, "repair diagnosis detects high leaf occupancy");
+			expect(diagnostics._testedPointDominated, "repair diagnosis detects tested-point-heavy queries");
 
 			const std::vector<Experiments::SchemaCandidate> repaired =
 				Experiments::generateSchemaRepairCandidates(parent, { measured }, repairOptions, &domain, 2, 1234, "");
 			expect(repaired.size() == 2, "repair generator emits bounded targeted candidates");
-			expect(repaired[0].config.levels[0].leafCapacity < parent.config.levels[0].leafCapacity,
+			expect(repaired[0]._config._levels[0]._leafCapacity < parent._config._levels[0]._leafCapacity,
 				"high-occupancy repair reduces leaf capacity");
-			expect(repaired[0].config.levels[0].numLevels > parent.config.levels[0].numLevels,
+			expect(repaired[0]._config._levels[0]._numLevels > parent._config._levels[0]._numLevels,
 				"high-occupancy repair increases depth when budget allows");
-			expect(repaired[1].config.levels.size() > parent.config.levels.size(),
+			expect(repaired[1]._config._levels.size() > parent._config._levels.size(),
 				"tested-point repair appends a local micro-index block");
-			expect(!repaired[1].config.levels.back().condition.empty(),
+			expect(!repaired[1]._config._levels.back()._condition.empty(),
 				"micro-index repair gates the added block with measured point thresholds");
 		}
 
 		{
 			Experiments::SchemaCandidate parent;
-			parent.config.name = "visited_parent";
-			parent.config.levels.resize(1);
-			parent.config.levels[0].type = MultiDataStructure::DataStructureLevel::KDTreeNode;
-			parent.config.levels[0].typeName = "KDTree";
-			parent.config.levels[0].numLevels = 6;
-			parent.config.levels[0].leafCapacity = 128;
-			parent.config.levels[0].minPrimitivesToSplit = 32;
+			parent._config._name = "visited_parent";
+			parent._config._levels.resize(1);
+			parent._config._levels[0]._type = MultiDataStructure::DataStructureLevel::KDTreeNode;
+			parent._config._levels[0]._typeName = "KDTree";
+			parent._config._levels[0]._numLevels = 6;
+			parent._config._levels[0]._leafCapacity = 128;
+			parent._config._levels[0]._minPrimitivesToSplit = 32;
 
 			Experiments::SchemaSearchRecord measured;
-			measured.numPoints = 20000;
-			measured.pointFeatures.flatnessScore = 1.0;
-			measured.buildMetrics.averageLeafOccupancy = 64.0;
-			measured.buildMetrics.maxLeafOccupancy = 128;
-			measured.buildMetrics.numNodes = 4096;
-			measured.buildMetrics.numLeaves = 2048;
-			measured.buildMetrics.maxDepth = 6;
-			measured.queryMetrics.averageVisitedNodes = 256.0;
-			measured.queryMetrics.averageTestedPoints = 256.0;
+			measured._numPoints = 20000;
+			measured._pointFeatures._flatnessScore = 1.0;
+			measured._buildMetrics._averageLeafOccupancy = 64.0;
+			measured._buildMetrics._maxLeafOccupancy = 128;
+			measured._buildMetrics._numNodes = 4096;
+			measured._buildMetrics._numLeaves = 2048;
+			measured._buildMetrics._maxDepth = 6;
+			measured._queryMetrics._averageVisitedNodes = 256.0;
+			measured._queryMetrics._averageTestedPoints = 256.0;
 
 			Experiments::SchemaGenerationOptions repairOptions;
-			repairOptions.maxDepth = 8;
-			repairOptions.maxBlocks = 2;
-			repairOptions.minLeafCapacity = 32;
-			repairOptions.maxLeafCapacity = 4096;
-			repairOptions.outputDirectory.clear();
-			repairOptions.primitiveProfile = "query_minimal_cpu";
+			repairOptions._maxDepth = 8;
+			repairOptions._maxBlocks = 2;
+			repairOptions._minLeafCapacity = 32;
+			repairOptions._maxLeafCapacity = 4096;
+			repairOptions._outputDirectory.clear();
+			repairOptions._primitiveProfile = "query_minimal_cpu";
 
 			const Experiments::SchemaRepairDiagnostics diagnostics =
 				Experiments::diagnoseSchemaRepair(parent, { measured });
-			expect(diagnostics.visitedNodeDominated, "repair diagnosis detects visited-node-heavy traversal");
+			expect(diagnostics._visitedNodeDominated, "repair diagnosis detects visited-node-heavy traversal");
 
 			const std::vector<Experiments::SchemaCandidate> repaired =
 				Experiments::generateSchemaRepairCandidates(parent, { measured }, repairOptions, nullptr, 1, 99, "");
 			expect(repaired.size() == 1, "visited-node repair emits one targeted candidate");
-			expect(repaired[0].config.levels[0].type == MultiDataStructure::DataStructureLevel::QuadTreeNode,
+			expect(repaired[0]._config._levels[0]._type == MultiDataStructure::DataStructureLevel::QuadTreeNode,
 				"visited-node repair switches flat root to quadtree");
-			expect(repaired[0].config.levels[0].leafCapacity > parent.config.levels[0].leafCapacity,
+			expect(repaired[0]._config._levels[0]._leafCapacity > parent._config._levels[0]._leafCapacity,
 				"visited-node repair coarsens root leaves");
 		}
 
 		std::vector<Experiments::SchemaSearchRecord> records(3);
-		records[0].datasetName = "flat";
-		records[0].workloadName = "mixed";
-		records[0].schemaName = "slow";
-		records[0].score = 3.0;
-		records[1].datasetName = "flat";
-		records[1].workloadName = "mixed";
-		records[1].schemaName = "fast";
-		records[1].score = 1.0;
-		records[2].datasetName = "facade";
-		records[2].workloadName = "mixed";
-		records[2].schemaName = "only";
-		records[2].score = 2.0;
+		records[0]._datasetName = "flat";
+		records[0]._workloadName = "mixed";
+		records[0]._schemaName = "slow";
+		records[0]._score = 3.0;
+		records[1]._datasetName = "flat";
+		records[1]._workloadName = "mixed";
+		records[1]._schemaName = "fast";
+		records[1]._score = 1.0;
+		records[2]._datasetName = "facade";
+		records[2]._workloadName = "mixed";
+		records[2]._schemaName = "only";
+		records[2]._score = 2.0;
 
 		const std::vector<Experiments::SchemaSearchRecord> best = Experiments::selectBestRecords(records);
 		expect(best.size() == 2, "schema search picks one best record per dataset/workload");
-		expect(best[0].schemaName == "fast", "schema search keeps lowest score as best schema");
-		expect(best[1].schemaName == "only", "schema search keeps independent dataset/workload groups");
+		expect(best[0]._schemaName == "fast", "schema search keeps lowest score as best schema");
+		expect(best[1]._schemaName == "only", "schema search keeps independent dataset/workload groups");
 
-		records[0].schemaName = "single_seed_lucky";
-		records[0].score = 1.0;
-		records[0].queryMetrics.averageLatencyMs = 1.0;
-		records[0].confirmSeedsUsed = 5;
-		records[0].latencyMean = 4.0;
-		records[1].schemaName = "confirmed_fast";
-		records[1].score = 2.0;
-		records[1].queryMetrics.averageLatencyMs = 2.0;
-		records[1].confirmSeedsUsed = 5;
-		records[1].latencyMean = 1.5;
+		records[0]._schemaName = "single_seed_lucky";
+		records[0]._score = 1.0;
+		records[0]._queryMetrics._averageLatencyMs = 1.0;
+		records[0]._confirmSeedsUsed = 5;
+		records[0]._latencyMean = 4.0;
+		records[1]._schemaName = "confirmed_fast";
+		records[1]._score = 2.0;
+		records[1]._queryMetrics._averageLatencyMs = 2.0;
+		records[1]._confirmSeedsUsed = 5;
+		records[1]._latencyMean = 1.5;
 		const std::vector<Experiments::SchemaSearchRecord> confirmedBest = Experiments::selectBestRecords(records);
-		expect(confirmedBest[0].schemaName == "confirmed_fast",
+		expect(confirmedBest[0]._schemaName == "confirmed_fast",
 			"schema search best selection prefers multi-seed confirmed latency over lucky single-seed score");
 
 		const Experiments::EvaluatorResolution cudaResolution = Experiments::resolveSchemaSearchEvaluator("cuda", true);
-		expect(cudaResolution.usingCuda, "schema search resolver keeps available CUDA");
-		expect(cudaResolution.evaluator == "cuda", "schema search resolver returns cuda evaluator");
+		expect(cudaResolution._usingCuda, "schema search resolver keeps available CUDA");
+		expect(cudaResolution._evaluator == "cuda", "schema search resolver returns cuda evaluator");
 
 		const Experiments::EvaluatorResolution fallbackResolution = Experiments::resolveSchemaSearchEvaluator("cuda", false, "missing device");
-		expect(!fallbackResolution.usingCuda, "schema search resolver disables unavailable CUDA");
-		expect(fallbackResolution.fellBackToCpu, "schema search resolver marks CPU fallback");
-		expect(fallbackResolution.evaluator == "cpu", "schema search resolver falls back to CPU");
-		expect(fallbackResolution.warning.find("missing device") != std::string::npos, "schema search resolver includes CUDA error in warning");
+		expect(!fallbackResolution._usingCuda, "schema search resolver disables unavailable CUDA");
+		expect(fallbackResolution._fellBackToCpu, "schema search resolver marks CPU fallback");
+		expect(fallbackResolution._evaluator == "cpu", "schema search resolver falls back to CPU");
+		expect(fallbackResolution._warning.find("missing device") != std::string::npos, "schema search resolver includes CUDA error in warning");
 
 		Experiments::SchemaGenerationOptions generation;
-		generation.count = 12;
-		generation.maxBlocks = 3;
-		generation.maxDepth = 8;
-		generation.minLeafCapacity = 32;
-		generation.maxLeafCapacity = 512;
-		generation.seed = 11;
-		generation.outputDirectory.clear();
+		generation._count = 12;
+		generation._maxBlocks = 3;
+		generation._maxDepth = 8;
+		generation._minLeafCapacity = 32;
+		generation._maxLeafCapacity = 512;
+		generation._seed = 11;
+		generation._outputDirectory.clear();
 
 		const std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(generation);
-		expect(generated.size() == generation.count, "schema generator creates requested candidate count");
+		expect(generated.size() == generation._count, "schema generator creates requested candidate count");
 		for (const Experiments::SchemaCandidate& candidate : generated)
 		{
-			expect(candidate.generated, "schema generator marks generated candidates");
-			expect(candidate.config.totalLevels() <= generation.maxDepth, "schema generator respects max depth");
-			expect(!candidate.config.levels.empty(), "schema generator creates non-empty level schedules");
-			expect(candidate.path.rfind("generated:", 0) == 0, "schema generator uses generated pseudo path");
+			expect(candidate._generated, "schema generator marks generated candidates");
+			expect(candidate._config.totalLevels() <= generation._maxDepth, "schema generator respects max depth");
+			expect(!candidate._config._levels.empty(), "schema generator creates non-empty level schedules");
+			expect(candidate._path.rfind("generated:", 0) == 0, "schema generator uses generated pseudo path");
 		}
 
 		Experiments::SchemaGenerationOptions nestedGeneration = generation;
-		nestedGeneration.count = 8;
-		nestedGeneration.minBlocks = 2;
-		nestedGeneration.maxBlocks = 2;
+		nestedGeneration._count = 8;
+		nestedGeneration._minBlocks = 2;
+		nestedGeneration._maxBlocks = 2;
 		const std::vector<Experiments::SchemaCandidate> nestedGenerated = Experiments::generateSchemaCandidates(nestedGeneration);
-		expect(nestedGenerated.size() == nestedGeneration.count, "schema generator creates requested minimum-block candidates");
+		expect(nestedGenerated.size() == nestedGeneration._count, "schema generator creates requested minimum-block candidates");
 		for (const Experiments::SchemaCandidate& candidate : nestedGenerated)
-			expect(candidate.config.levels.size() >= 2, "schema generator respects generated min blocks");
+			expect(candidate._config._levels.size() >= 2, "schema generator respects generated min blocks");
 
 		auto isCpuDuplicateName = [](const std::string& typeName) {
 			return typeName == "BIH" ||
@@ -324,29 +324,29 @@ namespace BaselineTests
 				typeName == "LBVH";
 		};
 		Experiments::SchemaGenerationOptions minimalGeneration = generation;
-		minimalGeneration.count = 48;
-		minimalGeneration.seed = 33;
-		minimalGeneration.outputDirectory.clear();
-		minimalGeneration.primitiveProfile = "query_minimal_cpu";
+		minimalGeneration._count = 48;
+		minimalGeneration._seed = 33;
+		minimalGeneration._outputDirectory.clear();
+		minimalGeneration._primitiveProfile = "query_minimal_cpu";
 		const std::vector<Experiments::SchemaCandidate> minimalGenerated =
 			Experiments::generateSchemaCandidates(minimalGeneration);
 		for (const Experiments::SchemaCandidate& candidate : minimalGenerated)
 		{
-			for (const SchemaLevelConfig& level : candidate.config.levels)
-				expect(!isCpuDuplicateName(level.typeName), "query-minimal primitive profile excludes CPU-equivalent aliases");
+			for (const SchemaLevelConfig& level : candidate._config._levels)
+				expect(!isCpuDuplicateName(level._typeName), "query-minimal primitive profile excludes CPU-equivalent aliases");
 		}
 
 		Experiments::SchemaGenerationOptions fullGeneration = minimalGeneration;
-		fullGeneration.count = 96;
-		fullGeneration.seed = 44;
-		fullGeneration.primitiveProfile = "cuda_query_full";
+		fullGeneration._count = 96;
+		fullGeneration._seed = 44;
+		fullGeneration._primitiveProfile = "cuda_query_full";
 		const std::vector<Experiments::SchemaCandidate> fullGenerated =
 			Experiments::generateSchemaCandidates(fullGeneration);
 		bool sawCudaVariant = false;
 		for (const Experiments::SchemaCandidate& candidate : fullGenerated)
 		{
-			for (const SchemaLevelConfig& level : candidate.config.levels)
-				sawCudaVariant = sawCudaVariant || isCpuDuplicateName(level.typeName);
+			for (const SchemaLevelConfig& level : candidate._config._levels)
+				sawCudaVariant = sawCudaVariant || isCpuDuplicateName(level._typeName);
 		}
 		expect(sawCudaVariant, "cuda-full primitive profile includes CUDA-native aliases");
 		expect(Experiments::resolvePrimitiveProfile("auto", false) == "query_minimal_cpu",
@@ -361,43 +361,43 @@ namespace BaselineTests
 		const Experiments::ConditionDomain flatDomainB = Experiments::estimateConditionDomain(flatCloud, 64);
 		const Experiments::ConditionDomain tallDomain = Experiments::estimateConditionDomain(tallCloud, 64);
 		const Experiments::ConditionDomain sparseDenseDomain = Experiments::estimateConditionDomain(sparseDenseCloud, 64);
-		expect(flatDomainA.estimatedFromCloud, "condition domain records cloud estimate");
-		expect(flatDomainA.samplePoints == 64, "condition domain respects sample cap");
-		expect(flatDomainA.pointThresholds == flatDomainB.pointThresholds, "condition domain point thresholds are deterministic");
-		expect(flatDomainA.heightRatioThresholds == flatDomainB.heightRatioThresholds, "condition domain height thresholds are deterministic");
-		expect(!flatDomainA.pointThresholds.empty(), "condition domain estimates point thresholds");
-		expect(!flatDomainA.heightRatioThresholds.empty(), "condition domain estimates height thresholds");
-		expect(!tallDomain.heightRatioThresholds.empty(), "condition domain estimates tall-cloud height thresholds");
-		expect(!sparseDenseDomain.densityThresholds.empty(), "condition domain estimates density thresholds");
+		expect(flatDomainA._estimatedFromCloud, "condition domain records cloud estimate");
+		expect(flatDomainA._samplePoints == 64, "condition domain respects sample cap");
+		expect(flatDomainA._pointThresholds == flatDomainB._pointThresholds, "condition domain point thresholds are deterministic");
+		expect(flatDomainA._heightRatioThresholds == flatDomainB._heightRatioThresholds, "condition domain height thresholds are deterministic");
+		expect(!flatDomainA._pointThresholds.empty(), "condition domain estimates point thresholds");
+		expect(!flatDomainA._heightRatioThresholds.empty(), "condition domain estimates height thresholds");
+		expect(!tallDomain._heightRatioThresholds.empty(), "condition domain estimates tall-cloud height thresholds");
+		expect(!sparseDenseDomain._densityThresholds.empty(), "condition domain estimates density thresholds");
 
 		Experiments::SchemaGenerationOptions conditionalGeneration;
-		conditionalGeneration.count = 10;
-		conditionalGeneration.maxBlocks = 3;
-		conditionalGeneration.maxDepth = 6;
-		conditionalGeneration.minLeafCapacity = 16;
-		conditionalGeneration.maxLeafCapacity = 256;
-		conditionalGeneration.conditionalLevels = true;
-		conditionalGeneration.conditionalProbability = 1.0;
-		conditionalGeneration.seed = 12;
-		conditionalGeneration.outputDirectory.clear();
+		conditionalGeneration._count = 10;
+		conditionalGeneration._maxBlocks = 3;
+		conditionalGeneration._maxDepth = 6;
+		conditionalGeneration._minLeafCapacity = 16;
+		conditionalGeneration._maxLeafCapacity = 256;
+		conditionalGeneration._conditionalLevels = true;
+		conditionalGeneration._conditionalProbability = 1.0;
+		conditionalGeneration._seed = 12;
+		conditionalGeneration._outputDirectory.clear();
 		const std::vector<Experiments::SchemaCandidate> conditionalGenerated =
 			Experiments::generateSchemaCandidates(conditionalGeneration, &flatDomainA);
 		const std::vector<Experiments::SchemaCandidate> conditionalGeneratedAgain =
 			Experiments::generateSchemaCandidates(conditionalGeneration, &flatDomainA);
-		expect(conditionalGenerated.size() == conditionalGeneration.count, "domain-aware schema generator creates requested candidates");
+		expect(conditionalGenerated.size() == conditionalGeneration._count, "domain-aware schema generator creates requested candidates");
 		expect(conditionalGeneratedAgain.size() == conditionalGenerated.size(), "domain-aware schema generator is deterministic for fixed seed");
 		bool sawNumericCondition = false;
 		for (size_t candidateIndex = 0; candidateIndex < conditionalGenerated.size(); ++candidateIndex)
 		{
 			const Experiments::SchemaCandidate& candidate = conditionalGenerated[candidateIndex];
-			expect(candidate.name == conditionalGeneratedAgain[candidateIndex].name,
+			expect(candidate._name == conditionalGeneratedAgain[candidateIndex]._name,
 				"domain-aware schema generator repeats candidate order for fixed seed");
-			for (size_t levelIndex = 1; levelIndex < candidate.config.levels.size(); ++levelIndex)
+			for (size_t levelIndex = 1; levelIndex < candidate._config._levels.size(); ++levelIndex)
 			{
-				if (!candidate.config.levels[levelIndex].condition.empty())
+				if (!candidate._config._levels[levelIndex]._condition.empty())
 				{
 					sawNumericCondition = true;
-					expect(candidate.config.levels[levelIndex].condition.minPoints.has_value(),
+					expect(candidate._config._levels[levelIndex]._condition._minPoints.has_value(),
 						"domain-aware generated condition includes numeric minPoints");
 				}
 			}
@@ -405,25 +405,25 @@ namespace BaselineTests
 		expect(sawNumericCondition, "domain-aware schema generator emits conditional levels");
 
 		Experiments::SchemaGenerationOptions adaptiveGeneration = conditionalGeneration;
-		adaptiveGeneration.count = 12;
-		adaptiveGeneration.seed = 18;
-		adaptiveGeneration.adaptiveLeafCapacity = true;
-		adaptiveGeneration.adaptiveLeafProbability = 1.0;
+		adaptiveGeneration._count = 12;
+		adaptiveGeneration._seed = 18;
+		adaptiveGeneration._adaptiveLeafCapacity = true;
+		adaptiveGeneration._adaptiveLeafProbability = 1.0;
 		const std::vector<Experiments::SchemaCandidate> adaptiveGenerated =
 			Experiments::generateSchemaCandidates(adaptiveGeneration, &flatDomainA);
-		expect(adaptiveGenerated.size() == adaptiveGeneration.count,
+		expect(adaptiveGenerated.size() == adaptiveGeneration._count,
 			"adaptive leaf-capacity generator creates requested candidates");
 		bool sawAdaptiveLeafCapacity = false;
 		for (const Experiments::SchemaCandidate& candidate : adaptiveGenerated)
 		{
-			for (const SchemaLevelConfig& level : candidate.config.levels)
+			for (const SchemaLevelConfig& level : candidate._config._levels)
 			{
-				if (level.adaptiveLeafCapacity.enabled)
+				if (level._adaptiveLeafCapacity._enabled)
 				{
 					sawAdaptiveLeafCapacity = true;
-					expect(level.adaptiveLeafCapacity.minCapacity > 0,
+					expect(level._adaptiveLeafCapacity._minCapacity > 0,
 						"adaptive leaf-capacity generator writes numeric minimum capacity");
-					expect(level.adaptiveLeafCapacity.maxCapacity >= level.adaptiveLeafCapacity.minCapacity,
+					expect(level._adaptiveLeafCapacity._maxCapacity >= level._adaptiveLeafCapacity._minCapacity,
 						"adaptive leaf-capacity generator writes valid capacity bounds");
 				}
 			}
@@ -437,16 +437,16 @@ namespace BaselineTests
 		const std::filesystem::path explainPath = tempRoot / "prepared_queries_explain.md";
 
 		Experiments::SchemaSearchOptions options;
-		options.schemaPaths = { "configs/schemas/quadtree.json" };
-		options.workloadPaths = { "configs/workloads/mixed.json" };
-		options.includeBaselineSchemas = false;
-		options.csvPath = csvPath.string();
-		options.bestCsvPath = bestCsvPath.string();
-		options.explainReportPath = explainPath.string();
-		options.syntheticScale = 64;
-		options.queryCountOverride = 9;
-		options.evaluator = "cpu";
-		options.pauseAtEnd = false;
+		options._schemaPaths = { "configs/schemas/quadtree.json" };
+		options._workloadPaths = { "configs/workloads/mixed.json" };
+		options._includeBaselineSchemas = false;
+		options._csvPath = csvPath.string();
+		options._bestCsvPath = bestCsvPath.string();
+		options._explainReportPath = explainPath.string();
+		options._syntheticScale = 64;
+		options._queryCountOverride = 9;
+		options._evaluator = "cpu";
+		options._pauseAtEnd = false;
 		const int exitCode = Experiments::runSchemaSearch(options);
 		expect(exitCode == 0, "schema search smoke run succeeds");
 		std::ifstream explain(explainPath);
@@ -540,25 +540,25 @@ namespace BaselineTests
 		const std::filesystem::path autoCsvPath = tempRoot / "auto_conditions.csv";
 		const std::filesystem::path autoBestCsvPath = tempRoot / "auto_conditions_best.csv";
 		Experiments::SchemaSearchOptions autoOptions;
-		autoOptions.schemaPaths = { "configs/schemas/quadtree.json" };
-		autoOptions.workloadPaths = { "configs/workloads/volume_small_medium.json" };
-		autoOptions.includeBaselineSchemas = false;
-		autoOptions.csvPath = autoCsvPath.string();
-		autoOptions.bestCsvPath = autoBestCsvPath.string();
-		autoOptions.syntheticScale = 64;
-		autoOptions.queryCountOverride = 6;
-		autoOptions.evaluator = "cpu";
-		autoOptions.pauseAtEnd = false;
-		autoOptions.rankModelPath.clear();
-		autoOptions.autoConditions.enabled = true;
-		autoOptions.autoConditions.proxyCandidateCount = 5;
-		autoOptions.autoConditions.proxyPointCap = 64;
-		autoOptions.autoConditions.proxyQueryCount = 2;
-		autoOptions.autoConditions.finalTopK = 3;
-		autoOptions.autoConditions.confirmationTopK = 2;
-		autoOptions.autoConditions.outputDirectory = (tempRoot / "auto_condition_schemas").string();
-		autoOptions.autoConditions.selectorOutputPath = (tempRoot / "auto_condition_selector.json").string();
-		autoOptions.generation.outputDirectory = (tempRoot / "generated_auto_conditions").string();
+		autoOptions._schemaPaths = { "configs/schemas/quadtree.json" };
+		autoOptions._workloadPaths = { "configs/workloads/volume_small_medium.json" };
+		autoOptions._includeBaselineSchemas = false;
+		autoOptions._csvPath = autoCsvPath.string();
+		autoOptions._bestCsvPath = autoBestCsvPath.string();
+		autoOptions._syntheticScale = 64;
+		autoOptions._queryCountOverride = 6;
+		autoOptions._evaluator = "cpu";
+		autoOptions._pauseAtEnd = false;
+		autoOptions._rankModelPath.clear();
+		autoOptions._autoConditions._enabled = true;
+		autoOptions._autoConditions._proxyCandidateCount = 5;
+		autoOptions._autoConditions._proxyPointCap = 64;
+		autoOptions._autoConditions._proxyQueryCount = 2;
+		autoOptions._autoConditions._finalTopK = 3;
+		autoOptions._autoConditions._confirmationTopK = 2;
+		autoOptions._autoConditions._outputDirectory = (tempRoot / "auto_condition_schemas").string();
+		autoOptions._autoConditions._selectorOutputPath = (tempRoot / "auto_condition_selector.json").string();
+		autoOptions._generation._outputDirectory = (tempRoot / "generated_auto_conditions").string();
 		expect(Experiments::runSchemaSearch(autoOptions) == 0, "schema search auto-condition staged run succeeds");
 
 		std::ifstream autoCsv(autoCsvPath);
@@ -571,7 +571,7 @@ namespace BaselineTests
 			if (!row.empty())
 				autoRows.push_back(row);
 		}
-		expect(autoRows.size() == autoOptions.autoConditions.confirmationTopK * 3,
+		expect(autoRows.size() == autoOptions._autoConditions._confirmationTopK * 3,
 			"auto-condition CSV only contains confirmation-stage rows");
 		expect(autoHeader.find("conditional_levels") != std::string::npos &&
 			autoHeader.find("condition_fields") != std::string::npos &&
@@ -591,24 +591,24 @@ namespace BaselineTests
 			expect(modeIndex < firstAutoValues.size() && firstAutoValues[modeIndex] == "latency",
 				"auto-condition confirmation rows use latency score mode");
 		}
-		expect(std::filesystem::exists(autoOptions.autoConditions.selectorOutputPath),
+		expect(std::filesystem::exists(autoOptions._autoConditions._selectorOutputPath),
 			"auto-condition tuning writes measured selector artifact");
 
 		std::string cudaError;
 		if (PointGpu::MixedTree::isAvailable(&cudaError))
 		{
 			Experiments::SchemaSearchOptions cudaOptions;
-			cudaOptions.schemaPaths = { "configs/schemas/gpu_mixed_all.json" };
-			cudaOptions.workloadPaths = { "configs/workloads/volume_small_medium.json" };
-			cudaOptions.includeBaselineSchemas = false;
-			cudaOptions.csvPath.clear();
-			cudaOptions.bestCsvPath.clear();
-			cudaOptions.syntheticScale = 64;
-			cudaOptions.queryCountOverride = 4;
-			cudaOptions.evaluator = "cuda";
-			cudaOptions.cuda.device = 0;
-			cudaOptions.cuda.builder = "mixed";
-			cudaOptions.pauseAtEnd = false;
+			cudaOptions._schemaPaths = { "configs/schemas/gpu_mixed_all.json" };
+			cudaOptions._workloadPaths = { "configs/workloads/volume_small_medium.json" };
+			cudaOptions._includeBaselineSchemas = false;
+			cudaOptions._csvPath.clear();
+			cudaOptions._bestCsvPath.clear();
+			cudaOptions._syntheticScale = 64;
+			cudaOptions._queryCountOverride = 4;
+			cudaOptions._evaluator = "cuda";
+			cudaOptions._cuda._device = 0;
+			cudaOptions._cuda._builder = "mixed";
+			cudaOptions._pauseAtEnd = false;
 			expect(Experiments::runSchemaSearch(cudaOptions) == 0, "schema search CUDA mixed smoke run succeeds");
 
 			const char* entropyConditionJson = R"json(
@@ -641,8 +641,8 @@ namespace BaselineTests
 			{
 				PointGpu::MixedTree mixedTree;
 				PointGpu::Options mixedOptions;
-				mixedOptions.device = 0;
-				mixedOptions.builder = "mixed";
+				mixedOptions._device = 0;
+				mixedOptions._builder = "mixed";
 				const PointCloud entropyCloud = SyntheticPointClouds::generateUrbanMixed(64, 64, 4);
 				mixedTree.build(
 					entropyCloud,
@@ -689,8 +689,8 @@ namespace BaselineTests
 			{
 				PointGpu::MixedTree mixedTree;
 				PointGpu::Options mixedOptions;
-				mixedOptions.device = 0;
-				mixedOptions.builder = "mixed";
+				mixedOptions._device = 0;
+				mixedOptions._builder = "mixed";
 				const PointCloud adaptiveCloud = SyntheticPointClouds::generateUrbanMixed(64, 64, 5);
 				mixedTree.build(
 					adaptiveCloud,
@@ -731,16 +731,16 @@ namespace BaselineTests
 			)json";
 			PointGpu::MixedTree conditionalMixedTree;
 			PointGpu::Options conditionalMixedOptions;
-			conditionalMixedOptions.device = 0;
-			conditionalMixedOptions.builder = "mixed";
+			conditionalMixedOptions._device = 0;
+			conditionalMixedOptions._builder = "mixed";
 			const PointCloud conditionalCloud = SyntheticPointClouds::generateUrbanMixed(64, 64, 4);
 			const PointGpu::BuildResult conditionalBuild = conditionalMixedTree.build(
 				conditionalCloud,
 				Config::parseSchemaConfig(conditionalSkipJson, "cuda_conditional_skip"),
 				conditionalMixedOptions);
-			expect(conditionalBuild.activeStructureSummary.find("KDTree") != std::string::npos,
+			expect(conditionalBuild._activeStructureSummary.find("KDTree") != std::string::npos,
 				"CUDA MixedTree skips failed conditional Octree block and enters KDTree block");
-			expect(conditionalBuild.activeStructureSummary.find("Octree") == std::string::npos,
+			expect(conditionalBuild._activeStructureSummary.find("Octree") == std::string::npos,
 				"CUDA MixedTree does not count skipped Octree block as active");
 
 			const std::filesystem::path knnWorkloadPath = tempRoot / "cuda_knn_workload.json";
@@ -760,17 +760,17 @@ namespace BaselineTests
 
 			const std::filesystem::path cudaKnnCsvPath = tempRoot / "cuda_knn_queries.csv";
 			Experiments::SchemaSearchOptions cudaKnnOptions;
-			cudaKnnOptions.schemaPaths = { "configs/schemas/gpu_mixed_all.json" };
-			cudaKnnOptions.workloadPaths = { knnWorkloadPath.string() };
-			cudaKnnOptions.includeBaselineSchemas = false;
-			cudaKnnOptions.csvPath = cudaKnnCsvPath.string();
-			cudaKnnOptions.bestCsvPath.clear();
-			cudaKnnOptions.syntheticScale = 64;
-			cudaKnnOptions.queryCountOverride = 5;
-			cudaKnnOptions.evaluator = "cuda";
-			cudaKnnOptions.cuda.device = 0;
-			cudaKnnOptions.cuda.builder = "mixed";
-			cudaKnnOptions.pauseAtEnd = false;
+			cudaKnnOptions._schemaPaths = { "configs/schemas/gpu_mixed_all.json" };
+			cudaKnnOptions._workloadPaths = { knnWorkloadPath.string() };
+			cudaKnnOptions._includeBaselineSchemas = false;
+			cudaKnnOptions._csvPath = cudaKnnCsvPath.string();
+			cudaKnnOptions._bestCsvPath.clear();
+			cudaKnnOptions._syntheticScale = 64;
+			cudaKnnOptions._queryCountOverride = 5;
+			cudaKnnOptions._evaluator = "cuda";
+			cudaKnnOptions._cuda._device = 0;
+			cudaKnnOptions._cuda._builder = "mixed";
+			cudaKnnOptions._pauseAtEnd = false;
 			expect(Experiments::runSchemaSearch(cudaKnnOptions) == 0, "schema search CUDA KNN workload succeeds");
 
 			std::ifstream cudaKnnCsv(cudaKnnCsvPath);
@@ -813,17 +813,17 @@ namespace BaselineTests
 			std::filesystem::remove(cachePath, rmError);
 
 			Experiments::WorkloadProfile workload;
-			workload.name = "mixed";
-			workload.rangeWeight = 0.4;
-			workload.radiusWeight = 0.3;
-			workload.knnWeight = 0.3;
-			workload.numQueries = 16;
-			workload.knnK = 8;
-			workload.querySeed = 42;
-			workload.rangeScaleMin = 0.01;
-			workload.rangeScaleMax = 0.05;
-			workload.radiusScaleMin = 0.01;
-			workload.radiusScaleMax = 0.04;
+			workload._name = "mixed";
+			workload._rangeWeight = 0.4;
+			workload._radiusWeight = 0.3;
+			workload._knnWeight = 0.3;
+			workload._numQueries = 16;
+			workload._knnK = 8;
+			workload._querySeed = 42;
+			workload._rangeScaleMin = 0.01;
+			workload._rangeScaleMax = 0.05;
+			workload._radiusScaleMin = 0.01;
+			workload._radiusScaleMax = 0.04;
 
 			Experiments::ScoreWeights weights;
 			const glm::vec3 bboxMin(0.0f, 0.0f, 0.0f);
@@ -832,27 +832,27 @@ namespace BaselineTests
 				"oct4_l64_kd3_l32", "synthetic_flat", 1234, bboxMin, bboxMax, workload, "cpu", "", weights);
 
 			Experiments::SchemaSearchRecord record;
-			record.datasetName = "synthetic_flat";
-			record.workloadName = workload.name;
-			record.schemaName = "oct4_l64_kd3_l32";
-			record.score = 1.75;
-			record.buildMetrics.buildTimeMs = 42.0;
-			record.buildMetrics.numNodes = 17;
-			record.queryMetrics.averageLatencyMs = 0.5;
-			record.queryMetrics.averageVisitedNodes = 12.5;
-			record.queryMetrics.totalQueries = 16;
-			record.rangeMetrics.totalQueries = 6;
-			record.rangeMetrics.averageVisitedNodes = 8.0;
-			record.knnMetrics.totalQueries = 4;
-			record.knnMetrics.averageTestedPoints = 64.0;
-			record.backend = "cpu";
-			record.scoreMode = "latency";
-			record.scoreStage = "final";
-			record.scoreIsFinalLatency = true;
-			record.isBaseline = true;
-			record.activeStructureTypes = 2;
-			record.nestedActiveFraction = 0.25;
-			record.activeStructureSummary = "ot:nodes=10|points=900;kd:nodes=4|points=100";
+			record._datasetName = "synthetic_flat";
+			record._workloadName = workload._name;
+			record._schemaName = "oct4_l64_kd3_l32";
+			record._score = 1.75;
+			record._buildMetrics._buildTimeMs = 42.0;
+			record._buildMetrics._numNodes = 17;
+			record._queryMetrics._averageLatencyMs = 0.5;
+			record._queryMetrics._averageVisitedNodes = 12.5;
+			record._queryMetrics._totalQueries = 16;
+			record._rangeMetrics._totalQueries = 6;
+			record._rangeMetrics._averageVisitedNodes = 8.0;
+			record._knnMetrics._totalQueries = 4;
+			record._knnMetrics._averageTestedPoints = 64.0;
+			record._backend = "cpu";
+			record._scoreMode = "latency";
+			record._scoreStage = "final";
+			record._scoreIsFinalLatency = true;
+			record._isBaseline = true;
+			record._activeStructureTypes = 2;
+			record._nestedActiveFraction = 0.25;
+			record._activeStructureSummary = "ot:nodes=10|points=900;kd:nodes=4|points=100";
 
 			{
 				Experiments::EvaluationCache cache;
@@ -868,40 +868,40 @@ namespace BaselineTests
 				expect(cache.entryCount() == 1, "evaluation cache loads prior entry from disk");
 
 				Experiments::SchemaSearchRecord roundTrip;
-				roundTrip.datasetName = "caller-set name";
-				roundTrip.schemaName = "caller-set schema";
-				roundTrip.isBaseline = true;
-				roundTrip.weights.lambdaMemory = 0.5;
-				roundTrip.scoreMode = "latency";
-				roundTrip.scoreStage = "confirm";
-				roundTrip.scoreIsFinalLatency = true;
-				roundTrip.pointFeatures.numPoints = 999;
+				roundTrip._datasetName = "caller-set name";
+				roundTrip._schemaName = "caller-set schema";
+				roundTrip._isBaseline = true;
+				roundTrip._weights._lambdaMemory = 0.5;
+				roundTrip._scoreMode = "latency";
+				roundTrip._scoreStage = "confirm";
+				roundTrip._scoreIsFinalLatency = true;
+				roundTrip._pointFeatures._numPoints = 999;
 				expect(cache.tryGet(key, roundTrip), "evaluation cache hit on identical key");
-				expect(nearlyEqual(roundTrip.score, 1.75), "cache restores score");
-				expect(nearlyEqual(roundTrip.buildMetrics.buildTimeMs, 42.0), "cache restores build metrics");
-				expect(roundTrip.buildMetrics.numNodes == 17, "cache restores build node count");
-				expect(nearlyEqual(roundTrip.queryMetrics.averageVisitedNodes, 12.5), "cache restores visit counts");
-				expect(roundTrip.rangeMetrics.totalQueries == 6, "cache restores range-family query count");
-				expect(nearlyEqual(roundTrip.rangeMetrics.averageVisitedNodes, 8.0), "cache restores range-family metrics");
-				expect(roundTrip.knnMetrics.totalQueries == 4, "cache restores knn-family query count");
-				expect(nearlyEqual(roundTrip.knnMetrics.averageTestedPoints, 64.0), "cache restores knn-family metrics");
-				expect(roundTrip.backend == "cpu", "cache restores backend");
-				expect(roundTrip.isBaseline, "cache preserves caller baseline marker");
-				expect(roundTrip.scoreMode == "latency", "cache preserves caller score mode");
-				expect(roundTrip.scoreStage == "confirm", "cache preserves caller score stage");
-				expect(roundTrip.scoreIsFinalLatency, "cache preserves caller final-latency marker");
-				expect(roundTrip.activeStructureTypes == 2, "cache restores active structure type count");
-				expect(nearlyEqual(roundTrip.nestedActiveFraction, 0.25), "cache restores nested active fraction");
-				expect(roundTrip.activeStructureSummary.find("kd:nodes") != std::string::npos,
+				expect(nearlyEqual(roundTrip._score, 1.75), "cache restores score");
+				expect(nearlyEqual(roundTrip._buildMetrics._buildTimeMs, 42.0), "cache restores build metrics");
+				expect(roundTrip._buildMetrics._numNodes == 17, "cache restores build node count");
+				expect(nearlyEqual(roundTrip._queryMetrics._averageVisitedNodes, 12.5), "cache restores visit counts");
+				expect(roundTrip._rangeMetrics._totalQueries == 6, "cache restores range-family query count");
+				expect(nearlyEqual(roundTrip._rangeMetrics._averageVisitedNodes, 8.0), "cache restores range-family metrics");
+				expect(roundTrip._knnMetrics._totalQueries == 4, "cache restores knn-family query count");
+				expect(nearlyEqual(roundTrip._knnMetrics._averageTestedPoints, 64.0), "cache restores knn-family metrics");
+				expect(roundTrip._backend == "cpu", "cache restores backend");
+				expect(roundTrip._isBaseline, "cache preserves caller baseline marker");
+				expect(roundTrip._scoreMode == "latency", "cache preserves caller score mode");
+				expect(roundTrip._scoreStage == "confirm", "cache preserves caller score stage");
+				expect(roundTrip._scoreIsFinalLatency, "cache preserves caller final-latency marker");
+				expect(roundTrip._activeStructureTypes == 2, "cache restores active structure type count");
+				expect(nearlyEqual(roundTrip._nestedActiveFraction, 0.25), "cache restores nested active fraction");
+				expect(roundTrip._activeStructureSummary.find("kd:nodes") != std::string::npos,
 					"cache restores active structure summary");
-				expect(roundTrip.datasetName == "caller-set name", "cache preserves caller dataset name");
-				expect(roundTrip.schemaName == "caller-set schema", "cache preserves caller schema name");
-				expect(nearlyEqual(roundTrip.weights.lambdaMemory, 0.5), "cache preserves caller weights");
-				expect(roundTrip.pointFeatures.numPoints == 999, "cache preserves caller point features");
+				expect(roundTrip._datasetName == "caller-set name", "cache preserves caller dataset name");
+				expect(roundTrip._schemaName == "caller-set schema", "cache preserves caller schema name");
+				expect(nearlyEqual(roundTrip._weights._lambdaMemory, 0.5), "cache preserves caller weights");
+				expect(roundTrip._pointFeatures._numPoints == 999, "cache preserves caller point features");
 				expect(cache.hitCount() == 1, "cache counts hit");
 
 				Experiments::WorkloadProfile differentWorkload = workload;
-				differentWorkload.querySeed = 7;
+				differentWorkload._querySeed = 7;
 				const Experiments::EvaluationCacheKey missKey = Experiments::makeEvaluationCacheKey(
 					"oct4_l64_kd3_l32", "synthetic_flat", 1234, bboxMin, bboxMax, differentWorkload, "cpu", "", weights);
 				Experiments::SchemaSearchRecord missRecord;
@@ -919,17 +919,17 @@ namespace BaselineTests
 			const std::filesystem::path baselineCsv = baselineRoot / "baseline_search.csv";
 
 			Experiments::SchemaSearchOptions baselineOptions;
-			baselineOptions.workloadPaths = { "configs/workloads/volume_small_medium.json" };
-			baselineOptions.csvPath = baselineCsv.string();
-			baselineOptions.bestCsvPath.clear();
-			baselineOptions.syntheticScale = 64;
-			baselineOptions.queryCountOverride = 4;
-			baselineOptions.evaluator = "cpu";
-			baselineOptions.pauseAtEnd = false;
-			baselineOptions.includeConfiguredSchemas = false;
-			baselineOptions.generation.count = 4;
-			baselineOptions.generation.outputDirectory = (baselineRoot / "generated").string();
-			baselineOptions.includeBaselineSchemas = true;
+			baselineOptions._workloadPaths = { "configs/workloads/volume_small_medium.json" };
+			baselineOptions._csvPath = baselineCsv.string();
+			baselineOptions._bestCsvPath.clear();
+			baselineOptions._syntheticScale = 64;
+			baselineOptions._queryCountOverride = 4;
+			baselineOptions._evaluator = "cpu";
+			baselineOptions._pauseAtEnd = false;
+			baselineOptions._includeConfiguredSchemas = false;
+			baselineOptions._generation._count = 4;
+			baselineOptions._generation._outputDirectory = (baselineRoot / "generated").string();
+			baselineOptions._includeBaselineSchemas = true;
 			expect(Experiments::runSchemaSearch(baselineOptions) == 0, "schema search runs with baselines + generated");
 
 			std::ifstream baselineCsvStream(baselineCsv);
@@ -969,109 +969,109 @@ namespace BaselineTests
 		// Multi-fidelity cache dedup: fingerprints must distinguish visit-proxy and latency rungs for the same tuple.
 		{
 			Experiments::WorkloadProfile workload;
-			workload.name = "rung_workload";
-			workload.numQueries = 8;
-			workload.knnK = 4;
-			workload.querySeed = 99;
-			workload.rangeWeight = 0.5;
-			workload.radiusWeight = 0.3;
-			workload.knnWeight = 0.2;
-			workload.rangeScaleMin = 0.01;
-			workload.rangeScaleMax = 0.05;
-			workload.radiusScaleMin = 0.01;
-			workload.radiusScaleMax = 0.04;
+			workload._name = "rung_workload";
+			workload._numQueries = 8;
+			workload._knnK = 4;
+			workload._querySeed = 99;
+			workload._rangeWeight = 0.5;
+			workload._radiusWeight = 0.3;
+			workload._knnWeight = 0.2;
+			workload._rangeScaleMin = 0.01;
+			workload._rangeScaleMax = 0.05;
+			workload._radiusScaleMin = 0.01;
+			workload._radiusScaleMax = 0.04;
 
 			const glm::vec3 bboxMin(-1.0f, -1.0f, -1.0f);
 			const glm::vec3 bboxMax(1.0f, 1.0f, 1.0f);
 
 			Experiments::ScoreWeights latencyWeights;
 			Experiments::ScoreWeights proxyWeights;
-			proxyWeights.useVisitProxy = true;
-			proxyWeights.visitProxyAlpha = 0.1;
+			proxyWeights._useVisitProxy = true;
+			proxyWeights._visitProxyAlpha = 0.1;
 
 			const Experiments::EvaluationCacheKey latencyKey = Experiments::makeEvaluationCacheKey(
 				"sig", "rung_ds", 2048, bboxMin, bboxMax, workload, "cpu", "", latencyWeights);
 			const Experiments::EvaluationCacheKey proxyKey = Experiments::makeEvaluationCacheKey(
 				"sig", "rung_ds", 2048, bboxMin, bboxMax, workload, "cpu", "", proxyWeights);
-			expect(latencyKey.evaluatorFingerprint != proxyKey.evaluatorFingerprint,
+			expect(latencyKey._evaluatorFingerprint != proxyKey._evaluatorFingerprint,
 				"cache fingerprint distinguishes visit-proxy from latency for same workload");
 
 			Experiments::ScoreWeights proxyWeightsOtherAlpha = proxyWeights;
-			proxyWeightsOtherAlpha.visitProxyAlpha = 0.5;
+			proxyWeightsOtherAlpha._visitProxyAlpha = 0.5;
 			const Experiments::EvaluationCacheKey otherAlphaKey = Experiments::makeEvaluationCacheKey(
 				"sig", "rung_ds", 2048, bboxMin, bboxMax, workload, "cpu", "", proxyWeightsOtherAlpha);
-			expect(otherAlphaKey.evaluatorFingerprint != proxyKey.evaluatorFingerprint,
+			expect(otherAlphaKey._evaluatorFingerprint != proxyKey._evaluatorFingerprint,
 				"cache fingerprint distinguishes visit-proxy alpha values");
 
 			// Query count overrides must produce distinct cache entries at the same fidelity mode.
 			Experiments::WorkloadProfile longWorkload = workload;
-			longWorkload.numQueries = 64;
+			longWorkload._numQueries = 64;
 			const Experiments::EvaluationCacheKey shortKey = Experiments::makeEvaluationCacheKey(
 				"sig", "rung_ds", 2048, bboxMin, bboxMax, workload, "cpu", "", latencyWeights);
 			const Experiments::EvaluationCacheKey longKey = Experiments::makeEvaluationCacheKey(
 				"sig", "rung_ds", 2048, bboxMin, bboxMax, longWorkload, "cpu", "", latencyWeights);
-			expect(shortKey.workloadFingerprint != longKey.workloadFingerprint,
+			expect(shortKey._workloadFingerprint != longKey._workloadFingerprint,
 				"cache fingerprint distinguishes rungs by effective query count");
 		}
 
 		// RungSchedule plumbs through SchemaSearchOptions and survives struct copy/move.
 		{
 			Experiments::SchemaSearchOptions options;
-			expect(options.evolution.rungSchedule.rungs.empty(),
+			expect(options._evolution._rungSchedule._rungs.empty(),
 				"default rung schedule is empty (flat GA)");
 
 			Experiments::RungSpec proxy;
-			proxy.name = "proxy";
-			proxy.queryCountOverride = 4;
-			proxy.useVisitProxy = true;
-			proxy.visitProxyAlpha = 0.2;
-			proxy.advanceTopK = 32;
+			proxy._name = "proxy";
+			proxy._queryCountOverride = 4;
+			proxy._useVisitProxy = true;
+			proxy._visitProxyAlpha = 0.2;
+			proxy._advanceTopK = 32;
 
 			Experiments::RungSpec confirm;
-			confirm.name = "confirm";
-			confirm.queryCountOverride = 64;
-			confirm.useVisitProxy = false;
-			confirm.advanceTopK = 0;
+			confirm._name = "confirm";
+			confirm._queryCountOverride = 64;
+			confirm._useVisitProxy = false;
+			confirm._advanceTopK = 0;
 
-			options.evolution.rungSchedule.rungs = { proxy, confirm };
-			options.evolution.rungSchedule.surrogateProposalsPerStep = 4;
-			options.evolution.rungSchedule.surrogateCandidatePool = 32;
+			options._evolution._rungSchedule._rungs = { proxy, confirm };
+			options._evolution._rungSchedule._surrogateProposalsPerStep = 4;
+			options._evolution._rungSchedule._surrogateCandidatePool = 32;
 
 			Experiments::SchemaSearchOptions copied = options;
-			expect(copied.evolution.rungSchedule.rungs.size() == 2,
+			expect(copied._evolution._rungSchedule._rungs.size() == 2,
 				"rung schedule survives SchemaSearchOptions copy");
-			expect(copied.evolution.rungSchedule.rungs[0].useVisitProxy,
+			expect(copied._evolution._rungSchedule._rungs[0]._useVisitProxy,
 				"first rung is the visit-proxy stage");
-			expect(!copied.evolution.rungSchedule.rungs[1].useVisitProxy,
+			expect(!copied._evolution._rungSchedule._rungs[1]._useVisitProxy,
 				"second rung is the latency confirmation stage");
-			expect(copied.evolution.rungSchedule.rungs[0].advanceTopK == 32,
+			expect(copied._evolution._rungSchedule._rungs[0]._advanceTopK == 32,
 				"rung schedule survivor count round-trips");
-			expect(copied.evolution.rungSchedule.surrogateProposalsPerStep == 4,
+			expect(copied._evolution._rungSchedule._surrogateProposalsPerStep == 4,
 				"surrogate proposal count round-trips");
 		}
 
 		// ThresholdRefiner: dims are discovered, the (1+lambda)-ES lowers the score, and minPoints stays in range.
 		{
 			Experiments::SchemaCandidate seed;
-			seed.config.name = "ot_with_conditional_kd";
-			seed.config.levels.resize(2);
-			seed.config.levels[0].type = MultiDataStructure::DataStructureLevel::OctreeNode;
-			seed.config.levels[0].typeName = "Octree";
-			seed.config.levels[0].numLevels = 4;
-			seed.config.levels[0].leafCapacity = 64;
-			seed.config.levels[1].type = MultiDataStructure::DataStructureLevel::KDTreeNode;
-			seed.config.levels[1].typeName = "KDTree";
-			seed.config.levels[1].numLevels = 3;
-			seed.config.levels[1].leafCapacity = 32;
-			seed.config.levels[1].condition.minPoints = 4096;     // starting point — refiner should move it
-			seed.config.levels[1].condition.minHeightRatio = 0.3; // second active dim
-			seed.path = "test:seed";
+			seed._config._name = "ot_with_conditional_kd";
+			seed._config._levels.resize(2);
+			seed._config._levels[0]._type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			seed._config._levels[0]._typeName = "Octree";
+			seed._config._levels[0]._numLevels = 4;
+			seed._config._levels[0]._leafCapacity = 64;
+			seed._config._levels[1]._type = MultiDataStructure::DataStructureLevel::KDTreeNode;
+			seed._config._levels[1]._typeName = "KDTree";
+			seed._config._levels[1]._numLevels = 3;
+			seed._config._levels[1]._leafCapacity = 32;
+			seed._config._levels[1]._condition._minPoints = 4096;     // starting point — refiner should move it
+			seed._config._levels[1]._condition._minHeightRatio = 0.3; // second active dim
+			seed._path = "test:seed";
 
 			Experiments::ConditionDomain domain;
-			domain.pointThresholds = { 256, 512, 1024, 2048, 4096, 8192, 16384, 32768 };
-			domain.heightRatioThresholds = { 0.05, 0.1, 0.2, 0.4, 0.6, 0.8 };
-			domain.estimatedFromCloud = true;
-			domain.samplePoints = 64;
+			domain._pointThresholds = { 256, 512, 1024, 2048, 4096, 8192, 16384, 32768 };
+			domain._heightRatioThresholds = { 0.05, 0.1, 0.2, 0.4, 0.6, 0.8 };
+			domain._estimatedFromCloud = true;
+			domain._samplePoints = 64;
 
 			const std::vector<Experiments::RefinementDimension> dims =
 				Experiments::collectRefinementDimensions(seed, domain);
@@ -1086,7 +1086,7 @@ namespace BaselineTests
 					foundPoints = true;
 					expect(dim.integerValued && dim.logScale,
 						"minPoints uses integer + log-scale encoding");
-					expect(nearlyEqual(dim.lo, 256.0) && nearlyEqual(dim.hi, 32768.0),
+					expect(nearlyEqual(dim._lo, 256.0) && nearlyEqual(dim._hi, 32768.0),
 						"minPoints bounds come from the supplied domain");
 				}
 				else if (dim.field == "minHeightRatio")
@@ -1094,7 +1094,7 @@ namespace BaselineTests
 					foundHeight = true;
 					expect(!dim.integerValued && !dim.logScale,
 						"minHeightRatio uses continuous linear encoding");
-					expect(dim.lo < dim.hi && dim.lo >= 0.05 && dim.hi <= 0.8,
+					expect(dim._lo < dim._hi && dim._lo >= 0.05 && dim._hi <= 0.8,
 						"minHeightRatio bounds come from the supplied domain");
 				}
 			}
@@ -1103,47 +1103,47 @@ namespace BaselineTests
 
 			// Synthetic quadratic bowl minimised at minPoints ~ 1024 and minHeightRatio ~ 0.4.
 			auto syntheticScore = [&](const Experiments::SchemaCandidate& candidate) {
-				if (candidate.config.levels.size() < 2)
+				if (candidate._config._levels.size() < 2)
 					return 1.0e9;
-				const SchemaLevelCondition& c = candidate.config.levels[1].condition;
-				const double minP = c.minPoints.has_value() ? static_cast<double>(c.minPoints.value()) : 4096.0;
-				const double minH = c.minHeightRatio.value_or(0.3);
+				const SchemaLevelCondition& c = candidate._config._levels[1]._condition;
+				const double minP = c._minPoints.has_value() ? static_cast<double>(c._minPoints.value()) : 4096.0;
+				const double minH = c._minHeightRatio.value_or(0.3);
 				const double pointError = std::log2(std::max(minP, 1.0)) - std::log2(1024.0);
 				const double heightError = minH - 0.4;
 				return pointError * pointError + 12.0 * heightError * heightError;
 			};
 
 			Experiments::ThresholdRefinementOptions refineOptions;
-			refineOptions.enabled = true;
-			refineOptions.maxEvaluations = 50;
-			refineOptions.populationLambda = 5;
-			refineOptions.sigma0 = 0.4;
-			refineOptions.seed = 4242;
-			refineOptions.outputDirectory.clear();
+			refineOptions._enabled = true;
+			refineOptions._maxEvaluations = 50;
+			refineOptions._populationLambda = 5;
+			refineOptions._sigma0 = 0.4;
+			refineOptions._seed = 4242;
+			refineOptions._outputDirectory.clear();
 
 			const Experiments::ThresholdRefinementResult result =
 				Experiments::refineSchemaThresholds(seed, domain, refineOptions, syntheticScore);
-			expect(result.dimensions == 2, "refinement result reports 2 active dimensions");
-			expect(result.evaluationsUsed >= 6,
+			expect(result._dimensions == 2, "refinement result reports 2 active dimensions");
+			expect(result._evaluationsUsed >= 6,
 				"refinement consumes at least one generation worth of evaluations");
-			expect(result.refinedScore < result.initialScore,
+			expect(result._refinedScore < result._initialScore,
 				"refinement drives the synthetic objective below its starting value");
-			expect(result.refinedCandidate.config.levels.size() == 2,
+			expect(result._refinedCandidate._config._levels.size() == 2,
 				"refined candidate preserves discrete topology");
-			expect(result.refinedCandidate.config.levels[1].condition.minPoints.has_value(),
+			expect(result._refinedCandidate._config._levels[1]._condition._minPoints.has_value(),
 				"refined candidate still carries the minPoints threshold");
-			const size_t refinedMinPoints = result.refinedCandidate.config.levels[1].condition.minPoints.value();
+			const size_t refinedMinPoints = result._refinedCandidate._config._levels[1]._condition._minPoints.value();
 			expect(refinedMinPoints >= 256 && refinedMinPoints <= 32768,
 				"refined minPoints stays inside the supplied domain bounds");
-			expect(result.refinedCandidate.config.levels[1].condition.minHeightRatio.has_value(),
+			expect(result._refinedCandidate._config._levels[1]._condition._minHeightRatio.has_value(),
 				"refined candidate still carries the minHeightRatio threshold");
 
 			// Topology must be frozen: types, level counts, and leaf capacities are untouched.
-			expect(result.refinedCandidate.config.levels[0].typeName == seed.config.levels[0].typeName,
+			expect(result._refinedCandidate._config._levels[0]._typeName == seed._config._levels[0]._typeName,
 				"refinement does not change level types");
-			expect(result.refinedCandidate.config.levels[0].leafCapacity == seed.config.levels[0].leafCapacity,
+			expect(result._refinedCandidate._config._levels[0]._leafCapacity == seed._config._levels[0]._leafCapacity,
 				"refinement does not change leaf capacity");
-			expect(result.refinedCandidate.config.levels[1].numLevels == seed.config.levels[1].numLevels,
+			expect(result._refinedCandidate._config._levels[1]._numLevels == seed._config._levels[1]._numLevels,
 				"refinement does not change level counts");
 		}
 
@@ -1153,15 +1153,15 @@ namespace BaselineTests
 				const std::string& schemaName, double latencyMs, double buildMs,
 				size_t memoryBytes, double avgOccupancy, size_t maxOccupancy) {
 				Experiments::SchemaSearchRecord record;
-				record.datasetName = dataset;
-				record.workloadName = workload;
-				record.schemaName = schemaName;
-				record.queryMetrics.averageLatencyMs = latencyMs;
-				record.buildMetrics.buildTimeMs = buildMs;
-				record.buildMetrics.memoryEstimateBytes = memoryBytes;
-				record.buildMetrics.averageLeafOccupancy = avgOccupancy;
-				record.buildMetrics.maxLeafOccupancy = maxOccupancy;
-				record.score = latencyMs;
+				record._datasetName = dataset;
+				record._workloadName = workload;
+				record._schemaName = schemaName;
+				record._queryMetrics._averageLatencyMs = latencyMs;
+				record._buildMetrics._buildTimeMs = buildMs;
+				record._buildMetrics._memoryEstimateBytes = memoryBytes;
+				record._buildMetrics._averageLeafOccupancy = avgOccupancy;
+				record._buildMetrics._maxLeafOccupancy = maxOccupancy;
+				record._score = latencyMs;
 				return record;
 			};
 
@@ -1189,36 +1189,36 @@ namespace BaselineTests
 			double previousLatency = -1.0;
 			for (const Experiments::SchemaSearchRecord& entry : front)
 			{
-				if (entry.datasetName == "ds_a")
+				if (entry._datasetName == "ds_a")
 				{
 					++groupA;
-					expect(entry.paretoRank >= 0, "front entry carries non-negative paretoRank");
-					if (previousLatencyRank == -1 || entry.paretoRank == 0)
+					expect(entry._paretoRank >= 0, "front entry carries non-negative paretoRank");
+					if (previousLatencyRank == -1 || entry._paretoRank == 0)
 					{
-						previousLatency = entry.queryMetrics.averageLatencyMs;
-						previousLatencyRank = entry.paretoRank;
+						previousLatency = entry._queryMetrics._averageLatencyMs;
+						previousLatencyRank = entry._paretoRank;
 					}
 					else
 					{
-						expect(entry.queryMetrics.averageLatencyMs >= previousLatency,
+						expect(entry._queryMetrics._averageLatencyMs >= previousLatency,
 							"pareto front sorted by ascending latency within group");
-						previousLatency = entry.queryMetrics.averageLatencyMs;
+						previousLatency = entry._queryMetrics._averageLatencyMs;
 					}
-					if (entry.schemaName == "dominated")
+					if (entry._schemaName == "dominated")
 						sawDominated = true;
-					if (entry.schemaName == "tiny")
+					if (entry._schemaName == "tiny")
 						sawTiny = true;
-					if (entry.schemaName == "fast_big")
+					if (entry._schemaName == "fast_big")
 						sawFast = true;
-					if (entry.schemaName == "balanced")
+					if (entry._schemaName == "balanced")
 						sawBalanced = true;
-					if (entry.schemaName == "matches_balanced")
+					if (entry._schemaName == "matches_balanced")
 						sawCofront = true;
 				}
-				else if (entry.datasetName == "ds_b")
+				else if (entry._datasetName == "ds_b")
 				{
 					++groupB;
-					expect(entry.paretoRank == 0, "single-entry group ranks the lone candidate at 0");
+					expect(entry._paretoRank == 0, "single-entry group ranks the lone candidate at 0");
 				}
 			}
 
@@ -1227,7 +1227,7 @@ namespace BaselineTests
 			expect(sawCofront, "candidate with identical metrics to the balanced one is co-front (no strict domination)");
 			expect(groupA == 4, "ds_a front contains 4 non-dominated rows (fast_big, balanced, matches_balanced, tiny)");
 			expect(groupB == 1, "ds_b front contains the single measured candidate");
-			expect(front.front().paretoRank == 0, "first row of returned front is rank 0");
+			expect(front.front()._paretoRank == 0, "first row of returned front is rank 0");
 		}
 
 		// Bootstrap mean + 95% CI helper.
@@ -1266,17 +1266,17 @@ namespace BaselineTests
 				size_t memoryBytes, double avgOccupancy, size_t maxOccupancy,
 				size_t confirmSeeds, double latencyMean) {
 				Experiments::SchemaSearchRecord record;
-				record.datasetName = "ds";
-				record.workloadName = "wl";
-				record.schemaName = schemaName;
-				record.queryMetrics.averageLatencyMs = latencyMs;
-				record.buildMetrics.buildTimeMs = buildMs;
-				record.buildMetrics.memoryEstimateBytes = memoryBytes;
-				record.buildMetrics.averageLeafOccupancy = avgOccupancy;
-				record.buildMetrics.maxLeafOccupancy = maxOccupancy;
-				record.score = latencyMs;
-				record.confirmSeedsUsed = confirmSeeds;
-				record.latencyMean = latencyMean;
+				record._datasetName = "ds";
+				record._workloadName = "wl";
+				record._schemaName = schemaName;
+				record._queryMetrics._averageLatencyMs = latencyMs;
+				record._buildMetrics._buildTimeMs = buildMs;
+				record._buildMetrics._memoryEstimateBytes = memoryBytes;
+				record._buildMetrics._averageLeafOccupancy = avgOccupancy;
+				record._buildMetrics._maxLeafOccupancy = maxOccupancy;
+				record._score = latencyMs;
+				record._confirmSeedsUsed = confirmSeeds;
+				record._latencyMean = latencyMean;
 				return record;
 			};
 
@@ -1291,8 +1291,8 @@ namespace BaselineTests
 			bool sawStable = false;
 			for (const auto& entry : front)
 			{
-				if (entry.schemaName == "noisy_lucky") sawNoisy = true;
-				if (entry.schemaName == "stable")      sawStable = true;
+				if (entry._schemaName == "noisy_lucky") sawNoisy = true;
+				if (entry._schemaName == "stable")      sawStable = true;
 			}
 			expect(sawStable, "stable candidate (best confirmed mean) survives the Pareto front");
 			expect(!sawNoisy, "noisy single-seed lucky candidate is dominated by the confirmed mean");
@@ -1301,18 +1301,18 @@ namespace BaselineTests
 		// Candidates with no conditional levels short-circuit: no evaluations, candidate unchanged.
 		{
 			Experiments::SchemaCandidate flat;
-			flat.config.name = "octree_flat";
-			flat.config.levels.resize(1);
-			flat.config.levels[0].type = MultiDataStructure::DataStructureLevel::OctreeNode;
-			flat.config.levels[0].typeName = "Octree";
-			flat.config.levels[0].numLevels = 6;
-			flat.config.levels[0].leafCapacity = 1024;
+			flat._config._name = "octree_flat";
+			flat._config._levels.resize(1);
+			flat._config._levels[0]._type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			flat._config._levels[0]._typeName = "Octree";
+			flat._config._levels[0]._numLevels = 6;
+			flat._config._levels[0]._leafCapacity = 1024;
 
 			Experiments::ConditionDomain emptyDomain;
 			Experiments::ThresholdRefinementOptions refineOptions;
-			refineOptions.enabled = true;
-			refineOptions.maxEvaluations = 20;
-			refineOptions.outputDirectory.clear();
+			refineOptions._enabled = true;
+			refineOptions._maxEvaluations = 20;
+			refineOptions._outputDirectory.clear();
 
 			size_t evalCount = 0;
 			auto trackedScore = [&](const Experiments::SchemaCandidate&) {
@@ -1322,9 +1322,9 @@ namespace BaselineTests
 
 			const Experiments::ThresholdRefinementResult result =
 				Experiments::refineSchemaThresholds(flat, emptyDomain, refineOptions, trackedScore);
-			expect(result.dimensions == 0, "no active dims when no conditional levels exist");
+			expect(result._dimensions == 0, "no active dims when no conditional levels exist");
 			expect(evalCount <= 1, "refiner does not waste evaluations on a flat candidate");
-			expect(result.refinedCandidate.config.name == flat.config.name,
+			expect(result._refinedCandidate._config._name == flat._config._name,
 				"flat candidate is returned unchanged");
 		}
 
@@ -1333,15 +1333,15 @@ namespace BaselineTests
 			auto makeRecord = [](const std::string& schema, double avgLatency, size_t repeats,
 				double ciLow, double ciHigh) {
 				Experiments::SchemaSearchRecord r;
-				r.datasetName = "ds";
-				r.workloadName = "wl";
-				r.schemaName = schema;
-				r.queryMetrics.averageLatencyMs = avgLatency;
-				r.queryMetrics.latencyMeanMs = avgLatency;
-				r.queryMetrics.measurementRepeats = repeats;
-				r.queryMetrics.latencyCiLowMs = ciLow;
-				r.queryMetrics.latencyCiHighMs = ciHigh;
-				r.score = avgLatency;
+				r._datasetName = "ds";
+				r._workloadName = "wl";
+				r._schemaName = schema;
+				r._queryMetrics._averageLatencyMs = avgLatency;
+				r._queryMetrics._latencyMeanMs = avgLatency;
+				r._queryMetrics._measurementRepeats = repeats;
+				r._queryMetrics._latencyCiLowMs = ciLow;
+				r._queryMetrics._latencyCiHighMs = ciHigh;
+				r._score = avgLatency;
 				return r;
 			};
 
@@ -1360,17 +1360,17 @@ namespace BaselineTests
 
 			std::vector<Experiments::SchemaSearchRecord> separable = { slow, fast };
 			Experiments::annotateRankingConfidence(separable);
-			expect(separable[0].rankingConfident && separable[1].rankingConfident,
+			expect(separable[0]._rankingConfident && separable[1]._rankingConfident,
 				"group with separable winner is flagged confident on all rows");
 
 			std::vector<Experiments::SchemaSearchRecord> overlapping = { overlapA, overlapB };
 			Experiments::annotateRankingConfidence(overlapping);
-			expect(!overlapping[0].rankingConfident && !overlapping[1].rankingConfident,
+			expect(!overlapping[0]._rankingConfident && !overlapping[1]._rankingConfident,
 				"group with overlapping winner is not flagged confident");
 
 			std::vector<Experiments::SchemaSearchRecord> lone = { fast };
 			Experiments::annotateRankingConfidence(lone);
-			expect(lone[0].rankingConfident, "single-candidate group is trivially confident");
+			expect(lone[0]._rankingConfident, "single-candidate group is trivially confident");
 		}
 
 		// Spearman rank correlation used by the proxy/latency validation report.
@@ -1391,12 +1391,12 @@ namespace BaselineTests
 		{
 			auto mk = [](const std::string& name, double latency, double build) {
 				Experiments::SchemaSearchRecord r;
-				r.datasetName = "ds";
-				r.workloadName = "wl";
-				r.schemaName = name;
-				r.queryMetrics.averageLatencyMs = latency;
-				r.buildMetrics.buildTimeMs = build;
-				r.buildMetrics.memoryEstimateBytes = 1000; // equal memory + imbalance across all
+				r._datasetName = "ds";
+				r._workloadName = "wl";
+				r._schemaName = name;
+				r._queryMetrics._averageLatencyMs = latency;
+				r._buildMetrics._buildTimeMs = build;
+				r._buildMetrics._memoryEstimateBytes = 1000; // equal memory + imbalance across all
 				return r;
 			};
 
@@ -1411,10 +1411,10 @@ namespace BaselineTests
 			std::string fastest;
 			for (const Experiments::SchemaSearchRecord& r : frontRecords)
 			{
-				if (r.paretoKnee)
-					knee = r.schemaName;
-				if (r.paretoRank == 0)
-					fastest = r.schemaName;
+				if (r._paretoKnee)
+					knee = r._schemaName;
+				if (r._paretoRank == 0)
+					fastest = r._schemaName;
 			}
 			expect(knee == "balanced", "pareto knee is the balanced compromise");
 			expect(fastest == "fast", "pareto rank 0 is the lowest-latency entry");
@@ -1423,21 +1423,21 @@ namespace BaselineTests
 		// Zero-build query-cost estimate: coarser leaves cost more despite fewer nodes; a structureless schema estimates a full scan.
 		{
 			Experiments::PointCloudFeatures features;
-			features.numPoints = 1000000;
+			features._numPoints = 1000000;
 			Experiments::WorkloadFeatures workload;
-			workload.queryScaleMean = 0.1;
-			workload.wRange = 1.0;
+			workload._queryScaleMean = 0.1;
+			workload._wRange = 1.0;
 
 			auto octreeWithCapacity = [](size_t cap) {
 				SchemaConfig schema;
-				schema.name = "octree_cap";
+				schema._name = "octree_cap";
 				SchemaLevelConfig level;
-				level.primitiveKind = SchemaPrimitiveKind::Octree;
-				level.typeName = "Octree";
-				level.numLevels = 10;
-				level.leafCapacity = cap;
-				schema.levels.push_back(level);
-				schema.buildPolicy.leafCapacity = cap;
+				level._primitiveKind = SchemaPrimitiveKind::Octree;
+				level._typeName = "Octree";
+				level._numLevels = 10;
+				level._leafCapacity = cap;
+				schema._levels.push_back(level);
+				schema._buildPolicy._leafCapacity = cap;
 				return schema;
 			};
 
@@ -1447,7 +1447,7 @@ namespace BaselineTests
 			expect(coarse > fine, "coarser leaves test more points per query (higher estimated cost)");
 
 			SchemaConfig empty;
-			empty.name = "empty";
+			empty._name = "empty";
 			expect(nearlyEqual(Experiments::estimateSchemaQueryCost(empty, features, workload, 0.1), 1000000.0),
 				"structureless schema estimates a full scan");
 		}

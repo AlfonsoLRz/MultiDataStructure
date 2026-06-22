@@ -10,44 +10,44 @@ namespace Experiments
 {
 	struct CandidatePrediction
 	{
-		std::string schemaName;
-		std::string schemaPath;
-		double predictedScore = 0.0;
+		std::string _schemaName;
+		std::string _schemaPath;
+		double _predictedScore = 0.0;
 	};
 
 	struct SchemaSelection
 	{
-		std::string modelPath;
-		std::string workloadProfilePath;
-		std::string schemaName;
-		std::string schemaPath;
-		double predictedScore = 0.0;
-		bool measuredScore = false;
-		std::vector<CandidatePrediction> candidates;
+		std::string _modelPath;
+		std::string _workloadProfilePath;
+		std::string _schemaName;
+		std::string _schemaPath;
+		double _predictedScore = 0.0;
+		bool _measuredScore = false;
+		std::vector<CandidatePrediction> _candidates;
 	};
 
 	struct SchemaSelectorModel
 	{
-		std::string modelType;
-		std::string sourceModel;
-		bool measuredBestSelector = false;
-		bool onnxScoreRanker = false;
-		std::string measuredDatasetName;
-		std::string measuredDatasetPath;
-		std::string measuredWorkloadName;
-		std::string fixedSchemaName;
-		std::string fixedSchemaPath;
-		double fixedMeasuredScore = 0.0;
-		std::vector<CandidatePrediction> measuredCandidates;
-		std::string onnxModelPath;
-		std::string onnxInputName = "features";
-		std::string onnxOutputName = "score";
-		std::string onnxExecutionProvider = "cpu";
-		int onnxDeviceId = 0;
-		std::vector<std::string> featureNames;
-		std::vector<double> coefficients;
-		double intercept = 0.0;
-		std::vector<SchemaCandidate> candidates;
+		std::string _modelType;
+		std::string _sourceModel;
+		bool _measuredBestSelector = false;
+		bool _onnxScoreRanker = false;
+		std::string _measuredDatasetName;
+		std::string _measuredDatasetPath;
+		std::string _measuredWorkloadName;
+		std::string _fixedSchemaName;
+		std::string _fixedSchemaPath;
+		double _fixedMeasuredScore = 0.0;
+		std::vector<CandidatePrediction> _measuredCandidates;
+		std::string _onnxModelPath;
+		std::string _onnxInputName = "features";
+		std::string _onnxOutputName = "score";
+		std::string _onnxExecutionProvider = "cpu";
+		int _onnxDeviceId = 0;
+		std::vector<std::string> _featureNames;
+		std::vector<double> _coefficients;
+		double _intercept = 0.0;
+		std::vector<SchemaCandidate> _candidates;
 	};
 
 	SchemaSelectorModel loadSchemaSelectorModel(const std::string& filename);

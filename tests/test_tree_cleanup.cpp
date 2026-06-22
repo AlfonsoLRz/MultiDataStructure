@@ -94,24 +94,24 @@ namespace BaselineTests
 		index.build(primitives, 2, AABB(glm::vec3(-1.0f), glm::vec3(1.0f)));
 
 		MultiDataStructure::Stats stats = index.getStats();
-		expect(stats.numNodes == 3, "build creates a root and two children before cleanup");
-		expect(stats.numLeaves == 2, "build leaves one populated and one empty child before cleanup");
-		expect(stats.numPrimitives == 2, "build keeps both primitives in the populated child");
+		expect(stats._numNodes == 3, "build creates a root and two children before cleanup");
+		expect(stats._numLeaves == 2, "build leaves one populated and one empty child before cleanup");
+		expect(stats._numPrimitives == 2, "build keeps both primitives in the populated child");
 
 		glm::uint deletedNodes = 0;
 		index.removeEmptyNodes(deletedNodes);
 		expect(deletedNodes == 1, "removeEmptyNodes deletes the empty child");
 
 		stats = index.getStats();
-		expect(stats.numNodes == 2, "removeEmptyNodes keeps the root and populated child");
-		expect(stats.numLeaves == 1, "removeEmptyNodes leaves a single populated leaf");
-		expect(stats.numPrimitives == 2, "removeEmptyNodes preserves primitive membership");
+		expect(stats._numNodes == 2, "removeEmptyNodes keeps the root and populated child");
+		expect(stats._numLeaves == 1, "removeEmptyNodes leaves a single populated leaf");
+		expect(stats._numPrimitives == 2, "removeEmptyNodes preserves primitive membership");
 
 		index.collapseNodes();
 		stats = index.getStats();
-		expect(stats.numNodes == 1, "collapseNodes replaces the root with its only child");
-		expect(stats.numLeaves == 1, "collapseNodes leaves one leaf");
-		expect(stats.numPrimitives == 2, "collapseNodes preserves primitive membership");
+		expect(stats._numNodes == 1, "collapseNodes replaces the root with its only child");
+		expect(stats._numLeaves == 1, "collapseNodes leaves one leaf");
+		expect(stats._numPrimitives == 2, "collapseNodes preserves primitive membership");
 	}
 }
 

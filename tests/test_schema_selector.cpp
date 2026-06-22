@@ -49,10 +49,10 @@ namespace BaselineTests
 			"configs/workloads/mixed.json",
 			cloud);
 
-		expect(selection.schemaName == "kdtree_default", "schema selector chooses lowest predicted score");
-		expect(selection.candidates.size() == 2, "schema selector reports candidate predictions");
-		expect(selection.candidates[0].schemaName == "kdtree_default", "schema selector sorts candidates by score");
-		expect(selection.candidates[0].predictedScore < selection.candidates[1].predictedScore, "schema selector score ordering is deterministic");
+		expect(selection._schemaName == "kdtree_default", "schema selector chooses lowest predicted score");
+		expect(selection._candidates.size() == 2, "schema selector reports candidate predictions");
+		expect(selection._candidates[0]._schemaName == "kdtree_default", "schema selector sorts candidates by score");
+		expect(selection._candidates[0]._predictedScore < selection._candidates[1]._predictedScore, "schema selector score ordering is deterministic");
 
 		std::filesystem::remove(modelPath);
 
@@ -82,9 +82,9 @@ namespace BaselineTests
 			measuredModelPath.string(),
 			"configs/workloads/mixed.json",
 			cloud);
-		expect(measuredSelection.schemaName == "quadtree_default", "measured local selector uses benchmark winner");
-		expect(measuredSelection.candidates[0].schemaName == "quadtree_default", "measured local selector preserves ranked candidates");
-		expect(measuredSelection.predictedScore == 0.25, "measured local selector exposes measured score as selection score");
+		expect(measuredSelection._schemaName == "quadtree_default", "measured local selector uses benchmark winner");
+		expect(measuredSelection._candidates[0]._schemaName == "quadtree_default", "measured local selector preserves ranked candidates");
+		expect(measuredSelection._predictedScore == 0.25, "measured local selector exposes measured score as selection score");
 
 		std::filesystem::remove(measuredModelPath);
 
@@ -108,10 +108,10 @@ namespace BaselineTests
 		}
 
 		const Experiments::SchemaSelectorModel onnxModel = Experiments::loadSchemaSelectorModel(onnxModelPath.string());
-		expect(onnxModel.onnxScoreRanker, "schema selector parses ONNX ranker model type");
-		expect(onnxModel.onnxInputName == "features", "schema selector parses ONNX input name");
-		expect(onnxModel.onnxOutputName == "score", "schema selector parses ONNX output name");
-		expect(onnxModel.candidates.size() == 2, "schema selector parses ONNX candidate schemas");
+		expect(onnxModel._onnxScoreRanker, "schema selector parses ONNX ranker model type");
+		expect(onnxModel._onnxInputName == "features", "schema selector parses ONNX input name");
+		expect(onnxModel._onnxOutputName == "score", "schema selector parses ONNX output name");
+		expect(onnxModel._candidates.size() == 2, "schema selector parses ONNX candidate schemas");
 
 		std::filesystem::remove(onnxModelPath);
 	}

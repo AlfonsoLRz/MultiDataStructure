@@ -11,44 +11,44 @@ namespace BaselineTests
 		SchemaConfig makeQuerySchema()
 		{
 			SchemaLevelConfig level;
-			level.type = MultiDataStructure::DataStructureLevel::OctreeNode;
-			level.typeName = "Octree";
-			level.numLevels = 6;
-			level.leafCapacity = 6;
-			level.minPrimitivesToSplit = 4;
+			level._type = MultiDataStructure::DataStructureLevel::OctreeNode;
+			level._typeName = "Octree";
+			level._numLevels = 6;
+			level._leafCapacity = 6;
+			level._minPrimitivesToSplit = 4;
 
 			SchemaConfig schema;
-			schema.name = "point_query_test";
-			schema.levels.push_back(level);
-			schema.buildPolicy.maxDepth = 6;
-			schema.buildPolicy.leafCapacity = 6;
-			schema.buildPolicy.minPrimitivesToSplit = 4;
-			schema.buildPolicy.collapseSingleChild = false;
-			schema.buildPolicy.removeEmptyNodes = true;
-			schema.buildPolicy.allowOverlapDuplication = false;
+			schema._name = "point_query_test";
+			schema._levels.push_back(level);
+			schema._buildPolicy._maxDepth = 6;
+			schema._buildPolicy._leafCapacity = 6;
+			schema._buildPolicy._minPrimitivesToSplit = 4;
+			schema._buildPolicy._collapseSingleChild = false;
+			schema._buildPolicy._removeEmptyNodes = true;
+			schema._buildPolicy._allowOverlapDuplication = false;
 			return schema;
 		}
 
 		SchemaConfig makePrimitiveSchema(const std::string& typeName, size_t numLevels = 2)
 		{
 			SchemaLevelConfig level;
-			level.typeName = typeName;
-			level.primitiveKind = Config::parseSchemaPrimitiveKind(typeName);
-			level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level.primitiveKind);
-			level.type = level.cpuFallbackType;
-			level.numLevels = numLevels;
-			level.leafCapacity = 6;
-			level.minPrimitivesToSplit = 4;
+			level._typeName = typeName;
+			level._primitiveKind = Config::parseSchemaPrimitiveKind(typeName);
+			level._cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level._primitiveKind);
+			level._type = level._cpuFallbackType;
+			level._numLevels = numLevels;
+			level._leafCapacity = 6;
+			level._minPrimitivesToSplit = 4;
 
 			SchemaConfig schema;
-			schema.name = typeName + "_point_query_test";
-			schema.levels.push_back(level);
-			schema.buildPolicy.maxDepth = numLevels;
-			schema.buildPolicy.leafCapacity = 6;
-			schema.buildPolicy.minPrimitivesToSplit = 4;
-			schema.buildPolicy.collapseSingleChild = false;
-			schema.buildPolicy.removeEmptyNodes = false;
-			schema.buildPolicy.allowOverlapDuplication = false;
+			schema._name = typeName + "_point_query_test";
+			schema._levels.push_back(level);
+			schema._buildPolicy._maxDepth = numLevels;
+			schema._buildPolicy._leafCapacity = 6;
+			schema._buildPolicy._minPrimitivesToSplit = 4;
+			schema._buildPolicy._collapseSingleChild = false;
+			schema._buildPolicy._removeEmptyNodes = false;
+			schema._buildPolicy._allowOverlapDuplication = false;
 			return schema;
 		}
 
@@ -119,10 +119,10 @@ namespace BaselineTests
 
 		void expectQueryCorrectness(const PointCloud& cloud, const PointSpatialIndex& index, const AABB& rangeBounds, const glm::vec3& center, float radius, const std::string& label)
 		{
-			expectSameSet(index.rangeQuery(rangeBounds).pointIndices, bruteForceRange(cloud, rangeBounds), label + " range query matches brute force");
-			expect(index.countRange(rangeBounds).count == bruteForceRange(cloud, rangeBounds).size(), label + " count range query matches brute force");
-			expectSameSet(index.radiusQuery(center, radius).pointIndices, bruteForceRadius(cloud, center, radius), label + " radius query matches brute force");
-			expect(index.knnQuery(center, 9).pointIndices == bruteForceKnn(cloud, center, 9), label + " KNN query matches brute force");
+			expectSameSet(index.rangeQuery(rangeBounds)._pointIndices, bruteForceRange(cloud, rangeBounds), label + " range query matches brute force");
+			expect(index.countRange(rangeBounds)._count == bruteForceRange(cloud, rangeBounds).size(), label + " count range query matches brute force");
+			expectSameSet(index.radiusQuery(center, radius)._pointIndices, bruteForceRadius(cloud, center, radius), label + " radius query matches brute force");
+			expect(index.knnQuery(center, 9)._pointIndices == bruteForceKnn(cloud, center, 9), label + " KNN query matches brute force");
 		}
 
 		PointCloud makeTieCloud()
@@ -177,100 +177,100 @@ namespace BaselineTests
 		index.build(cloud, schema);
 
 		const PointSpatialIndex::Stats buildStats = index.stats();
-		expect(index.root() && index.root()->pointCount == cloud.size(), "point query index stores root as a contiguous point range");
-		expect(buildStats.numPoints == cloud.size(), "point query index keeps every point in leaves");
-		expect(buildStats.numNodes > 1, "point query index creates a searchable hierarchy");
+		expect(index.root() && index.root()->_pointCount == cloud.size(), "point query index stores root as a contiguous point range");
+		expect(buildStats._numPoints == cloud.size(), "point query index keeps every point in leaves");
+		expect(buildStats._numNodes > 1, "point query index creates a searchable hierarchy");
 
 		const AABB rangeBounds(glm::vec3(7.0f, -7.0f, 2.0f), glm::vec3(9.0f, -5.0f, 4.0f));
 		const std::vector<size_t> bruteRange = bruteForceRange(cloud, rangeBounds);
 		const PointSpatialIndex::QueryResult range = index.rangeQuery(rangeBounds);
-		expectSameSet(range.pointIndices, bruteRange, "range query matches brute force");
-		expect(range.stats.visitedNodes > 0, "range query records visited nodes");
-		expect(range.stats.testedPoints > 0 || range.stats.fullyContainedNodes > 0, "range query records tested points or containment shortcuts");
-		expect(range.stats.returnedPoints == range.pointIndices.size(), "range query records returned points");
+		expectSameSet(range._pointIndices, bruteRange, "range query matches brute force");
+		expect(range._stats._visitedNodes > 0, "range query records visited nodes");
+		expect(range._stats._testedPoints > 0 || range._stats._fullyContainedNodes > 0, "range query records tested points or containment shortcuts");
+		expect(range._stats._returnedPoints == range._pointIndices.size(), "range query records returned points");
 		const size_t rangeVisitedByDepth = std::accumulate(
-			range.stats.breakdown.visitedByDepth.begin(),
-			range.stats.breakdown.visitedByDepth.end(),
+			range._stats._breakdown.visitedByDepth.begin(),
+			range._stats._breakdown.visitedByDepth.end(),
 			size_t(0));
-		expect(rangeVisitedByDepth == range.stats.visitedNodes, "range query breakdown accounts for visited nodes by depth");
-		expect(range.stats.breakdown.visitedByStructure.at("Octree") == range.stats.visitedNodes,
+		expect(rangeVisitedByDepth == range._stats._visitedNodes, "range query breakdown accounts for visited nodes by depth");
+		expect(range._stats._breakdown._visitedByStructure.at("Octree") == range._stats._visitedNodes,
 			"range query breakdown accounts for visited nodes by structure");
 
 		const PointSpatialIndex::CountResult count = index.countRange(rangeBounds);
-		expect(count.count == bruteRange.size(), "count range query matches brute force");
-		expect(count.stats.returnedPoints == count.count, "count query records returned count");
+		expect(count._count == bruteRange.size(), "count range query matches brute force");
+		expect(count._stats._returnedPoints == count._count, "count query records returned count");
 
 		const AABB largeBounds(cloud.bounds().min() - glm::vec3(0.01f), cloud.bounds().max() + glm::vec3(0.01f));
 		const PointSpatialIndex::QueryResult largeRange = index.rangeQuery(largeBounds);
-		expectSameSet(largeRange.pointIndices, bruteForceRange(cloud, largeBounds), "large range query with containment fast path matches brute force");
-		expect(largeRange.stats.fullyContainedNodes > 0, "large range query records fully contained nodes");
-		expect(largeRange.stats.testedPoints < cloud.size(), "large range query tests fewer points through containment fast path");
+		expectSameSet(largeRange._pointIndices, bruteForceRange(cloud, largeBounds), "large range query with containment fast path matches brute force");
+		expect(largeRange._stats._fullyContainedNodes > 0, "large range query records fully contained nodes");
+		expect(largeRange._stats._testedPoints < cloud.size(), "large range query tests fewer points through containment fast path");
 		const PointSpatialIndex::CountResult largeCount = index.countRange(largeBounds);
-		expect(largeCount.count == cloud.size(), "large count query with containment fast path matches brute force");
-		expect(largeCount.stats.fullyContainedNodes > 0, "large count query records fully contained nodes");
-		expect(largeCount.stats.testedPoints < cloud.size(), "large count query tests fewer points through containment fast path");
+		expect(largeCount._count == cloud.size(), "large count query with containment fast path matches brute force");
+		expect(largeCount._stats._fullyContainedNodes > 0, "large count query records fully contained nodes");
+		expect(largeCount._stats._testedPoints < cloud.size(), "large count query tests fewer points through containment fast path");
 
 		const glm::vec3 denseCenter(8.0f, -6.0f, 3.0f);
 		const float radius = 2.0f;
 		const std::vector<size_t> bruteRadius = bruteForceRadius(cloud, denseCenter, radius);
 		const PointSpatialIndex::QueryResult radiusResult = index.radiusQuery(denseCenter, radius);
-		expectSameSet(radiusResult.pointIndices, bruteRadius, "radius query matches brute force");
-		expect(radiusResult.stats.visitedNodes > 0, "radius query records visited nodes");
-		expect(radiusResult.stats.testedPoints > 0, "radius query records tested points");
-		expect(radiusResult.stats.breakdown.testedPointsByStructure.at("Octree") == radiusResult.stats.testedPoints,
+		expectSameSet(radiusResult._pointIndices, bruteRadius, "radius query matches brute force");
+		expect(radiusResult._stats._visitedNodes > 0, "radius query records visited nodes");
+		expect(radiusResult._stats._testedPoints > 0, "radius query records tested points");
+		expect(radiusResult._stats._breakdown._testedPointsByStructure.at("Octree") == radiusResult._stats._testedPoints,
 			"radius query breakdown accounts for tested points by structure");
 
 		const size_t k = 7;
 		const std::vector<size_t> bruteKnn = bruteForceKnn(cloud, denseCenter, k);
 		const PointSpatialIndex::QueryResult knn = index.knnQuery(denseCenter, k);
-		expect(knn.pointIndices == bruteKnn, "KNN query matches brute force ordering");
-		expect(knn.stats.returnedPoints == k, "KNN query records returned neighbors");
-		expect(knn.stats.visitedNodes > 0, "KNN query records visited nodes");
-		expect(knn.stats.testedPoints >= k, "KNN query tests enough points to fill neighbors");
+		expect(knn._pointIndices == bruteKnn, "KNN query matches brute force ordering");
+		expect(knn._stats._returnedPoints == k, "KNN query records returned neighbors");
+		expect(knn._stats._visitedNodes > 0, "KNN query records visited nodes");
+		expect(knn._stats._testedPoints >= k, "KNN query tests enough points to fill neighbors");
 
 		const PointSpatialIndex::QueryResult emptyKnn = index.knnQuery(denseCenter, 0);
-		expect(emptyKnn.pointIndices.empty(), "KNN query with k=0 returns no points");
-		expect(emptyKnn.stats.returnedPoints == 0, "KNN query with k=0 records no returned points");
+		expect(emptyKnn._pointIndices.empty(), "KNN query with k=0 returns no points");
+		expect(emptyKnn._stats._returnedPoints == 0, "KNN query with k=0 records no returned points");
 
 		const PointCloud tieCloud = makeTieCloud();
 		PointSpatialIndex tieIndex;
 		tieIndex.build(tieCloud, makeQuerySchema());
 		const glm::vec3 origin(0.0f);
 		const PointSpatialIndex::QueryResult duplicateKnn = tieIndex.knnQuery(origin, 2);
-		expect((duplicateKnn.pointIndices == std::vector<size_t>{ 3, 4 }), "KNN returns duplicate zero-distance points in index order");
+		expect((duplicateKnn._pointIndices == std::vector<size_t>{ 3, 4 }), "KNN returns duplicate zero-distance points in index order");
 		const PointSpatialIndex::QueryResult tieKnn = tieIndex.knnQuery(origin, 5);
-		expect(tieKnn.pointIndices == bruteForceKnn(tieCloud, origin, 5), "KNN preserves equal-distance tie ordering");
+		expect(tieKnn._pointIndices == bruteForceKnn(tieCloud, origin, 5), "KNN preserves equal-distance tie ordering");
 		const PointSpatialIndex::QueryResult oversizedKnn = tieIndex.knnQuery(origin, 10);
-		expect(oversizedKnn.pointIndices == bruteForceKnn(tieCloud, origin, 10), "KNN with k > num points returns all points in brute-force order");
+		expect(oversizedKnn._pointIndices == bruteForceKnn(tieCloud, origin, 10), "KNN with k > num points returns all points in brute-force order");
 		const glm::vec3 outsideCenter(100.0f, 100.0f, 100.0f);
 		const PointSpatialIndex::QueryResult outsideKnn = tieIndex.knnQuery(outsideCenter, 3);
-		expect(outsideKnn.pointIndices == bruteForceKnn(tieCloud, outsideCenter, 3), "KNN outside cloud bounds matches brute force");
+		expect(outsideKnn._pointIndices == bruteForceKnn(tieCloud, outsideCenter, 3), "KNN outside cloud bounds matches brute force");
 
 		PointSpatialIndex rebuiltIndex;
 		rebuiltIndex.build(cloud, schema);
 		rebuiltIndex.build(tieCloud, makeQuerySchema());
-		expectSameSet(rebuiltIndex.radiusQuery(origin, 1.01f).pointIndices, bruteForceRadius(tieCloud, origin, 1.01f),
+		expectSameSet(rebuiltIndex.radiusQuery(origin, 1.01f)._pointIndices, bruteForceRadius(tieCloud, origin, 1.01f),
 			"point query index rebuild refreshes ordered SoA point storage");
 
 		const PointCloud tightBoundsCloud = makeTightBoundsRadiusCloud();
 		PointSpatialIndex tightBoundsIndex;
 		tightBoundsIndex.build(tightBoundsCloud, makePrimitiveSchema("Octree", 4));
 		const PointSpatialIndex::QueryResult tightBoundsRadius = tightBoundsIndex.radiusQuery(glm::vec3(49.0f, 49.0f, 49.0f), 0.25f);
-		expect(tightBoundsRadius.pointIndices.empty(), "radius query outside tight node bounds returns no points");
-		expect(tightBoundsIndex.root() && tightBoundsRadius.stats.visitedNodes <= tightBoundsIndex.root()->children.size() + 1,
+		expect(tightBoundsRadius._pointIndices.empty(), "radius query outside tight node bounds returns no points");
+		expect(tightBoundsIndex.root() && tightBoundsRadius._stats._visitedNodes <= tightBoundsIndex.root()->_children.size() + 1,
 			"radius query prunes sparse nodes with tight bounds before visiting grandchildren");
 
 		SchemaConfig microSchema = makePrimitiveSchema("Octree", 1);
-		microSchema.levels[0].leafCapacity = 4096;
-		microSchema.levels[0].minPrimitivesToSplit = 4096;
-		microSchema.buildPolicy.leafCapacity = 4096;
-		microSchema.buildPolicy.minPrimitivesToSplit = 4096;
-		microSchema.buildPolicy.enableLeafMicroIndexes = true;
-		microSchema.buildPolicy.leafMicroIndexThreshold = 16;
+		microSchema._levels[0]._leafCapacity = 4096;
+		microSchema._levels[0]._minPrimitivesToSplit = 4096;
+		microSchema._buildPolicy._leafCapacity = 4096;
+		microSchema._buildPolicy._minPrimitivesToSplit = 4096;
+		microSchema._buildPolicy._enableLeafMicroIndexes = true;
+		microSchema._buildPolicy._leafMicroIndexThreshold = 16;
 		PointSpatialIndex microIndex;
 		microIndex.build(cloud, microSchema);
 		expect(microIndex.root() && microIndex.root()->isLeaf(), "micro-index test keeps one heavy leaf");
-		expect(microIndex.root() && microIndex.root()->microIndex, "heavy leaf builds optional micro-index");
+		expect(microIndex.root() && microIndex.root()->_microIndex, "heavy leaf builds optional micro-index");
 		expectQueryCorrectness(cloud, microIndex, rangeBounds, denseCenter, radius, "heavy-leaf micro-index");
 
 		const AABB gridRange(glm::vec3(-15.0f, -15.0f, -4.0f), glm::vec3(15.0f, 15.0f, 8.0f));
@@ -278,9 +278,9 @@ namespace BaselineTests
 		{
 			PointSpatialIndex gridIndex;
 			gridIndex.build(cloud, makePrimitiveSchema(typeName, 2));
-			expect(gridIndex.root() && gridIndex.root()->children.size() > 8, typeName + " CPU split creates grid cells instead of collapsing to Octree");
-			expect(gridIndex.stats().numPoints == cloud.size(), typeName + " CPU split preserves point count");
-			expect(gridIndex.root()->subtreePointCount == cloud.size(), typeName + " CPU split preserves subtree point count");
+			expect(gridIndex.root() && gridIndex.root()->_children.size() > 8, typeName + " CPU split creates grid cells instead of collapsing to Octree");
+			expect(gridIndex.stats()._numPoints == cloud.size(), typeName + " CPU split preserves point count");
+			expect(gridIndex.root()->_subtreePointCount == cloud.size(), typeName + " CPU split preserves subtree point count");
 			expectQueryCorrectness(cloud, gridIndex, gridRange, denseCenter, radius, typeName + " CPU grid");
 		}
 	}

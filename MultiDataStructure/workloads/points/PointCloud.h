@@ -10,13 +10,13 @@ public:
 	struct CoordinateFrame
 	{
 		glm::dvec3 origin = glm::dvec3(0.0);
-		glm::dvec3 scale = glm::dvec3(1.0);
+		glm::dvec3 _scale = glm::dvec3(1.0);
 	};
 
 	struct LoadOptions
 	{
-		bool useBinaryCache = true;
-		bool rebuildBinaryCache = false;
+		bool _useBinaryCache = true;
+		bool _rebuildBinaryCache = false;
 	};
 
 	static PointCloud load(const std::string& filename, const LoadOptions& options = {});
@@ -45,10 +45,10 @@ public:
 private:
 	struct Stats
 	{
-		size_t numPoints = 0;
-		AABB bounds;
+		size_t _numPoints = 0;
+		AABB _bounds;
 		glm::vec3 coordinateRange = glm::vec3(0.0f);
-		float approximateDensity = 0.0f;
+		float _approximateDensity = 0.0f;
 	};
 
 	std::vector<PointPrimitive> _points;

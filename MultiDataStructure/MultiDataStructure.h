@@ -25,11 +25,11 @@ public:
 
 	struct Stats
 	{
-		glm::uint numLevels = 0;
-		glm::uint numNodes = 0;
-		glm::uint numLeaves = 0;
-		glm::uint numPrimitives = 0;
-		float averageLeafPrimitives = 0.0f;
+		glm::uint _numLevels = 0;
+		glm::uint _numNodes = 0;
+		glm::uint _numLeaves = 0;
+		glm::uint _numPrimitives = 0;
+		float _averageLeafPrimitives = 0.0f;
 	};
 
 public:

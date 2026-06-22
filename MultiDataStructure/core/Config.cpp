@@ -124,36 +124,36 @@ static std::string normalizeAxisPolicy(std::string value)
 
 static void normalizeLevelAxisPolicy(SchemaLevelConfig& level)
 {
-	level.axisPolicy = normalizeAxisPolicy(level.axisPolicy);
-	if (level.primitiveKind == SchemaPrimitiveKind::QuadTree)
+	level._axisPolicy = normalizeAxisPolicy(level._axisPolicy);
+	if (level._primitiveKind == SchemaPrimitiveKind::QuadTree)
 	{
-		if (level.axisPolicy.empty())
+		if (level._axisPolicy.empty())
 		{
-			level.axisPolicy = "xy";
+			level._axisPolicy = "xy";
 			return;
 		}
-		if (level.axisPolicy == "xy" ||
-			level.axisPolicy == "xz" ||
-			level.axisPolicy == "yz" ||
-			level.axisPolicy == "ignore_shortest" ||
-			level.axisPolicy == "ignore_x" ||
-			level.axisPolicy == "ignore_y" ||
-			level.axisPolicy == "ignore_z")
+		if (level._axisPolicy == "xy" ||
+			level._axisPolicy == "xz" ||
+			level._axisPolicy == "yz" ||
+			level._axisPolicy == "ignore_shortest" ||
+			level._axisPolicy == "ignore_x" ||
+			level._axisPolicy == "ignore_y" ||
+			level._axisPolicy == "ignore_z")
 			return;
 
-		throw std::runtime_error("Unsupported QuadTree axisPolicy: " + level.axisPolicy);
+		throw std::runtime_error("Unsupported QuadTree axisPolicy: " + level._axisPolicy);
 	}
 
-	if (level.type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+	if (level._type == MultiDataStructure::DataStructureLevel::KDTreeNode)
 	{
-		if (level.axisPolicy.empty())
-			level.axisPolicy = "median_longest_axis";
-		if (level.axisPolicy == "median_longest_axis" ||
-			level.axisPolicy == "round_robin" ||
-			level.axisPolicy == "center_longest_axis")
+		if (level._axisPolicy.empty())
+			level._axisPolicy = "median_longest_axis";
+		if (level._axisPolicy == "median_longest_axis" ||
+			level._axisPolicy == "round_robin" ||
+			level._axisPolicy == "center_longest_axis")
 			return;
 
-		throw std::runtime_error("Unsupported KDTree/BIH axisPolicy: " + level.axisPolicy);
+		throw std::runtime_error("Unsupported KDTree/BIH axisPolicy: " + level._axisPolicy);
 	}
 }
 
@@ -192,39 +192,39 @@ static std::filesystem::path resolveConfigPath(const std::string& filename)
 static SchemaLevelCondition parseLevelCondition(const boost::json::object& object)
 {
 	SchemaLevelCondition condition;
-	condition.minPoints = optionalSize(object, { "minPoints", "pointCountMin", "minPointCount", "point_count_min" });
-	condition.maxPoints = optionalSize(object, { "maxPoints", "pointCountMax", "maxPointCount", "point_count_max" });
-	condition.minDensity = optionalDouble(object, { "minDensity", "densityMin", "density_min" });
-	condition.maxDensity = optionalDouble(object, { "maxDensity", "densityMax", "density_max" });
-	condition.minHeightRatio = optionalDouble(object, { "minHeightRatio", "heightRatioMin", "height_ratio_min" });
-	condition.maxHeightRatio = optionalDouble(object, { "maxHeightRatio", "heightRatioMax", "height_ratio_max" });
-	condition.minExtentX = optionalDouble(object, { "minExtentX", "extentXMin", "extent_x_min" });
-	condition.maxExtentX = optionalDouble(object, { "maxExtentX", "extentXMax", "extent_x_max" });
-	condition.minExtentY = optionalDouble(object, { "minExtentY", "extentYMin", "extent_y_min" });
-	condition.maxExtentY = optionalDouble(object, { "maxExtentY", "extentYMax", "extent_y_max" });
-	condition.minExtentZ = optionalDouble(object, { "minExtentZ", "extentZMin", "extent_z_min" });
-	condition.maxExtentZ = optionalDouble(object, { "maxExtentZ", "extentZMax", "extent_z_max" });
-	condition.minAnisotropy = optionalDouble(object, { "minAnisotropy", "anisotropyMin", "anisotropy_min" });
-	condition.maxAnisotropy = optionalDouble(object, { "maxAnisotropy", "anisotropyMax", "anisotropy_max" });
-	condition.minOccupancyEntropy = optionalDouble(object, { "minOccupancyEntropy", "occupancyEntropyMin", "occupancy_entropy_min" });
-	condition.maxOccupancyEntropy = optionalDouble(object, { "maxOccupancyEntropy", "occupancyEntropyMax", "occupancy_entropy_max" });
+	condition._minPoints = optionalSize(object, { "minPoints", "pointCountMin", "minPointCount", "point_count_min" });
+	condition._maxPoints = optionalSize(object, { "maxPoints", "pointCountMax", "maxPointCount", "point_count_max" });
+	condition._minDensity = optionalDouble(object, { "minDensity", "densityMin", "density_min" });
+	condition._maxDensity = optionalDouble(object, { "maxDensity", "densityMax", "density_max" });
+	condition._minHeightRatio = optionalDouble(object, { "minHeightRatio", "heightRatioMin", "height_ratio_min" });
+	condition._maxHeightRatio = optionalDouble(object, { "maxHeightRatio", "heightRatioMax", "height_ratio_max" });
+	condition._minExtentX = optionalDouble(object, { "minExtentX", "extentXMin", "extent_x_min" });
+	condition._maxExtentX = optionalDouble(object, { "maxExtentX", "extentXMax", "extent_x_max" });
+	condition._minExtentY = optionalDouble(object, { "minExtentY", "extentYMin", "extent_y_min" });
+	condition._maxExtentY = optionalDouble(object, { "maxExtentY", "extentYMax", "extent_y_max" });
+	condition._minExtentZ = optionalDouble(object, { "minExtentZ", "extentZMin", "extent_z_min" });
+	condition._maxExtentZ = optionalDouble(object, { "maxExtentZ", "extentZMax", "extent_z_max" });
+	condition._minAnisotropy = optionalDouble(object, { "minAnisotropy", "anisotropyMin", "anisotropy_min" });
+	condition._maxAnisotropy = optionalDouble(object, { "maxAnisotropy", "anisotropyMax", "anisotropy_max" });
+	condition._minOccupancyEntropy = optionalDouble(object, { "minOccupancyEntropy", "occupancyEntropyMin", "occupancy_entropy_min" });
+	condition._maxOccupancyEntropy = optionalDouble(object, { "maxOccupancyEntropy", "occupancyEntropyMax", "occupancy_entropy_max" });
 	return condition;
 }
 
 static AdaptiveLeafCapacityConfig parseAdaptiveLeafCapacity(const boost::json::object& object)
 {
 	AdaptiveLeafCapacityConfig config;
-	config.enabled = asBool(object, "enabled", true);
-	config.minCapacity = optionalSize(object, { "minCapacity", "minLeafCapacity", "leafCapacityMin", "min_leaf_capacity" }).value_or(0);
-	config.maxCapacity = optionalSize(object, { "maxCapacity", "maxLeafCapacity", "leafCapacityMax", "max_leaf_capacity" }).value_or(0);
-	config.densityWeight = asDouble(object, { "densityWeight", "densityExponent", "density_factor_weight" }, config.densityWeight);
-	config.anisotropyWeight = asDouble(object, { "anisotropyWeight", "anisotropyExponent", "anisotropy_factor_weight" }, config.anisotropyWeight);
-	config.heightRatioWeight = asDouble(object, { "heightRatioWeight", "heightRatioExponent", "height_ratio_factor_weight" }, config.heightRatioWeight);
-	config.queryMixFactor = asDouble(object, { "queryMixFactor", "queryFactor", "workloadFactor", "query_mix_factor" }, config.queryMixFactor);
+	config._enabled = asBool(object, "enabled", true);
+	config._minCapacity = optionalSize(object, { "minCapacity", "minLeafCapacity", "leafCapacityMin", "min_leaf_capacity" }).value_or(0);
+	config._maxCapacity = optionalSize(object, { "maxCapacity", "maxLeafCapacity", "leafCapacityMax", "max_leaf_capacity" }).value_or(0);
+	config._densityWeight = asDouble(object, { "densityWeight", "densityExponent", "density_factor_weight" }, config._densityWeight);
+	config._anisotropyWeight = asDouble(object, { "anisotropyWeight", "anisotropyExponent", "anisotropy_factor_weight" }, config._anisotropyWeight);
+	config._heightRatioWeight = asDouble(object, { "heightRatioWeight", "heightRatioExponent", "height_ratio_factor_weight" }, config._heightRatioWeight);
+	config._queryMixFactor = asDouble(object, { "queryMixFactor", "queryFactor", "workloadFactor", "query_mix_factor" }, config._queryMixFactor);
 
-	if (config.maxCapacity > 0 && config.minCapacity > 0 && config.maxCapacity < config.minCapacity)
+	if (config._maxCapacity > 0 && config._minCapacity > 0 && config._maxCapacity < config._minCapacity)
 		throw std::runtime_error("adaptiveLeafCapacity maxCapacity must be >= minCapacity");
-	if (config.queryMixFactor <= 0.0)
+	if (config._queryMixFactor <= 0.0)
 		throw std::runtime_error("adaptiveLeafCapacity queryMixFactor must be positive");
 
 	return config;
@@ -233,22 +233,22 @@ static AdaptiveLeafCapacityConfig parseAdaptiveLeafCapacity(const boost::json::o
 static SchemaLevelConfig parseLevel(const boost::json::object& object)
 {
 	SchemaLevelConfig level;
-	level.typeName = asString(object, "type", level.typeName);
-	level.primitiveKind = Config::parseSchemaPrimitiveKind(level.typeName);
-	level.typeName = Config::schemaPrimitiveKindName(level.primitiveKind);
-	level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level.primitiveKind);
-	level.type = level.cpuFallbackType;
-	level.numLevels = asSize(object, "numLevels", level.numLevels);
-	level.leafCapacity = asSize(object, "leafCapacity", level.leafCapacity);
-	level.minPrimitivesToSplit = asSize(object, "minPointsToSplit", level.minPrimitivesToSplit);
-	level.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level.minPrimitivesToSplit);
-	level.axisPolicy = asString(object, "axisPolicy", level.axisPolicy);
+	level._typeName = asString(object, "type", level._typeName);
+	level._primitiveKind = Config::parseSchemaPrimitiveKind(level._typeName);
+	level._typeName = Config::schemaPrimitiveKindName(level._primitiveKind);
+	level._cpuFallbackType = Config::cpuFallbackForPrimitiveKind(level._primitiveKind);
+	level._type = level._cpuFallbackType;
+	level._numLevels = asSize(object, "numLevels", level._numLevels);
+	level._leafCapacity = asSize(object, "leafCapacity", level._leafCapacity);
+	level._minPrimitivesToSplit = asSize(object, "minPointsToSplit", level._minPrimitivesToSplit);
+	level._minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level._minPrimitivesToSplit);
+	level._axisPolicy = asString(object, "axisPolicy", level._axisPolicy);
 	normalizeLevelAxisPolicy(level);
 	if (const boost::json::value* conditionValue = object.if_contains("condition"))
 	{
 		if (!conditionValue->is_object())
 			throw std::runtime_error("Schema level condition must be an object");
-		level.condition = parseLevelCondition(conditionValue->as_object());
+		level._condition = parseLevelCondition(conditionValue->as_object());
 	}
 	for (const char* key : { "adaptiveLeafCapacity", "leafCapacityAdaptation", "adaptiveCapacity" })
 	{
@@ -256,12 +256,12 @@ static SchemaLevelConfig parseLevel(const boost::json::object& object)
 		{
 			if (!adaptiveValue->is_object())
 				throw std::runtime_error("adaptiveLeafCapacity must be an object");
-			level.adaptiveLeafCapacity = parseAdaptiveLeafCapacity(adaptiveValue->as_object());
+			level._adaptiveLeafCapacity = parseAdaptiveLeafCapacity(adaptiveValue->as_object());
 			break;
 		}
 	}
 
-	if (level.numLevels == 0)
+	if (level._numLevels == 0)
 		throw std::runtime_error("Schema level numLevels must be greater than zero");
 
 	return level;
@@ -270,37 +270,37 @@ static SchemaLevelConfig parseLevel(const boost::json::object& object)
 static BuildPolicy parseBuildPolicy(const boost::json::object& object)
 {
 	BuildPolicy policy;
-	policy.maxDepth = asSize(object, "maxDepth", policy.maxDepth);
-	policy.leafCapacity = asSize(object, "leafCapacity", policy.leafCapacity);
-	policy.minPrimitivesToSplit = asSize(object, "minPointsToSplit", policy.minPrimitivesToSplit);
-	policy.minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", policy.minPrimitivesToSplit);
-	policy.collapseSingleChild = asBool(object, "collapseSingleChild", policy.collapseSingleChild);
-	policy.removeEmptyNodes = asBool(object, "removeEmptyNodes", policy.removeEmptyNodes);
-	policy.allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy.allowOverlapDuplication);
-	policy.enableLeafMicroIndexes = asBool(object, "enableLeafMicroIndexes", policy.enableLeafMicroIndexes);
-	policy.enableLeafMicroIndexes = asBool(object, "leafMicroIndexes", policy.enableLeafMicroIndexes);
-	policy.leafMicroIndexThreshold = asSize(object, "leafMicroIndexThreshold", policy.leafMicroIndexThreshold);
-	policy.leafMicroIndexThreshold = asSize(object, "microIndexThreshold", policy.leafMicroIndexThreshold);
+	policy._maxDepth = asSize(object, "maxDepth", policy._maxDepth);
+	policy._leafCapacity = asSize(object, "leafCapacity", policy._leafCapacity);
+	policy._minPrimitivesToSplit = asSize(object, "minPointsToSplit", policy._minPrimitivesToSplit);
+	policy._minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", policy._minPrimitivesToSplit);
+	policy._collapseSingleChild = asBool(object, "collapseSingleChild", policy._collapseSingleChild);
+	policy._removeEmptyNodes = asBool(object, "removeEmptyNodes", policy._removeEmptyNodes);
+	policy._allowOverlapDuplication = asBool(object, "allowOverlapDuplication", policy._allowOverlapDuplication);
+	policy._enableLeafMicroIndexes = asBool(object, "enableLeafMicroIndexes", policy._enableLeafMicroIndexes);
+	policy._enableLeafMicroIndexes = asBool(object, "leafMicroIndexes", policy._enableLeafMicroIndexes);
+	policy._leafMicroIndexThreshold = asSize(object, "leafMicroIndexThreshold", policy._leafMicroIndexThreshold);
+	policy._leafMicroIndexThreshold = asSize(object, "microIndexThreshold", policy._leafMicroIndexThreshold);
 	return policy;
 }
 
 bool SchemaLevelCondition::empty() const
 {
-	return !minPoints && !maxPoints &&
-		!minDensity && !maxDensity &&
-		!minHeightRatio && !maxHeightRatio &&
-		!minExtentX && !maxExtentX &&
-		!minExtentY && !maxExtentY &&
-		!minExtentZ && !maxExtentZ &&
-		!minAnisotropy && !maxAnisotropy &&
-		!minOccupancyEntropy && !maxOccupancyEntropy;
+	return !_minPoints && !_maxPoints &&
+		!_minDensity && !_maxDensity &&
+		!_minHeightRatio && !_maxHeightRatio &&
+		!_minExtentX && !_maxExtentX &&
+		!_minExtentY && !_maxExtentY &&
+		!_minExtentZ && !_maxExtentZ &&
+		!_minAnisotropy && !_maxAnisotropy &&
+		!_minOccupancyEntropy && !_maxOccupancyEntropy;
 }
 
 size_t SchemaConfig::totalLevels() const
 {
 	size_t total = 0;
-	for (const SchemaLevelConfig& level : levels)
-		total += level.numLevels;
+	for (const SchemaLevelConfig& level : _levels)
+		total += level._numLevels;
 
 	return total;
 }
@@ -308,15 +308,15 @@ size_t SchemaConfig::totalLevels() const
 std::vector<MultiDataStructure::LevelConfig> SchemaConfig::toLevelConfigs() const
 {
 	std::vector<MultiDataStructure::LevelConfig> result;
-	result.reserve(levels.size());
+	result.reserve(_levels.size());
 
-	for (const SchemaLevelConfig& level : levels)
+	for (const SchemaLevelConfig& level : _levels)
 	{
 		MultiDataStructure::LevelConfig converted;
-		converted._levelType = level.cpuFallbackType;
-		converted._numLevels = static_cast<glm::uint>(level.numLevels);
-		converted._leafCapacity = level.leafCapacity;
-		converted._minPrimitivesToSplit = level.minPrimitivesToSplit;
+		converted._levelType = level._cpuFallbackType;
+		converted._numLevels = static_cast<glm::uint>(level._numLevels);
+		converted._leafCapacity = level._leafCapacity;
+		converted._minPrimitivesToSplit = level._minPrimitivesToSplit;
 		result.push_back(converted);
 	}
 
@@ -325,18 +325,18 @@ std::vector<MultiDataStructure::LevelConfig> SchemaConfig::toLevelConfigs() cons
 
 const SchemaLevelConfig& SchemaConfig::levelForDepth(size_t depth) const
 {
-	if (levels.empty())
+	if (_levels.empty())
 		throw std::runtime_error("Schema has no levels");
 
 	size_t cumulative = 0;
-	for (const SchemaLevelConfig& level : levels)
+	for (const SchemaLevelConfig& level : _levels)
 	{
-		cumulative += level.numLevels;
+		cumulative += level._numLevels;
 		if (depth < cumulative)
 			return level;
 	}
 
-	return levels.back();
+	return _levels.back();
 }
 
 SchemaConfig Config::loadSchemaConfig(const std::string& filename)
@@ -364,13 +364,13 @@ SchemaConfig Config::parseSchemaConfig(const std::string& jsonText, const std::s
 	const boost::json::object& root = rootValue.as_object();
 
 	SchemaConfig schema;
-	schema.name = asString(root, "name", sourceName);
+	schema._name = asString(root, "name", sourceName);
 
 	if (const boost::json::value* policyValue = root.if_contains("buildPolicy"))
 	{
 		if (!policyValue->is_object())
 			throw std::runtime_error("buildPolicy must be an object");
-		schema.buildPolicy = parseBuildPolicy(policyValue->as_object());
+		schema._buildPolicy = parseBuildPolicy(policyValue->as_object());
 	}
 
 	const boost::json::value* levelsValue = root.if_contains("levels");
@@ -381,14 +381,14 @@ SchemaConfig Config::parseSchemaConfig(const std::string& jsonText, const std::s
 	{
 		if (!levelValue.is_object())
 			throw std::runtime_error("Each schema level must be an object");
-		schema.levels.push_back(parseLevel(levelValue.as_object()));
+		schema._levels.push_back(parseLevel(levelValue.as_object()));
 	}
 
-	if (schema.levels.empty())
+	if (schema._levels.empty())
 		throw std::runtime_error("Schema config requires at least one level");
 
-	if (schema.buildPolicy.maxDepth == 0)
-		schema.buildPolicy.maxDepth = schema.totalLevels();
+	if (schema._buildPolicy._maxDepth == 0)
+		schema._buildPolicy._maxDepth = schema.totalLevels();
 
 	return schema;
 }

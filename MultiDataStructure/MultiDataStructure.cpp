@@ -25,8 +25,8 @@ MultiDataStructure::MultiDataStructure(const std::vector<LevelConfig>& levels, c
 		_maxLevels += levels[i]._numLevels;
 	}
 
-	if (_buildPolicy.maxDepth > 0)
-		_maxLevels = static_cast<glm::uint>(std::min<size_t>(_maxLevels, _buildPolicy.maxDepth));
+	if (_buildPolicy._maxDepth > 0)
+		_maxLevels = static_cast<glm::uint>(std::min<size_t>(_maxLevels, _buildPolicy._maxDepth));
 }
 
 MultiDataStructure::~MultiDataStructure()
@@ -72,7 +72,7 @@ void MultiDataStructure::removeEmptyNodes(glm::uint& deletedNodes)
 
 void MultiDataStructure::applyConfiguredCleanup()
 {
-	if (_buildPolicy.removeEmptyNodes)
+	if (_buildPolicy._removeEmptyNodes)
 	{
 		glm::uint deletedNodes = 0;
 		do
@@ -81,7 +81,7 @@ void MultiDataStructure::applyConfiguredCleanup()
 		} while (deletedNodes > 0);
 	}
 
-	if (_buildPolicy.collapseSingleChild)
+	if (_buildPolicy._collapseSingleChild)
 		collapseNodes();
 }
 
@@ -158,18 +158,18 @@ bool MultiDataStructure::exportNodes(const std::string& filename)
 MultiDataStructure::Stats MultiDataStructure::getStats() const
 {
 	Stats stats;
-	stats.numLevels = _maxLevels;
+	stats._numLevels = _maxLevels;
 
 	if (!_rootNode)
 		return stats;
 
 	float sum = 0.0f;
 	glm::uint leafPrimitiveSamples = 0;
-	this->getNumLeaves(_rootNode.get(), stats.numLeaves);
-	this->getNumNodes(_rootNode.get(), stats.numNodes);
-	this->getNumPrimitives(_rootNode.get(), stats.numPrimitives);
+	this->getNumLeaves(_rootNode.get(), stats._numLeaves);
+	this->getNumNodes(_rootNode.get(), stats._numNodes);
+	this->getNumPrimitives(_rootNode.get(), stats._numPrimitives);
 	this->getAverageLeafPrimitives(_rootNode.get(), sum, leafPrimitiveSamples);
-	stats.averageLeafPrimitives = leafPrimitiveSamples > 0 ? sum / static_cast<float>(leafPrimitiveSamples) : 0.0f;
+	stats._averageLeafPrimitives = leafPrimitiveSamples > 0 ? sum / static_cast<float>(leafPrimitiveSamples) : 0.0f;
 
 	return stats;
 }
@@ -179,11 +179,11 @@ void MultiDataStructure::printStats() const
 	const Stats stats = getStats();
 
 	std::cout << "MultiDataStructure stats:" << '\n';
-	std::cout << "  - Number of levels: " << stats.numLevels << '\n';
-	std::cout << "  - Number of primitives: " << stats.numPrimitives << '\n';
-	std::cout << "  - Number of nodes: " << stats.numNodes << '\n';
-	std::cout << "  - Number of leaves: " << stats.numLeaves << '\n';
-	std::cout << "  - Average number of primitives per leaf: " << stats.averageLeafPrimitives << '\n';
+	std::cout << "  - Number of levels: " << stats._numLevels << '\n';
+	std::cout << "  - Number of primitives: " << stats._numPrimitives << '\n';
+	std::cout << "  - Number of nodes: " << stats._numNodes << '\n';
+	std::cout << "  - Number of leaves: " << stats._numLeaves << '\n';
+	std::cout << "  - Average number of primitives per leaf: " << stats._averageLeafPrimitives << '\n';
 }
 
 bool MultiDataStructure::SpatialDSNode::in(const Node* node) const
@@ -344,8 +344,8 @@ bool MultiDataStructure::shouldSplit(const LevelConfig& levelConfig, size_t prim
 	if (level >= _maxLevels)
 		return false;
 
-	const size_t leafCapacity = levelConfig._leafCapacity > 0 ? levelConfig._leafCapacity : _buildPolicy.leafCapacity;
-	const size_t minPrimitivesToSplit = levelConfig._minPrimitivesToSplit > 0 ? levelConfig._minPrimitivesToSplit : _buildPolicy.minPrimitivesToSplit;
+	const size_t leafCapacity = levelConfig._leafCapacity > 0 ? levelConfig._leafCapacity : _buildPolicy._leafCapacity;
+	const size_t minPrimitivesToSplit = levelConfig._minPrimitivesToSplit > 0 ? levelConfig._minPrimitivesToSplit : _buildPolicy._minPrimitivesToSplit;
 
 	return primitiveCount > leafCapacity && primitiveCount >= minPrimitivesToSplit;
 }

@@ -60,19 +60,19 @@ static void mergeBreakdown(QueryBreakdown& target, const QueryBreakdown& source)
 	for (size_t i = 0; i < target.visitedByDepth.size(); ++i)
 		target.visitedByDepth[i] += source.visitedByDepth[i];
 
-	for (const auto& [name, count] : source.visitedByStructure)
-		target.visitedByStructure[name] += count;
-	for (const auto& [name, count] : source.testedPointsByStructure)
-		target.testedPointsByStructure[name] += count;
-	for (const auto& [name, count] : source.fullyContainedByStructure)
-		target.fullyContainedByStructure[name] += count;
+	for (const auto& [name, count] : source._visitedByStructure)
+		target._visitedByStructure[name] += count;
+	for (const auto& [name, count] : source._testedPointsByStructure)
+		target._testedPointsByStructure[name] += count;
+	for (const auto& [name, count] : source._fullyContainedByStructure)
+		target._fullyContainedByStructure[name] += count;
 }
 
 static QueryBreakdown aggregateBreakdowns(const std::vector<PointSpatialIndex::QueryStats>& samples)
 {
 	QueryBreakdown result;
 	for (const PointSpatialIndex::QueryStats& sample : samples)
-		mergeBreakdown(result, sample.breakdown);
+		mergeBreakdown(result, sample._breakdown);
 	return result;
 }
 
@@ -154,95 +154,95 @@ static void writeQueryBreakdownJson(std::ostream& stream, const char* name, cons
 	writeDepthBreakdownJson(stream, breakdown);
 	stream << ",\n";
 	stream << "      \"visited_by_structure\": ";
-	writeMapBreakdownJson(stream, breakdown.visitedByStructure);
+	writeMapBreakdownJson(stream, breakdown._visitedByStructure);
 	stream << ",\n";
 	stream << "      \"tested_points_by_structure\": ";
-	writeMapBreakdownJson(stream, breakdown.testedPointsByStructure);
+	writeMapBreakdownJson(stream, breakdown._testedPointsByStructure);
 	stream << ",\n";
 	stream << "      \"fully_contained_by_structure\": ";
-	writeMapBreakdownJson(stream, breakdown.fullyContainedByStructure);
+	writeMapBreakdownJson(stream, breakdown._fullyContainedByStructure);
 	stream << "\n";
 	stream << "    }" << (trailingComma ? "," : "") << "\n";
 }
 
 struct QueryProfileSection
 {
-	std::vector<PointSpatialIndex::QueryStats> samples;
-	Experiments::QueryMetrics metrics;
-	QueryBreakdown breakdown;
+	std::vector<PointSpatialIndex::QueryStats> _samples;
+	Experiments::QueryMetrics _metrics;
+	QueryBreakdown _breakdown;
 
 	void add(const PointSpatialIndex::QueryStats& stats)
 	{
-		samples.push_back(stats);
+		_samples.push_back(stats);
 	}
 
 	void finalize()
 	{
-		metrics = Experiments::summarizeQueryStats(samples);
-		breakdown = aggregateBreakdowns(samples);
+		_metrics = Experiments::summarizeQueryStats(_samples);
+		_breakdown = aggregateBreakdowns(_samples);
 	}
 };
 
 struct QueryTraceSample
 {
-	size_t queryId = 0;
-	std::string queryType;
-	bool hasBounds = false;
-	AABB bounds;
-	bool hasCenter = false;
+	size_t _queryId = 0;
+	std::string _queryType;
+	bool _hasBounds = false;
+	AABB _bounds;
+	bool _hasCenter = false;
 	glm::vec3 center = glm::vec3(0.0f);
-	float radius = 0.0f;
-	size_t k = 0;
-	PointSpatialIndex::QueryStats stats;
+	float _radius = 0.0f;
+	size_t _k = 0;
+	PointSpatialIndex::QueryStats _stats;
 };
 
 struct QueryProfileSummary
 {
-	size_t queryCount = 0;
-	size_t queryK = 0;
-	uint32_t seed = 0;
-	QueryProfileSection range;
-	QueryProfileSection countRange;
-	QueryProfileSection radius;
-	QueryProfileSection knn;
-	Experiments::QueryMetrics mixed;
-	QueryBreakdown mixedBreakdown;
-	std::vector<QueryTraceSample> traces;
+	size_t _queryCount = 0;
+	size_t _queryK = 0;
+	uint32_t _seed = 0;
+	QueryProfileSection _range;
+	QueryProfileSection _countRange;
+	QueryProfileSection _radius;
+	QueryProfileSection _knn;
+	Experiments::QueryMetrics _mixed;
+	QueryBreakdown _mixedBreakdown;
+	std::vector<QueryTraceSample> _traces;
 
 	size_t totalQueries() const
 	{
-		return mixed.totalQueries;
+		return _mixed._totalQueries;
 	}
 
 	void finalize()
 	{
-		range.finalize();
-		countRange.finalize();
-		radius.finalize();
-		knn.finalize();
+		_range.finalize();
+		_countRange.finalize();
+		_radius.finalize();
+		_knn.finalize();
 
 		std::vector<PointSpatialIndex::QueryStats> allSamples;
-		allSamples.reserve(range.samples.size() + countRange.samples.size() + radius.samples.size() + knn.samples.size());
-		allSamples.insert(allSamples.end(), range.samples.begin(), range.samples.end());
-		allSamples.insert(allSamples.end(), countRange.samples.begin(), countRange.samples.end());
-		allSamples.insert(allSamples.end(), radius.samples.begin(), radius.samples.end());
-		allSamples.insert(allSamples.end(), knn.samples.begin(), knn.samples.end());
-		mixed = Experiments::summarizeQueryStats(allSamples);
-		mixedBreakdown = aggregateBreakdowns(allSamples);
+		allSamples.reserve(_range._samples.size() + _countRange._samples.size() + _radius._samples.size() + _knn._samples.size());
+		allSamples.insert(allSamples.end(), _range._samples.begin(), _range._samples.end());
+		allSamples.insert(allSamples.end(), _countRange._samples.begin(), _countRange._samples.end());
+		allSamples.insert(allSamples.end(), _radius._samples.begin(), _radius._samples.end());
+		allSamples.insert(allSamples.end(), _knn._samples.begin(), _knn._samples.end());
+		_mixed = Experiments::summarizeQueryStats(allSamples);
+		_mixedBreakdown = aggregateBreakdowns(allSamples);
 	}
 };
 
 struct LoadedSchema
 {
-	std::string path;
-	SchemaConfig config;
-	double schemaLoadMs = 0.0;
+	std::string _path;
+	SchemaConfig _config;
+	double _schemaLoadMs = 0.0;
 };
 
 struct AutoSelectionLog
 {
-	bool enabled = false;
-	Experiments::SchemaSelection selection;
+	bool _enabled = false;
+	Experiments::SchemaSelection _selection;
 };
 
 static float randomFloat(std::mt19937& rng, float minValue, float maxValue)
@@ -283,36 +283,36 @@ static float randomQueryRadius(std::mt19937& rng, const PointCloud& cloud)
 static QueryProfileSummary runQueryProfile(const PointBenchmark::Options& options, const PointCloud& cloud, const PointSpatialIndex& index)
 {
 	QueryProfileSummary summary;
-	summary.queryCount = options.queryCount;
-	summary.queryK = options.queryK;
-	summary.seed = options.querySeed;
+	summary._queryCount = options._queryCount;
+	summary._queryK = options._queryK;
+	summary._seed = options._querySeed;
 
-	if (options.queryCount == 0)
+	if (options._queryCount == 0)
 		return summary;
 
-	std::mt19937 rng(options.querySeed);
+	std::mt19937 rng(options._querySeed);
 	size_t traceId = 0;
-	for (size_t i = 0; i < options.queryCount; ++i)
+	for (size_t i = 0; i < options._queryCount; ++i)
 	{
 		const AABB rangeBounds = randomQueryBox(rng, cloud);
-		const PointSpatialIndex::QueryStats rangeStats = index.rangeQuery(rangeBounds).stats;
-		summary.range.add(rangeStats);
-		summary.traces.push_back({ traceId++, "range", true, rangeBounds, false, {}, 0.0f, 0, rangeStats });
+		const PointSpatialIndex::QueryStats rangeStats = index.rangeQuery(rangeBounds)._stats;
+		summary._range.add(rangeStats);
+		summary._traces.push_back({ traceId++, "range", true, rangeBounds, false, {}, 0.0f, 0, rangeStats });
 
-		const PointSpatialIndex::QueryStats countStats = index.countRange(rangeBounds).stats;
-		summary.countRange.add(countStats);
-		summary.traces.push_back({ traceId++, "count_range", true, rangeBounds, false, {}, 0.0f, 0, countStats });
+		const PointSpatialIndex::QueryStats countStats = index.countRange(rangeBounds)._stats;
+		summary._countRange.add(countStats);
+		summary._traces.push_back({ traceId++, "count_range", true, rangeBounds, false, {}, 0.0f, 0, countStats });
 
 		const glm::vec3 radiusCenter = randomPointInBounds(rng, cloud.bounds());
 		const float radius = randomQueryRadius(rng, cloud);
-		const PointSpatialIndex::QueryStats radiusStats = index.radiusQuery(radiusCenter, radius).stats;
-		summary.radius.add(radiusStats);
-		summary.traces.push_back({ traceId++, "radius", false, {}, true, radiusCenter, radius, 0, radiusStats });
+		const PointSpatialIndex::QueryStats radiusStats = index.radiusQuery(radiusCenter, radius)._stats;
+		summary._radius.add(radiusStats);
+		summary._traces.push_back({ traceId++, "radius", false, {}, true, radiusCenter, radius, 0, radiusStats });
 
 		const glm::vec3 knnCenter = randomPointInBounds(rng, cloud.bounds());
-		const PointSpatialIndex::QueryStats knnStats = index.knnQuery(knnCenter, options.queryK).stats;
-		summary.knn.add(knnStats);
-		summary.traces.push_back({ traceId++, "knn", false, {}, true, knnCenter, 0.0f, options.queryK, knnStats });
+		const PointSpatialIndex::QueryStats knnStats = index.knnQuery(knnCenter, options._queryK)._stats;
+		summary._knn.add(knnStats);
+		summary._traces.push_back({ traceId++, "knn", false, {}, true, knnCenter, 0.0f, options._queryK, knnStats });
 	}
 
 	summary.finalize();
@@ -388,31 +388,31 @@ static bool isEmptyFile(const std::filesystem::path& path)
 static void writeQueryMetricsJson(std::ostream& stream, const char* name, const Experiments::QueryMetrics& metrics, bool trailingComma)
 {
 	stream << "    \"" << name << "\": {\n";
-	stream << "      \"total_queries\": " << metrics.totalQueries << ",\n";
-	stream << "      \"total_latency_ms\": " << metrics.totalLatencyMs << ",\n";
-	stream << "      \"avg_latency_ms\": " << metrics.averageLatencyMs << ",\n";
-	stream << "      \"median_latency_ms\": " << metrics.medianLatencyMs << ",\n";
-	stream << "      \"p95_latency_ms\": " << metrics.p95LatencyMs << ",\n";
-	stream << "      \"throughput_queries_per_sec\": " << metrics.throughputQueriesPerSecond << ",\n";
-	stream << "      \"avg_visited_nodes\": " << metrics.averageVisitedNodes << ",\n";
-	stream << "      \"avg_tested_points\": " << metrics.averageTestedPoints << ",\n";
-	stream << "      \"avg_returned_points\": " << metrics.averageReturnedPoints << ",\n";
-	stream << "      \"avg_fully_contained_nodes\": " << metrics.averageFullyContainedNodes << ",\n";
-	stream << "      \"total_visited_nodes\": " << metrics.totalVisitedNodes << ",\n";
-	stream << "      \"total_tested_points\": " << metrics.totalTestedPoints << ",\n";
-	stream << "      \"total_returned_points\": " << metrics.totalReturnedPoints << ",\n";
-	stream << "      \"total_fully_contained_nodes\": " << metrics.totalFullyContainedNodes << "\n";
+	stream << "      \"total_queries\": " << metrics._totalQueries << ",\n";
+	stream << "      \"total_latency_ms\": " << metrics._totalLatencyMs << ",\n";
+	stream << "      \"avg_latency_ms\": " << metrics._averageLatencyMs << ",\n";
+	stream << "      \"median_latency_ms\": " << metrics._medianLatencyMs << ",\n";
+	stream << "      \"p95_latency_ms\": " << metrics._p95LatencyMs << ",\n";
+	stream << "      \"throughput_queries_per_sec\": " << metrics._throughputQueriesPerSecond << ",\n";
+	stream << "      \"avg_visited_nodes\": " << metrics._averageVisitedNodes << ",\n";
+	stream << "      \"avg_tested_points\": " << metrics._averageTestedPoints << ",\n";
+	stream << "      \"avg_returned_points\": " << metrics._averageReturnedPoints << ",\n";
+	stream << "      \"avg_fully_contained_nodes\": " << metrics._averageFullyContainedNodes << ",\n";
+	stream << "      \"total_visited_nodes\": " << metrics._totalVisitedNodes << ",\n";
+	stream << "      \"total_tested_points\": " << metrics._totalTestedPoints << ",\n";
+	stream << "      \"total_returned_points\": " << metrics._totalReturnedPoints << ",\n";
+	stream << "      \"total_fully_contained_nodes\": " << metrics._totalFullyContainedNodes << "\n";
 	stream << "    }" << (trailingComma ? "," : "") << "\n";
 }
 
 static void printQueryMetrics(const char* label, const Experiments::QueryMetrics& metrics)
 {
 	std::cout << "    " << label << ": "
-		<< "avg " << metrics.averageLatencyMs << " ms, "
-		<< "p95 " << metrics.p95LatencyMs << " ms, "
-		<< "visited " << metrics.averageVisitedNodes << ", "
-		<< "tested " << metrics.averageTestedPoints << ", "
-		<< "returned " << metrics.averageReturnedPoints << '\n';
+		<< "avg " << metrics._averageLatencyMs << " ms, "
+		<< "p95 " << metrics._p95LatencyMs << " ms, "
+		<< "visited " << metrics._averageVisitedNodes << ", "
+		<< "tested " << metrics._averageTestedPoints << ", "
+		<< "returned " << metrics._averageReturnedPoints << '\n';
 }
 
 static void printBounds(const PointCloud& cloud)
@@ -449,16 +449,16 @@ static void writeResults(
 
 	std::ofstream output(outputPath);
 	if (!output.is_open())
-		throw std::runtime_error("Unable to open point benchmark output path: " + options.outputPath);
+		throw std::runtime_error("Unable to open point benchmark output path: " + options._outputPath);
 
 	output << std::fixed << std::setprecision(4);
 	output << "{\n";
 	output << "  \"run_id\": \"" << jsonEscape(runId) << "\",\n";
 	output << "  \"mode\": \"points\",\n";
 	output << "  \"dataset\": {\n";
-	output << "    \"name\": \"" << jsonEscape(datasetName(options.inputPath)) << "\",\n";
+	output << "    \"name\": \"" << jsonEscape(datasetName(options._inputPath)) << "\",\n";
 	output << "    \"source\": \"file\",\n";
-	output << "    \"path\": \"" << jsonEscape(options.inputPath) << "\",\n";
+	output << "    \"path\": \"" << jsonEscape(options._inputPath) << "\",\n";
 	output << "    \"num_points\": " << cloud.size() << ",\n";
 	output << "    \"approximate_density\": " << cloud.approximateDensity() << ",\n";
 	output << "    \"bounds_min\": ";
@@ -476,95 +476,95 @@ static void writeResults(
 	writeDVec3Json(output, cloud.coordinateFrame().origin);
 	output << ",\n";
 	output << "      \"scale\": ";
-	writeDVec3Json(output, cloud.coordinateFrame().scale);
+	writeDVec3Json(output, cloud.coordinateFrame()._scale);
 	output << "\n";
 	output << "    }\n";
 	output << "  },\n";
 	output << "  \"cache\": {\n";
-	output << "    \"enabled\": " << (options.useBinaryCache ? "true" : "false") << ",\n";
+	output << "    \"enabled\": " << (options._useBinaryCache ? "true" : "false") << ",\n";
 	output << "    \"path\": \"" << jsonEscape(cloud.cachePath()) << "\",\n";
 	output << "    \"loaded_from_cache\": " << (cloud.loadedFromCache() ? "true" : "false") << "\n";
 	output << "  },\n";
 	output << "  \"schema\": {\n";
 	output << "    \"path\": \"" << jsonEscape(schemaPath) << "\",\n";
-	output << "    \"name\": \"" << jsonEscape(schema.name) << "\",\n";
+	output << "    \"name\": \"" << jsonEscape(schema._name) << "\",\n";
 	output << "    \"total_levels\": " << schema.totalLevels() << "\n";
 	output << "  },\n";
-	if (autoSelection.enabled)
+	if (autoSelection._enabled)
 	{
 		output << "  \"schema_selection\": {\n";
 		output << "    \"mode\": \"auto\",\n";
-		output << "    \"model_path\": \"" << jsonEscape(autoSelection.selection.modelPath) << "\",\n";
-		output << "    \"workload_profile_path\": \"" << jsonEscape(autoSelection.selection.workloadProfilePath) << "\",\n";
-		output << "    \"selected_schema_name\": \"" << jsonEscape(autoSelection.selection.schemaName) << "\",\n";
-		output << "    \"selected_schema_path\": \"" << jsonEscape(autoSelection.selection.schemaPath) << "\",\n";
-		output << "    \"score_source\": \"" << (autoSelection.selection.measuredScore ? "measured" : "predicted") << "\",\n";
-		output << "    \"predicted_score\": " << autoSelection.selection.predictedScore << ",\n";
+		output << "    \"model_path\": \"" << jsonEscape(autoSelection._selection._modelPath) << "\",\n";
+		output << "    \"workload_profile_path\": \"" << jsonEscape(autoSelection._selection._workloadProfilePath) << "\",\n";
+		output << "    \"selected_schema_name\": \"" << jsonEscape(autoSelection._selection._schemaName) << "\",\n";
+		output << "    \"selected_schema_path\": \"" << jsonEscape(autoSelection._selection._schemaPath) << "\",\n";
+		output << "    \"score_source\": \"" << (autoSelection._selection._measuredScore ? "measured" : "predicted") << "\",\n";
+		output << "    \"predicted_score\": " << autoSelection._selection._predictedScore << ",\n";
 		output << "    \"candidates\": [\n";
-		for (size_t i = 0; i < autoSelection.selection.candidates.size(); ++i)
+		for (size_t i = 0; i < autoSelection._selection._candidates.size(); ++i)
 		{
-			const Experiments::CandidatePrediction& candidate = autoSelection.selection.candidates[i];
-			output << "      {\"schema_name\": \"" << jsonEscape(candidate.schemaName)
-				<< "\", \"schema_path\": \"" << jsonEscape(candidate.schemaPath)
-				<< "\", \"predicted_score\": " << candidate.predictedScore << "}";
-			output << (i + 1 < autoSelection.selection.candidates.size() ? "," : "") << "\n";
+			const Experiments::CandidatePrediction& candidate = autoSelection._selection._candidates[i];
+			output << "      {\"schema_name\": \"" << jsonEscape(candidate._schemaName)
+				<< "\", \"schema_path\": \"" << jsonEscape(candidate._schemaPath)
+				<< "\", \"predicted_score\": " << candidate._predictedScore << "}";
+			output << (i + 1 < autoSelection._selection._candidates.size() ? "," : "") << "\n";
 		}
 		output << "    ]\n";
 		output << "  },\n";
 	}
 	output << "  \"workload\": {\n";
 	output << "    \"name\": \"generated_mixed\",\n";
-	output << "    \"queries_per_type\": " << queryProfile.queryCount << ",\n";
+	output << "    \"queries_per_type\": " << queryProfile._queryCount << ",\n";
 	output << "    \"total_queries\": " << queryProfile.totalQueries() << ",\n";
-	output << "    \"knn_k\": " << queryProfile.queryK << ",\n";
-	output << "    \"knn_backend\": \"" << (queryProfile.knn.metrics.totalQueries > 0 ? "cpu_tree_knn" : "none") << "\",\n";
-	output << "    \"seed\": " << queryProfile.seed << "\n";
+	output << "    \"knn_k\": " << queryProfile._queryK << ",\n";
+	output << "    \"knn_backend\": \"" << (queryProfile._knn._metrics._totalQueries > 0 ? "cpu_tree_knn" : "none") << "\",\n";
+	output << "    \"seed\": " << queryProfile._seed << "\n";
 	output << "  },\n";
 	output << "  \"timings\": {\n";
 	output << "    \"schema_load_time_ms\": " << schemaMs << ",\n";
 	output << "    \"point_load_time_ms\": " << loadMs << "\n";
 	output << "  },\n";
 	output << "  \"build_metrics\": {\n";
-	output << "    \"build_time_ms\": " << buildMetrics.buildTimeMs << ",\n";
-	output << "    \"num_nodes\": " << buildMetrics.numNodes << ",\n";
-	output << "    \"num_leaves\": " << buildMetrics.numLeaves << ",\n";
-	output << "    \"indexed_points\": " << buildMetrics.indexedPoints << ",\n";
-	output << "    \"max_depth\": " << buildMetrics.maxDepth << ",\n";
-	output << "    \"avg_leaf_occupancy\": " << buildMetrics.averageLeafOccupancy << ",\n";
-	output << "    \"max_leaf_occupancy\": " << buildMetrics.maxLeafOccupancy << ",\n";
-	output << "    \"leaf_occupancy_p50\": " << buildMetrics.leafOccupancyP50 << ",\n";
-	output << "    \"leaf_occupancy_p90\": " << buildMetrics.leafOccupancyP90 << ",\n";
-	output << "    \"leaf_occupancy_p99\": " << buildMetrics.leafOccupancyP99 << ",\n";
-	output << "    \"avg_depth\": " << buildMetrics.averageDepth << ",\n";
-	output << "    \"avg_fanout\": " << buildMetrics.averageFanout << ",\n";
-	output << "    \"max_fanout\": " << buildMetrics.maxFanout << ",\n";
-	output << "    \"empty_child_ratio\": " << buildMetrics.emptyChildRatio << ",\n";
-	output << "    \"single_child_nodes\": " << buildMetrics.singleChildNodeCount << ",\n";
-	output << "    \"mean_tight_bounds_volume_ratio\": " << buildMetrics.meanTightBoundsVolumeRatio << ",\n";
-	output << "    \"micro_indexed_leaves\": " << buildMetrics.microIndexedLeaves << ",\n";
-	output << "    \"micro_indexed_points\": " << buildMetrics.microIndexedPoints << ",\n";
-	output << "    \"node_fanout_summary\": \"" << jsonEscape(buildMetrics.nodeFanoutSummary) << "\",\n";
-	output << "    \"memory_estimate_bytes\": " << buildMetrics.memoryEstimateBytes << "\n";
+	output << "    \"build_time_ms\": " << buildMetrics._buildTimeMs << ",\n";
+	output << "    \"num_nodes\": " << buildMetrics._numNodes << ",\n";
+	output << "    \"num_leaves\": " << buildMetrics._numLeaves << ",\n";
+	output << "    \"indexed_points\": " << buildMetrics._indexedPoints << ",\n";
+	output << "    \"max_depth\": " << buildMetrics._maxDepth << ",\n";
+	output << "    \"avg_leaf_occupancy\": " << buildMetrics._averageLeafOccupancy << ",\n";
+	output << "    \"max_leaf_occupancy\": " << buildMetrics._maxLeafOccupancy << ",\n";
+	output << "    \"leaf_occupancy_p50\": " << buildMetrics._leafOccupancyP50 << ",\n";
+	output << "    \"leaf_occupancy_p90\": " << buildMetrics._leafOccupancyP90 << ",\n";
+	output << "    \"leaf_occupancy_p99\": " << buildMetrics._leafOccupancyP99 << ",\n";
+	output << "    \"avg_depth\": " << buildMetrics._averageDepth << ",\n";
+	output << "    \"avg_fanout\": " << buildMetrics._averageFanout << ",\n";
+	output << "    \"max_fanout\": " << buildMetrics._maxFanout << ",\n";
+	output << "    \"empty_child_ratio\": " << buildMetrics._emptyChildRatio << ",\n";
+	output << "    \"single_child_nodes\": " << buildMetrics._singleChildNodeCount << ",\n";
+	output << "    \"mean_tight_bounds_volume_ratio\": " << buildMetrics._meanTightBoundsVolumeRatio << ",\n";
+	output << "    \"micro_indexed_leaves\": " << buildMetrics._microIndexedLeaves << ",\n";
+	output << "    \"micro_indexed_points\": " << buildMetrics._microIndexedPoints << ",\n";
+	output << "    \"node_fanout_summary\": \"" << jsonEscape(buildMetrics._nodeFanoutSummary) << "\",\n";
+	output << "    \"memory_estimate_bytes\": " << buildMetrics._memoryEstimateBytes << "\n";
 	output << "  },\n";
 	output << "  \"query_metrics\": {\n";
-	writeQueryMetricsJson(output, "mixed", queryProfile.mixed, true);
-	writeQueryMetricsJson(output, "range", queryProfile.range.metrics, true);
-	writeQueryMetricsJson(output, "count_range", queryProfile.countRange.metrics, true);
-	writeQueryMetricsJson(output, "radius", queryProfile.radius.metrics, true);
-	writeQueryMetricsJson(output, "knn", queryProfile.knn.metrics, false);
+	writeQueryMetricsJson(output, "mixed", queryProfile._mixed, true);
+	writeQueryMetricsJson(output, "range", queryProfile._range._metrics, true);
+	writeQueryMetricsJson(output, "count_range", queryProfile._countRange._metrics, true);
+	writeQueryMetricsJson(output, "radius", queryProfile._radius._metrics, true);
+	writeQueryMetricsJson(output, "knn", queryProfile._knn._metrics, false);
 	output << "\n";
 	output << "  },\n";
 	output << "  \"query_breakdowns\": {\n";
-	writeQueryBreakdownJson(output, "mixed", queryProfile.mixedBreakdown, true);
-	writeQueryBreakdownJson(output, "range", queryProfile.range.breakdown, true);
-	writeQueryBreakdownJson(output, "count_range", queryProfile.countRange.breakdown, true);
-	writeQueryBreakdownJson(output, "radius", queryProfile.radius.breakdown, true);
-	writeQueryBreakdownJson(output, "knn", queryProfile.knn.breakdown, false);
+	writeQueryBreakdownJson(output, "mixed", queryProfile._mixedBreakdown, true);
+	writeQueryBreakdownJson(output, "range", queryProfile._range._breakdown, true);
+	writeQueryBreakdownJson(output, "count_range", queryProfile._countRange._breakdown, true);
+	writeQueryBreakdownJson(output, "radius", queryProfile._radius._breakdown, true);
+	writeQueryBreakdownJson(output, "knn", queryProfile._knn._breakdown, false);
 	output << "  },\n";
 	output << "  \"outputs\": {\n";
 	output << "    \"json_path\": \"" << jsonEscape(outputPath.string()) << "\",\n";
-	output << "    \"csv_path\": \"" << jsonEscape(options.csvPath) << "\",\n";
-	output << "    \"query_trace_path\": \"" << jsonEscape(options.queryTracePath) << "\",\n";
+	output << "    \"csv_path\": \"" << jsonEscape(options._csvPath) << "\",\n";
+	output << "    \"query_trace_path\": \"" << jsonEscape(options._queryTracePath) << "\",\n";
 	output << "    \"multiple_schemas\": " << (multipleSchemas ? "true" : "false") << "\n";
 	output << "  }\n";
 	output << "}\n";
@@ -610,53 +610,53 @@ static void appendCsvSummary(
 
 	output << std::fixed << std::setprecision(6)
 		<< csvEscape(runId) << ','
-		<< csvEscape(datasetName(options.inputPath)) << ','
-		<< csvEscape(options.inputPath) << ','
+		<< csvEscape(datasetName(options._inputPath)) << ','
+		<< csvEscape(options._inputPath) << ','
 		<< cloud.size() << ','
-		<< csvEscape(schema.name) << ','
+		<< csvEscape(schema._name) << ','
 		<< csvEscape(schemaPath) << ','
 		<< "generated_mixed" << ','
-		<< queryProfile.queryCount << ','
+		<< queryProfile._queryCount << ','
 		<< queryProfile.totalQueries() << ','
-		<< queryProfile.queryK << ','
-		<< queryProfile.seed << ','
+		<< queryProfile._queryK << ','
+		<< queryProfile._seed << ','
 		<< schemaMs << ','
 		<< loadMs << ','
-		<< buildMetrics.buildTimeMs << ','
-		<< buildMetrics.numNodes << ','
-		<< buildMetrics.numLeaves << ','
-		<< buildMetrics.maxDepth << ','
-		<< buildMetrics.averageLeafOccupancy << ','
-		<< buildMetrics.maxLeafOccupancy << ','
-		<< buildMetrics.memoryEstimateBytes << ','
-		<< buildMetrics.leafOccupancyP50 << ','
-		<< buildMetrics.leafOccupancyP90 << ','
-		<< buildMetrics.leafOccupancyP99 << ','
-		<< buildMetrics.averageDepth << ','
-		<< buildMetrics.averageFanout << ','
-		<< buildMetrics.maxFanout << ','
-		<< buildMetrics.emptyChildRatio << ','
-		<< buildMetrics.singleChildNodeCount << ','
-		<< buildMetrics.meanTightBoundsVolumeRatio << ','
-		<< buildMetrics.microIndexedLeaves << ','
-		<< buildMetrics.microIndexedPoints << ','
-		<< csvEscape(buildMetrics.nodeFanoutSummary) << ','
-		<< queryProfile.mixed.averageLatencyMs << ','
-		<< queryProfile.mixed.medianLatencyMs << ','
-		<< queryProfile.mixed.p95LatencyMs << ','
-		<< queryProfile.mixed.throughputQueriesPerSecond << ','
-		<< queryProfile.mixed.averageVisitedNodes << ','
-		<< queryProfile.mixed.averageTestedPoints << ','
-		<< queryProfile.mixed.averageReturnedPoints << ','
-		<< queryProfile.range.metrics.averageLatencyMs << ','
-		<< queryProfile.range.metrics.p95LatencyMs << ','
-		<< queryProfile.countRange.metrics.averageLatencyMs << ','
-		<< queryProfile.countRange.metrics.p95LatencyMs << ','
-		<< queryProfile.radius.metrics.averageLatencyMs << ','
-		<< queryProfile.radius.metrics.p95LatencyMs << ','
-		<< queryProfile.knn.metrics.averageLatencyMs << ','
-		<< queryProfile.knn.metrics.p95LatencyMs << ','
-		<< (queryProfile.knn.metrics.totalQueries > 0 ? "cpu_tree_knn" : "none") << '\n';
+		<< buildMetrics._buildTimeMs << ','
+		<< buildMetrics._numNodes << ','
+		<< buildMetrics._numLeaves << ','
+		<< buildMetrics._maxDepth << ','
+		<< buildMetrics._averageLeafOccupancy << ','
+		<< buildMetrics._maxLeafOccupancy << ','
+		<< buildMetrics._memoryEstimateBytes << ','
+		<< buildMetrics._leafOccupancyP50 << ','
+		<< buildMetrics._leafOccupancyP90 << ','
+		<< buildMetrics._leafOccupancyP99 << ','
+		<< buildMetrics._averageDepth << ','
+		<< buildMetrics._averageFanout << ','
+		<< buildMetrics._maxFanout << ','
+		<< buildMetrics._emptyChildRatio << ','
+		<< buildMetrics._singleChildNodeCount << ','
+		<< buildMetrics._meanTightBoundsVolumeRatio << ','
+		<< buildMetrics._microIndexedLeaves << ','
+		<< buildMetrics._microIndexedPoints << ','
+		<< csvEscape(buildMetrics._nodeFanoutSummary) << ','
+		<< queryProfile._mixed._averageLatencyMs << ','
+		<< queryProfile._mixed._medianLatencyMs << ','
+		<< queryProfile._mixed._p95LatencyMs << ','
+		<< queryProfile._mixed._throughputQueriesPerSecond << ','
+		<< queryProfile._mixed._averageVisitedNodes << ','
+		<< queryProfile._mixed._averageTestedPoints << ','
+		<< queryProfile._mixed._averageReturnedPoints << ','
+		<< queryProfile._range._metrics._averageLatencyMs << ','
+		<< queryProfile._range._metrics._p95LatencyMs << ','
+		<< queryProfile._countRange._metrics._averageLatencyMs << ','
+		<< queryProfile._countRange._metrics._p95LatencyMs << ','
+		<< queryProfile._radius._metrics._averageLatencyMs << ','
+		<< queryProfile._radius._metrics._p95LatencyMs << ','
+		<< queryProfile._knn._metrics._averageLatencyMs << ','
+		<< queryProfile._knn._metrics._p95LatencyMs << ','
+		<< (queryProfile._knn._metrics._totalQueries > 0 ? "cpu_tree_knn" : "none") << '\n';
 }
 
 static void writeQueryTraceHeader(std::ostream& output)
@@ -677,7 +677,7 @@ static void appendPointQueryTrace(
 	const SchemaConfig& schema,
 	const QueryProfileSummary& queryProfile)
 {
-	if (tracePath.empty() || queryProfile.traces.empty())
+	if (tracePath.empty() || queryProfile._traces.empty())
 		return;
 
 	const std::filesystem::path path(tracePath);
@@ -692,34 +692,34 @@ static void appendPointQueryTrace(
 		writeQueryTraceHeader(output);
 
 	output << std::fixed << std::setprecision(6);
-	for (const QueryTraceSample& trace : queryProfile.traces)
+	for (const QueryTraceSample& trace : queryProfile._traces)
 	{
 		output
 			<< csvEscape(runId) << ','
-			<< csvEscape(datasetName(options.inputPath)) << ','
-			<< csvEscape(options.inputPath) << ','
-			<< csvEscape(schema.name) << ','
+			<< csvEscape(datasetName(options._inputPath)) << ','
+			<< csvEscape(options._inputPath) << ','
+			<< csvEscape(schema._name) << ','
 			<< csvEscape(schemaPath) << ','
 			<< "generated_mixed" << ','
-			<< trace.queryId << ','
-			<< csvEscape(trace.queryType) << ',';
+			<< trace._queryId << ','
+			<< csvEscape(trace._queryType) << ',';
 
-		if (trace.hasBounds)
+		if (trace._hasBounds)
 		{
 			output
-				<< trace.bounds.min().x << ','
-				<< trace.bounds.min().y << ','
-				<< trace.bounds.min().z << ','
-				<< trace.bounds.max().x << ','
-				<< trace.bounds.max().y << ','
-				<< trace.bounds.max().z << ',';
+				<< trace._bounds.min().x << ','
+				<< trace._bounds.min().y << ','
+				<< trace._bounds.min().z << ','
+				<< trace._bounds.max().x << ','
+				<< trace._bounds.max().y << ','
+				<< trace._bounds.max().z << ',';
 		}
 		else
 		{
 			output << ",,,,,,";
 		}
 
-		if (trace.hasCenter)
+		if (trace._hasCenter)
 		{
 			output
 				<< trace.center.x << ','
@@ -732,52 +732,52 @@ static void appendPointQueryTrace(
 		}
 
 		output
-			<< trace.radius << ','
-			<< trace.k << ','
-			<< trace.stats.elapsedMs << ','
-			<< trace.stats.visitedNodes << ','
-			<< trace.stats.testedPoints << ','
-			<< trace.stats.returnedPoints << ','
-			<< trace.stats.fullyContainedNodes << ','
-			<< csvEscape(formatDepthBreakdown(trace.stats.breakdown)) << ','
-			<< csvEscape(formatMapBreakdown(trace.stats.breakdown.visitedByStructure)) << ','
-			<< csvEscape(formatMapBreakdown(trace.stats.breakdown.testedPointsByStructure)) << ','
-			<< csvEscape(formatMapBreakdown(trace.stats.breakdown.fullyContainedByStructure)) << ','
+			<< trace._radius << ','
+			<< trace._k << ','
+			<< trace._stats._elapsedMs << ','
+			<< trace._stats._visitedNodes << ','
+			<< trace._stats._testedPoints << ','
+			<< trace._stats._returnedPoints << ','
+			<< trace._stats._fullyContainedNodes << ','
+			<< csvEscape(formatDepthBreakdown(trace._stats._breakdown)) << ','
+			<< csvEscape(formatMapBreakdown(trace._stats._breakdown._visitedByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(trace._stats._breakdown._testedPointsByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(trace._stats._breakdown._fullyContainedByStructure)) << ','
 			<< "cpu" << ','
-			<< queryProfile.seed << '\n';
+			<< queryProfile._seed << '\n';
 	}
 }
 
 int PointBenchmark::run(const Options& options)
 {
-	if (options.inputPath.empty())
+	if (options._inputPath.empty())
 		throw std::invalid_argument("Point mode requires --input <file.las|file.ply>");
 
 	const auto loadBegin = std::chrono::steady_clock::now();
-	const PointCloud cloud = PointCloud::load(options.inputPath, { options.useBinaryCache, options.rebuildBinaryCache });
+	const PointCloud cloud = PointCloud::load(options._inputPath, { options._useBinaryCache, options._rebuildBinaryCache });
 	const auto loadEnd = std::chrono::steady_clock::now();
 	if (cloud.empty())
-		throw std::runtime_error("Point cloud is empty: " + options.inputPath);
+		throw std::runtime_error("Point cloud is empty: " + options._inputPath);
 
 	const double loadMs = elapsedMilliseconds(loadBegin, loadEnd);
 	AutoSelectionLog autoSelection;
-	std::vector<std::string> schemaPaths = options.schemaPaths;
+	std::vector<std::string> schemaPaths = options._schemaPaths;
 	if (schemaPaths.empty())
 	{
-		if (options.schemaPath == "auto")
+		if (options._schemaPath == "auto")
 		{
-			if (options.modelPath.empty())
+			if (options._modelPath.empty())
 				throw std::invalid_argument("--schema auto requires --model <schema_selector.json>");
-			if (options.workloadProfilePath.empty())
+			if (options._workloadProfilePath.empty())
 				throw std::invalid_argument("--schema auto requires --workload-profile <profile.json>");
 
-			autoSelection.enabled = true;
-			autoSelection.selection = Experiments::selectSchemaForCloud(options.modelPath, options.workloadProfilePath, cloud);
-			schemaPaths.push_back(autoSelection.selection.schemaPath);
+			autoSelection._enabled = true;
+			autoSelection._selection = Experiments::selectSchemaForCloud(options._modelPath, options._workloadProfilePath, cloud);
+			schemaPaths.push_back(autoSelection._selection._schemaPath);
 		}
 		else
 		{
-			schemaPaths.push_back(options.schemaPath);
+			schemaPaths.push_back(options._schemaPath);
 		}
 	}
 
@@ -787,10 +787,10 @@ int PointBenchmark::run(const Options& options)
 	{
 		const auto schemaBegin = std::chrono::steady_clock::now();
 		LoadedSchema loaded;
-		loaded.path = schemaPath;
-		loaded.config = Config::loadSchemaConfig(schemaPath);
+		loaded._path = schemaPath;
+		loaded._config = Config::loadSchemaConfig(schemaPath);
 		const auto schemaEnd = std::chrono::steady_clock::now();
-		loaded.schemaLoadMs = elapsedMilliseconds(schemaBegin, schemaEnd);
+		loaded._schemaLoadMs = elapsedMilliseconds(schemaBegin, schemaEnd);
 		schemas.push_back(std::move(loaded));
 	}
 
@@ -798,38 +798,38 @@ int PointBenchmark::run(const Options& options)
 
 	std::cout << std::fixed << std::setprecision(3);
 	std::cout << "Point cloud benchmark\n";
-	std::cout << "  input: " << options.inputPath << '\n';
-	if (options.useBinaryCache)
+	std::cout << "  input: " << options._inputPath << '\n';
+	if (options._useBinaryCache)
 		std::cout << "  cache: " << (cloud.loadedFromCache() ? "loaded " : "written ") << cloud.cachePath() << '\n';
 	else
 		std::cout << "  cache: disabled\n";
 	std::cout << "  points: " << cloud.size() << '\n';
 	printBounds(cloud);
 	std::cout << "  point load: " << loadMs << " ms\n";
-	if (autoSelection.enabled)
+	if (autoSelection._enabled)
 	{
 		std::cout << "  schema selection: auto\n";
-		std::cout << "    model: " << autoSelection.selection.modelPath << '\n';
-		std::cout << "    workload profile: " << autoSelection.selection.workloadProfilePath << '\n';
-		std::cout << "    selected: " << autoSelection.selection.schemaName
-			<< " (" << autoSelection.selection.schemaPath << ")"
-			<< (autoSelection.selection.measuredScore ? " measured score " : " predicted score ")
-			<< autoSelection.selection.predictedScore << '\n';
-		for (const Experiments::CandidatePrediction& candidate : autoSelection.selection.candidates)
+		std::cout << "    model: " << autoSelection._selection._modelPath << '\n';
+		std::cout << "    workload profile: " << autoSelection._selection._workloadProfilePath << '\n';
+		std::cout << "    selected: " << autoSelection._selection._schemaName
+			<< " (" << autoSelection._selection._schemaPath << ")"
+			<< (autoSelection._selection._measuredScore ? " measured score " : " predicted score ")
+			<< autoSelection._selection._predictedScore << '\n';
+		for (const Experiments::CandidatePrediction& candidate : autoSelection._selection._candidates)
 		{
-			std::cout << "      candidate: " << candidate.schemaName
-				<< " score " << candidate.predictedScore << '\n';
+			std::cout << "      candidate: " << candidate._schemaName
+				<< " score " << candidate._predictedScore << '\n';
 		}
 	}
 
 	for (size_t schemaIndex = 0; schemaIndex < schemas.size(); ++schemaIndex)
 	{
 		const LoadedSchema& loadedSchema = schemas[schemaIndex];
-		SchemaConfig schema = loadedSchema.config;
-		if (options.enableLeafMicroIndexes)
+		SchemaConfig schema = loadedSchema._config;
+		if (options._enableLeafMicroIndexes)
 		{
-			schema.buildPolicy.enableLeafMicroIndexes = true;
-			schema.buildPolicy.leafMicroIndexThreshold = options.leafMicroIndexThreshold;
+			schema._buildPolicy._enableLeafMicroIndexes = true;
+			schema._buildPolicy._leafMicroIndexThreshold = options._leafMicroIndexThreshold;
 		}
 
 		PointSpatialIndex index;
@@ -840,32 +840,32 @@ int PointBenchmark::run(const Options& options)
 		const PointSpatialIndex::Stats indexStats = index.stats();
 		const Experiments::BuildMetrics buildMetrics = Experiments::collectBuildMetrics(indexStats, index.root(), buildMs, schema);
 		const QueryProfileSummary queryProfile = runQueryProfile(options, cloud, index);
-		const std::string runId = makeRunId(options.inputPath, schema.name, schemaIndex);
-		const std::filesystem::path jsonPath = outputPathForRun(options.outputPath, schema.name, multipleSchemas);
+		const std::string runId = makeRunId(options._inputPath, schema._name, schemaIndex);
+		const std::filesystem::path jsonPath = outputPathForRun(options._outputPath, schema._name, multipleSchemas);
 
 		std::cout << "  schema[" << (schemaIndex + 1) << "/" << schemas.size() << "]: "
-			<< schema.name << " (" << loadedSchema.path << ")\n";
+			<< schema._name << " (" << loadedSchema._path << ")\n";
 		std::cout << "    run id: " << runId << '\n';
-		std::cout << "    schema load: " << loadedSchema.schemaLoadMs << " ms\n";
-		std::cout << "    index build: " << buildMetrics.buildTimeMs << " ms\n";
+		std::cout << "    schema load: " << loadedSchema._schemaLoadMs << " ms\n";
+		std::cout << "    index build: " << buildMetrics._buildTimeMs << " ms\n";
 		std::cout << "    nodes/leaves/maxDepth: "
-			<< buildMetrics.numNodes << " / "
-			<< buildMetrics.numLeaves << " / "
-			<< buildMetrics.maxDepth << '\n';
+			<< buildMetrics._numNodes << " / "
+			<< buildMetrics._numLeaves << " / "
+			<< buildMetrics._maxDepth << '\n';
 		std::cout << "    leaf occupancy avg/max: "
-			<< buildMetrics.averageLeafOccupancy << " / "
-			<< buildMetrics.maxLeafOccupancy << '\n';
-		std::cout << "    memory estimate: " << buildMetrics.memoryEstimateBytes << " bytes\n";
-		std::cout << "    indexed points: " << buildMetrics.indexedPoints << '\n';
-		if (options.queryCount > 0)
+			<< buildMetrics._averageLeafOccupancy << " / "
+			<< buildMetrics._maxLeafOccupancy << '\n';
+		std::cout << "    memory estimate: " << buildMetrics._memoryEstimateBytes << " bytes\n";
+		std::cout << "    indexed points: " << buildMetrics._indexedPoints << '\n';
+		if (options._queryCount > 0)
 		{
-			std::cout << "    query profile: " << options.queryCount << " generated queries per type"
-				<< " (knn k=" << options.queryK << ", seed=" << options.querySeed << ")\n";
-			printQueryMetrics("mixed", queryProfile.mixed);
-			printQueryMetrics("range", queryProfile.range.metrics);
-			printQueryMetrics("count range", queryProfile.countRange.metrics);
-			printQueryMetrics("radius", queryProfile.radius.metrics);
-			printQueryMetrics("knn", queryProfile.knn.metrics);
+			std::cout << "    query profile: " << options._queryCount << " generated queries per type"
+				<< " (knn k=" << options._queryK << ", seed=" << options._querySeed << ")\n";
+			printQueryMetrics("mixed", queryProfile._mixed);
+			printQueryMetrics("range", queryProfile._range._metrics);
+			printQueryMetrics("count range", queryProfile._countRange._metrics);
+			printQueryMetrics("radius", queryProfile._radius._metrics);
+			printQueryMetrics("knn", queryProfile._knn._metrics);
 		}
 		else
 		{
@@ -876,36 +876,36 @@ int PointBenchmark::run(const Options& options)
 			jsonPath,
 			runId,
 			options,
-			loadedSchema.path,
+			loadedSchema._path,
 			schema,
 			cloud,
 			buildMetrics,
 			queryProfile,
-			loadedSchema.schemaLoadMs,
+			loadedSchema._schemaLoadMs,
 			loadMs,
 			multipleSchemas,
 			autoSelection);
 		appendCsvSummary(
-			options.csvPath,
+			options._csvPath,
 			runId,
 			options,
-			loadedSchema.path,
+			loadedSchema._path,
 			schema,
 			cloud,
 			buildMetrics,
 			queryProfile,
-			loadedSchema.schemaLoadMs,
+			loadedSchema._schemaLoadMs,
 			loadMs);
 		appendPointQueryTrace(
-			options.queryTracePath,
+			options._queryTracePath,
 			runId,
 			options,
-			loadedSchema.path,
+			loadedSchema._path,
 			schema,
 			queryProfile);
 	}
 
-	if (options.pauseAtEnd)
+	if (options._pauseAtEnd)
 		std::system("pause");
 
 	return 0;

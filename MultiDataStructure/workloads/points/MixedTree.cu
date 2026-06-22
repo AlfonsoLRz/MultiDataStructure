@@ -51,27 +51,27 @@ namespace
 
 	struct DeviceLevelCondition
 	{
-		uint32_t flags = 0;
-		uint32_t minPoints = 0;
-		uint32_t maxPoints = 0;
-		float minDensity = 0.0f;
-		float maxDensity = 0.0f;
-		float minHeightRatio = 0.0f;
-		float maxHeightRatio = 0.0f;
-		float minExtentX = 0.0f;
-		float maxExtentX = 0.0f;
-		float minExtentY = 0.0f;
-		float maxExtentY = 0.0f;
-		float minExtentZ = 0.0f;
-		float maxExtentZ = 0.0f;
-		float minAnisotropy = 0.0f;
-		float maxAnisotropy = 0.0f;
+		uint32_t _flags = 0;
+		uint32_t _minPoints = 0;
+		uint32_t _maxPoints = 0;
+		float _minDensity = 0.0f;
+		float _maxDensity = 0.0f;
+		float _minHeightRatio = 0.0f;
+		float _maxHeightRatio = 0.0f;
+		float _minExtentX = 0.0f;
+		float _maxExtentX = 0.0f;
+		float _minExtentY = 0.0f;
+		float _maxExtentY = 0.0f;
+		float _minExtentZ = 0.0f;
+		float _maxExtentZ = 0.0f;
+		float _minAnisotropy = 0.0f;
+		float _maxAnisotropy = 0.0f;
 	};
 
 	struct HostActiveTypeAccumulator
 	{
-		size_t nodes = 0;
-		size_t leafPoints = 0;
+		size_t _nodes = 0;
+		size_t _leafPoints = 0;
 	};
 
 	size_t divUp(size_t value, size_t divisor)
@@ -81,25 +81,25 @@ namespace
 
 	size_t leafCapacityForSchema(const SchemaConfig& schema)
 	{
-		size_t leafCapacity = schema.buildPolicy.leafCapacity;
-		if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
-			leafCapacity = schema.levels.front().leafCapacity;
+		size_t leafCapacity = schema._buildPolicy._leafCapacity;
+		if (!schema._levels.empty() && schema._levels.front()._leafCapacity > 0)
+			leafCapacity = schema._levels.front()._leafCapacity;
 
 		return std::max<size_t>(1, leafCapacity);
 	}
 
 	size_t minSplitForSchema(const SchemaConfig& schema)
 	{
-		size_t minSplit = schema.buildPolicy.minPrimitivesToSplit;
-		if (!schema.levels.empty() && schema.levels.front().minPrimitivesToSplit > 0)
-			minSplit = schema.levels.front().minPrimitivesToSplit;
+		size_t minSplit = schema._buildPolicy._minPrimitivesToSplit;
+		if (!schema._levels.empty() && schema._levels.front()._minPrimitivesToSplit > 0)
+			minSplit = schema._levels.front()._minPrimitivesToSplit;
 
 		return std::max<size_t>(2, minSplit);
 	}
 
 	size_t maxDepthForSchema(const SchemaConfig& schema)
 	{
-		size_t maxDepth = schema.buildPolicy.maxDepth;
+		size_t maxDepth = schema._buildPolicy._maxDepth;
 		if (maxDepth == 0)
 			maxDepth = schema.totalLevels();
 		if (maxDepth == 0)
@@ -122,10 +122,10 @@ namespace
 
 	int splitTypeForLevel(const SchemaLevelConfig& level)
 	{
-		const std::string typeName = normalizedTypeName(level.typeName);
+		const std::string typeName = normalizedTypeName(level._typeName);
 		if (typeName == "quadtree" || typeName == "quadtreenode")
 		{
-			const std::string policy = normalizedTypeName(level.axisPolicy.empty() ? std::string("xy") : level.axisPolicy);
+			const std::string policy = normalizedTypeName(level._axisPolicy.empty() ? std::string("xy") : level._axisPolicy);
 			if (policy == "xz" || policy == "ignorey" || policy == "y")
 				return SplitQuadTreeXZ;
 			if (policy == "yz" || policy == "ignorex" || policy == "x")
@@ -144,24 +144,24 @@ namespace
 			return SplitRegularGrid;
 		if (typeName == "hgrid" || typeName == "hierarchicalgrid" || typeName == "hierarchicalgrid3d")
 			return SplitHGrid;
-		return static_cast<int>(level.type);
+		return static_cast<int>(level._type);
 	}
 
 	bool hasUnsupportedMixedCondition(const SchemaLevelCondition& condition)
 	{
-		return condition.minOccupancyEntropy.has_value() ||
-			condition.maxOccupancyEntropy.has_value();
+		return condition._minOccupancyEntropy.has_value() ||
+			condition._maxOccupancyEntropy.has_value();
 	}
 
 	void validateMixedTreeConditions(const SchemaConfig& schema)
 	{
-		for (const SchemaLevelConfig& level : schema.levels)
+		for (const SchemaLevelConfig& level : schema._levels)
 		{
-			if (level.adaptiveLeafCapacity.enabled)
+			if (level._adaptiveLeafCapacity._enabled)
 				throw std::runtime_error(
 					"CUDA MixedTree does not currently support adaptiveLeafCapacity; "
 					"remove the adaptive leaf-capacity rule or use the CPU evaluator.");
-			if (hasUnsupportedMixedCondition(level.condition))
+			if (hasUnsupportedMixedCondition(level._condition))
 				throw std::runtime_error(
 					"CUDA MixedTree does not currently support occupancy-entropy conditions; "
 					"remove minOccupancyEntropy/maxOccupancyEntropy or use the CPU evaluator.");
@@ -170,13 +170,13 @@ namespace
 
 	std::string activeTypeNameForDepth(const SchemaConfig& schema, size_t depth)
 	{
-		if (schema.levels.empty())
+		if (schema._levels.empty())
 			return "unknown";
 
 		const SchemaLevelConfig& level = schema.levelForDepth(depth);
-		return level.typeName.empty()
-			? Config::dataStructureLevelName(level.type)
-			: level.typeName;
+		return level._typeName.empty()
+			? Config::dataStructureLevelName(level._type)
+			: level._typeName;
 	}
 
 	void fillActiveStructureStats(
@@ -184,7 +184,7 @@ namespace
 		const SchemaConfig& schema,
 		const std::vector<LinearMixedTreeNode>& hostNodes)
 	{
-		if (schema.levels.empty() || hostNodes.empty())
+		if (schema._levels.empty() || hostNodes.empty())
 			return;
 
 		std::map<std::string, HostActiveTypeAccumulator> byType;
@@ -192,21 +192,21 @@ namespace
 		size_t totalLeafPoints = 0;
 		for (const LinearMixedTreeNode& node : hostNodes)
 		{
-			if (node.pointCount == 0)
+			if (node._pointCount == 0)
 				continue;
 
-			const std::string typeName = activeTypeNameForDepth(schema, node.schemaDepth);
+			const std::string typeName = activeTypeNameForDepth(schema, node._schemaDepth);
 			HostActiveTypeAccumulator& accumulator = byType[typeName];
-			++accumulator.nodes;
+			++accumulator._nodes;
 			++totalNodes;
-			if (node.childBase < 0)
+			if (node._childBase < 0)
 			{
-				accumulator.leafPoints += node.pointCount;
-				totalLeafPoints += node.pointCount;
+				accumulator._leafPoints += node._pointCount;
+				totalLeafPoints += node._pointCount;
 			}
 		}
 
-		result.activeStructureTypes = byType.size();
+		result._activeStructureTypes = byType.size();
 		if (byType.empty())
 			return;
 
@@ -220,12 +220,12 @@ namespace
 			if (!first)
 				summary << ';';
 			first = false;
-			summary << typeName << ":nodes=" << accumulator.nodes << "|points=" << accumulator.leafPoints;
+			summary << typeName << ":nodes=" << accumulator._nodes << "|points=" << accumulator._leafPoints;
 
 			if (typeName != primaryType)
 			{
-				nonPrimaryNodes += accumulator.nodes;
-				nonPrimaryLeafPoints += accumulator.leafPoints;
+				nonPrimaryNodes += accumulator._nodes;
+				nonPrimaryLeafPoints += accumulator._leafPoints;
 			}
 		}
 
@@ -235,8 +235,8 @@ namespace
 		const double nodeFraction = totalNodes > 0
 			? static_cast<double>(nonPrimaryNodes) / static_cast<double>(totalNodes)
 			: 0.0;
-		result.nestedActiveFraction = std::max(pointFraction, nodeFraction);
-		result.activeStructureSummary = summary.str();
+		result._nestedActiveFraction = std::max(pointFraction, nodeFraction);
+		result._activeStructureSummary = summary.str();
 	}
 
 	size_t hostChildSlotCountForSplitType(int splitType)
@@ -263,7 +263,7 @@ namespace
 
 	std::vector<int> splitTypesForSchema(const SchemaConfig& schema, size_t maxDepth)
 	{
-		if (schema.levels.empty())
+		if (schema._levels.empty())
 			throw std::runtime_error("MixedTree requires at least one schema level.");
 
 		std::vector<int> splitTypes;
@@ -279,75 +279,75 @@ namespace
 	DeviceLevelCondition makeDeviceCondition(const SchemaLevelCondition& condition)
 	{
 		DeviceLevelCondition result;
-		if (condition.minPoints)
+		if (condition._minPoints)
 		{
-			result.flags |= HasMinPoints;
-			result.minPoints = static_cast<uint32_t>(std::min<size_t>(condition.minPoints.value(), std::numeric_limits<uint32_t>::max()));
+			result._flags |= HasMinPoints;
+			result._minPoints = static_cast<uint32_t>(std::min<size_t>(condition._minPoints.value(), std::numeric_limits<uint32_t>::max()));
 		}
-		if (condition.maxPoints)
+		if (condition._maxPoints)
 		{
-			result.flags |= HasMaxPoints;
-			result.maxPoints = static_cast<uint32_t>(std::min<size_t>(condition.maxPoints.value(), std::numeric_limits<uint32_t>::max()));
+			result._flags |= HasMaxPoints;
+			result._maxPoints = static_cast<uint32_t>(std::min<size_t>(condition._maxPoints.value(), std::numeric_limits<uint32_t>::max()));
 		}
-		if (condition.minDensity)
+		if (condition._minDensity)
 		{
-			result.flags |= HasMinDensity;
-			result.minDensity = static_cast<float>(condition.minDensity.value());
+			result._flags |= HasMinDensity;
+			result._minDensity = static_cast<float>(condition._minDensity.value());
 		}
-		if (condition.maxDensity)
+		if (condition._maxDensity)
 		{
-			result.flags |= HasMaxDensity;
-			result.maxDensity = static_cast<float>(condition.maxDensity.value());
+			result._flags |= HasMaxDensity;
+			result._maxDensity = static_cast<float>(condition._maxDensity.value());
 		}
-		if (condition.minHeightRatio)
+		if (condition._minHeightRatio)
 		{
-			result.flags |= HasMinHeightRatio;
-			result.minHeightRatio = static_cast<float>(condition.minHeightRatio.value());
+			result._flags |= HasMinHeightRatio;
+			result._minHeightRatio = static_cast<float>(condition._minHeightRatio.value());
 		}
-		if (condition.maxHeightRatio)
+		if (condition._maxHeightRatio)
 		{
-			result.flags |= HasMaxHeightRatio;
-			result.maxHeightRatio = static_cast<float>(condition.maxHeightRatio.value());
+			result._flags |= HasMaxHeightRatio;
+			result._maxHeightRatio = static_cast<float>(condition._maxHeightRatio.value());
 		}
-		if (condition.minExtentX)
+		if (condition._minExtentX)
 		{
-			result.flags |= HasMinExtentX;
-			result.minExtentX = static_cast<float>(condition.minExtentX.value());
+			result._flags |= HasMinExtentX;
+			result._minExtentX = static_cast<float>(condition._minExtentX.value());
 		}
-		if (condition.maxExtentX)
+		if (condition._maxExtentX)
 		{
-			result.flags |= HasMaxExtentX;
-			result.maxExtentX = static_cast<float>(condition.maxExtentX.value());
+			result._flags |= HasMaxExtentX;
+			result._maxExtentX = static_cast<float>(condition._maxExtentX.value());
 		}
-		if (condition.minExtentY)
+		if (condition._minExtentY)
 		{
-			result.flags |= HasMinExtentY;
-			result.minExtentY = static_cast<float>(condition.minExtentY.value());
+			result._flags |= HasMinExtentY;
+			result._minExtentY = static_cast<float>(condition._minExtentY.value());
 		}
-		if (condition.maxExtentY)
+		if (condition._maxExtentY)
 		{
-			result.flags |= HasMaxExtentY;
-			result.maxExtentY = static_cast<float>(condition.maxExtentY.value());
+			result._flags |= HasMaxExtentY;
+			result._maxExtentY = static_cast<float>(condition._maxExtentY.value());
 		}
-		if (condition.minExtentZ)
+		if (condition._minExtentZ)
 		{
-			result.flags |= HasMinExtentZ;
-			result.minExtentZ = static_cast<float>(condition.minExtentZ.value());
+			result._flags |= HasMinExtentZ;
+			result._minExtentZ = static_cast<float>(condition._minExtentZ.value());
 		}
-		if (condition.maxExtentZ)
+		if (condition._maxExtentZ)
 		{
-			result.flags |= HasMaxExtentZ;
-			result.maxExtentZ = static_cast<float>(condition.maxExtentZ.value());
+			result._flags |= HasMaxExtentZ;
+			result._maxExtentZ = static_cast<float>(condition._maxExtentZ.value());
 		}
-		if (condition.minAnisotropy)
+		if (condition._minAnisotropy)
 		{
-			result.flags |= HasMinAnisotropy;
-			result.minAnisotropy = static_cast<float>(condition.minAnisotropy.value());
+			result._flags |= HasMinAnisotropy;
+			result._minAnisotropy = static_cast<float>(condition._minAnisotropy.value());
 		}
-		if (condition.maxAnisotropy)
+		if (condition._maxAnisotropy)
 		{
-			result.flags |= HasMaxAnisotropy;
-			result.maxAnisotropy = static_cast<float>(condition.maxAnisotropy.value());
+			result._flags |= HasMaxAnisotropy;
+			result._maxAnisotropy = static_cast<float>(condition._maxAnisotropy.value());
 		}
 		return result;
 	}
@@ -357,7 +357,7 @@ namespace
 		std::vector<DeviceLevelCondition> values;
 		values.reserve(maxDepth);
 		for (size_t depth = 0; depth < maxDepth; ++depth)
-			values.push_back(makeDeviceCondition(schema.levelForDepth(depth).condition));
+			values.push_back(makeDeviceCondition(schema.levelForDepth(depth)._condition));
 		return values;
 	}
 
@@ -369,9 +369,9 @@ namespace
 		for (size_t depth = 0; depth < maxDepth; ++depth)
 		{
 			size_t cumulative = 0;
-			for (const SchemaLevelConfig& level : schema.levels)
+			for (const SchemaLevelConfig& level : schema._levels)
 			{
-				cumulative += level.numLevels;
+				cumulative += level._numLevels;
 				if (depth < cumulative)
 					break;
 			}
@@ -389,7 +389,7 @@ namespace
 		for (size_t depth = 0; depth < maxDepth; ++depth)
 		{
 			const SchemaLevelConfig& level = schema.levelForDepth(depth);
-			const size_t leafCapacity = level.leafCapacity > 0 ? level.leafCapacity : schema.buildPolicy.leafCapacity;
+			const size_t leafCapacity = level._leafCapacity > 0 ? level._leafCapacity : schema._buildPolicy._leafCapacity;
 			values.push_back(static_cast<uint32_t>(std::max<size_t>(1, leafCapacity)));
 		}
 		return values;
@@ -402,7 +402,7 @@ namespace
 		for (size_t depth = 0; depth < maxDepth; ++depth)
 		{
 			const SchemaLevelConfig& level = schema.levelForDepth(depth);
-			const size_t minSplit = level.minPrimitivesToSplit > 0 ? level.minPrimitivesToSplit : schema.buildPolicy.minPrimitivesToSplit;
+			const size_t minSplit = level._minPrimitivesToSplit > 0 ? level._minPrimitivesToSplit : schema._buildPolicy._minPrimitivesToSplit;
 			values.push_back(static_cast<uint32_t>(std::max<size_t>(2, minSplit)));
 		}
 		return values;
@@ -454,20 +454,20 @@ namespace
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
 	{
 		DeviceQuery result{};
-		result.type = static_cast<int>(query.type);
-		const glm::vec3 min = query.bounds.min();
-		const glm::vec3 max = query.bounds.max();
-		result.minX = min.x;
-		result.minY = min.y;
-		result.minZ = min.z;
-		result.maxX = max.x;
-		result.maxY = max.y;
-		result.maxZ = max.z;
-		result.centerX = query.center.x;
-		result.centerY = query.center.y;
-		result.centerZ = query.center.z;
-		result.radius = query.radius;
-		result.knnK = static_cast<uint32_t>(std::min<size_t>(query.k, std::numeric_limits<uint32_t>::max()));
+		result._type = static_cast<int>(query._type);
+		const glm::vec3 min = query._bounds.min();
+		const glm::vec3 max = query._bounds.max();
+		result._minX = min.x;
+		result._minY = min.y;
+		result._minZ = min.z;
+		result._maxX = max.x;
+		result._maxY = max.y;
+		result._maxZ = max.z;
+		result._centerX = query.center.x;
+		result._centerY = query.center.y;
+		result._centerZ = query.center.z;
+		result._radius = query._radius;
+		result._knnK = static_cast<uint32_t>(std::min<size_t>(query._k, std::numeric_limits<uint32_t>::max()));
 		return result;
 	}
 
@@ -478,10 +478,10 @@ namespace
 		for (const PointGpu::QuerySample& sample : samples)
 		{
 			PointSpatialIndex::QueryStats stats;
-			stats.visitedNodes = sample.visitedNodes;
-			stats.testedPoints = sample.testedPoints;
-			stats.returnedPoints = sample.returnedPoints;
-			stats.elapsedMs = sample.elapsedMs;
+			stats._visitedNodes = sample._visitedNodes;
+			stats._testedPoints = sample._testedPoints;
+			stats._returnedPoints = sample._returnedPoints;
+			stats._elapsedMs = sample._elapsedMs;
 			cpuSamples.push_back(stats);
 		}
 		return Experiments::summarizeQueryStats(cpuSamples);
@@ -495,20 +495,20 @@ namespace
 	__device__ uint32_t regularGridDimensionForAxis(const LinearMixedTreeNode& node, int axis)
 	{
 		if (axis == 0)
-			return activeGridDimension(node.maxX - node.minX, 3u);
+			return activeGridDimension(node._maxX - node._minX, 3u);
 		if (axis == 1)
-			return activeGridDimension(node.maxY - node.minY, 3u);
-		return activeGridDimension(node.maxZ - node.minZ, 3u);
+			return activeGridDimension(node._maxY - node._minY, 3u);
+		return activeGridDimension(node._maxZ - node._minZ, 3u);
 	}
 
 	__device__ uint32_t hgridDimensionForAxis(const LinearMixedTreeNode& node, int axis)
 	{
-		const uint32_t target = (node.depth & 1u) == 0 ? 2u : 3u;
+		const uint32_t target = (node._depth & 1u) == 0 ? 2u : 3u;
 		if (axis == 0)
-			return activeGridDimension(node.maxX - node.minX, target);
+			return activeGridDimension(node._maxX - node._minX, target);
 		if (axis == 1)
-			return activeGridDimension(node.maxY - node.minY, target);
-		return activeGridDimension(node.maxZ - node.minZ, target);
+			return activeGridDimension(node._maxY - node._minY, target);
+		return activeGridDimension(node._maxZ - node._minZ, target);
 	}
 
 	__device__ void gridDimensionsForNode(const LinearMixedTreeNode& node, int splitType, uint32_t& dimX, uint32_t& dimY, uint32_t& dimZ)
@@ -554,9 +554,9 @@ namespace
 			return 1;
 		if (splitType == SplitQuadTreeIgnoreShortest)
 		{
-			const float extentX = node.maxX - node.minX;
-			const float extentY = node.maxY - node.minY;
-			const float extentZ = node.maxZ - node.minZ;
+			const float extentX = node._maxX - node._minX;
+			const float extentY = node._maxY - node._minY;
+			const float extentZ = node._maxZ - node._minZ;
 			if (extentX <= extentY && extentX <= extentZ)
 				return 0;
 			if (extentY <= extentZ)
@@ -574,54 +574,54 @@ namespace
 
 	__device__ bool matchesCondition(const LinearMixedTreeNode& node, const DeviceLevelCondition& condition)
 	{
-		if (condition.flags == 0)
+		if (condition._flags == 0)
 			return true;
 
-		if ((condition.flags & HasMinPoints) && node.pointCount < condition.minPoints)
+		if ((condition._flags & HasMinPoints) && node._pointCount < condition._minPoints)
 			return false;
-		if ((condition.flags & HasMaxPoints) && node.pointCount > condition.maxPoints)
+		if ((condition._flags & HasMaxPoints) && node._pointCount > condition._maxPoints)
 			return false;
 
-		const float extentX = fmaxf(node.maxX - node.minX, 0.0f);
-		const float extentY = fmaxf(node.maxY - node.minY, 0.0f);
-		const float extentZ = fmaxf(node.maxZ - node.minZ, 0.0f);
+		const float extentX = fmaxf(node._maxX - node._minX, 0.0f);
+		const float extentY = fmaxf(node._maxY - node._minY, 0.0f);
+		const float extentZ = fmaxf(node._maxZ - node._minZ, 0.0f);
 		const float horizontalExtent = fmaxf(fmaxf(extentX, extentY), 1.0e-9f);
 		const float heightRatio = extentZ / horizontalExtent;
-		if ((condition.flags & HasMinHeightRatio) && heightRatio < condition.minHeightRatio)
+		if ((condition._flags & HasMinHeightRatio) && heightRatio < condition._minHeightRatio)
 			return false;
-		if ((condition.flags & HasMaxHeightRatio) && heightRatio > condition.maxHeightRatio)
+		if ((condition._flags & HasMaxHeightRatio) && heightRatio > condition._maxHeightRatio)
 			return false;
 
 		const float volume = extentX * extentY * extentZ;
-		const float density = volume > 1.0e-9f ? static_cast<float>(node.pointCount) / volume : 0.0f;
-		if ((condition.flags & HasMinDensity) && density < condition.minDensity)
+		const float density = volume > 1.0e-9f ? static_cast<float>(node._pointCount) / volume : 0.0f;
+		if ((condition._flags & HasMinDensity) && density < condition._minDensity)
 			return false;
-		if ((condition.flags & HasMaxDensity) && density > condition.maxDensity)
-			return false;
-
-		if ((condition.flags & HasMinExtentX) && extentX < condition.minExtentX)
-			return false;
-		if ((condition.flags & HasMaxExtentX) && extentX > condition.maxExtentX)
-			return false;
-		if ((condition.flags & HasMinExtentY) && extentY < condition.minExtentY)
-			return false;
-		if ((condition.flags & HasMaxExtentY) && extentY > condition.maxExtentY)
-			return false;
-		if ((condition.flags & HasMinExtentZ) && extentZ < condition.minExtentZ)
-			return false;
-		if ((condition.flags & HasMaxExtentZ) && extentZ > condition.maxExtentZ)
+		if ((condition._flags & HasMaxDensity) && density > condition._maxDensity)
 			return false;
 
-		if (condition.flags & (HasMinAnisotropy | HasMaxAnisotropy))
+		if ((condition._flags & HasMinExtentX) && extentX < condition._minExtentX)
+			return false;
+		if ((condition._flags & HasMaxExtentX) && extentX > condition._maxExtentX)
+			return false;
+		if ((condition._flags & HasMinExtentY) && extentY < condition._minExtentY)
+			return false;
+		if ((condition._flags & HasMaxExtentY) && extentY > condition._maxExtentY)
+			return false;
+		if ((condition._flags & HasMinExtentZ) && extentZ < condition._minExtentZ)
+			return false;
+		if ((condition._flags & HasMaxExtentZ) && extentZ > condition._maxExtentZ)
+			return false;
+
+		if (condition._flags & (HasMinAnisotropy | HasMaxAnisotropy))
 		{
 			const float longExtent = fmaxf(fmaxf(extentX, extentY), extentZ);
 			const float shortExtent = fminf(fminf(extentX, extentY), extentZ);
 			if (longExtent > 1.0e-9f)
 			{
 				const float anisotropy = 1.0f - (shortExtent / longExtent);
-				if ((condition.flags & HasMinAnisotropy) && anisotropy < condition.minAnisotropy)
+				if ((condition._flags & HasMinAnisotropy) && anisotropy < condition._minAnisotropy)
 					return false;
-				if ((condition.flags & HasMaxAnisotropy) && anisotropy > condition.maxAnisotropy)
+				if ((condition._flags & HasMaxAnisotropy) && anisotropy > condition._maxAnisotropy)
 					return false;
 			}
 		}
@@ -635,7 +635,7 @@ namespace
 		const DeviceLevelCondition* conditions,
 		const uint32_t* schemaBlockEndDepths)
 	{
-		uint32_t schemaDepth = node.schemaDepth;
+		uint32_t schemaDepth = node._schemaDepth;
 		while (schemaDepth < schemaDepthLimit)
 		{
 			if (matchesCondition(node, conditions[schemaDepth]))
@@ -650,9 +650,9 @@ namespace
 
 	__device__ int longestAxisForNode(const LinearMixedTreeNode& node)
 	{
-		const float extentX = node.maxX - node.minX;
-		const float extentY = node.maxY - node.minY;
-		const float extentZ = node.maxZ - node.minZ;
+		const float extentX = node._maxX - node._minX;
+		const float extentY = node._maxY - node._minY;
+		const float extentZ = node._maxZ - node._minZ;
 		if (extentX >= extentY && extentX >= extentZ)
 			return 0;
 		if (extentY >= extentZ)
@@ -672,10 +672,10 @@ namespace
 	__device__ float midpointForAxis(const LinearMixedTreeNode& node, int axis)
 	{
 		if (axis == 0)
-			return (node.minX + node.maxX) * 0.5f;
+			return (node._minX + node._maxX) * 0.5f;
 		if (axis == 1)
-			return (node.minY + node.maxY) * 0.5f;
-		return (node.minZ + node.maxZ) * 0.5f;
+			return (node._minY + node._maxY) * 0.5f;
+		return (node._minZ + node._maxZ) * 0.5f;
 	}
 
 	__device__ uint32_t clampGridCoordinate(float value, float minValue, float maxValue, uint32_t dimension)
@@ -690,9 +690,9 @@ namespace
 
 	__device__ uint32_t childForPoint(const DevicePoint& point, const LinearMixedTreeNode& node, int splitType)
 	{
-		const float midX = (node.minX + node.maxX) * 0.5f;
-		const float midY = (node.minY + node.maxY) * 0.5f;
-		const float midZ = (node.minZ + node.maxZ) * 0.5f;
+		const float midX = (node._minX + node._maxX) * 0.5f;
+		const float midY = (node._minY + node._maxY) * 0.5f;
+		const float midZ = (node._minZ + node._maxZ) * 0.5f;
 
 		if (splitType == SplitQuadTree ||
 			splitType == SplitQuadTreeXZ ||
@@ -718,9 +718,9 @@ namespace
 			uint32_t dimY = 1;
 			uint32_t dimZ = 1;
 			gridDimensionsForNode(node, splitType, dimX, dimY, dimZ);
-			const uint32_t x = clampGridCoordinate(point.x, node.minX, node.maxX, dimX);
-			const uint32_t y = clampGridCoordinate(point.y, node.minY, node.maxY, dimY);
-			const uint32_t z = clampGridCoordinate(point.z, node.minZ, node.maxZ, dimZ);
+			const uint32_t x = clampGridCoordinate(point.x, node._minX, node._maxX, dimX);
+			const uint32_t y = clampGridCoordinate(point.y, node._minY, node._maxY, dimY);
+			const uint32_t z = clampGridCoordinate(point.z, node._minZ, node._maxZ, dimZ);
 			return (z * dimY + y) * dimX + x;
 		}
 
@@ -738,9 +738,9 @@ namespace
 		int splitType,
 		uint32_t childSchemaDepth)
 	{
-		const float midX = (parent.minX + parent.maxX) * 0.5f;
-		const float midY = (parent.minY + parent.maxY) * 0.5f;
-		const float midZ = (parent.minZ + parent.maxZ) * 0.5f;
+		const float midX = (parent._minX + parent._maxX) * 0.5f;
+		const float midY = (parent._minY + parent._maxY) * 0.5f;
+		const float midZ = (parent._minZ + parent._maxZ) * 0.5f;
 
 		LinearMixedTreeNode node{};
 		if (splitType == SplitQuadTree ||
@@ -748,12 +748,12 @@ namespace
 			splitType == SplitQuadTreeYZ ||
 			splitType == SplitQuadTreeIgnoreShortest)
 		{
-			node.minX = parent.minX;
-			node.maxX = parent.maxX;
-			node.minY = parent.minY;
-			node.maxY = parent.maxY;
-			node.minZ = parent.minZ;
-			node.maxZ = parent.maxZ;
+			node._minX = parent._minX;
+			node._maxX = parent._maxX;
+			node._minY = parent._minY;
+			node._maxY = parent._maxY;
+			node._minZ = parent._minZ;
+			node._maxZ = parent._maxZ;
 			int firstAxis = 0;
 			int secondAxis = 1;
 			quadTreeActiveAxes(parent, splitType, firstAxis, secondAxis);
@@ -761,59 +761,59 @@ namespace
 			const float secondPlane = midpointForAxis(parent, secondAxis);
 			if (firstAxis == 0)
 			{
-				if (child & 1u) node.minX = firstPlane; else node.maxX = firstPlane;
+				if (child & 1u) node._minX = firstPlane; else node._maxX = firstPlane;
 			}
 			else if (firstAxis == 1)
 			{
-				if (child & 1u) node.minY = firstPlane; else node.maxY = firstPlane;
+				if (child & 1u) node._minY = firstPlane; else node._maxY = firstPlane;
 			}
 			else
 			{
-				if (child & 1u) node.minZ = firstPlane; else node.maxZ = firstPlane;
+				if (child & 1u) node._minZ = firstPlane; else node._maxZ = firstPlane;
 			}
 			if (secondAxis == 0)
 			{
-				if (child & 2u) node.minX = secondPlane; else node.maxX = secondPlane;
+				if (child & 2u) node._minX = secondPlane; else node._maxX = secondPlane;
 			}
 			else if (secondAxis == 1)
 			{
-				if (child & 2u) node.minY = secondPlane; else node.maxY = secondPlane;
+				if (child & 2u) node._minY = secondPlane; else node._maxY = secondPlane;
 			}
 			else
 			{
-				if (child & 2u) node.minZ = secondPlane; else node.maxZ = secondPlane;
+				if (child & 2u) node._minZ = secondPlane; else node._maxZ = secondPlane;
 			}
 		}
 		else if (splitType == SplitKDTree || splitType == SplitBVH || splitType == SplitBIH || splitType == SplitLBVH)
 		{
-			node.minX = parent.minX;
-			node.minY = parent.minY;
-			node.minZ = parent.minZ;
-			node.maxX = parent.maxX;
-			node.maxY = parent.maxY;
-			node.maxZ = parent.maxZ;
+			node._minX = parent._minX;
+			node._minY = parent._minY;
+			node._minZ = parent._minZ;
+			node._maxX = parent._maxX;
+			node._maxY = parent._maxY;
+			node._maxZ = parent._maxZ;
 			const int axis = longestAxisForNode(parent);
 			const float plane = midpointForAxis(parent, axis);
 			if (axis == 0)
 			{
 				if (child == 0)
-					node.maxX = plane;
+					node._maxX = plane;
 				else
-					node.minX = plane;
+					node._minX = plane;
 			}
 			else if (axis == 1)
 			{
 				if (child == 0)
-					node.maxY = plane;
+					node._maxY = plane;
 				else
-					node.minY = plane;
+					node._minY = plane;
 			}
 			else
 			{
 				if (child == 0)
-					node.maxZ = plane;
+					node._maxZ = plane;
 				else
-					node.minZ = plane;
+					node._minZ = plane;
 			}
 		}
 		else if (splitType == SplitRegularGrid || splitType == SplitHGrid)
@@ -825,67 +825,67 @@ namespace
 			const uint32_t cellX = child % dimX;
 			const uint32_t cellY = (child / dimX) % dimY;
 			const uint32_t cellZ = child / (dimX * dimY);
-			const float cellSizeX = (parent.maxX - parent.minX) / static_cast<float>(dimX);
-			const float cellSizeY = (parent.maxY - parent.minY) / static_cast<float>(dimY);
-			const float cellSizeZ = (parent.maxZ - parent.minZ) / static_cast<float>(dimZ);
-			node.minX = parent.minX + cellSizeX * static_cast<float>(cellX);
-			node.maxX = cellX + 1 == dimX ? parent.maxX : parent.minX + cellSizeX * static_cast<float>(cellX + 1);
-			node.minY = parent.minY + cellSizeY * static_cast<float>(cellY);
-			node.maxY = cellY + 1 == dimY ? parent.maxY : parent.minY + cellSizeY * static_cast<float>(cellY + 1);
-			node.minZ = parent.minZ + cellSizeZ * static_cast<float>(cellZ);
-			node.maxZ = cellZ + 1 == dimZ ? parent.maxZ : parent.minZ + cellSizeZ * static_cast<float>(cellZ + 1);
+			const float cellSizeX = (parent._maxX - parent._minX) / static_cast<float>(dimX);
+			const float cellSizeY = (parent._maxY - parent._minY) / static_cast<float>(dimY);
+			const float cellSizeZ = (parent._maxZ - parent._minZ) / static_cast<float>(dimZ);
+			node._minX = parent._minX + cellSizeX * static_cast<float>(cellX);
+			node._maxX = cellX + 1 == dimX ? parent._maxX : parent._minX + cellSizeX * static_cast<float>(cellX + 1);
+			node._minY = parent._minY + cellSizeY * static_cast<float>(cellY);
+			node._maxY = cellY + 1 == dimY ? parent._maxY : parent._minY + cellSizeY * static_cast<float>(cellY + 1);
+			node._minZ = parent._minZ + cellSizeZ * static_cast<float>(cellZ);
+			node._maxZ = cellZ + 1 == dimZ ? parent._maxZ : parent._minZ + cellSizeZ * static_cast<float>(cellZ + 1);
 		}
 		else
 		{
-			node.minX = (child & 1u) ? midX : parent.minX;
-			node.maxX = (child & 1u) ? parent.maxX : midX;
-			node.minY = (child & 2u) ? midY : parent.minY;
-			node.maxY = (child & 2u) ? parent.maxY : midY;
-			node.minZ = (child & 4u) ? midZ : parent.minZ;
-			node.maxZ = (child & 4u) ? parent.maxZ : midZ;
+			node._minX = (child & 1u) ? midX : parent._minX;
+			node._maxX = (child & 1u) ? parent._maxX : midX;
+			node._minY = (child & 2u) ? midY : parent._minY;
+			node._maxY = (child & 2u) ? parent._maxY : midY;
+			node._minZ = (child & 4u) ? midZ : parent._minZ;
+			node._maxZ = (child & 4u) ? parent._maxZ : midZ;
 		}
-		node.parent = parentIndex;
-		node.childBase = -1;
-		node.childMask = 0;
-		node.pointOffset = offset;
-		node.pointCount = count;
-		node.flags = count > 0 ? 1u : 0u;
-		node.depth = parent.depth + 1;
-		node.schemaDepth = childSchemaDepth;
+		node._parent = parentIndex;
+		node._childBase = -1;
+		node._childMask = 0;
+		node._pointOffset = offset;
+		node._pointCount = count;
+		node._flags = count > 0 ? 1u : 0u;
+		node._depth = parent._depth + 1;
+		node._schemaDepth = childSchemaDepth;
 		return node;
 	}
 
 	__device__ bool rangeIntersectsNode(const LinearMixedTreeNode& node, const DeviceQuery& query)
 	{
-		return node.minX <= query.maxX && node.maxX >= query.minX &&
-			node.minY <= query.maxY && node.maxY >= query.minY &&
-			node.minZ <= query.maxZ && node.maxZ >= query.minZ;
+		return node._minX <= query._maxX && node._maxX >= query._minX &&
+			node._minY <= query._maxY && node._maxY >= query._minY &&
+			node._minZ <= query._maxZ && node._maxZ >= query._minZ;
 	}
 
 	__device__ bool pointInsideRange(const DevicePoint& point, const DeviceQuery& query)
 	{
-		return point.x >= query.minX && point.x <= query.maxX &&
-			point.y >= query.minY && point.y <= query.maxY &&
-			point.z >= query.minZ && point.z <= query.maxZ;
+		return point.x >= query._minX && point.x <= query._maxX &&
+			point.y >= query._minY && point.y <= query._maxY &&
+			point.z >= query._minZ && point.z <= query._maxZ;
 	}
 
 	__device__ float distanceSquaredToNode(const LinearMixedTreeNode& node, const DeviceQuery& query)
 	{
-		const float x = fminf(fmaxf(query.centerX, node.minX), node.maxX);
-		const float y = fminf(fmaxf(query.centerY, node.minY), node.maxY);
-		const float z = fminf(fmaxf(query.centerZ, node.minZ), node.maxZ);
-		const float dx = query.centerX - x;
-		const float dy = query.centerY - y;
-		const float dz = query.centerZ - z;
+		const float x = fminf(fmaxf(query._centerX, node._minX), node._maxX);
+		const float y = fminf(fmaxf(query._centerY, node._minY), node._maxY);
+		const float z = fminf(fmaxf(query._centerZ, node._minZ), node._maxZ);
+		const float dx = query._centerX - x;
+		const float dy = query._centerY - y;
+		const float dz = query._centerZ - z;
 		return dx * dx + dy * dy + dz * dz;
 	}
 
 	__device__ bool pointInsideRadius(const DevicePoint& point, const DeviceQuery& query)
 	{
-		const float dx = point.x - query.centerX;
-		const float dy = point.y - query.centerY;
-		const float dz = point.z - query.centerZ;
-		return dx * dx + dy * dy + dz * dz <= query.radius * query.radius;
+		const float dx = point.x - query._centerX;
+		const float dy = point.y - query._centerY;
+		const float dz = point.z - query._centerZ;
+		return dx * dx + dy * dy + dz * dz <= query._radius * query._radius;
 	}
 
 	__global__ void initializeIndicesKernel(uint32_t* indices, size_t pointCount)
@@ -909,20 +909,20 @@ namespace
 		float maxZ)
 	{
 		LinearMixedTreeNode root{};
-		root.minX = minX;
-		root.minY = minY;
-		root.minZ = minZ;
-		root.maxX = maxX;
-		root.maxY = maxY;
-		root.maxZ = maxZ;
-		root.parent = -1;
-		root.childBase = -1;
-		root.childMask = 0;
-		root.pointOffset = 0;
-		root.pointCount = static_cast<uint32_t>(pointCount);
-		root.flags = 1;
-		root.depth = 0;
-		root.schemaDepth = 0;
+		root._minX = minX;
+		root._minY = minY;
+		root._minZ = minZ;
+		root._maxX = maxX;
+		root._maxY = maxY;
+		root._maxZ = maxZ;
+		root._parent = -1;
+		root._childBase = -1;
+		root._childMask = 0;
+		root._pointOffset = 0;
+		root._pointCount = static_cast<uint32_t>(pointCount);
+		root._flags = 1;
+		root._depth = 0;
+		root._schemaDepth = 0;
 		nodes[0] = root;
 		*nodeCounter = 1;
 	}
@@ -955,28 +955,28 @@ namespace
 		const uint32_t leafCapacity = hasActiveSchemaLevel ? leafCapacities[schemaDepth] : UINT_MAX;
 		const uint32_t minSplit = hasActiveSchemaLevel ? minSplits[schemaDepth] : UINT_MAX;
 		const uint32_t childSlots = childCountForNode(node, splitType);
-		if (node.pointCount == 0 ||
-			node.pointCount <= leafCapacity ||
-			node.pointCount < minSplit ||
-			node.depth >= maxDepth ||
+		if (node._pointCount == 0 ||
+			node._pointCount <= leafCapacity ||
+			node._pointCount < minSplit ||
+			node._depth >= maxDepth ||
 			!hasActiveSchemaLevel)
 		{
 			if (threadIdx.x == 0)
 			{
-				nodes[nodeIndex].childBase = -1;
-				nodes[nodeIndex].childMask = 0;
-				nodes[nodeIndex].flags = node.pointCount > 0 ? 1u : 0u;
+				nodes[nodeIndex]._childBase = -1;
+				nodes[nodeIndex]._childMask = 0;
+				nodes[nodeIndex]._flags = node._pointCount > 0 ? 1u : 0u;
 			}
 			return;
 		}
 
 		if (threadIdx.x == 0)
-			nodes[nodeIndex].schemaDepth = schemaDepth;
+			nodes[nodeIndex]._schemaDepth = schemaDepth;
 
 		uint32_t localCounts[MaxChildCount] = {};
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			const uint32_t child = childForPoint(points[pointIndex], node, splitType);
 			++localCounts[child];
 		}
@@ -1008,10 +1008,10 @@ namespace
 
 		const size_t nodeIndex = levelStart + localNode;
 		LinearMixedTreeNode node = nodes[nodeIndex];
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			return;
 
-		const uint32_t schemaDepth = node.schemaDepth < schemaDepthLimit ? node.schemaDepth : schemaDepthLimit - 1;
+		const uint32_t schemaDepth = node._schemaDepth < schemaDepthLimit ? node._schemaDepth : schemaDepthLimit - 1;
 		const int splitType = splitTypes[schemaDepth];
 		const uint32_t childSlots = childCountForNode(node, splitType);
 		uint32_t nonEmptyChildren = 0;
@@ -1027,9 +1027,9 @@ namespace
 
 		if (nonEmptyChildren <= 1)
 		{
-			nodes[nodeIndex].childBase = -1;
-			nodes[nodeIndex].childMask = 0;
-			nodes[nodeIndex].flags = 1;
+			nodes[nodeIndex]._childBase = -1;
+			nodes[nodeIndex]._childMask = 0;
+			nodes[nodeIndex]._flags = 1;
 			return;
 		}
 
@@ -1037,17 +1037,17 @@ namespace
 		if (static_cast<size_t>(childBase) + childSlots > nodeCapacity)
 		{
 			*overflowFlag = 1;
-			nodes[nodeIndex].childBase = -1;
-			nodes[nodeIndex].childMask = 0;
-			nodes[nodeIndex].flags = 1;
+			nodes[nodeIndex]._childBase = -1;
+			nodes[nodeIndex]._childMask = 0;
+			nodes[nodeIndex]._flags = 1;
 			return;
 		}
 
-		nodes[nodeIndex].childBase = static_cast<int>(childBase);
-		nodes[nodeIndex].childMask = childMask;
-		nodes[nodeIndex].flags = 0;
+		nodes[nodeIndex]._childBase = static_cast<int>(childBase);
+		nodes[nodeIndex]._childMask = childMask;
+		nodes[nodeIndex]._flags = 0;
 
-		uint32_t runningOffset = node.pointOffset;
+		uint32_t runningOffset = node._pointOffset;
 		for (uint32_t child = 0; child < childSlots; ++child)
 		{
 			const uint32_t count = childCounts[localNode * childSlotStride + child];
@@ -1058,7 +1058,7 @@ namespace
 				count,
 				static_cast<int>(nodeIndex),
 				splitType,
-				node.schemaDepth + 1u < schemaDepthLimit ? node.schemaDepth + 1u : schemaDepthLimit);
+				node._schemaDepth + 1u < schemaDepthLimit ? node._schemaDepth + 1u : schemaDepthLimit);
 			writeCursors[localNode * childSlotStride + child] = runningOffset;
 			runningOffset += count;
 		}
@@ -1083,14 +1083,14 @@ namespace
 
 		const size_t nodeIndex = levelStart + localNode;
 		const LinearMixedTreeNode node = nodes[nodeIndex];
-		if (node.pointCount == 0 || node.childBase < 0)
+		if (node._pointCount == 0 || node._childBase < 0)
 			return;
 
-		const uint32_t schemaDepth = node.schemaDepth < schemaDepthLimit ? node.schemaDepth : schemaDepthLimit - 1;
+		const uint32_t schemaDepth = node._schemaDepth < schemaDepthLimit ? node._schemaDepth : schemaDepthLimit - 1;
 		const int splitType = splitTypes[schemaDepth];
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			const uint32_t child = childForPoint(points[pointIndex], node, splitType);
 			const uint32_t writeOffset = atomicAdd(&writeCursors[localNode * childSlotStride + child], 1u);
 			outputIndices[writeOffset] = pointIndex;
@@ -1112,10 +1112,10 @@ namespace
 
 		const size_t nodeIndex = nodeStart + localNode;
 		const LinearMixedTreeNode node = nodes[nodeIndex];
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			return;
 
-		const uint32_t parentSchemaDepth = node.schemaDepth > 0 ? node.schemaDepth - 1u : 0u;
+		const uint32_t parentSchemaDepth = node._schemaDepth > 0 ? node._schemaDepth - 1u : 0u;
 		if (parentSchemaDepth >= schemaDepthLimit)
 			return;
 
@@ -1134,9 +1134,9 @@ namespace
 		float maxY = -3.402823466e+38F;
 		float maxZ = -3.402823466e+38F;
 
-		for (uint32_t offset = threadIdx.x; offset < node.pointCount; offset += blockDim.x)
+		for (uint32_t offset = threadIdx.x; offset < node._pointCount; offset += blockDim.x)
 		{
-			const uint32_t pointIndex = indices[node.pointOffset + offset];
+			const uint32_t pointIndex = indices[node._pointOffset + offset];
 			const DevicePoint point = points[pointIndex];
 			minX = fminf(minX, point.x);
 			minY = fminf(minY, point.y);
@@ -1176,12 +1176,12 @@ namespace
 
 		if (threadIdx.x == 0)
 		{
-			nodes[nodeIndex].minX = sharedMinX[0];
-			nodes[nodeIndex].minY = sharedMinY[0];
-			nodes[nodeIndex].minZ = sharedMinZ[0];
-			nodes[nodeIndex].maxX = sharedMaxX[0];
-			nodes[nodeIndex].maxY = sharedMaxY[0];
-			nodes[nodeIndex].maxZ = sharedMaxZ[0];
+			nodes[nodeIndex]._minX = sharedMinX[0];
+			nodes[nodeIndex]._minY = sharedMinY[0];
+			nodes[nodeIndex]._minZ = sharedMinZ[0];
+			nodes[nodeIndex]._maxX = sharedMaxX[0];
+			nodes[nodeIndex]._maxY = sharedMaxY[0];
+			nodes[nodeIndex]._maxZ = sharedMaxZ[0];
 		}
 	}
 
@@ -1200,7 +1200,7 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 		{
 			samples[queryIndex] = DeviceQuerySample{};
 			return;
@@ -1219,12 +1219,12 @@ namespace
 		{
 			const int nodeIndex = stack[--stackSize];
 			const LinearMixedTreeNode node = nodes[nodeIndex];
-			if (node.pointCount == 0)
+			if (node._pointCount == 0)
 				continue;
 
 			bool intersects = false;
-			if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
-				intersects = distanceSquaredToNode(node, query) <= query.radius * query.radius;
+			if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
+				intersects = distanceSquaredToNode(node, query) <= query._radius * query._radius;
 			else
 				intersects = rangeIntersectsNode(node, query);
 
@@ -1232,13 +1232,13 @@ namespace
 				continue;
 
 			++visited;
-			if (node.childBase < 0)
+			if (node._childBase < 0)
 			{
-				for (uint32_t i = 0; i < node.pointCount; ++i)
+				for (uint32_t i = 0; i < node._pointCount; ++i)
 				{
 					++tested;
-					const DevicePoint point = points[indices[node.pointOffset + i]];
-					if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+					const DevicePoint point = points[indices[node._pointOffset + i]];
+					if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 					{
 						if (pointInsideRadius(point, query))
 							++returned;
@@ -1253,19 +1253,19 @@ namespace
 
 			for (uint32_t child = 0; child < MaxChildCount; ++child)
 			{
-				if ((node.childMask & (1u << child)) == 0)
+				if ((node._childMask & (1u << child)) == 0)
 					continue;
 				if (stackSize < QueryStackSize)
-					stack[stackSize++] = node.childBase + static_cast<int>(child);
+					stack[stackSize++] = node._childBase + static_cast<int>(child);
 			}
 		}
 
 		const unsigned long long end = clock64();
 		DeviceQuerySample sample{};
-		sample.visitedNodes = visited;
-		sample.testedPoints = tested;
-		sample.returnedPoints = returned;
-		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+		sample._visitedNodes = visited;
+		sample._testedPoints = tested;
+		sample._returnedPoints = returned;
+		sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
 
@@ -1283,7 +1283,7 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 		{
 			if (threadIdx.x == 0)
 				samples[queryIndex] = DeviceQuerySample{};
@@ -1319,11 +1319,11 @@ namespace
 				break;
 
 			const LinearMixedTreeNode node = nodes[nodeIndex];
-			bool intersects = node.pointCount > 0;
+			bool intersects = node._pointCount > 0;
 			if (intersects)
 			{
-				if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
-					intersects = distanceSquaredToNode(node, query) <= query.radius * query.radius;
+				if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
+					intersects = distanceSquaredToNode(node, query) <= query._radius * query._radius;
 				else
 					intersects = rangeIntersectsNode(node, query);
 			}
@@ -1335,13 +1335,13 @@ namespace
 			if (!intersects)
 				continue;
 
-			if (node.childBase < 0)
+			if (node._childBase < 0)
 			{
 				unsigned long long localReturned = 0;
-				for (uint32_t i = threadIdx.x; i < node.pointCount; i += blockDim.x)
+				for (uint32_t i = threadIdx.x; i < node._pointCount; i += blockDim.x)
 				{
-					const DevicePoint point = points[indices[node.pointOffset + i]];
-					if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+					const DevicePoint point = points[indices[node._pointOffset + i]];
+					if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 					{
 						if (pointInsideRadius(point, query))
 							++localReturned;
@@ -1363,7 +1363,7 @@ namespace
 
 				if (threadIdx.x == 0)
 				{
-					tested += node.pointCount;
+					tested += node._pointCount;
 					returned += sharedCounts[0];
 				}
 				__syncthreads();
@@ -1374,10 +1374,10 @@ namespace
 			{
 				for (uint32_t child = 0; child < MaxChildCount; ++child)
 				{
-					if ((node.childMask & (1u << child)) == 0)
+					if ((node._childMask & (1u << child)) == 0)
 						continue;
 					if (stackSize < QueryStackSize)
-						stack[stackSize++] = node.childBase + static_cast<int>(child);
+						stack[stackSize++] = node._childBase + static_cast<int>(child);
 				}
 			}
 			__syncthreads();
@@ -1387,10 +1387,10 @@ namespace
 		{
 			const unsigned long long end = clock64();
 			DeviceQuerySample sample{};
-			sample.visitedNodes = visited;
-			sample.testedPoints = tested;
-			sample.returnedPoints = returned;
-			sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+			sample._visitedNodes = visited;
+			sample._testedPoints = tested;
+			sample._returnedPoints = returned;
+			sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 			samples[queryIndex] = sample;
 		}
 	}
@@ -1398,38 +1398,38 @@ namespace
 
 struct PointGpu::MixedTree::DeviceState
 {
-	DevicePoint* points = nullptr;
-	uint32_t* indices = nullptr;
-	uint32_t* tempIndices = nullptr;
-	LinearMixedTreeNode* nodes = nullptr;
-	uint32_t* childCounts = nullptr;
-	uint32_t* writeCursors = nullptr;
-	int* splitTypes = nullptr;
-	uint32_t* leafCapacities = nullptr;
-	uint32_t* minSplits = nullptr;
-	DeviceLevelCondition* conditions = nullptr;
-	uint32_t* schemaBlockEndDepths = nullptr;
-	uint32_t* nodeCounter = nullptr;
-	uint32_t* overflowFlag = nullptr;
-	DeviceQuery* queryBuffer = nullptr;
-	DeviceQuerySample* sampleBuffer = nullptr;
-	size_t pointCount = 0;
-	size_t nodeCapacity = 0;
-	size_t allocatedNodes = 0;
-	size_t actualNodes = 0;
-	size_t actualLeaves = 0;
-	size_t leafCapacity = 1;
-	size_t minSplit = 2;
-	size_t maxDepth = 0;
-	size_t schemaDepthLimit = 0;
-	size_t childSlotStride = 2;
-	size_t levelScratchNodeCapacity = 0;
-	size_t queryCapacity = 0;
-	size_t baseMemoryBytes = 0;
-	size_t memoryBytes = 0;
-	int device = 0;
-	const PointCloud* cloud = nullptr;
-	bool pointsReady = false;
+	DevicePoint* _points = nullptr;
+	uint32_t* _indices = nullptr;
+	uint32_t* _tempIndices = nullptr;
+	LinearMixedTreeNode* _nodes = nullptr;
+	uint32_t* _childCounts = nullptr;
+	uint32_t* _writeCursors = nullptr;
+	int* _splitTypes = nullptr;
+	uint32_t* _leafCapacities = nullptr;
+	uint32_t* _minSplits = nullptr;
+	DeviceLevelCondition* _conditions = nullptr;
+	uint32_t* _schemaBlockEndDepths = nullptr;
+	uint32_t* _nodeCounter = nullptr;
+	uint32_t* _overflowFlag = nullptr;
+	DeviceQuery* _queryBuffer = nullptr;
+	DeviceQuerySample* _sampleBuffer = nullptr;
+	size_t _pointCount = 0;
+	size_t _nodeCapacity = 0;
+	size_t _allocatedNodes = 0;
+	size_t _actualNodes = 0;
+	size_t _actualLeaves = 0;
+	size_t _leafCapacity = 1;
+	size_t _minSplit = 2;
+	size_t _maxDepth = 0;
+	size_t _schemaDepthLimit = 0;
+	size_t _childSlotStride = 2;
+	size_t _levelScratchNodeCapacity = 0;
+	size_t _queryCapacity = 0;
+	size_t _baseMemoryBytes = 0;
+	size_t _memoryBytes = 0;
+	int _device = 0;
+	const PointCloud* _cloud = nullptr;
+	bool _pointsReady = false;
 };
 
 namespace
@@ -1459,23 +1459,23 @@ namespace
 	template <typename State>
 	void releaseQueryBuffers(State& state)
 	{
-		cudaFree(state.queryBuffer);
-		cudaFree(state.sampleBuffer);
-		state.queryBuffer = nullptr;
-		state.sampleBuffer = nullptr;
-		state.queryCapacity = 0;
+		cudaFree(state._queryBuffer);
+		cudaFree(state._sampleBuffer);
+		state._queryBuffer = nullptr;
+		state._sampleBuffer = nullptr;
+		state._queryCapacity = 0;
 	}
 
 	template <typename State>
 	void ensureQueryBuffers(State& state, size_t capacity)
 	{
-		if (state.queryCapacity >= capacity && state.queryBuffer && state.sampleBuffer)
+		if (state._queryCapacity >= capacity && state._queryBuffer && state._sampleBuffer)
 			return;
 
 		releaseQueryBuffers(state);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
-		state.queryCapacity = capacity;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._queryBuffer), sizeof(DeviceQuery) * capacity));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._sampleBuffer), sizeof(DeviceQuerySample) * capacity));
+		state._queryCapacity = capacity;
 	}
 
 	double safeVolume(const glm::vec3& extent)
@@ -1493,12 +1493,12 @@ namespace
 		const double cloudVolume = std::max(safeVolume(cloud->bounds().size()), 1.0e-12);
 		for (const DeviceQuery& query : queries)
 		{
-			if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+			if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 				continue;
 
-			if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+			if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 			{
-				const double radius = std::max(0.0f, query.radius);
+				const double radius = std::max(0.0f, query._radius);
 				const double radiusVolume = (4.0 / 3.0) * 3.14159265358979323846 * radius * radius * radius;
 				if (radiusVolume / cloudVolume >= 0.005)
 					return true;
@@ -1506,9 +1506,9 @@ namespace
 			}
 
 			const glm::vec3 queryExtent(
-				std::max(0.0f, query.maxX - query.minX),
-				std::max(0.0f, query.maxY - query.minY),
-				std::max(0.0f, query.maxZ - query.minZ));
+				std::max(0.0f, query._maxX - query._minX),
+				std::max(0.0f, query._maxY - query._minY),
+				std::max(0.0f, query._maxZ - query._minZ));
 			if (safeVolume(queryExtent) / cloudVolume >= 0.005)
 				return true;
 		}
@@ -1531,43 +1531,43 @@ PointGpu::MixedTree::~MixedTree()
 void PointGpu::MixedTree::release()
 {
 	releaseTree();
-	cudaFree(_state->points);
-	cudaFree(_state->indices);
-	cudaFree(_state->tempIndices);
+	cudaFree(_state->_points);
+	cudaFree(_state->_indices);
+	cudaFree(_state->_tempIndices);
 	releaseQueryBuffers(*_state);
 	*_state = DeviceState();
 }
 
 void PointGpu::MixedTree::releaseTree()
 {
-	cudaFree(_state->nodes);
-	cudaFree(_state->childCounts);
-	cudaFree(_state->writeCursors);
-	cudaFree(_state->splitTypes);
-	cudaFree(_state->leafCapacities);
-	cudaFree(_state->minSplits);
-	cudaFree(_state->conditions);
-	cudaFree(_state->schemaBlockEndDepths);
-	cudaFree(_state->nodeCounter);
-	cudaFree(_state->overflowFlag);
-	_state->nodes = nullptr;
-	_state->childCounts = nullptr;
-	_state->writeCursors = nullptr;
-	_state->splitTypes = nullptr;
-	_state->leafCapacities = nullptr;
-	_state->minSplits = nullptr;
-	_state->conditions = nullptr;
-	_state->schemaBlockEndDepths = nullptr;
-	_state->nodeCounter = nullptr;
-	_state->overflowFlag = nullptr;
-	_state->nodeCapacity = 0;
-	_state->allocatedNodes = 0;
-	_state->actualNodes = 0;
-	_state->actualLeaves = 0;
-	_state->schemaDepthLimit = 0;
-	_state->childSlotStride = 2;
-	_state->levelScratchNodeCapacity = 0;
-	_state->memoryBytes = _state->baseMemoryBytes;
+	cudaFree(_state->_nodes);
+	cudaFree(_state->_childCounts);
+	cudaFree(_state->_writeCursors);
+	cudaFree(_state->_splitTypes);
+	cudaFree(_state->_leafCapacities);
+	cudaFree(_state->_minSplits);
+	cudaFree(_state->_conditions);
+	cudaFree(_state->_schemaBlockEndDepths);
+	cudaFree(_state->_nodeCounter);
+	cudaFree(_state->_overflowFlag);
+	_state->_nodes = nullptr;
+	_state->_childCounts = nullptr;
+	_state->_writeCursors = nullptr;
+	_state->_splitTypes = nullptr;
+	_state->_leafCapacities = nullptr;
+	_state->_minSplits = nullptr;
+	_state->_conditions = nullptr;
+	_state->_schemaBlockEndDepths = nullptr;
+	_state->_nodeCounter = nullptr;
+	_state->_overflowFlag = nullptr;
+	_state->_nodeCapacity = 0;
+	_state->_allocatedNodes = 0;
+	_state->_actualNodes = 0;
+	_state->_actualLeaves = 0;
+	_state->_schemaDepthLimit = 0;
+	_state->_childSlotStride = 2;
+	_state->_levelScratchNodeCapacity = 0;
+	_state->_memoryBytes = _state->_baseMemoryBytes;
 }
 
 bool PointGpu::MixedTree::isAvailable(std::string* error)
@@ -1603,7 +1603,7 @@ int PointGpu::MixedTree::deviceCount()
 
 PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const SchemaConfig& schema, const Options& options)
 {
-	const std::string builder = options.builder.empty() ? "mixed" : options.builder;
+	const std::string builder = options._builder.empty() ? "mixed" : options._builder;
 	if (builder != "mixed" && builder != "hybrid")
 		throw std::runtime_error("MixedTree evaluator supports --cuda-builder mixed or hybrid.");
 	if (cloud.size() > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
@@ -1615,20 +1615,20 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		throw std::runtime_error("CUDA point evaluator is unavailable: " + availabilityError);
 
 	const int count = deviceCount();
-	const int device = options.device >= 0 ? std::min(options.device, count - 1) : 0;
+	const int device = options._device >= 0 ? std::min(options._device, count - 1) : 0;
 	CudaHelper::checkError(cudaSetDevice(device));
 
 	const bool canReusePoints =
-		_state->pointsReady &&
-		_state->cloud == &cloud &&
-		_state->pointCount == cloud.size() &&
-		_state->device == device;
+		_state->_pointsReady &&
+		_state->_cloud == &cloud &&
+		_state->_pointCount == cloud.size() &&
+		_state->_device == device;
 
 	if (!canReusePoints)
 	{
-		if (_state->points || _state->nodes)
+		if (_state->_points || _state->_nodes)
 		{
-			CudaHelper::checkError(cudaSetDevice(_state->device));
+			CudaHelper::checkError(cudaSetDevice(_state->_device));
 			release();
 			CudaHelper::checkError(cudaSetDevice(device));
 		}
@@ -1642,28 +1642,28 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		releaseTree();
 	}
 
-	_state->pointCount = cloud.size();
-	_state->leafCapacity = leafCapacityForSchema(schema);
-	_state->minSplit = minSplitForSchema(schema);
-	_state->maxDepth = maxDepthForSchema(schema);
-	_state->schemaDepthLimit = std::min(_state->maxDepth, std::max<size_t>(1, schema.totalLevels()));
-	_state->device = device;
-	_state->cloud = &cloud;
+	_state->_pointCount = cloud.size();
+	_state->_leafCapacity = leafCapacityForSchema(schema);
+	_state->_minSplit = minSplitForSchema(schema);
+	_state->_maxDepth = maxDepthForSchema(schema);
+	_state->_schemaDepthLimit = std::min(_state->_maxDepth, std::max<size_t>(1, schema.totalLevels()));
+	_state->_device = device;
+	_state->_cloud = &cloud;
 
 	BuildResult result;
-	result.device = device;
-	result.builder = "mixed";
+	result._device = device;
+	result._builder = "mixed";
 
 	if (cloud.empty())
 		return result;
 
-	const std::vector<int> hostSplitTypes = splitTypesForSchema(schema, _state->maxDepth);
-	const std::vector<uint32_t> hostLeafCapacities = leafCapacitiesForSchema(schema, _state->maxDepth);
-	const std::vector<uint32_t> hostMinSplits = minSplitsForSchema(schema, _state->maxDepth);
-	const std::vector<DeviceLevelCondition> hostConditions = conditionsForSchema(schema, _state->maxDepth);
-	const std::vector<uint32_t> hostSchemaBlockEndDepths = schemaBlockEndDepthsForSchema(schema, _state->maxDepth);
-	_state->childSlotStride = maxChildSlotsForSchema(hostSplitTypes);
-	_state->leafCapacity = *std::min_element(hostLeafCapacities.begin(), hostLeafCapacities.end());
+	const std::vector<int> hostSplitTypes = splitTypesForSchema(schema, _state->_maxDepth);
+	const std::vector<uint32_t> hostLeafCapacities = leafCapacitiesForSchema(schema, _state->_maxDepth);
+	const std::vector<uint32_t> hostMinSplits = minSplitsForSchema(schema, _state->_maxDepth);
+	const std::vector<DeviceLevelCondition> hostConditions = conditionsForSchema(schema, _state->_maxDepth);
+	const std::vector<uint32_t> hostSchemaBlockEndDepths = schemaBlockEndDepthsForSchema(schema, _state->_maxDepth);
+	_state->_childSlotStride = maxChildSlotsForSchema(hostSplitTypes);
+	_state->_leafCapacity = *std::min_element(hostLeafCapacities.begin(), hostLeafCapacities.end());
 	const glm::vec3 boundsMin = cloud.bounds().min();
 	const glm::vec3 boundsMax = cloud.bounds().max();
 
@@ -1672,64 +1672,64 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
-		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_points), sizeof(DevicePoint) * _state->_pointCount));
+		CudaHelper::checkError(cudaMemcpy(_state->_points, cloud.points().data(), sizeof(DevicePoint) * _state->_pointCount, cudaMemcpyHostToDevice));
+		result._uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
 
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->indices), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->tempIndices), sizeof(uint32_t) * _state->pointCount));
-		_state->baseMemoryBytes =
-			sizeof(DevicePoint) * _state->pointCount +
-			sizeof(uint32_t) * _state->pointCount * 2;
-		_state->pointsReady = true;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_indices), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_tempIndices), sizeof(uint32_t) * _state->_pointCount));
+		_state->_baseMemoryBytes =
+			sizeof(DevicePoint) * _state->_pointCount +
+			sizeof(uint32_t) * _state->_pointCount * 2;
+		_state->_pointsReady = true;
 	}
 
-	_state->nodeCapacity = estimateNodeCapacity(_state->pointCount, _state->leafCapacity, _state->maxDepth, _state->childSlotStride);
-	_state->levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(
-		_state->pointCount,
-		_state->leafCapacity,
-		_state->nodeCapacity,
-		_state->childSlotStride);
-	_state->memoryBytes =
-		_state->baseMemoryBytes +
-		sizeof(LinearMixedTreeNode) * _state->nodeCapacity +
-		sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride * 2 +
-		sizeof(int) * _state->maxDepth +
-		sizeof(uint32_t) * _state->maxDepth * 3 +
-		sizeof(DeviceLevelCondition) * _state->maxDepth +
+	_state->_nodeCapacity = estimateNodeCapacity(_state->_pointCount, _state->_leafCapacity, _state->_maxDepth, _state->_childSlotStride);
+	_state->_levelScratchNodeCapacity = estimateLevelScratchNodeCapacity(
+		_state->_pointCount,
+		_state->_leafCapacity,
+		_state->_nodeCapacity,
+		_state->_childSlotStride);
+	_state->_memoryBytes =
+		_state->_baseMemoryBytes +
+		sizeof(LinearMixedTreeNode) * _state->_nodeCapacity +
+		sizeof(uint32_t) * _state->_levelScratchNodeCapacity * _state->_childSlotStride * 2 +
+		sizeof(int) * _state->_maxDepth +
+		sizeof(uint32_t) * _state->_maxDepth * 3 +
+		sizeof(DeviceLevelCondition) * _state->_maxDepth +
 		sizeof(uint32_t) * 2;
-	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
+	checkMemoryBudget(_state->_memoryBytes, options._memoryBudgetMb);
 
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodes), sizeof(LinearMixedTreeNode) * _state->nodeCapacity));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->childCounts), sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->writeCursors), sizeof(uint32_t) * _state->levelScratchNodeCapacity * _state->childSlotStride));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->splitTypes), sizeof(int) * _state->maxDepth));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->leafCapacities), sizeof(uint32_t) * _state->maxDepth));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->minSplits), sizeof(uint32_t) * _state->maxDepth));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->conditions), sizeof(DeviceLevelCondition) * _state->maxDepth));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->schemaBlockEndDepths), sizeof(uint32_t) * _state->maxDepth));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->nodeCounter), sizeof(uint32_t)));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->overflowFlag), sizeof(uint32_t)));
-	CudaHelper::checkError(cudaMemcpy(_state->splitTypes, hostSplitTypes.data(), sizeof(int) * _state->maxDepth, cudaMemcpyHostToDevice));
-	CudaHelper::checkError(cudaMemcpy(_state->leafCapacities, hostLeafCapacities.data(), sizeof(uint32_t) * _state->maxDepth, cudaMemcpyHostToDevice));
-	CudaHelper::checkError(cudaMemcpy(_state->minSplits, hostMinSplits.data(), sizeof(uint32_t) * _state->maxDepth, cudaMemcpyHostToDevice));
-	CudaHelper::checkError(cudaMemcpy(_state->conditions, hostConditions.data(), sizeof(DeviceLevelCondition) * _state->maxDepth, cudaMemcpyHostToDevice));
-	CudaHelper::checkError(cudaMemcpy(_state->schemaBlockEndDepths, hostSchemaBlockEndDepths.data(), sizeof(uint32_t) * _state->maxDepth, cudaMemcpyHostToDevice));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_nodes), sizeof(LinearMixedTreeNode) * _state->_nodeCapacity));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_childCounts), sizeof(uint32_t) * _state->_levelScratchNodeCapacity * _state->_childSlotStride));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_writeCursors), sizeof(uint32_t) * _state->_levelScratchNodeCapacity * _state->_childSlotStride));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_splitTypes), sizeof(int) * _state->_maxDepth));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_leafCapacities), sizeof(uint32_t) * _state->_maxDepth));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_minSplits), sizeof(uint32_t) * _state->_maxDepth));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_conditions), sizeof(DeviceLevelCondition) * _state->_maxDepth));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_schemaBlockEndDepths), sizeof(uint32_t) * _state->_maxDepth));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_nodeCounter), sizeof(uint32_t)));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_overflowFlag), sizeof(uint32_t)));
+	CudaHelper::checkError(cudaMemcpy(_state->_splitTypes, hostSplitTypes.data(), sizeof(int) * _state->_maxDepth, cudaMemcpyHostToDevice));
+	CudaHelper::checkError(cudaMemcpy(_state->_leafCapacities, hostLeafCapacities.data(), sizeof(uint32_t) * _state->_maxDepth, cudaMemcpyHostToDevice));
+	CudaHelper::checkError(cudaMemcpy(_state->_minSplits, hostMinSplits.data(), sizeof(uint32_t) * _state->_maxDepth, cudaMemcpyHostToDevice));
+	CudaHelper::checkError(cudaMemcpy(_state->_conditions, hostConditions.data(), sizeof(DeviceLevelCondition) * _state->_maxDepth, cudaMemcpyHostToDevice));
+	CudaHelper::checkError(cudaMemcpy(_state->_schemaBlockEndDepths, hostSchemaBlockEndDepths.data(), sizeof(uint32_t) * _state->_maxDepth, cudaMemcpyHostToDevice));
 
 	cudaEvent_t buildBegin = nullptr;
 	cudaEvent_t buildEnd = nullptr;
 	CudaHelper::startTimer(buildBegin, buildEnd);
 
-	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->pointCount, ThreadsPerBlock)));
-	initializeIndicesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->indices, _state->pointCount);
+	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->_pointCount, ThreadsPerBlock)));
+	initializeIndicesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->_indices, _state->_pointCount);
 	CudaHelper::synchronize("initializeMixedTreeIndicesKernel");
 
 	initializeRootKernel<<<1, 1>>>(
-		_state->nodes,
-		_state->nodeCounter,
-		_state->pointCount,
+		_state->_nodes,
+		_state->_nodeCounter,
+		_state->_pointCount,
 		boundsMin.x,
 		boundsMin.y,
 		boundsMin.z,
@@ -1737,176 +1737,176 @@ PointGpu::BuildResult PointGpu::MixedTree::build(const PointCloud& cloud, const 
 		boundsMax.y,
 		boundsMax.z);
 	CudaHelper::synchronize("initializeMixedTreeRootKernel");
-	CudaHelper::checkError(cudaMemset(_state->overflowFlag, 0, sizeof(uint32_t)));
+	CudaHelper::checkError(cudaMemset(_state->_overflowFlag, 0, sizeof(uint32_t)));
 
 	size_t levelStart = 0;
 	size_t levelCount = 1;
 	uint32_t currentNodeCount = 1;
-	for (size_t depth = 0; depth < _state->maxDepth && levelCount > 0; ++depth)
+	for (size_t depth = 0; depth < _state->_maxDepth && levelCount > 0; ++depth)
 	{
-		if (levelCount > _state->levelScratchNodeCapacity)
+		if (levelCount > _state->_levelScratchNodeCapacity)
 			throw std::runtime_error("MixedTree exceeded its level scratch budget. Increase leaf capacity or reduce max depth.");
 
 		CudaHelper::checkError(cudaMemset(
-			_state->childCounts,
+			_state->_childCounts,
 			0,
-			sizeof(uint32_t) * levelCount * _state->childSlotStride));
+			sizeof(uint32_t) * levelCount * _state->_childSlotStride));
 		const dim3 prepareBlocks(static_cast<unsigned int>(divUp(levelCount, ThreadsPerBlock)));
 
 		countChildBucketsKernel<<<static_cast<unsigned int>(levelCount), ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->nodes,
+			_state->_points,
+			_state->_indices,
+			_state->_nodes,
 			levelStart,
 			levelCount,
-			static_cast<uint32_t>(_state->maxDepth),
-			_state->splitTypes,
-			_state->leafCapacities,
-			_state->minSplits,
-			_state->conditions,
-			_state->schemaBlockEndDepths,
-			static_cast<uint32_t>(_state->schemaDepthLimit),
-			static_cast<uint32_t>(_state->childSlotStride),
-			_state->childCounts);
+			static_cast<uint32_t>(_state->_maxDepth),
+			_state->_splitTypes,
+			_state->_leafCapacities,
+			_state->_minSplits,
+			_state->_conditions,
+			_state->_schemaBlockEndDepths,
+			static_cast<uint32_t>(_state->_schemaDepthLimit),
+			static_cast<uint32_t>(_state->_childSlotStride),
+			_state->_childCounts);
 		CudaHelper::synchronize("countMixedTreeChildBucketsKernel");
 
 		const uint32_t previousNodeCount = currentNodeCount;
 
 		prepareChildrenKernel<<<prepareBlocks, ThreadsPerBlock>>>(
-			_state->nodes,
+			_state->_nodes,
 			levelStart,
 			levelCount,
-			_state->nodeCapacity,
-			static_cast<uint32_t>(_state->maxDepth),
-			_state->splitTypes,
-			static_cast<uint32_t>(_state->schemaDepthLimit),
-			_state->childCounts,
-			static_cast<uint32_t>(_state->childSlotStride),
-			_state->writeCursors,
-			_state->nodeCounter,
-			_state->overflowFlag);
+			_state->_nodeCapacity,
+			static_cast<uint32_t>(_state->_maxDepth),
+			_state->_splitTypes,
+			static_cast<uint32_t>(_state->_schemaDepthLimit),
+			_state->_childCounts,
+			static_cast<uint32_t>(_state->_childSlotStride),
+			_state->_writeCursors,
+			_state->_nodeCounter,
+			_state->_overflowFlag);
 		CudaHelper::synchronize("prepareMixedTreeChildrenKernel");
 
 		uint32_t overflow = 0;
-		CudaHelper::checkError(cudaMemcpy(&overflow, _state->overflowFlag, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(&overflow, _state->_overflowFlag, sizeof(uint32_t), cudaMemcpyDeviceToHost));
 		if (overflow != 0)
 			throw std::runtime_error("MixedTree exceeded its allocated node budget. Increase leaf capacity or reduce max depth.");
 
 		CudaHelper::checkError(cudaMemcpy(
-			_state->tempIndices,
-			_state->indices,
-			sizeof(uint32_t) * _state->pointCount,
+			_state->_tempIndices,
+			_state->_indices,
+			sizeof(uint32_t) * _state->_pointCount,
 			cudaMemcpyDeviceToDevice));
 
 		partitionIndicesKernel<<<static_cast<unsigned int>(levelCount), ThreadsPerBlock>>>(
-			_state->points,
-			_state->indices,
-			_state->tempIndices,
-			_state->nodes,
+			_state->_points,
+			_state->_indices,
+			_state->_tempIndices,
+			_state->_nodes,
 			levelStart,
 			levelCount,
-			static_cast<uint32_t>(_state->maxDepth),
-			_state->splitTypes,
-			static_cast<uint32_t>(_state->schemaDepthLimit),
-			static_cast<uint32_t>(_state->childSlotStride),
-			_state->writeCursors);
+			static_cast<uint32_t>(_state->_maxDepth),
+			_state->_splitTypes,
+			static_cast<uint32_t>(_state->_schemaDepthLimit),
+			static_cast<uint32_t>(_state->_childSlotStride),
+			_state->_writeCursors);
 		CudaHelper::synchronize("partitionMixedTreeIndicesKernel");
-		std::swap(_state->indices, _state->tempIndices);
+		std::swap(_state->_indices, _state->_tempIndices);
 
 		uint32_t nextNodeCount = 0;
-		CudaHelper::checkError(cudaMemcpy(&nextNodeCount, _state->nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(&nextNodeCount, _state->_nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
 		currentNodeCount = nextNodeCount;
 		if (nextNodeCount > previousNodeCount)
 		{
 			refitNodeBoundsKernel<<<static_cast<unsigned int>(nextNodeCount - previousNodeCount), ThreadsPerBlock>>>(
-				_state->points,
-				_state->indices,
-				_state->nodes,
+				_state->_points,
+				_state->_indices,
+				_state->_nodes,
 				previousNodeCount,
 				static_cast<size_t>(nextNodeCount - previousNodeCount),
-				_state->splitTypes,
-				static_cast<uint32_t>(_state->schemaDepthLimit));
+				_state->_splitTypes,
+				static_cast<uint32_t>(_state->_schemaDepthLimit));
 			CudaHelper::synchronize("refitMixedTreeNodeBoundsKernel");
 		}
 		levelStart = previousNodeCount;
 		levelCount = nextNodeCount > previousNodeCount
 			? static_cast<size_t>(nextNodeCount - previousNodeCount)
 			: 0;
-		_state->allocatedNodes = nextNodeCount;
+		_state->_allocatedNodes = nextNodeCount;
 	}
 
-	result.gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
+	result._gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
 	cudaEventDestroy(buildBegin);
 	cudaEventDestroy(buildEnd);
 
-	if (_state->allocatedNodes == 0)
+	if (_state->_allocatedNodes == 0)
 	{
 		uint32_t allocated = 0;
-		CudaHelper::checkError(cudaMemcpy(&allocated, _state->nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-		_state->allocatedNodes = allocated;
+		CudaHelper::checkError(cudaMemcpy(&allocated, _state->_nodeCounter, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		_state->_allocatedNodes = allocated;
 	}
 
-	std::vector<LinearMixedTreeNode> hostNodes(_state->allocatedNodes);
-	CudaHelper::checkError(cudaMemcpy(hostNodes.data(), _state->nodes, sizeof(LinearMixedTreeNode) * _state->allocatedNodes, cudaMemcpyDeviceToHost));
+	std::vector<LinearMixedTreeNode> hostNodes(_state->_allocatedNodes);
+	CudaHelper::checkError(cudaMemcpy(hostNodes.data(), _state->_nodes, sizeof(LinearMixedTreeNode) * _state->_allocatedNodes, cudaMemcpyDeviceToHost));
 
 	size_t maxLeafOccupancy = 0;
 	size_t indexedPoints = 0;
 	size_t deepestNode = 0;
 	for (const LinearMixedTreeNode& node : hostNodes)
 	{
-		if (node.pointCount == 0)
+		if (node._pointCount == 0)
 			continue;
 
-		++_state->actualNodes;
-		deepestNode = std::max<size_t>(deepestNode, node.depth);
-		if (node.childBase < 0)
+		++_state->_actualNodes;
+		deepestNode = std::max<size_t>(deepestNode, node._depth);
+		if (node._childBase < 0)
 		{
-			++_state->actualLeaves;
-			indexedPoints += node.pointCount;
-			maxLeafOccupancy = std::max<size_t>(maxLeafOccupancy, node.pointCount);
+			++_state->_actualLeaves;
+			indexedPoints += node._pointCount;
+			maxLeafOccupancy = std::max<size_t>(maxLeafOccupancy, node._pointCount);
 		}
 	}
 
-	result.gpuMemoryBytes = _state->memoryBytes;
-	result.metrics.buildTimeMs = result.gpuBuildTimeMs;
-	result.metrics.numNodes = _state->actualNodes;
-	result.metrics.numLeaves = _state->actualLeaves;
-	result.metrics.indexedPoints = indexedPoints;
-	result.metrics.maxDepth = deepestNode;
-	result.metrics.averageLeafOccupancy = _state->actualLeaves > 0
-		? static_cast<double>(indexedPoints) / static_cast<double>(_state->actualLeaves)
+	result._gpuMemoryBytes = _state->_memoryBytes;
+	result._metrics._buildTimeMs = result._gpuBuildTimeMs;
+	result._metrics._numNodes = _state->_actualNodes;
+	result._metrics._numLeaves = _state->_actualLeaves;
+	result._metrics._indexedPoints = indexedPoints;
+	result._metrics._maxDepth = deepestNode;
+	result._metrics._averageLeafOccupancy = _state->_actualLeaves > 0
+		? static_cast<double>(indexedPoints) / static_cast<double>(_state->_actualLeaves)
 		: 0.0;
-	result.metrics.maxLeafOccupancy = maxLeafOccupancy;
-	result.metrics.memoryEstimateBytes = _state->memoryBytes;
+	result._metrics._maxLeafOccupancy = maxLeafOccupancy;
+	result._metrics._memoryEstimateBytes = _state->_memoryBytes;
 	fillActiveStructureStats(result, schema, hostNodes);
 	return result;
 }
 
 PointGpu::QueryResult PointGpu::MixedTree::query(const std::vector<Query>& queries, const Options& options) const
 {
-	if (!_state || _state->actualNodes == 0 || queries.empty())
+	if (!_state || _state->_actualNodes == 0 || queries.empty())
 		return {};
 
-	CudaHelper::checkError(cudaSetDevice(_state->device));
+	CudaHelper::checkError(cudaSetDevice(_state->_device));
 
 	QueryResult result;
-	result.samples.reserve(queries.size());
+	result._samples.reserve(queries.size());
 	for (const Query& query : queries)
 	{
-		if (query.type == QueryType::Radius)
-			++result.radiusQueries;
-		else if (query.type == QueryType::CountRange)
-			++result.countRangeQueries;
-		else if (query.type == QueryType::Knn)
-			++result.knnQueries;
+		if (query._type == QueryType::Radius)
+			++result._radiusQueries;
+		else if (query._type == QueryType::CountRange)
+			++result._countRangeQueries;
+		else if (query._type == QueryType::Knn)
+			++result._knnQueries;
 		else
-			++result.rangeQueries;
+			++result._rangeQueries;
 	}
 
-	const size_t batchSize = options.queryBatchSize > 0
-		? std::max<size_t>(1, options.queryBatchSize)
+	const size_t batchSize = options._queryBatchSize > 0
+		? std::max<size_t>(1, options._queryBatchSize)
 		: queries.size();
-	const float clockRate = deviceClockRateKHz(_state->device);
+	const float clockRate = deviceClockRateKHz(_state->_device);
 
 	ensureQueryBuffers(*_state, batchSize);
 
@@ -1924,88 +1924,88 @@ PointGpu::QueryResult PointGpu::MixedTree::query(const std::vector<Query>& queri
 		for (size_t i = 0; i < currentBatch; ++i)
 			hostQueries.push_back(makeDeviceQuery(queries[offset + i]));
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
-			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
+			return query._type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
 		if (batchHasKnn)
-			result.knnBackend = "gpu_bruteforce_knn";
-		const bool useCooperativeQuery = shouldUseCooperativeQueryKernel(hostQueries, _state->cloud);
+			result._knnBackend = "gpu_bruteforce_knn";
+		const bool useCooperativeQuery = shouldUseCooperativeQueryKernel(hostQueries, _state->_cloud);
 
-		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->_queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
 		if (useCooperativeQuery)
 		{
 			cooperativeQueryKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock>>>(
-				_state->points,
-				_state->indices,
-				_state->nodes,
-				_state->queryBuffer,
+				_state->_points,
+				_state->_indices,
+				_state->_nodes,
+				_state->_queryBuffer,
 				currentBatch,
 				clockRate,
-				_state->sampleBuffer);
+				_state->_sampleBuffer);
 			CudaHelper::synchronize("MixedTreeCooperativeQueryKernel");
 		}
 		else
 		{
 			const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
 			queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
-				_state->points,
-				_state->indices,
-				_state->nodes,
-				_state->pointCount,
-				_state->queryBuffer,
+				_state->_points,
+				_state->_indices,
+				_state->_nodes,
+				_state->_pointCount,
+				_state->_queryBuffer,
 				currentBatch,
 				clockRate,
-				_state->sampleBuffer);
+				_state->_sampleBuffer);
 			CudaHelper::synchronize("MixedTreeQueryKernel");
 		}
 		if (batchHasKnn)
 		{
 			PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
-				_state->points,
-				_state->pointCount,
-				_state->queryBuffer,
+				_state->_points,
+				_state->_pointCount,
+				_state->_queryBuffer,
 				currentBatch,
 				clockRate,
-				_state->sampleBuffer);
+				_state->_sampleBuffer);
 			CudaHelper::synchronize("MixedTreeKnnQueryKernel");
 		}
 
 		hostSamples.resize(currentBatch);
-		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->_sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
 		for (const DeviceQuerySample& sample : hostSamples)
 		{
 			QuerySample converted;
-			converted.visitedNodes = static_cast<size_t>(sample.visitedNodes);
-			converted.testedPoints = static_cast<size_t>(sample.testedPoints);
-			converted.returnedPoints = static_cast<size_t>(sample.returnedPoints);
-			converted.elapsedMs = sample.elapsedMs;
-			result.samples.push_back(converted);
+			converted._visitedNodes = static_cast<size_t>(sample._visitedNodes);
+			converted._testedPoints = static_cast<size_t>(sample._testedPoints);
+			converted._returnedPoints = static_cast<size_t>(sample._returnedPoints);
+			converted._elapsedMs = sample._elapsedMs;
+			result._samples.push_back(converted);
 		}
 	}
 
-	result.gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
+	result._gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
 	cudaEventDestroy(queryBegin);
 	cudaEventDestroy(queryEnd);
 
-	result.metrics = summarizeGpuSamples(result.samples);
+	result._metrics = summarizeGpuSamples(result._samples);
 	return result;
 }
 
 bool PointGpu::MixedTree::built() const
 {
-	return _state && _state->actualNodes > 0;
+	return _state && _state->_actualNodes > 0;
 }
 
 size_t PointGpu::MixedTree::pointCount() const
 {
-	return _state ? _state->pointCount : 0;
+	return _state ? _state->_pointCount : 0;
 }
 
 size_t PointGpu::MixedTree::nodeCount() const
 {
-	return _state ? _state->actualNodes : 0;
+	return _state ? _state->_actualNodes : 0;
 }
 
 size_t PointGpu::MixedTree::leafCount() const
 {
-	return _state ? _state->actualLeaves : 0;
+	return _state ? _state->_actualLeaves : 0;
 }

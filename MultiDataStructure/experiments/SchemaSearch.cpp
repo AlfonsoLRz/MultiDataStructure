@@ -49,26 +49,26 @@ static const std::vector<std::string>& defaultWorkloadPaths()
 
 struct SearchDataset
 {
-	std::string name;
-	std::string source;
-	PointCloud cloud;
+	std::string _name;
+	std::string _source;
+	PointCloud _cloud;
 };
 
 struct WorkloadRun
 {
-	Experiments::QueryMetrics metrics;
-	Experiments::QueryMetrics rangeMetrics;
-	Experiments::QueryMetrics countRangeMetrics;
-	Experiments::QueryMetrics radiusMetrics;
-	Experiments::QueryMetrics knnMetrics;
-	std::vector<PointSpatialIndex::QueryStats> samples;
-	size_t rangeQueries = 0;
-	size_t countRangeQueries = 0;
-	size_t radiusQueries = 0;
-	size_t knnQueries = 0;
-	std::map<std::string, Experiments::QueryMetrics> stratumMetrics;
-	std::string stratumSummary;
-	double gpuQueryMs = 0.0;
+	Experiments::QueryMetrics _metrics;
+	Experiments::QueryMetrics _rangeMetrics;
+	Experiments::QueryMetrics _countRangeMetrics;
+	Experiments::QueryMetrics _radiusMetrics;
+	Experiments::QueryMetrics _knnMetrics;
+	std::vector<PointSpatialIndex::QueryStats> _samples;
+	size_t _rangeQueries = 0;
+	size_t _countRangeQueries = 0;
+	size_t _radiusQueries = 0;
+	size_t _knnQueries = 0;
+	std::map<std::string, Experiments::QueryMetrics> _stratumMetrics;
+	std::string _stratumSummary;
+	double _gpuQueryMs = 0.0;
 };
 
 enum class PreparedQueryKind
@@ -80,22 +80,22 @@ enum class PreparedQueryKind
 
 struct PreparedCpuQuery
 {
-	PreparedQueryKind kind = PreparedQueryKind::Range;
-	AABB bounds;
+	PreparedQueryKind _kind = PreparedQueryKind::Range;
+	AABB _bounds;
 	glm::vec3 center = glm::vec3(0.0f);
-	float radius = 0.0f;
-	std::string stratum;
+	float _radius = 0.0f;
+	std::string _stratum;
 };
 
 struct PreparedWorkload
 {
-	std::vector<PreparedCpuQuery> cpuQueries;
-	std::vector<PointGpu::Query> cudaQueries;
-	std::vector<std::string> cudaStrata;
-	size_t rangeQueries = 0;
-	size_t countRangeQueries = 0;
-	size_t radiusQueries = 0;
-	size_t knnQueries = 0;
+	std::vector<PreparedCpuQuery> _cpuQueries;
+	std::vector<PointGpu::Query> _cudaQueries;
+	std::vector<std::string> _cudaStrata;
+	size_t _rangeQueries = 0;
+	size_t _countRangeQueries = 0;
+	size_t _radiusQueries = 0;
+	size_t _knnQueries = 0;
 };
 
 static std::string csvEscape(const std::string& value);
@@ -103,42 +103,42 @@ static void createParentDirectory(const std::string& filename);
 
 struct DatasetContext
 {
-	const SearchDataset* dataset = nullptr;
-	Experiments::PointCloudFeatures features;
-	std::vector<PreparedWorkload> preparedWorkloads;
+	const SearchDataset* _dataset = nullptr;
+	Experiments::PointCloudFeatures _features;
+	std::vector<PreparedWorkload> _preparedWorkloads;
 };
 
 struct EvaluatedCandidate
 {
-	Experiments::SchemaCandidate candidate;
-	std::vector<Experiments::SchemaSearchRecord> records;
+	Experiments::SchemaCandidate _candidate;
+	std::vector<Experiments::SchemaSearchRecord> _records;
 	double aggregateScore = std::numeric_limits<double>::infinity();
 	// NSGA-II tagging: paretoFront -1 = unranked, 0 = current front; crowdingDistance sums normalized objective gaps to same-front neighbors (larger = more isolated).
-	int paretoFront = -1;
-	double crowdingDistance = 0.0;
+	int _paretoFront = -1;
+	double _crowdingDistance = 0.0;
 };
 
 template <typename TIndex>
 struct CudaCachedBuilder
 {
-	std::unique_ptr<TIndex> index;
-	std::string lastSignature;
-	PointGpu::BuildResult lastResult;
-	bool hasResult = false;
+	std::unique_ptr<TIndex> _index;
+	std::string _lastSignature;
+	PointGpu::BuildResult _lastResult;
+	bool _hasResult = false;
 };
 
 struct CudaIndexCacheEntry
 {
-	CudaCachedBuilder<PointGpu::BIH> bih;
-	CudaCachedBuilder<PointGpu::HGrid> hgrid;
-	CudaCachedBuilder<PointGpu::KDTree> kdTree;
-	CudaCachedBuilder<PointGpu::LBVH> lbvh;
-	CudaCachedBuilder<PointGpu::MixedTree> mixedTree;
-	CudaCachedBuilder<PointGpu::Octree> octree;
-	CudaCachedBuilder<PointGpu::QuadTree> quadTree;
-	CudaCachedBuilder<PointGpu::RegularGrid> regularGrid;
-	size_t buildHits = 0;
-	size_t buildMisses = 0;
+	CudaCachedBuilder<PointGpu::BIH> _bih;
+	CudaCachedBuilder<PointGpu::HGrid> _hgrid;
+	CudaCachedBuilder<PointGpu::KDTree> _kdTree;
+	CudaCachedBuilder<PointGpu::LBVH> _lbvh;
+	CudaCachedBuilder<PointGpu::MixedTree> _mixedTree;
+	CudaCachedBuilder<PointGpu::Octree> _octree;
+	CudaCachedBuilder<PointGpu::QuadTree> _quadTree;
+	CudaCachedBuilder<PointGpu::RegularGrid> _regularGrid;
+	size_t _buildHits = 0;
+	size_t _buildMisses = 0;
 };
 
 using CudaIndexCache = std::unordered_map<const SearchDataset*, CudaIndexCacheEntry>;
@@ -153,21 +153,21 @@ static PointGpu::BuildResult cudaBuildOrReuse(
 	CudaIndexCacheEntry& parentEntry,
 	TIndex*& outIndex)
 {
-	if (!slot.index)
-		slot.index = std::make_unique<TIndex>();
-	outIndex = slot.index.get();
+	if (!slot._index)
+		slot._index = std::make_unique<TIndex>();
+	outIndex = slot._index.get();
 
-	if (slot.hasResult && slot.lastSignature == currentSignature)
+	if (slot._hasResult && slot._lastSignature == currentSignature)
 	{
-		++parentEntry.buildHits;
-		return slot.lastResult;
+		++parentEntry._buildHits;
+		return slot._lastResult;
 	}
 
-	slot.lastResult = slot.index->build(cloud, schemaConfig, cudaOptions);
-	slot.lastSignature = currentSignature;
-	slot.hasResult = true;
-	++parentEntry.buildMisses;
-	return slot.lastResult;
+	slot._lastResult = slot._index->build(cloud, schemaConfig, cudaOptions);
+	slot._lastSignature = currentSignature;
+	slot._hasResult = true;
+	++parentEntry._buildMisses;
+	return slot._lastResult;
 }
 
 static bool pathExists(const std::filesystem::path& path)
@@ -261,23 +261,23 @@ static std::string asString(const boost::json::object& object, const char* key, 
 static bool scoreWeightsAreDefault(const Experiments::ScoreWeights& weights)
 {
 	constexpr double epsilon = 1e-12;
-	return std::abs(weights.lambdaLatency - 1.0) <= epsilon &&
-		std::abs(weights.lambdaBuild) <= epsilon &&
-		std::abs(weights.lambdaMemory) <= epsilon &&
-		std::abs(weights.lambdaImbalance) <= epsilon &&
-		!weights.useVisitProxy &&
-		std::abs(weights.visitProxyAlpha - 0.1) <= epsilon;
+	return std::abs(weights._lambdaLatency - 1.0) <= epsilon &&
+		std::abs(weights._lambdaBuild) <= epsilon &&
+		std::abs(weights._lambdaMemory) <= epsilon &&
+		std::abs(weights._lambdaImbalance) <= epsilon &&
+		!weights._useVisitProxy &&
+		std::abs(weights._visitProxyAlpha - 0.1) <= epsilon;
 }
 
 static Experiments::ScoreWeights effectiveScoreWeights(
 	const Experiments::WorkloadProfile& workload,
 	const Experiments::SchemaSearchOptions& options)
 {
-	if (options.scoreWeightsOverride || !scoreWeightsAreDefault(options.weights))
-		return options.weights;
-	if (workload.hasScoreWeights)
-		return workload.scoreWeights;
-	return options.weights;
+	if (options._scoreWeightsOverride || !scoreWeightsAreDefault(options._weights))
+		return options._weights;
+	if (workload._hasScoreWeights)
+		return workload._scoreWeights;
+	return options._weights;
 }
 
 static double elapsedMilliseconds(std::chrono::steady_clock::time_point begin, std::chrono::steady_clock::time_point end)
@@ -328,42 +328,42 @@ static void parseScaleRange(const boost::json::object& object, const char* key, 
 static Experiments::ScoreWeights parseScoreWeightsObject(const boost::json::object& object)
 {
 	Experiments::ScoreWeights weights;
-	weights.lambdaLatency = asDouble(object, "latency", weights.lambdaLatency);
-	weights.lambdaLatency = asDouble(object, "lambdaLatency", weights.lambdaLatency);
-	weights.lambdaBuild = asDouble(object, "buildTime", weights.lambdaBuild);
-	weights.lambdaBuild = asDouble(object, "build", weights.lambdaBuild);
-	weights.lambdaBuild = asDouble(object, "lambdaBuild", weights.lambdaBuild);
-	weights.lambdaMemory = asDouble(object, "memory", weights.lambdaMemory);
-	weights.lambdaMemory = asDouble(object, "lambdaMemory", weights.lambdaMemory);
-	weights.lambdaImbalance = asDouble(object, "imbalance", weights.lambdaImbalance);
-	weights.lambdaImbalance = asDouble(object, "lambdaImbalance", weights.lambdaImbalance);
-	weights.useVisitProxy = asBool(object, "useVisitProxy", weights.useVisitProxy);
-	weights.useVisitProxy = asBool(object, "visitProxy", weights.useVisitProxy);
-	weights.visitProxyAlpha = asDouble(object, "visitProxyAlpha", weights.visitProxyAlpha);
+	weights._lambdaLatency = asDouble(object, "latency", weights._lambdaLatency);
+	weights._lambdaLatency = asDouble(object, "lambdaLatency", weights._lambdaLatency);
+	weights._lambdaBuild = asDouble(object, "buildTime", weights._lambdaBuild);
+	weights._lambdaBuild = asDouble(object, "build", weights._lambdaBuild);
+	weights._lambdaBuild = asDouble(object, "lambdaBuild", weights._lambdaBuild);
+	weights._lambdaMemory = asDouble(object, "memory", weights._lambdaMemory);
+	weights._lambdaMemory = asDouble(object, "lambdaMemory", weights._lambdaMemory);
+	weights._lambdaImbalance = asDouble(object, "imbalance", weights._lambdaImbalance);
+	weights._lambdaImbalance = asDouble(object, "lambdaImbalance", weights._lambdaImbalance);
+	weights._useVisitProxy = asBool(object, "useVisitProxy", weights._useVisitProxy);
+	weights._useVisitProxy = asBool(object, "visitProxy", weights._useVisitProxy);
+	weights._visitProxyAlpha = asDouble(object, "visitProxyAlpha", weights._visitProxyAlpha);
 
 	const double visitedNodes = asDouble(object, "visitedNodes", 0.0);
 	const double testedPoints = asDouble(object, "testedPoints", 0.0);
 	if (visitedNodes > 0.0 || testedPoints > 0.0)
 	{
-		weights.useVisitProxy = true;
+		weights._useVisitProxy = true;
 		if (visitedNodes > 0.0)
-			weights.visitProxyAlpha = std::max(0.0, testedPoints) / visitedNodes;
+			weights._visitProxyAlpha = std::max(0.0, testedPoints) / visitedNodes;
 		else if (testedPoints > 0.0)
-			weights.visitProxyAlpha = testedPoints;
+			weights._visitProxyAlpha = testedPoints;
 	}
 
-	weights.lambdaLatency = std::max(0.0, weights.lambdaLatency);
-	weights.lambdaBuild = std::max(0.0, weights.lambdaBuild);
-	weights.lambdaMemory = std::max(0.0, weights.lambdaMemory);
-	weights.lambdaImbalance = std::max(0.0, weights.lambdaImbalance);
-	weights.visitProxyAlpha = std::max(0.0, weights.visitProxyAlpha);
+	weights._lambdaLatency = std::max(0.0, weights._lambdaLatency);
+	weights._lambdaBuild = std::max(0.0, weights._lambdaBuild);
+	weights._lambdaMemory = std::max(0.0, weights._lambdaMemory);
+	weights._lambdaImbalance = std::max(0.0, weights._lambdaImbalance);
+	weights._visitProxyAlpha = std::max(0.0, weights._visitProxyAlpha);
 	return weights;
 }
 
 static AABB randomQueryBox(std::mt19937& rng, const PointCloud& cloud, const Experiments::WorkloadProfile& profile)
 {
 	const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
-	const float scale = randomFloat(rng, static_cast<float>(profile.rangeScaleMin), static_cast<float>(profile.rangeScaleMax));
+	const float scale = randomFloat(rng, static_cast<float>(profile._rangeScaleMin), static_cast<float>(profile._rangeScaleMax));
 	const glm::vec3 halfExtent = glm::max(range * scale * 0.5f, glm::vec3(0.0005f));
 	const glm::vec3 boundsMin = cloud.bounds().min();
 	const glm::vec3 boundsMax = cloud.bounds().max();
@@ -383,7 +383,7 @@ static float randomQueryRadius(std::mt19937& rng, const PointCloud& cloud, const
 {
 	const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
 	const float largestRange = std::max({ range.x, range.y, range.z, 1.0f });
-	return largestRange * randomFloat(rng, static_cast<float>(profile.radiusScaleMin), static_cast<float>(profile.radiusScaleMax));
+	return largestRange * randomFloat(rng, static_cast<float>(profile._radiusScaleMin), static_cast<float>(profile._radiusScaleMax));
 }
 
 static AABB queryBoxAtScale(const glm::vec3& center, const PointCloud& cloud, double scale)
@@ -434,7 +434,7 @@ static std::string lowerCopy(std::string value)
 
 static bool useCudaEvaluator(const Experiments::SchemaSearchOptions& options)
 {
-	const std::string evaluator = lowerCopy(options.evaluator);
+	const std::string evaluator = lowerCopy(options._evaluator);
 	return evaluator == "cuda" || evaluator == "gpu";
 }
 
@@ -481,12 +481,12 @@ static std::string primitiveProfileName(PrimitiveProfile profile)
 
 static bool queryMinimalPrimitiveProfile(const Experiments::SchemaGenerationOptions& options)
 {
-	return parsePrimitiveProfileInternal(options.primitiveProfile, false) == PrimitiveProfile::QueryMinimalCpu;
+	return parsePrimitiveProfileInternal(options._primitiveProfile, false) == PrimitiveProfile::QueryMinimalCpu;
 }
 
 static std::string scoreModeForWeights(const Experiments::ScoreWeights& weights)
 {
-	if (weights.useVisitProxy)
+	if (weights._useVisitProxy)
 		return "visit_proxy";
 	return scoreWeightsAreDefault(weights) ? "latency" : "weighted_latency";
 }
@@ -590,9 +590,9 @@ static std::string cudaDeviceDescription(const PointGpu::Options& cudaOptions)
 		return "unavailable (no CUDA devices)";
 
 	int device = 0;
-	if (cudaOptions.device >= 0)
+	if (cudaOptions._device >= 0)
 	{
-		device = std::min(cudaOptions.device, count - 1);
+		device = std::min(cudaOptions._device, count - 1);
 	}
 	else
 	{
@@ -607,10 +607,10 @@ static std::string cudaDeviceDescription(const PointGpu::Options& cudaOptions)
 		return std::string("unavailable (") + cudaGetErrorString(propertyResult) + ")";
 
 	std::ostringstream out;
-	if (cudaOptions.device >= 0)
+	if (cudaOptions._device >= 0)
 	{
-		if (cudaOptions.device != device)
-			out << cudaOptions.device << " -> ";
+		if (cudaOptions._device != device)
+			out << cudaOptions._device << " -> ";
 		out << device;
 	}
 	else
@@ -642,8 +642,8 @@ static int resolvedCudaDevice(const PointGpu::Options& cudaOptions)
 	if (count <= 0)
 		throw std::runtime_error("CUDA evaluator requested, but no CUDA devices are available.");
 
-	if (cudaOptions.device >= 0)
-		return std::min(cudaOptions.device, count - 1);
+	if (cudaOptions._device >= 0)
+		return std::min(cudaOptions._device, count - 1);
 
 	int device = 0;
 	const cudaError_t currentResult = cudaGetDevice(&device);
@@ -688,17 +688,17 @@ static size_t cudaTotalVramMb(int deviceHint)
 static PointGpu::Options cudaOptionsFrom(const Experiments::SchemaSearchOptions& options)
 {
 	PointGpu::Options cudaOptions;
-	cudaOptions.device = options.cuda.device;
-	cudaOptions.builder = canonicalCudaBuilder(options.cuda.builder);
-	cudaOptions.queryBatchSize = options.cuda.queryBatchSize;
-	cudaOptions.memoryBudgetMb = options.cuda.memoryBudgetMb;
-	cudaOptions.knnBackend = options.cuda.knnBackend;
+	cudaOptions._device = options._cuda._device;
+	cudaOptions._builder = canonicalCudaBuilder(options._cuda._builder);
+	cudaOptions._queryBatchSize = options._cuda._queryBatchSize;
+	cudaOptions._memoryBudgetMb = options._cuda._memoryBudgetMb;
+	cudaOptions._knnBackend = options._cuda._knnBackend;
 	// Auto-default the budget to 75% of total VRAM when the caller leaves it at 0, leaving headroom for the rest of the GPU stack.
-	if (cudaOptions.memoryBudgetMb == 0)
+	if (cudaOptions._memoryBudgetMb == 0)
 	{
-		const size_t totalMb = cudaTotalVramMb(cudaOptions.device);
+		const size_t totalMb = cudaTotalVramMb(cudaOptions._device);
 		if (totalMb > 0)
-			cudaOptions.memoryBudgetMb = (totalMb * 3) / 4;
+			cudaOptions._memoryBudgetMb = (totalMb * 3) / 4;
 	}
 	return cudaOptions;
 }
@@ -753,18 +753,18 @@ static bool isHGridLevelName(const std::string& typeName)
 
 static std::string schemaTypeShortName(const SchemaLevelConfig& level)
 {
-	if (isBIHLevelName(level.typeName))
+	if (isBIHLevelName(level._typeName))
 		return "bih";
-	if (isKarrasOctreeLevelName(level.typeName))
+	if (isKarrasOctreeLevelName(level._typeName))
 		return "kot";
-	if (isLBVHLevelName(level.typeName))
+	if (isLBVHLevelName(level._typeName))
 		return "lbvh";
-	if (isRegularGridLevelName(level.typeName))
+	if (isRegularGridLevelName(level._typeName))
 		return "rg";
-	if (isHGridLevelName(level.typeName))
+	if (isHGridLevelName(level._typeName))
 		return "hg";
 
-	switch (level.type)
+	switch (level._type)
 	{
 	case MultiDataStructure::QuadTreeNode:
 		return "qt";
@@ -781,7 +781,7 @@ static std::string schemaTypeShortName(const SchemaLevelConfig& level)
 
 static std::string levelJsonTypeName(const SchemaLevelConfig& level)
 {
-	return level.typeName.empty() ? Config::dataStructureLevelName(level.type) : level.typeName;
+	return level._typeName.empty() ? Config::dataStructureLevelName(level._type) : level._typeName;
 }
 
 static std::string randomTypeNameForBase(
@@ -972,22 +972,22 @@ static AdaptiveLeafCapacityConfig randomAdaptiveLeafCapacity(
 	static const std::vector<double> queryFactors = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
 
 	AdaptiveLeafCapacityConfig config;
-	config.enabled = true;
-	config.minCapacity = std::max<size_t>(1, baseLeafCapacity / 4);
-	config.maxCapacity = baseLeafCapacity > std::numeric_limits<size_t>::max() / 4
+	config._enabled = true;
+	config._minCapacity = std::max<size_t>(1, baseLeafCapacity / 4);
+	config._maxCapacity = baseLeafCapacity > std::numeric_limits<size_t>::max() / 4
 		? std::numeric_limits<size_t>::max()
 		: std::max<size_t>(baseLeafCapacity, baseLeafCapacity * 4);
-	config.densityWeight = chooseDoubleValue(rng, weights);
-	config.anisotropyWeight = chooseDoubleValue(rng, weights);
-	config.heightRatioWeight = chooseDoubleValue(rng, weights);
-	config.queryMixFactor = chooseDoubleValue(rng, queryFactors);
+	config._densityWeight = chooseDoubleValue(rng, weights);
+	config._anisotropyWeight = chooseDoubleValue(rng, weights);
+	config._heightRatioWeight = chooseDoubleValue(rng, weights);
+	config._queryMixFactor = chooseDoubleValue(rng, queryFactors);
 
-	if (config.densityWeight == 0.0 &&
-		config.anisotropyWeight == 0.0 &&
-		config.heightRatioWeight == 0.0 &&
-		config.queryMixFactor == 1.0)
+	if (config._densityWeight == 0.0 &&
+		config._anisotropyWeight == 0.0 &&
+		config._heightRatioWeight == 0.0 &&
+		config._queryMixFactor == 1.0)
 	{
-		config.densityWeight = 1.0;
+		config._densityWeight = 1.0;
 	}
 
 	return config;
@@ -995,28 +995,28 @@ static AdaptiveLeafCapacityConfig randomAdaptiveLeafCapacity(
 
 static void normalizeAdaptiveLeafCapacity(SchemaLevelConfig& level)
 {
-	AdaptiveLeafCapacityConfig& adaptive = level.adaptiveLeafCapacity;
-	if (!adaptive.enabled)
+	AdaptiveLeafCapacityConfig& adaptive = level._adaptiveLeafCapacity;
+	if (!adaptive._enabled)
 		return;
 
-	const size_t baseCapacity = std::max<size_t>(1, level.leafCapacity);
-	if (adaptive.minCapacity == 0)
-		adaptive.minCapacity = std::max<size_t>(1, baseCapacity / 4);
-	if (adaptive.maxCapacity == 0)
+	const size_t baseCapacity = std::max<size_t>(1, level._leafCapacity);
+	if (adaptive._minCapacity == 0)
+		adaptive._minCapacity = std::max<size_t>(1, baseCapacity / 4);
+	if (adaptive._maxCapacity == 0)
 	{
-		adaptive.maxCapacity = baseCapacity > std::numeric_limits<size_t>::max() / 4
+		adaptive._maxCapacity = baseCapacity > std::numeric_limits<size_t>::max() / 4
 			? std::numeric_limits<size_t>::max()
 			: std::max<size_t>(baseCapacity, baseCapacity * 4);
 	}
-	if (adaptive.maxCapacity < adaptive.minCapacity)
-		adaptive.maxCapacity = adaptive.minCapacity;
+	if (adaptive._maxCapacity < adaptive._minCapacity)
+		adaptive._maxCapacity = adaptive._minCapacity;
 
-	adaptive.densityWeight = std::clamp(adaptive.densityWeight, -3.0, 3.0);
-	adaptive.anisotropyWeight = std::clamp(adaptive.anisotropyWeight, -3.0, 3.0);
-	adaptive.heightRatioWeight = std::clamp(adaptive.heightRatioWeight, -3.0, 3.0);
-	if (!std::isfinite(adaptive.queryMixFactor) || adaptive.queryMixFactor <= 0.0)
-		adaptive.queryMixFactor = 1.0;
-	adaptive.queryMixFactor = std::clamp(adaptive.queryMixFactor, 0.25, 4.0);
+	adaptive._densityWeight = std::clamp(adaptive._densityWeight, -3.0, 3.0);
+	adaptive._anisotropyWeight = std::clamp(adaptive._anisotropyWeight, -3.0, 3.0);
+	adaptive._heightRatioWeight = std::clamp(adaptive._heightRatioWeight, -3.0, 3.0);
+	if (!std::isfinite(adaptive._queryMixFactor) || adaptive._queryMixFactor <= 0.0)
+		adaptive._queryMixFactor = 1.0;
+	adaptive._queryMixFactor = std::clamp(adaptive._queryMixFactor, 0.25, 4.0);
 }
 
 static void maybeAssignAdaptiveLeafCapacity(
@@ -1024,12 +1024,12 @@ static void maybeAssignAdaptiveLeafCapacity(
 	std::mt19937& rng,
 	const Experiments::SchemaGenerationOptions& options)
 {
-	if (!options.adaptiveLeafCapacity)
+	if (!options._adaptiveLeafCapacity)
 		return;
 
-	std::bernoulli_distribution adaptiveDistribution(std::clamp(options.adaptiveLeafProbability, 0.0, 1.0));
+	std::bernoulli_distribution adaptiveDistribution(std::clamp(options._adaptiveLeafProbability, 0.0, 1.0));
 	if (adaptiveDistribution(rng))
-		level.adaptiveLeafCapacity = randomAdaptiveLeafCapacity(rng, std::max<size_t>(1, level.leafCapacity));
+		level._adaptiveLeafCapacity = randomAdaptiveLeafCapacity(rng, std::max<size_t>(1, level._leafCapacity));
 }
 
 template <typename T>
@@ -1077,52 +1077,52 @@ static void appendConditionSignature(std::ostringstream& output, const SchemaLev
 		return;
 
 	output << "c";
-	if (condition.minPoints) output << "p" << condition.minPoints.value();
-	if (condition.maxPoints) output << "P" << condition.maxPoints.value();
-	if (condition.minDensity) output << "d" << static_cast<size_t>(condition.minDensity.value() * 1000.0);
-	if (condition.maxDensity) output << "D" << static_cast<size_t>(condition.maxDensity.value() * 1000.0);
-	if (condition.minHeightRatio) output << "h" << static_cast<size_t>(condition.minHeightRatio.value() * 1000.0);
-	if (condition.maxHeightRatio) output << "H" << static_cast<size_t>(condition.maxHeightRatio.value() * 1000.0);
-	if (condition.minExtentX) output << "x" << static_cast<size_t>(condition.minExtentX.value() * 1000.0);
-	if (condition.maxExtentX) output << "X" << static_cast<size_t>(condition.maxExtentX.value() * 1000.0);
-	if (condition.minExtentY) output << "y" << static_cast<size_t>(condition.minExtentY.value() * 1000.0);
-	if (condition.maxExtentY) output << "Y" << static_cast<size_t>(condition.maxExtentY.value() * 1000.0);
-	if (condition.minExtentZ) output << "z" << static_cast<size_t>(condition.minExtentZ.value() * 1000.0);
-	if (condition.maxExtentZ) output << "Z" << static_cast<size_t>(condition.maxExtentZ.value() * 1000.0);
-	if (condition.minAnisotropy) output << "a" << static_cast<size_t>(condition.minAnisotropy.value() * 1000.0);
-	if (condition.maxAnisotropy) output << "A" << static_cast<size_t>(condition.maxAnisotropy.value() * 1000.0);
-	if (condition.minOccupancyEntropy) output << "e" << static_cast<size_t>(condition.minOccupancyEntropy.value() * 1000.0);
-	if (condition.maxOccupancyEntropy) output << "E" << static_cast<size_t>(condition.maxOccupancyEntropy.value() * 1000.0);
+	if (condition._minPoints) output << "p" << condition._minPoints.value();
+	if (condition._maxPoints) output << "P" << condition._maxPoints.value();
+	if (condition._minDensity) output << "d" << static_cast<size_t>(condition._minDensity.value() * 1000.0);
+	if (condition._maxDensity) output << "D" << static_cast<size_t>(condition._maxDensity.value() * 1000.0);
+	if (condition._minHeightRatio) output << "h" << static_cast<size_t>(condition._minHeightRatio.value() * 1000.0);
+	if (condition._maxHeightRatio) output << "H" << static_cast<size_t>(condition._maxHeightRatio.value() * 1000.0);
+	if (condition._minExtentX) output << "x" << static_cast<size_t>(condition._minExtentX.value() * 1000.0);
+	if (condition._maxExtentX) output << "X" << static_cast<size_t>(condition._maxExtentX.value() * 1000.0);
+	if (condition._minExtentY) output << "y" << static_cast<size_t>(condition._minExtentY.value() * 1000.0);
+	if (condition._maxExtentY) output << "Y" << static_cast<size_t>(condition._maxExtentY.value() * 1000.0);
+	if (condition._minExtentZ) output << "z" << static_cast<size_t>(condition._minExtentZ.value() * 1000.0);
+	if (condition._maxExtentZ) output << "Z" << static_cast<size_t>(condition._maxExtentZ.value() * 1000.0);
+	if (condition._minAnisotropy) output << "a" << static_cast<size_t>(condition._minAnisotropy.value() * 1000.0);
+	if (condition._maxAnisotropy) output << "A" << static_cast<size_t>(condition._maxAnisotropy.value() * 1000.0);
+	if (condition._minOccupancyEntropy) output << "e" << static_cast<size_t>(condition._minOccupancyEntropy.value() * 1000.0);
+	if (condition._maxOccupancyEntropy) output << "E" << static_cast<size_t>(condition._maxOccupancyEntropy.value() * 1000.0);
 }
 
 static size_t conditionFieldCount(const SchemaLevelCondition& condition)
 {
 	size_t count = 0;
-	count += condition.minPoints.has_value() ? 1 : 0;
-	count += condition.maxPoints.has_value() ? 1 : 0;
-	count += condition.minDensity.has_value() ? 1 : 0;
-	count += condition.maxDensity.has_value() ? 1 : 0;
-	count += condition.minHeightRatio.has_value() ? 1 : 0;
-	count += condition.maxHeightRatio.has_value() ? 1 : 0;
-	count += condition.minExtentX.has_value() ? 1 : 0;
-	count += condition.maxExtentX.has_value() ? 1 : 0;
-	count += condition.minExtentY.has_value() ? 1 : 0;
-	count += condition.maxExtentY.has_value() ? 1 : 0;
-	count += condition.minExtentZ.has_value() ? 1 : 0;
-	count += condition.maxExtentZ.has_value() ? 1 : 0;
-	count += condition.minAnisotropy.has_value() ? 1 : 0;
-	count += condition.maxAnisotropy.has_value() ? 1 : 0;
-	count += condition.minOccupancyEntropy.has_value() ? 1 : 0;
-	count += condition.maxOccupancyEntropy.has_value() ? 1 : 0;
+	count += condition._minPoints.has_value() ? 1 : 0;
+	count += condition._maxPoints.has_value() ? 1 : 0;
+	count += condition._minDensity.has_value() ? 1 : 0;
+	count += condition._maxDensity.has_value() ? 1 : 0;
+	count += condition._minHeightRatio.has_value() ? 1 : 0;
+	count += condition._maxHeightRatio.has_value() ? 1 : 0;
+	count += condition._minExtentX.has_value() ? 1 : 0;
+	count += condition._maxExtentX.has_value() ? 1 : 0;
+	count += condition._minExtentY.has_value() ? 1 : 0;
+	count += condition._maxExtentY.has_value() ? 1 : 0;
+	count += condition._minExtentZ.has_value() ? 1 : 0;
+	count += condition._maxExtentZ.has_value() ? 1 : 0;
+	count += condition._minAnisotropy.has_value() ? 1 : 0;
+	count += condition._maxAnisotropy.has_value() ? 1 : 0;
+	count += condition._minOccupancyEntropy.has_value() ? 1 : 0;
+	count += condition._maxOccupancyEntropy.has_value() ? 1 : 0;
 	return count;
 }
 
 static size_t schemaConditionalLevels(const SchemaConfig& schema)
 {
 	size_t count = 0;
-	for (const SchemaLevelConfig& level : schema.levels)
+	for (const SchemaLevelConfig& level : schema._levels)
 	{
-		if (!level.condition.empty())
+		if (!level._condition.empty())
 			++count;
 	}
 	return count;
@@ -1131,15 +1131,15 @@ static size_t schemaConditionalLevels(const SchemaConfig& schema)
 static size_t schemaConditionFields(const SchemaConfig& schema)
 {
 	size_t count = 0;
-	for (const SchemaLevelConfig& level : schema.levels)
-		count += conditionFieldCount(level.condition);
+	for (const SchemaLevelConfig& level : schema._levels)
+		count += conditionFieldCount(level._condition);
 	return count;
 }
 
 static bool schemaUsesAdaptiveLeafCapacity(const SchemaConfig& schema)
 {
-	return std::any_of(schema.levels.begin(), schema.levels.end(), [](const SchemaLevelConfig& level) {
-		return level.adaptiveLeafCapacity.enabled;
+	return std::any_of(schema._levels.begin(), schema._levels.end(), [](const SchemaLevelConfig& level) {
+		return level._adaptiveLeafCapacity._enabled;
 	});
 }
 
@@ -1148,56 +1148,56 @@ static bool schemaUsesGpuUnsupportedFeature(const SchemaConfig& schema)
 {
 	if (schemaUsesAdaptiveLeafCapacity(schema))
 		return true;
-	return std::any_of(schema.levels.begin(), schema.levels.end(), [](const SchemaLevelConfig& level) {
-		return level.condition.minOccupancyEntropy.has_value() || level.condition.maxOccupancyEntropy.has_value();
+	return std::any_of(schema._levels.begin(), schema._levels.end(), [](const SchemaLevelConfig& level) {
+		return level._condition._minOccupancyEntropy.has_value() || level._condition._maxOccupancyEntropy.has_value();
 	});
 }
 
 // CUDA MixedTree has no occupancy-entropy gate; drop those thresholds so a CUDA search samples GPU-runnable schemas instead of silently falling back to the CPU.
 static void restrictConditionDomainToGpuSafe(Experiments::ConditionDomain& domain)
 {
-	domain.occupancyEntropyThresholds.clear();
+	domain._occupancyEntropyThresholds.clear();
 }
 
 static std::string schemaConditionSummary(const SchemaConfig& schema)
 {
 	std::ostringstream output;
 	bool first = true;
-	for (const SchemaLevelConfig& level : schema.levels)
+	for (const SchemaLevelConfig& level : schema._levels)
 	{
-		if (level.condition.empty())
+		if (level._condition.empty())
 			continue;
 
 		if (!first)
 			output << ';';
 		first = false;
 		output << schemaTypeShortName(level) << ':';
-		appendConditionSignature(output, level.condition);
+		appendConditionSignature(output, level._condition);
 	}
-	if (schema.buildPolicy.enableLeafMicroIndexes)
-		output << "_mi" << schema.buildPolicy.leafMicroIndexThreshold;
+	if (schema._buildPolicy._enableLeafMicroIndexes)
+		output << "_mi" << schema._buildPolicy._leafMicroIndexThreshold;
 	return output.str();
 }
 
 struct ActiveTypeAccumulator
 {
-	size_t nodes = 0;
-	size_t leafPoints = 0;
+	size_t _nodes = 0;
+	size_t _leafPoints = 0;
 };
 
 struct ActiveStructureStats
 {
-	size_t activeStructureTypes = 0;
-	double nestedActiveFraction = 0.0;
-	std::string summary;
+	size_t _activeStructureTypes = 0;
+	double _nestedActiveFraction = 0.0;
+	std::string _summary;
 };
 
 static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig& schema, const PointSpatialIndex::Node& node)
 {
-	if (schema.levels.empty())
+	if (schema._levels.empty())
 		return nullptr;
 	const size_t totalLevels = std::max<size_t>(1, schema.totalLevels());
-	const size_t schemaDepth = std::min(node.schemaDepth, totalLevels - 1);
+	const size_t schemaDepth = std::min(node._schemaDepth, totalLevels - 1);
 	return &schema.levelForDepth(schemaDepth);
 }
 
@@ -1208,8 +1208,8 @@ static std::string activeTypeNameForNode(const SchemaConfig& schema, const Point
 		return schemaTypeShortName(*level);
 
 	SchemaLevelConfig fallback;
-	fallback.type = node.type;
-	fallback.typeName = Config::dataStructureLevelName(node.type);
+	fallback._type = node._type;
+	fallback._typeName = Config::dataStructureLevelName(node._type);
 	return schemaTypeShortName(fallback);
 }
 
@@ -1225,15 +1225,15 @@ static void collectActiveStructureStatsRecursive(
 
 	const std::string typeName = activeTypeNameForNode(schema, *node);
 	ActiveTypeAccumulator& accumulator = byType[typeName];
-	++accumulator.nodes;
+	++accumulator._nodes;
 	++totalNodes;
 	if (node->isLeaf())
 	{
-		accumulator.leafPoints += node->pointCount;
-		totalLeafPoints += node->pointCount;
+		accumulator._leafPoints += node->_pointCount;
+		totalLeafPoints += node->_pointCount;
 	}
 
-	for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->children)
+	for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->_children)
 		collectActiveStructureStatsRecursive(child.get(), schema, byType, totalNodes, totalLeafPoints);
 }
 
@@ -1248,8 +1248,8 @@ static ActiveStructureStats collectActiveStructureStats(const PointSpatialIndex:
 	size_t totalLeafPoints = 0;
 	collectActiveStructureStatsRecursive(root, schema, byType, totalNodes, totalLeafPoints);
 
-	stats.activeStructureTypes = byType.size();
-	const std::string primaryType = schema.levels.empty() ? activeTypeNameForNode(schema, *root) : schemaTypeShortName(schema.levels.front());
+	stats._activeStructureTypes = byType.size();
+	const std::string primaryType = schema._levels.empty() ? activeTypeNameForNode(schema, *root) : schemaTypeShortName(schema._levels.front());
 	size_t nonPrimaryNodes = 0;
 	size_t nonPrimaryLeafPoints = 0;
 
@@ -1260,15 +1260,15 @@ static ActiveStructureStats collectActiveStructureStats(const PointSpatialIndex:
 		if (!first)
 			summary << ';';
 		first = false;
-		summary << typeName << ":nodes=" << accumulator.nodes << "|points=" << accumulator.leafPoints;
+		summary << typeName << ":nodes=" << accumulator._nodes << "|points=" << accumulator._leafPoints;
 
 		if (typeName != primaryType)
 		{
-			nonPrimaryNodes += accumulator.nodes;
-			nonPrimaryLeafPoints += accumulator.leafPoints;
+			nonPrimaryNodes += accumulator._nodes;
+			nonPrimaryLeafPoints += accumulator._leafPoints;
 		}
 	}
-	stats.summary = summary.str();
+	stats._summary = summary.str();
 
 	const double pointFraction = totalLeafPoints > 0
 		? static_cast<double>(nonPrimaryLeafPoints) / static_cast<double>(totalLeafPoints)
@@ -1276,7 +1276,7 @@ static ActiveStructureStats collectActiveStructureStats(const PointSpatialIndex:
 	const double nodeFraction = totalNodes > 0
 		? static_cast<double>(nonPrimaryNodes) / static_cast<double>(totalNodes)
 		: 0.0;
-	stats.nestedActiveFraction = std::max(pointFraction, nodeFraction);
+	stats._nestedActiveFraction = std::max(pointFraction, nodeFraction);
 	return stats;
 }
 
@@ -1284,9 +1284,9 @@ static ActiveStructureStats staticSchemaStructureStats(const SchemaConfig& schem
 {
 	ActiveStructureStats stats;
 	std::set<std::string> types;
-	for (const SchemaLevelConfig& level : schema.levels)
+	for (const SchemaLevelConfig& level : schema._levels)
 		types.insert(schemaTypeShortName(level));
-	stats.activeStructureTypes = types.size();
+	stats._activeStructureTypes = types.size();
 
 	std::ostringstream summary;
 	bool first = true;
@@ -1297,7 +1297,7 @@ static ActiveStructureStats staticSchemaStructureStats(const SchemaConfig& schem
 		first = false;
 		summary << typeName << ":schema";
 	}
-	stats.summary = summary.str();
+	stats._summary = summary.str();
 	return stats;
 }
 
@@ -1309,64 +1309,64 @@ static SchemaLevelCondition randomLevelCondition(
 	const Experiments::ConditionDomain* domain)
 {
 	SchemaLevelCondition condition;
-	if (domain && !domain->pointThresholds.empty())
+	if (domain && !domain->_pointThresholds.empty())
 	{
-		condition.minPoints = chooseSizeValue(rng, domain->pointThresholds, fallbackPointThresholds());
+		condition._minPoints = chooseSizeValue(rng, domain->_pointThresholds, fallbackPointThresholds());
 	}
 	else
 	{
 		const size_t maxPointThreshold = std::max<size_t>(minLeaf * 2, std::min<size_t>(maxLeaf * 8, 1 << 20));
-		condition.minPoints = randomPowerOfTwo(rng, std::max<size_t>(minLeaf, 32), maxPointThreshold);
+		condition._minPoints = randomPowerOfTwo(rng, std::max<size_t>(minLeaf, 32), maxPointThreshold);
 	}
 
-	if (level.type == MultiDataStructure::OctreeNode)
+	if (level._type == MultiDataStructure::OctreeNode)
 	{
-		if (isRegularGridLevelName(level.typeName) || isHGridLevelName(level.typeName))
+		if (isRegularGridLevelName(level._typeName) || isHGridLevelName(level._typeName))
 		{
-			if (domain && !domain->densityThresholds.empty())
-				condition.minDensity = chooseDoubleValue(rng, domain->densityThresholds, {});
+			if (domain && !domain->_densityThresholds.empty())
+				condition._minDensity = chooseDoubleValue(rng, domain->_densityThresholds, {});
 		}
 		else
 		{
-			condition.minHeightRatio = chooseDoubleValue(
+			condition._minHeightRatio = chooseDoubleValue(
 				rng,
-				domain ? domain->heightRatioThresholds : std::vector<double>{},
+				domain ? domain->_heightRatioThresholds : std::vector<double>{},
 				fallbackHeightRatioThresholds());
 		}
 	}
-	else if (level.type == MultiDataStructure::QuadTreeNode)
+	else if (level._type == MultiDataStructure::QuadTreeNode)
 	{
-		condition.maxHeightRatio = chooseDoubleValue(
+		condition._maxHeightRatio = chooseDoubleValue(
 			rng,
-			domain ? domain->heightRatioThresholds : std::vector<double>{},
+			domain ? domain->_heightRatioThresholds : std::vector<double>{},
 			fallbackHeightRatioThresholds());
 	}
 
 	// Add an anisotropy gate with probability 0.5 so the optimizer can compare shape-gated branches against ungated ones.
-	if (domain && !domain->anisotropyThresholds.empty())
+	if (domain && !domain->_anisotropyThresholds.empty())
 	{
 		std::bernoulli_distribution coin(0.5);
 		if (coin(rng))
 		{
 			std::bernoulli_distribution minOrMax(0.5);
 			if (minOrMax(rng))
-				condition.minAnisotropy = chooseDoubleValue(rng, domain->anisotropyThresholds, {});
+				condition._minAnisotropy = chooseDoubleValue(rng, domain->_anisotropyThresholds, {});
 			else
-				condition.maxAnisotropy = chooseDoubleValue(rng, domain->anisotropyThresholds, {});
+				condition._maxAnisotropy = chooseDoubleValue(rng, domain->_anisotropyThresholds, {});
 		}
 	}
 
 	// Same pattern for occupancy entropy: 0.5 chance to gate, then 0.5 between min/max.
-	if (domain && !domain->occupancyEntropyThresholds.empty())
+	if (domain && !domain->_occupancyEntropyThresholds.empty())
 	{
 		std::bernoulli_distribution coin(0.5);
 		if (coin(rng))
 		{
 			std::bernoulli_distribution minOrMax(0.5);
 			if (minOrMax(rng))
-				condition.minOccupancyEntropy = chooseDoubleValue(rng, domain->occupancyEntropyThresholds, {});
+				condition._minOccupancyEntropy = chooseDoubleValue(rng, domain->_occupancyEntropyThresholds, {});
 			else
-				condition.maxOccupancyEntropy = chooseDoubleValue(rng, domain->occupancyEntropyThresholds, {});
+				condition._maxOccupancyEntropy = chooseDoubleValue(rng, domain->_occupancyEntropyThresholds, {});
 		}
 	}
 
@@ -1376,57 +1376,57 @@ static SchemaLevelCondition randomLevelCondition(
 static std::string schemaSignature(const SchemaConfig& schema)
 {
 	std::ostringstream output;
-	for (size_t i = 0; i < schema.levels.size(); ++i)
+	for (size_t i = 0; i < schema._levels.size(); ++i)
 	{
-		const SchemaLevelConfig& level = schema.levels[i];
+		const SchemaLevelConfig& level = schema._levels[i];
 		if (i > 0)
 			output << '_';
 		output
 			<< schemaTypeShortName(level)
-			<< level.numLevels
+			<< level._numLevels
 			<< "l"
-			<< level.leafCapacity;
-		if (level.adaptiveLeafCapacity.enabled)
+			<< level._leafCapacity;
+		if (level._adaptiveLeafCapacity._enabled)
 		{
 			output
 				<< "ac"
-				<< level.adaptiveLeafCapacity.minCapacity
+				<< level._adaptiveLeafCapacity._minCapacity
 				<< "m"
-				<< level.adaptiveLeafCapacity.maxCapacity
+				<< level._adaptiveLeafCapacity._maxCapacity
 				<< "d"
-				<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.densityWeight * 100.0))
+				<< static_cast<int>(std::llround(level._adaptiveLeafCapacity._densityWeight * 100.0))
 				<< "a"
-				<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.anisotropyWeight * 100.0))
+				<< static_cast<int>(std::llround(level._adaptiveLeafCapacity._anisotropyWeight * 100.0))
 				<< "h"
-				<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.heightRatioWeight * 100.0))
+				<< static_cast<int>(std::llround(level._adaptiveLeafCapacity._heightRatioWeight * 100.0))
 				<< "q"
-				<< static_cast<int>(std::llround(level.adaptiveLeafCapacity.queryMixFactor * 100.0));
+				<< static_cast<int>(std::llround(level._adaptiveLeafCapacity._queryMixFactor * 100.0));
 		}
 		// Fold the axis policy into the signature so policy-only KDTree/BIH variants get distinct keys; default/empty policies emit no suffix to keep legacy signatures stable.
-		if (!level.axisPolicy.empty() &&
-			level.axisPolicy != "median_longest_axis" &&
-			level.axisPolicy != "xy")
+		if (!level._axisPolicy.empty() &&
+			level._axisPolicy != "median_longest_axis" &&
+			level._axisPolicy != "xy")
 		{
-			if (level.axisPolicy == "round_robin")
+			if (level._axisPolicy == "round_robin")
 				output << "ap=rr";
-			else if (level.axisPolicy == "center_longest_axis")
+			else if (level._axisPolicy == "center_longest_axis")
 				output << "ap=cl";
-			else if (level.axisPolicy == "xz")
+			else if (level._axisPolicy == "xz")
 				output << "ap=xz";
-			else if (level.axisPolicy == "yz")
+			else if (level._axisPolicy == "yz")
 				output << "ap=yz";
-			else if (level.axisPolicy == "ignore_shortest")
+			else if (level._axisPolicy == "ignore_shortest")
 				output << "ap=is";
-			else if (level.axisPolicy == "ignore_x")
+			else if (level._axisPolicy == "ignore_x")
 				output << "ap=ix";
-			else if (level.axisPolicy == "ignore_y")
+			else if (level._axisPolicy == "ignore_y")
 				output << "ap=iy";
-			else if (level.axisPolicy == "ignore_z")
+			else if (level._axisPolicy == "ignore_z")
 				output << "ap=iz";
 			else
 				output << "ap=other";
 		}
-		appendConditionSignature(output, level.condition);
+		appendConditionSignature(output, level._condition);
 	}
 	return output.str();
 }
@@ -1435,11 +1435,11 @@ static std::string schemaSignature(const SchemaConfig& schema)
 static std::string schemaTopologyKey(const SchemaConfig& schema)
 {
 	std::ostringstream output;
-	for (size_t i = 0; i < schema.levels.size(); ++i)
+	for (size_t i = 0; i < schema._levels.size(); ++i)
 	{
 		if (i > 0)
 			output << ':';
-		output << schemaTypeShortName(schema.levels[i]);
+		output << schemaTypeShortName(schema._levels[i]);
 	}
 	return output.str();
 }
@@ -1448,65 +1448,65 @@ static std::string schemaConfigToJson(const SchemaConfig& schema)
 {
 	std::ostringstream output;
 	output << "{\n";
-	output << "  \"name\": \"" << schema.name << "\",\n";
+	output << "  \"name\": \"" << schema._name << "\",\n";
 	output << "  \"levels\": [\n";
-	for (size_t i = 0; i < schema.levels.size(); ++i)
+	for (size_t i = 0; i < schema._levels.size(); ++i)
 	{
-		const SchemaLevelConfig& level = schema.levels[i];
+		const SchemaLevelConfig& level = schema._levels[i];
 		output << "    {\n";
 		output << "      \"type\": \"" << levelJsonTypeName(level) << "\",\n";
-		output << "      \"numLevels\": " << level.numLevels << ",\n";
-		output << "      \"leafCapacity\": " << level.leafCapacity << ",\n";
-		output << "      \"minPointsToSplit\": " << level.minPrimitivesToSplit;
-		if (!level.axisPolicy.empty())
-			output << ",\n      \"axisPolicy\": \"" << level.axisPolicy << "\"";
-		if (level.adaptiveLeafCapacity.enabled)
+		output << "      \"numLevels\": " << level._numLevels << ",\n";
+		output << "      \"leafCapacity\": " << level._leafCapacity << ",\n";
+		output << "      \"minPointsToSplit\": " << level._minPrimitivesToSplit;
+		if (!level._axisPolicy.empty())
+			output << ",\n      \"axisPolicy\": \"" << level._axisPolicy << "\"";
+		if (level._adaptiveLeafCapacity._enabled)
 		{
 			output << ",\n      \"adaptiveLeafCapacity\": {\n";
 			output << "        \"enabled\": true,\n";
-			output << "        \"minCapacity\": " << level.adaptiveLeafCapacity.minCapacity << ",\n";
-			output << "        \"maxCapacity\": " << level.adaptiveLeafCapacity.maxCapacity << ",\n";
-			output << "        \"densityWeight\": " << level.adaptiveLeafCapacity.densityWeight << ",\n";
-			output << "        \"anisotropyWeight\": " << level.adaptiveLeafCapacity.anisotropyWeight << ",\n";
-			output << "        \"heightRatioWeight\": " << level.adaptiveLeafCapacity.heightRatioWeight << ",\n";
-			output << "        \"queryMixFactor\": " << level.adaptiveLeafCapacity.queryMixFactor << "\n";
+			output << "        \"minCapacity\": " << level._adaptiveLeafCapacity._minCapacity << ",\n";
+			output << "        \"maxCapacity\": " << level._adaptiveLeafCapacity._maxCapacity << ",\n";
+			output << "        \"densityWeight\": " << level._adaptiveLeafCapacity._densityWeight << ",\n";
+			output << "        \"anisotropyWeight\": " << level._adaptiveLeafCapacity._anisotropyWeight << ",\n";
+			output << "        \"heightRatioWeight\": " << level._adaptiveLeafCapacity._heightRatioWeight << ",\n";
+			output << "        \"queryMixFactor\": " << level._adaptiveLeafCapacity._queryMixFactor << "\n";
 			output << "      }";
 		}
-		if (!level.condition.empty())
+		if (!level._condition.empty())
 		{
 			output << ",\n      \"condition\": {\n";
 			bool first = true;
-			appendOptionalSize(output, "minPoints", level.condition.minPoints, first);
-			appendOptionalSize(output, "maxPoints", level.condition.maxPoints, first);
-			appendOptionalDouble(output, "minDensity", level.condition.minDensity, first);
-			appendOptionalDouble(output, "maxDensity", level.condition.maxDensity, first);
-			appendOptionalDouble(output, "minHeightRatio", level.condition.minHeightRatio, first);
-			appendOptionalDouble(output, "maxHeightRatio", level.condition.maxHeightRatio, first);
-			appendOptionalDouble(output, "minExtentX", level.condition.minExtentX, first);
-			appendOptionalDouble(output, "maxExtentX", level.condition.maxExtentX, first);
-			appendOptionalDouble(output, "minExtentY", level.condition.minExtentY, first);
-			appendOptionalDouble(output, "maxExtentY", level.condition.maxExtentY, first);
-			appendOptionalDouble(output, "minExtentZ", level.condition.minExtentZ, first);
-			appendOptionalDouble(output, "maxExtentZ", level.condition.maxExtentZ, first);
-			appendOptionalDouble(output, "minAnisotropy", level.condition.minAnisotropy, first);
-			appendOptionalDouble(output, "maxAnisotropy", level.condition.maxAnisotropy, first);
-			appendOptionalDouble(output, "minOccupancyEntropy", level.condition.minOccupancyEntropy, first);
-			appendOptionalDouble(output, "maxOccupancyEntropy", level.condition.maxOccupancyEntropy, first);
+			appendOptionalSize(output, "minPoints", level._condition._minPoints, first);
+			appendOptionalSize(output, "maxPoints", level._condition._maxPoints, first);
+			appendOptionalDouble(output, "minDensity", level._condition._minDensity, first);
+			appendOptionalDouble(output, "maxDensity", level._condition._maxDensity, first);
+			appendOptionalDouble(output, "minHeightRatio", level._condition._minHeightRatio, first);
+			appendOptionalDouble(output, "maxHeightRatio", level._condition._maxHeightRatio, first);
+			appendOptionalDouble(output, "minExtentX", level._condition._minExtentX, first);
+			appendOptionalDouble(output, "maxExtentX", level._condition._maxExtentX, first);
+			appendOptionalDouble(output, "minExtentY", level._condition._minExtentY, first);
+			appendOptionalDouble(output, "maxExtentY", level._condition._maxExtentY, first);
+			appendOptionalDouble(output, "minExtentZ", level._condition._minExtentZ, first);
+			appendOptionalDouble(output, "maxExtentZ", level._condition._maxExtentZ, first);
+			appendOptionalDouble(output, "minAnisotropy", level._condition._minAnisotropy, first);
+			appendOptionalDouble(output, "maxAnisotropy", level._condition._maxAnisotropy, first);
+			appendOptionalDouble(output, "minOccupancyEntropy", level._condition._minOccupancyEntropy, first);
+			appendOptionalDouble(output, "maxOccupancyEntropy", level._condition._maxOccupancyEntropy, first);
 			output << "\n      }";
 		}
 		output << '\n';
-		output << "    }" << (i + 1 < schema.levels.size() ? "," : "") << "\n";
+		output << "    }" << (i + 1 < schema._levels.size() ? "," : "") << "\n";
 	}
 	output << "  ],\n";
 	output << "  \"buildPolicy\": {\n";
-	output << "    \"maxDepth\": " << schema.buildPolicy.maxDepth << ",\n";
-	output << "    \"leafCapacity\": " << schema.buildPolicy.leafCapacity << ",\n";
-	output << "    \"minPointsToSplit\": " << schema.buildPolicy.minPrimitivesToSplit << ",\n";
-	output << "    \"collapseSingleChild\": " << (schema.buildPolicy.collapseSingleChild ? "true" : "false") << ",\n";
-	output << "    \"removeEmptyNodes\": " << (schema.buildPolicy.removeEmptyNodes ? "true" : "false") << ",\n";
-	output << "    \"allowOverlapDuplication\": " << (schema.buildPolicy.allowOverlapDuplication ? "true" : "false") << ",\n";
-	output << "    \"enableLeafMicroIndexes\": " << (schema.buildPolicy.enableLeafMicroIndexes ? "true" : "false") << ",\n";
-	output << "    \"leafMicroIndexThreshold\": " << schema.buildPolicy.leafMicroIndexThreshold << "\n";
+	output << "    \"maxDepth\": " << schema._buildPolicy._maxDepth << ",\n";
+	output << "    \"leafCapacity\": " << schema._buildPolicy._leafCapacity << ",\n";
+	output << "    \"minPointsToSplit\": " << schema._buildPolicy._minPrimitivesToSplit << ",\n";
+	output << "    \"collapseSingleChild\": " << (schema._buildPolicy._collapseSingleChild ? "true" : "false") << ",\n";
+	output << "    \"removeEmptyNodes\": " << (schema._buildPolicy._removeEmptyNodes ? "true" : "false") << ",\n";
+	output << "    \"allowOverlapDuplication\": " << (schema._buildPolicy._allowOverlapDuplication ? "true" : "false") << ",\n";
+	output << "    \"enableLeafMicroIndexes\": " << (schema._buildPolicy._enableLeafMicroIndexes ? "true" : "false") << ",\n";
+	output << "    \"leafMicroIndexThreshold\": " << schema._buildPolicy._leafMicroIndexThreshold << "\n";
 	output << "  }\n";
 	output << "}\n";
 	return output.str();
@@ -1518,16 +1518,16 @@ static Experiments::SchemaCandidate materializeGeneratedSchema(
 	const std::string& outputDirectory)
 {
 	const std::string signature = schemaSignature(schema);
-	schema.name = namePrefix + "_" + signature;
+	schema._name = namePrefix + "_" + signature;
 
 	Experiments::SchemaCandidate candidate;
-	candidate.name = schema.name;
-	candidate.config = schema;
-	candidate.generated = true;
+	candidate._name = schema._name;
+	candidate._config = schema;
+	candidate._generated = true;
 
 	if (!outputDirectory.empty())
 	{
-		const std::filesystem::path schemaPath = std::filesystem::path(outputDirectory) / (schema.name + ".json");
+		const std::filesystem::path schemaPath = std::filesystem::path(outputDirectory) / (schema._name + ".json");
 		if (schemaPath.has_parent_path())
 			std::filesystem::create_directories(schemaPath.parent_path());
 
@@ -1535,11 +1535,11 @@ static Experiments::SchemaCandidate materializeGeneratedSchema(
 		if (!output.is_open())
 			throw std::runtime_error("Unable to write generated schema: " + schemaPath.string());
 		output << schemaConfigToJson(schema);
-		candidate.path = schemaPath.string();
+		candidate._path = schemaPath.string();
 	}
 	else
 	{
-		candidate.path = "generated:" + schema.name;
+		candidate._path = "generated:" + schema._name;
 	}
 
 	return candidate;
@@ -1550,20 +1550,20 @@ static SchemaLevelConfig randomLevelConfig(
 	const Experiments::SchemaGenerationOptions& options,
 	std::optional<MultiDataStructure::DataStructureLevel> previousType = std::nullopt)
 {
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
 
 	SchemaLevelConfig level;
-	level.type = randomStructureType(rng, previousType);
-	level.typeName = randomTypeNameForBase(level.type, rng, options);
-	level.numLevels = 1;
-	level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
-	level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+	level._type = randomStructureType(rng, previousType);
+	level._typeName = randomTypeNameForBase(level._type, rng, options);
+	level._numLevels = 1;
+	level._leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+	level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
 	maybeAssignAdaptiveLeafCapacity(level, rng, options);
-	if (level.type == MultiDataStructure::QuadTreeNode)
-		level.axisPolicy = "xy";
-	else if (level.type == MultiDataStructure::KDTreeNode)
-		level.axisPolicy = std::bernoulli_distribution(0.5)(rng) ? "round_robin" : "median_longest_axis";
+	if (level._type == MultiDataStructure::QuadTreeNode)
+		level._axisPolicy = "xy";
+	else if (level._type == MultiDataStructure::KDTreeNode)
+		level._axisPolicy = std::bernoulli_distribution(0.5)(rng) ? "round_robin" : "median_longest_axis";
 	return level;
 }
 
@@ -1582,95 +1582,95 @@ static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::Sc
 {
 	if (queryMinimalPrimitiveProfile(options))
 	{
-		level.typeName = Config::dataStructureLevelName(level.type);
-		if (level.type == MultiDataStructure::QuadTreeNode)
+		level._typeName = Config::dataStructureLevelName(level._type);
+		if (level._type == MultiDataStructure::QuadTreeNode)
 		{
-			if (level.axisPolicy.empty())
-				level.axisPolicy = "xy";
+			if (level._axisPolicy.empty())
+				level._axisPolicy = "xy";
 		}
-		else if (level.type != MultiDataStructure::KDTreeNode)
-			level.axisPolicy = "";
-		else if (level.axisPolicy.empty())
-			level.axisPolicy = "median_longest_axis";
+		else if (level._type != MultiDataStructure::KDTreeNode)
+			level._axisPolicy = "";
+		else if (level._axisPolicy.empty())
+			level._axisPolicy = "median_longest_axis";
 		return;
 	}
 
-	const bool compatibleBIH = level.type == MultiDataStructure::KDTreeNode && isBIHLevelName(level.typeName);
-	const bool compatibleKarras = level.type == MultiDataStructure::OctreeNode && isKarrasOctreeLevelName(level.typeName);
-	const bool compatibleLBVH = level.type == MultiDataStructure::BvhNode && isLBVHLevelName(level.typeName);
-	const bool compatibleRegularGrid = level.type == MultiDataStructure::OctreeNode && isRegularGridLevelName(level.typeName);
-	const bool compatibleHGrid = level.type == MultiDataStructure::OctreeNode && isHGridLevelName(level.typeName);
+	const bool compatibleBIH = level._type == MultiDataStructure::KDTreeNode && isBIHLevelName(level._typeName);
+	const bool compatibleKarras = level._type == MultiDataStructure::OctreeNode && isKarrasOctreeLevelName(level._typeName);
+	const bool compatibleLBVH = level._type == MultiDataStructure::BvhNode && isLBVHLevelName(level._typeName);
+	const bool compatibleRegularGrid = level._type == MultiDataStructure::OctreeNode && isRegularGridLevelName(level._typeName);
+	const bool compatibleHGrid = level._type == MultiDataStructure::OctreeNode && isHGridLevelName(level._typeName);
 	if (!compatibleBIH && !compatibleKarras && !compatibleLBVH && !compatibleRegularGrid && !compatibleHGrid)
-		level.typeName = Config::dataStructureLevelName(level.type);
+		level._typeName = Config::dataStructureLevelName(level._type);
 	// Preserve a recognized axisPolicy, resetting only for non-KDTree-family types, so children inherit their parent's sampled policy.
-	if (level.type == MultiDataStructure::QuadTreeNode)
+	if (level._type == MultiDataStructure::QuadTreeNode)
 	{
-		if (level.axisPolicy.empty())
-			level.axisPolicy = "xy";
+		if (level._axisPolicy.empty())
+			level._axisPolicy = "xy";
 	}
-	else if (level.type != MultiDataStructure::KDTreeNode)
-		level.axisPolicy = "";
-	else if (level.axisPolicy.empty())
-		level.axisPolicy = "median_longest_axis";
+	else if (level._type != MultiDataStructure::KDTreeNode)
+		level._axisPolicy = "";
+	else if (level._axisPolicy.empty())
+		level._axisPolicy = "median_longest_axis";
 }
 
 static void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments::SchemaGenerationOptions& options)
 {
-	const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
-	const size_t maxBlocks = std::max<size_t>(1, std::min(options.maxBlocks, maxDepth));
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
+	const size_t maxBlocks = std::max<size_t>(1, std::min(options._maxBlocks, maxDepth));
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
 
-	if (schema.levels.empty())
+	if (schema._levels.empty())
 	{
-		std::mt19937 fallbackRng(options.seed);
-		schema.levels.push_back(randomLevelConfig(fallbackRng, options));
+		std::mt19937 fallbackRng(options._seed);
+		schema._levels.push_back(randomLevelConfig(fallbackRng, options));
 	}
 
-	while (schema.levels.size() > maxBlocks)
-		schema.levels.pop_back();
+	while (schema._levels.size() > maxBlocks)
+		schema._levels.pop_back();
 
-	for (size_t i = 0; i < schema.levels.size(); ++i)
+	for (size_t i = 0; i < schema._levels.size(); ++i)
 	{
-		SchemaLevelConfig& level = schema.levels[i];
-		level.numLevels = std::max<size_t>(1, level.numLevels);
-		level.leafCapacity = clampPowerOfTwo(level.leafCapacity, minLeaf, maxLeaf);
-		level.minPrimitivesToSplit = std::clamp(level.minPrimitivesToSplit, static_cast<size_t>(2), std::max<size_t>(2, level.leafCapacity));
+		SchemaLevelConfig& level = schema._levels[i];
+		level._numLevels = std::max<size_t>(1, level._numLevels);
+		level._leafCapacity = clampPowerOfTwo(level._leafCapacity, minLeaf, maxLeaf);
+		level._minPrimitivesToSplit = std::clamp(level._minPrimitivesToSplit, static_cast<size_t>(2), std::max<size_t>(2, level._leafCapacity));
 		refreshLevelTypeName(level, options);
 		normalizeAdaptiveLeafCapacity(level);
 		if (i == 0)
-			level.condition = {};
+			level._condition = {};
 	}
 
-	while (schema.totalLevels() > maxDepth && !schema.levels.empty())
+	while (schema.totalLevels() > maxDepth && !schema._levels.empty())
 	{
-		auto reducible = std::find_if(schema.levels.rbegin(), schema.levels.rend(), [](const SchemaLevelConfig& level) {
-			return level.numLevels > 1;
+		auto reducible = std::find_if(schema._levels.rbegin(), schema._levels.rend(), [](const SchemaLevelConfig& level) {
+			return level._numLevels > 1;
 		});
-		if (reducible != schema.levels.rend())
+		if (reducible != schema._levels.rend())
 		{
-			--reducible->numLevels;
+			--reducible->_numLevels;
 			continue;
 		}
 
-		if (schema.levels.size() > 1)
-			schema.levels.pop_back();
+		if (schema._levels.size() > 1)
+			schema._levels.pop_back();
 		else
 			break;
 	}
 
-	if (schema.levels.empty())
+	if (schema._levels.empty())
 	{
-		std::mt19937 fallbackRng(options.seed);
-		schema.levels.push_back(randomLevelConfig(fallbackRng, options));
+		std::mt19937 fallbackRng(options._seed);
+		schema._levels.push_back(randomLevelConfig(fallbackRng, options));
 	}
 
-	schema.buildPolicy.maxDepth = std::min(maxDepth, schema.totalLevels());
-	schema.buildPolicy.leafCapacity = schema.levels.front().leafCapacity;
-	schema.buildPolicy.minPrimitivesToSplit = std::max<size_t>(2, schema.buildPolicy.leafCapacity / 4);
-	schema.buildPolicy.collapseSingleChild = true;
-	schema.buildPolicy.removeEmptyNodes = true;
-	schema.buildPolicy.allowOverlapDuplication = false;
+	schema._buildPolicy._maxDepth = std::min(maxDepth, schema.totalLevels());
+	schema._buildPolicy._leafCapacity = schema._levels.front()._leafCapacity;
+	schema._buildPolicy._minPrimitivesToSplit = std::max<size_t>(2, schema._buildPolicy._leafCapacity / 4);
+	schema._buildPolicy._collapseSingleChild = true;
+	schema._buildPolicy._removeEmptyNodes = true;
+	schema._buildPolicy._allowOverlapDuplication = false;
 }
 
 static void mutateLevelCondition(
@@ -1679,11 +1679,11 @@ static void mutateLevelCondition(
 	const Experiments::SchemaGenerationOptions& options,
 	const Experiments::ConditionDomain* domain)
 {
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
-	if (level.condition.empty())
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
+	if (level._condition.empty())
 	{
-		level.condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, domain);
+		level._condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, domain);
 		return;
 	}
 
@@ -1691,36 +1691,36 @@ static void mutateLevelCondition(
 	switch (editDistribution(rng))
 	{
 	case 0:
-		level.condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, domain);
+		level._condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, domain);
 		break;
 	case 1:
-		if (domain && !domain->pointThresholds.empty())
-			level.condition.minPoints = nearbyDomainValue(domain->pointThresholds, level.condition.minPoints.value_or(domain->pointThresholds.front()), rng);
+		if (domain && !domain->_pointThresholds.empty())
+			level._condition._minPoints = nearbyDomainValue(domain->_pointThresholds, level._condition._minPoints.value_or(domain->_pointThresholds.front()), rng);
 		else
-			level.condition.minPoints = randomPowerOfTwo(rng, minLeaf, std::max<size_t>(minLeaf * 2, std::min<size_t>(maxLeaf * 8, 1 << 20)));
+			level._condition._minPoints = randomPowerOfTwo(rng, minLeaf, std::max<size_t>(minLeaf * 2, std::min<size_t>(maxLeaf * 8, 1 << 20)));
 		break;
 	case 2:
 	{
-		const std::vector<double>& heightValues = domain && !domain->heightRatioThresholds.empty()
-			? domain->heightRatioThresholds
+		const std::vector<double>& heightValues = domain && !domain->_heightRatioThresholds.empty()
+			? domain->_heightRatioThresholds
 			: fallbackHeightRatioThresholds();
-		if (level.type == MultiDataStructure::QuadTreeNode)
-			level.condition.maxHeightRatio = nearbyDomainValue(heightValues, level.condition.maxHeightRatio.value_or(heightValues.front()), rng);
+		if (level._type == MultiDataStructure::QuadTreeNode)
+			level._condition._maxHeightRatio = nearbyDomainValue(heightValues, level._condition._maxHeightRatio.value_or(heightValues.front()), rng);
 		else
-			level.condition.minHeightRatio = nearbyDomainValue(heightValues, level.condition.minHeightRatio.value_or(heightValues.front()), rng);
+			level._condition._minHeightRatio = nearbyDomainValue(heightValues, level._condition._minHeightRatio.value_or(heightValues.front()), rng);
 		break;
 	}
 	case 3:
-		if (domain && !domain->pointThresholds.empty())
-			level.condition.maxPoints = nearbyDomainValue(domain->pointThresholds, level.condition.maxPoints.value_or(domain->pointThresholds.back()), rng);
+		if (domain && !domain->_pointThresholds.empty())
+			level._condition._maxPoints = nearbyDomainValue(domain->_pointThresholds, level._condition._maxPoints.value_or(domain->_pointThresholds.back()), rng);
 		break;
 	case 4:
-		if (domain && !domain->densityThresholds.empty())
+		if (domain && !domain->_densityThresholds.empty())
 		{
-			if (isRegularGridLevelName(level.typeName) || isHGridLevelName(level.typeName))
-				level.condition.minDensity = nearbyDomainValue(domain->densityThresholds, level.condition.minDensity.value_or(domain->densityThresholds.front()), rng);
+			if (isRegularGridLevelName(level._typeName) || isHGridLevelName(level._typeName))
+				level._condition._minDensity = nearbyDomainValue(domain->_densityThresholds, level._condition._minDensity.value_or(domain->_densityThresholds.front()), rng);
 			else
-				level.condition.maxDensity = nearbyDomainValue(domain->densityThresholds, level.condition.maxDensity.value_or(domain->densityThresholds.back()), rng);
+				level._condition._maxDensity = nearbyDomainValue(domain->_densityThresholds, level._condition._maxDensity.value_or(domain->_densityThresholds.back()), rng);
 		}
 		break;
 	case 5:
@@ -1728,52 +1728,52 @@ static void mutateLevelCondition(
 		{
 			std::uniform_int_distribution<int> axisDistribution(0, 2);
 			const int axis = axisDistribution(rng);
-			if (axis == 0 && !domain->extentXThresholds.empty())
-				level.condition.minExtentX = nearbyDomainValue(domain->extentXThresholds, level.condition.minExtentX.value_or(domain->extentXThresholds.front()), rng);
-			else if (axis == 1 && !domain->extentYThresholds.empty())
-				level.condition.minExtentY = nearbyDomainValue(domain->extentYThresholds, level.condition.minExtentY.value_or(domain->extentYThresholds.front()), rng);
-			else if (axis == 2 && !domain->extentZThresholds.empty())
-				level.condition.minExtentZ = nearbyDomainValue(domain->extentZThresholds, level.condition.minExtentZ.value_or(domain->extentZThresholds.front()), rng);
+			if (axis == 0 && !domain->_extentXThresholds.empty())
+				level._condition._minExtentX = nearbyDomainValue(domain->_extentXThresholds, level._condition._minExtentX.value_or(domain->_extentXThresholds.front()), rng);
+			else if (axis == 1 && !domain->_extentYThresholds.empty())
+				level._condition._minExtentY = nearbyDomainValue(domain->_extentYThresholds, level._condition._minExtentY.value_or(domain->_extentYThresholds.front()), rng);
+			else if (axis == 2 && !domain->_extentZThresholds.empty())
+				level._condition._minExtentZ = nearbyDomainValue(domain->_extentZThresholds, level._condition._minExtentZ.value_or(domain->_extentZThresholds.front()), rng);
 		}
 		break;
 	case 6:
 		// Toggle a min/max anisotropy threshold from the domain.
-		if (domain && !domain->anisotropyThresholds.empty())
+		if (domain && !domain->_anisotropyThresholds.empty())
 		{
 			std::bernoulli_distribution minOrMax(0.5);
 			if (minOrMax(rng))
-				level.condition.minAnisotropy = nearbyDomainValue(domain->anisotropyThresholds,
-					level.condition.minAnisotropy.value_or(domain->anisotropyThresholds.front()), rng);
+				level._condition._minAnisotropy = nearbyDomainValue(domain->_anisotropyThresholds,
+					level._condition._minAnisotropy.value_or(domain->_anisotropyThresholds.front()), rng);
 			else
-				level.condition.maxAnisotropy = nearbyDomainValue(domain->anisotropyThresholds,
-					level.condition.maxAnisotropy.value_or(domain->anisotropyThresholds.back()), rng);
+				level._condition._maxAnisotropy = nearbyDomainValue(domain->_anisotropyThresholds,
+					level._condition._maxAnisotropy.value_or(domain->_anisotropyThresholds.back()), rng);
 		}
 		break;
 	case 7:
 		// Clear the anisotropy gate while keeping other threshold fields intact.
-		level.condition.minAnisotropy.reset();
-		level.condition.maxAnisotropy.reset();
+		level._condition._minAnisotropy.reset();
+		level._condition._maxAnisotropy.reset();
 		break;
 	case 8:
 		// Toggle a min/max occupancy entropy threshold from the domain.
-		if (domain && !domain->occupancyEntropyThresholds.empty())
+		if (domain && !domain->_occupancyEntropyThresholds.empty())
 		{
 			std::bernoulli_distribution minOrMax(0.5);
 			if (minOrMax(rng))
-				level.condition.minOccupancyEntropy = nearbyDomainValue(domain->occupancyEntropyThresholds,
-					level.condition.minOccupancyEntropy.value_or(domain->occupancyEntropyThresholds.front()), rng);
+				level._condition._minOccupancyEntropy = nearbyDomainValue(domain->_occupancyEntropyThresholds,
+					level._condition._minOccupancyEntropy.value_or(domain->_occupancyEntropyThresholds.front()), rng);
 			else
-				level.condition.maxOccupancyEntropy = nearbyDomainValue(domain->occupancyEntropyThresholds,
-					level.condition.maxOccupancyEntropy.value_or(domain->occupancyEntropyThresholds.back()), rng);
+				level._condition._maxOccupancyEntropy = nearbyDomainValue(domain->_occupancyEntropyThresholds,
+					level._condition._maxOccupancyEntropy.value_or(domain->_occupancyEntropyThresholds.back()), rng);
 		}
 		break;
 	case 9:
 		// Clear the entropy gate.
-		level.condition.minOccupancyEntropy.reset();
-		level.condition.maxOccupancyEntropy.reset();
+		level._condition._minOccupancyEntropy.reset();
+		level._condition._maxOccupancyEntropy.reset();
 		break;
 	default:
-		level.condition = {};
+		level._condition = {};
 		break;
 	}
 }
@@ -1782,51 +1782,51 @@ static void mutateAdaptiveLeafCapacity(
 	SchemaLevelConfig& level,
 	std::mt19937& rng)
 {
-	if (!level.adaptiveLeafCapacity.enabled)
+	if (!level._adaptiveLeafCapacity._enabled)
 	{
-		level.adaptiveLeafCapacity = randomAdaptiveLeafCapacity(rng, std::max<size_t>(1, level.leafCapacity));
+		level._adaptiveLeafCapacity = randomAdaptiveLeafCapacity(rng, std::max<size_t>(1, level._leafCapacity));
 		return;
 	}
 
-	AdaptiveLeafCapacityConfig& adaptive = level.adaptiveLeafCapacity;
+	AdaptiveLeafCapacityConfig& adaptive = level._adaptiveLeafCapacity;
 	std::uniform_int_distribution<int> mutationDistribution(0, 5);
 	switch (mutationDistribution(rng))
 	{
 	case 0:
-		adaptive.minCapacity = clampPowerOfTwo(
-			std::max<size_t>(1, adaptive.minCapacity / 2),
+		adaptive._minCapacity = clampPowerOfTwo(
+			std::max<size_t>(1, adaptive._minCapacity / 2),
 			size_t(1),
-			std::max<size_t>(1, level.leafCapacity));
+			std::max<size_t>(1, level._leafCapacity));
 		break;
 	case 1:
-		adaptive.maxCapacity = clampPowerOfTwo(
-			adaptive.maxCapacity >= std::numeric_limits<size_t>::max() / 2
-				? adaptive.maxCapacity
-				: adaptive.maxCapacity * 2,
-			std::max<size_t>(adaptive.minCapacity, level.leafCapacity),
+		adaptive._maxCapacity = clampPowerOfTwo(
+			adaptive._maxCapacity >= std::numeric_limits<size_t>::max() / 2
+				? adaptive._maxCapacity
+				: adaptive._maxCapacity * 2,
+			std::max<size_t>(adaptive._minCapacity, level._leafCapacity),
 			std::numeric_limits<size_t>::max());
 		break;
 	case 2:
-		adaptive.densityWeight = std::clamp(
-			adaptive.densityWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
+		adaptive._densityWeight = std::clamp(
+			adaptive._densityWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
 			-3.0,
 			3.0);
 		break;
 	case 3:
-		adaptive.anisotropyWeight = std::clamp(
-			adaptive.anisotropyWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
+		adaptive._anisotropyWeight = std::clamp(
+			adaptive._anisotropyWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
 			-3.0,
 			3.0);
 		break;
 	case 4:
-		adaptive.heightRatioWeight = std::clamp(
-			adaptive.heightRatioWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
+		adaptive._heightRatioWeight = std::clamp(
+			adaptive._heightRatioWeight + (std::bernoulli_distribution(0.5)(rng) ? 0.5 : -0.5),
 			-3.0,
 			3.0);
 		break;
 	case 5:
-		adaptive.queryMixFactor = std::clamp(
-			adaptive.queryMixFactor * (std::bernoulli_distribution(0.5)(rng) ? 1.25 : 0.8),
+		adaptive._queryMixFactor = std::clamp(
+			adaptive._queryMixFactor * (std::bernoulli_distribution(0.5)(rng) ? 1.25 : 0.8),
 			0.25,
 			4.0);
 		break;
@@ -1842,27 +1842,27 @@ static SchemaConfig crossoverSchemaConfigs(
 	std::mt19937& rng,
 	const Experiments::SchemaGenerationOptions& options)
 {
-	if (parentA.levels.empty()) return parentB;
-	if (parentB.levels.empty()) return parentA;
+	if (parentA._levels.empty()) return parentB;
+	if (parentB._levels.empty()) return parentA;
 
-	std::uniform_int_distribution<size_t> cutADist(0, parentA.levels.size());
-	std::uniform_int_distribution<size_t> cutBDist(0, parentB.levels.size());
+	std::uniform_int_distribution<size_t> cutADist(0, parentA._levels.size());
+	std::uniform_int_distribution<size_t> cutBDist(0, parentB._levels.size());
 	size_t splitA = cutADist(rng);
 	size_t splitB = cutBDist(rng);
 
 	// Reject the degenerate "all of A or all of B" case, which just returns a parent untouched.
 	if (splitA == 0 && splitB == 0)
 		splitA = 1;
-	else if (splitA == parentA.levels.size() && splitB == parentB.levels.size())
-		splitB = std::max<size_t>(0, parentB.levels.size() - 1);
+	else if (splitA == parentA._levels.size() && splitB == parentB._levels.size())
+		splitB = std::max<size_t>(0, parentB._levels.size() - 1);
 
 	SchemaConfig child;
-	child.buildPolicy = parentA.buildPolicy;
-	child.levels.reserve(splitA + (parentB.levels.size() - splitB));
+	child._buildPolicy = parentA._buildPolicy;
+	child._levels.reserve(splitA + (parentB._levels.size() - splitB));
 	for (size_t i = 0; i < splitA; ++i)
-		child.levels.push_back(parentA.levels[i]);
-	for (size_t i = splitB; i < parentB.levels.size(); ++i)
-		child.levels.push_back(parentB.levels[i]);
+		child._levels.push_back(parentA._levels[i]);
+	for (size_t i = splitB; i < parentB._levels.size(); ++i)
+		child._levels.push_back(parentB._levels[i]);
 
 	// Reuse the mutation operator's normalization so depth caps, leaf-cap monotonicity, and root-condition stripping match the rest of the population.
 	normalizeSchemaForGeneration(child, options);
@@ -1877,105 +1877,105 @@ static SchemaConfig mutateSchemaConfig(
 	const Experiments::ConditionDomain* domain)
 {
 	SchemaConfig schema = parent;
-	const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
-	const size_t maxBlocks = std::max<size_t>(1, std::min(options.maxBlocks, maxDepth));
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
+	const size_t maxBlocks = std::max<size_t>(1, std::min(options._maxBlocks, maxDepth));
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
 
-	std::bernoulli_distribution extraEdit(std::clamp(evolution.mutationRate, 0.0, 1.0));
+	std::bernoulli_distribution extraEdit(std::clamp(evolution._mutationRate, 0.0, 1.0));
 	size_t edits = 1;
 	while (edits < 5 && extraEdit(rng))
 		++edits;
 
 	for (size_t edit = 0; edit < edits; ++edit)
 	{
-		if (schema.levels.empty())
-			schema.levels.push_back(randomLevelConfig(rng, options));
+		if (schema._levels.empty())
+			schema._levels.push_back(randomLevelConfig(rng, options));
 
-		if (domain && options.conditionalLevels && schema.levels.size() > 1)
+		if (domain && options._conditionalLevels && schema._levels.size() > 1)
 		{
 			std::bernoulli_distribution conditionEdit(0.5);
 			if (conditionEdit(rng))
 			{
-				std::uniform_int_distribution<size_t> conditionalLevelDistribution(1, schema.levels.size() - 1);
-				mutateLevelCondition(schema.levels[conditionalLevelDistribution(rng)], rng, options, domain);
+				std::uniform_int_distribution<size_t> conditionalLevelDistribution(1, schema._levels.size() - 1);
+				mutateLevelCondition(schema._levels[conditionalLevelDistribution(rng)], rng, options, domain);
 				continue;
 			}
 		}
 
-		std::uniform_int_distribution<size_t> levelDistribution(0, schema.levels.size() - 1);
+		std::uniform_int_distribution<size_t> levelDistribution(0, schema._levels.size() - 1);
 		const size_t levelIndex = levelDistribution(rng);
-		SchemaLevelConfig& level = schema.levels[levelIndex];
+		SchemaLevelConfig& level = schema._levels[levelIndex];
 		const bool canMutateAdaptiveLeafCapacity =
-			options.adaptiveLeafCapacity ||
-			std::any_of(schema.levels.begin(), schema.levels.end(), [](const SchemaLevelConfig& candidateLevel) {
-				return candidateLevel.adaptiveLeafCapacity.enabled;
+			options._adaptiveLeafCapacity ||
+			std::any_of(schema._levels.begin(), schema._levels.end(), [](const SchemaLevelConfig& candidateLevel) {
+				return candidateLevel._adaptiveLeafCapacity._enabled;
 			});
 
 		std::uniform_int_distribution<int> mutationDistribution(0, canMutateAdaptiveLeafCapacity ? 9 : 8);
 		switch (mutationDistribution(rng))
 		{
 		case 0:
-			level.type = randomStructureType(rng, std::nullopt);
-			level.typeName = randomTypeNameForBase(level.type, rng, options);
-			level.axisPolicy = sampleAxisPolicy(rng, level.type);
+			level._type = randomStructureType(rng, std::nullopt);
+			level._typeName = randomTypeNameForBase(level._type, rng, options);
+			level._axisPolicy = sampleAxisPolicy(rng, level._type);
 			if (levelIndex == 0)
-				level.condition = {};
+				level._condition = {};
 			break;
 		case 1:
 		{
 			std::bernoulli_distribution grow(0.5);
 			if (grow(rng) && schema.totalLevels() < maxDepth)
-				++level.numLevels;
-			else if (level.numLevels > 1)
-				--level.numLevels;
+				++level._numLevels;
+			else if (level._numLevels > 1)
+				--level._numLevels;
 			break;
 		}
 		case 2:
 		{
 			std::bernoulli_distribution grow(0.5);
-			level.leafCapacity = grow(rng)
-				? clampPowerOfTwo(level.leafCapacity * 2, minLeaf, maxLeaf)
-				: clampPowerOfTwo(std::max<size_t>(1, level.leafCapacity / 2), minLeaf, maxLeaf);
-			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+			level._leafCapacity = grow(rng)
+				? clampPowerOfTwo(level._leafCapacity * 2, minLeaf, maxLeaf)
+				: clampPowerOfTwo(std::max<size_t>(1, level._leafCapacity / 2), minLeaf, maxLeaf);
+			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
 			break;
 		}
 		case 3:
 		{
 			static const std::array<size_t, 4> divisors = { 2, 4, 8, 16 };
 			std::uniform_int_distribution<size_t> divisorDistribution(0, divisors.size() - 1);
-			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / divisors[divisorDistribution(rng)]);
+			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / divisors[divisorDistribution(rng)]);
 			break;
 		}
 		case 4:
-			if (options.conditionalLevels && levelIndex > 0)
+			if (options._conditionalLevels && levelIndex > 0)
 				mutateLevelCondition(level, rng, options, domain);
 			break;
 		case 5:
-			if (schema.levels.size() < maxBlocks && schema.totalLevels() < maxDepth)
+			if (schema._levels.size() < maxBlocks && schema.totalLevels() < maxDepth)
 			{
-				const auto insertAt = schema.levels.begin() + static_cast<std::ptrdiff_t>(levelIndex + 1);
-				schema.levels.insert(insertAt, randomLevelConfig(rng, options, level.type));
+				const auto insertAt = schema._levels.begin() + static_cast<std::ptrdiff_t>(levelIndex + 1);
+				schema._levels.insert(insertAt, randomLevelConfig(rng, options, level._type));
 			}
 			break;
 		case 6:
-			if (schema.levels.size() > 1)
-				schema.levels.erase(schema.levels.begin() + static_cast<std::ptrdiff_t>(levelIndex));
+			if (schema._levels.size() > 1)
+				schema._levels.erase(schema._levels.begin() + static_cast<std::ptrdiff_t>(levelIndex));
 			break;
 		case 7:
-			if (schema.levels.size() > 1)
+			if (schema._levels.size() > 1)
 			{
-				std::uniform_int_distribution<size_t> swapDistribution(0, schema.levels.size() - 1);
+				std::uniform_int_distribution<size_t> swapDistribution(0, schema._levels.size() - 1);
 				const size_t other = swapDistribution(rng);
 				if (other != levelIndex)
-					std::swap(schema.levels[levelIndex], schema.levels[other]);
+					std::swap(schema._levels[levelIndex], schema._levels[other]);
 			}
 			break;
 		case 8:
 			// Axis-policy flip; meaningful only for KDTree/BIH levels, a no-op elsewhere.
-			if (level.type == MultiDataStructure::KDTreeNode)
+			if (level._type == MultiDataStructure::KDTreeNode)
 			{
-				level.axisPolicy = (level.axisPolicy == "round_robin")
+				level._axisPolicy = (level._axisPolicy == "round_robin")
 					? std::string("median_longest_axis")
 					: std::string("round_robin");
 			}
@@ -1992,8 +1992,8 @@ static SchemaConfig mutateSchemaConfig(
 
 struct RepairSchemaMutation
 {
-	SchemaConfig schema;
-	std::string reason;
+	SchemaConfig _schema;
+	std::string _reason;
 };
 
 static void assignRepairPrimitive(
@@ -2001,51 +2001,51 @@ static void assignRepairPrimitive(
 	SchemaPrimitiveKind primitive,
 	const Experiments::SchemaGenerationOptions& options)
 {
-	level.primitiveKind = primitive;
-	level.typeName = Config::schemaPrimitiveKindName(primitive);
-	level.cpuFallbackType = Config::cpuFallbackForPrimitiveKind(primitive);
-	level.type = level.cpuFallbackType;
+	level._primitiveKind = primitive;
+	level._typeName = Config::schemaPrimitiveKindName(primitive);
+	level._cpuFallbackType = Config::cpuFallbackForPrimitiveKind(primitive);
+	level._type = level._cpuFallbackType;
 
 	if (primitive == SchemaPrimitiveKind::QuadTree)
-		level.axisPolicy = "xy";
+		level._axisPolicy = "xy";
 	else if (primitive == SchemaPrimitiveKind::KDTree || primitive == SchemaPrimitiveKind::BIH)
-		level.axisPolicy = "round_robin";
+		level._axisPolicy = "round_robin";
 	else
-		level.axisPolicy.clear();
+		level._axisPolicy.clear();
 
 	refreshLevelTypeName(level, options);
 }
 
 static size_t repairTargetLeafLevel(const SchemaConfig& schema)
 {
-	if (schema.levels.empty())
+	if (schema._levels.empty())
 		return 0;
-	return schema.levels.size() - 1;
+	return schema._levels.size() - 1;
 }
 
 static void tightenLeafCapacity(
 	SchemaLevelConfig& level,
 	const Experiments::SchemaGenerationOptions& options)
 {
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
-	level.leafCapacity = clampPowerOfTwo(std::max<size_t>(1, level.leafCapacity / 2), minLeaf, maxLeaf);
-	level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
+	level._leafCapacity = clampPowerOfTwo(std::max<size_t>(1, level._leafCapacity / 2), minLeaf, maxLeaf);
+	level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
 }
 
 static void loosenLeafCapacity(
 	SchemaLevelConfig& level,
 	const Experiments::SchemaGenerationOptions& options)
 {
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
-	level.leafCapacity = clampPowerOfTwo(
-		level.leafCapacity >= std::numeric_limits<size_t>::max() / 2
-			? level.leafCapacity
-			: level.leafCapacity * 2,
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
+	level._leafCapacity = clampPowerOfTwo(
+		level._leafCapacity >= std::numeric_limits<size_t>::max() / 2
+			? level._leafCapacity
+			: level._leafCapacity * 2,
 		minLeaf,
 		maxLeaf);
-	level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
+	level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
 }
 
 static void addPointGateFromDomain(
@@ -2053,15 +2053,15 @@ static void addPointGateFromDomain(
 	const Experiments::ConditionDomain* domain,
 	size_t fallback)
 {
-	if (domain && !domain->pointThresholds.empty())
+	if (domain && !domain->_pointThresholds.empty())
 	{
-		auto it = std::lower_bound(domain->pointThresholds.begin(), domain->pointThresholds.end(), fallback);
-		if (it == domain->pointThresholds.end())
-			it = std::prev(domain->pointThresholds.end());
-		level.condition.minPoints = *it;
+		auto it = std::lower_bound(domain->_pointThresholds.begin(), domain->_pointThresholds.end(), fallback);
+		if (it == domain->_pointThresholds.end())
+			it = std::prev(domain->_pointThresholds.end());
+		level._condition._minPoints = *it;
 		return;
 	}
-	level.condition.minPoints = std::max<size_t>(2, fallback);
+	level._condition._minPoints = std::max<size_t>(2, fallback);
 }
 
 static Experiments::SchemaRepairDiagnostics diagnoseRepairInternal(
@@ -2082,20 +2082,20 @@ static Experiments::SchemaRepairDiagnostics diagnoseRepairInternal(
 
 	for (const Experiments::SchemaSearchRecord& record : measuredRecords)
 	{
-		if (!std::isfinite(record.score))
+		if (!std::isfinite(record._score))
 			continue;
 
-		const double averageLeaf = std::max(record.buildMetrics.averageLeafOccupancy, 1.0);
-		const double leafRatio = static_cast<double>(record.buildMetrics.maxLeafOccupancy) / averageLeaf;
-		const double visited = std::max(record.queryMetrics.averageVisitedNodes, 0.0);
-		const double tested = std::max(record.queryMetrics.averageTestedPoints, 0.0);
+		const double averageLeaf = std::max(record._buildMetrics._averageLeafOccupancy, 1.0);
+		const double leafRatio = static_cast<double>(record._buildMetrics._maxLeafOccupancy) / averageLeaf;
+		const double visited = std::max(record._queryMetrics._averageVisitedNodes, 0.0);
+		const double tested = std::max(record._queryMetrics._averageTestedPoints, 0.0);
 		const double testedPerVisited = tested / std::max(visited, 1.0);
-		const double testedFraction = record.numPoints > 0
-			? tested / static_cast<double>(record.numPoints)
+		const double testedFraction = record._numPoints > 0
+			? tested / static_cast<double>(record._numPoints)
 			: 0.0;
-		const double fullContainmentRatio = record.queryMetrics.averageFullyContainedNodes / std::max(visited, 1.0);
-		const double nodeLeafRatio = record.buildMetrics.numLeaves > 0
-			? static_cast<double>(record.buildMetrics.numNodes) / static_cast<double>(record.buildMetrics.numLeaves)
+		const double fullContainmentRatio = record._queryMetrics._averageFullyContainedNodes / std::max(visited, 1.0);
+		const double nodeLeafRatio = record._buildMetrics._numLeaves > 0
+			? static_cast<double>(record._buildMetrics._numNodes) / static_cast<double>(record._buildMetrics._numLeaves)
 			: 0.0;
 
 		leafRatioSum += leafRatio;
@@ -2111,42 +2111,42 @@ static Experiments::SchemaRepairDiagnostics diagnoseRepairInternal(
 		return diagnostics;
 
 	const double invCount = 1.0 / static_cast<double>(count);
-	diagnostics.leafOccupancyRatio = leafRatioSum * invCount;
-	diagnostics.testedPerVisited = testedPerVisitedSum * invCount;
-	diagnostics.visitedPerQuery = visitedSum * invCount;
-	diagnostics.testedPointFraction = testedFractionSum * invCount;
-	diagnostics.fullContainmentRatio = fullContainmentRatioSum * invCount;
+	diagnostics._leafOccupancyRatio = leafRatioSum * invCount;
+	diagnostics._testedPerVisited = testedPerVisitedSum * invCount;
+	diagnostics._visitedPerQuery = visitedSum * invCount;
+	diagnostics._testedPointFraction = testedFractionSum * invCount;
+	diagnostics._fullContainmentRatio = fullContainmentRatioSum * invCount;
 
-	const size_t deepestConfiguredLeaf = candidate.config.levels.empty()
+	const size_t deepestConfiguredLeaf = candidate._config._levels.empty()
 		? 1
-		: candidate.config.levels[repairTargetLeafLevel(candidate.config)].leafCapacity;
+		: candidate._config._levels[repairTargetLeafLevel(candidate._config)]._leafCapacity;
 
-	diagnostics.highLeafOccupancy =
-		diagnostics.leafOccupancyRatio >= 3.0 ||
+	diagnostics._highLeafOccupancy =
+		diagnostics._leafOccupancyRatio >= 3.0 ||
 		(!measuredRecords.empty() &&
-			measuredRecords.front().buildMetrics.maxLeafOccupancy >= std::max<size_t>(deepestConfiguredLeaf * 2, 1024));
-	diagnostics.testedPointDominated =
-		diagnostics.testedPerVisited >= 32.0 ||
-		diagnostics.testedPointFraction >= 0.20;
-	diagnostics.visitedNodeDominated =
-		diagnostics.visitedPerQuery >= 64.0 &&
-		diagnostics.testedPerVisited <= 8.0;
-	diagnostics.fullContainmentDominated =
-		diagnostics.fullContainmentRatio >= 0.20;
-	diagnostics.likelySingleChildChains =
+			measuredRecords.front()._buildMetrics._maxLeafOccupancy >= std::max<size_t>(deepestConfiguredLeaf * 2, 1024));
+	diagnostics._testedPointDominated =
+		diagnostics._testedPerVisited >= 32.0 ||
+		diagnostics._testedPointFraction >= 0.20;
+	diagnostics._visitedNodeDominated =
+		diagnostics._visitedPerQuery >= 64.0 &&
+		diagnostics._testedPerVisited <= 8.0;
+	diagnostics._fullContainmentDominated =
+		diagnostics._fullContainmentRatio >= 0.20;
+	diagnostics._likelySingleChildChains =
 		(nodeLeafRatioSum * invCount) >= 2.50 &&
-		measuredRecords.front().buildMetrics.maxDepth > candidate.config.totalLevels() / 2;
+		measuredRecords.front()._buildMetrics._maxDepth > candidate._config.totalLevels() / 2;
 
-	if (diagnostics.highLeafOccupancy)
-		diagnostics.bottleneck = "high_leaf_occupancy";
-	else if (diagnostics.testedPointDominated)
-		diagnostics.bottleneck = "tested_points_dominated";
-	else if (diagnostics.visitedNodeDominated)
-		diagnostics.bottleneck = "visited_nodes_dominated";
-	else if (diagnostics.fullContainmentDominated)
-		diagnostics.bottleneck = "full_containment_dominated";
-	else if (diagnostics.likelySingleChildChains)
-		diagnostics.bottleneck = "single_child_chains";
+	if (diagnostics._highLeafOccupancy)
+		diagnostics._bottleneck = "high_leaf_occupancy";
+	else if (diagnostics._testedPointDominated)
+		diagnostics._bottleneck = "tested_points_dominated";
+	else if (diagnostics._visitedNodeDominated)
+		diagnostics._bottleneck = "visited_nodes_dominated";
+	else if (diagnostics._fullContainmentDominated)
+		diagnostics._bottleneck = "full_containment_dominated";
+	else if (diagnostics._likelySingleChildChains)
+		diagnostics._bottleneck = "single_child_chains";
 
 	return diagnostics;
 }
@@ -2174,74 +2174,74 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 	uint32_t seed)
 {
 	std::vector<RepairSchemaMutation> mutations;
-	if (maxMutations == 0 || candidate.config.levels.empty())
+	if (maxMutations == 0 || candidate._config._levels.empty())
 		return mutations;
 
 	const Experiments::SchemaRepairDiagnostics diagnostics = diagnoseRepairInternal(candidate, measuredRecords);
-	const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
-	const size_t maxBlocks = std::max<size_t>(1, std::min(options.maxBlocks, maxDepth));
-	const bool canAppendBlock = candidate.config.levels.size() < maxBlocks && candidate.config.totalLevels() < maxDepth;
+	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
+	const size_t maxBlocks = std::max<size_t>(1, std::min(options._maxBlocks, maxDepth));
+	const bool canAppendBlock = candidate._config._levels.size() < maxBlocks && candidate._config.totalLevels() < maxDepth;
 	std::unordered_set<std::string> seen;
-	seen.insert(schemaSignature(candidate.config));
+	seen.insert(schemaSignature(candidate._config));
 	std::mt19937 rng(seed);
 
 	auto maybeStop = [&]() { return mutations.size() >= maxMutations; };
 
-	if (diagnostics.highLeafOccupancy || diagnostics.testedPointDominated)
+	if (diagnostics._highLeafOccupancy || diagnostics._testedPointDominated)
 	{
-		SchemaConfig repaired = candidate.config;
-		SchemaLevelConfig& leafLevel = repaired.levels[repairTargetLeafLevel(repaired)];
+		SchemaConfig repaired = candidate._config;
+		SchemaLevelConfig& leafLevel = repaired._levels[repairTargetLeafLevel(repaired)];
 		tightenLeafCapacity(leafLevel, options);
 		if (repaired.totalLevels() < maxDepth)
-			++leafLevel.numLevels;
-		addRepairMutation(mutations, std::move(repaired), diagnostics.highLeafOccupancy
+			++leafLevel._numLevels;
+		addRepairMutation(mutations, std::move(repaired), diagnostics._highLeafOccupancy
 			? "high_leaf_occupancy"
 			: "tested_points_leaf_tighten", options, seen);
 		if (maybeStop()) return mutations;
 	}
 
-	if (diagnostics.testedPointDominated && canAppendBlock)
+	if (diagnostics._testedPointDominated && canAppendBlock)
 	{
-		SchemaConfig repaired = candidate.config;
-		SchemaLevelConfig micro = repaired.levels.back();
+		SchemaConfig repaired = candidate._config;
+		SchemaLevelConfig micro = repaired._levels.back();
 		assignRepairPrimitive(micro,
-			measuredRecords.empty() || measuredRecords.front().knnWeight < 0.5
+			measuredRecords.empty() || measuredRecords.front()._knnWeight < 0.5
 				? SchemaPrimitiveKind::BVH
 				: SchemaPrimitiveKind::KDTree,
 			options);
-		micro.numLevels = std::min<size_t>(3, maxDepth - repaired.totalLevels());
-		micro.leafCapacity = std::max<size_t>(options.minLeafCapacity, repaired.levels.back().leafCapacity / 2);
-		micro.leafCapacity = clampPowerOfTwo(micro.leafCapacity, std::max<size_t>(1, options.minLeafCapacity), std::max<size_t>(1, options.maxLeafCapacity));
-		micro.minPrimitivesToSplit = std::max<size_t>(2, micro.leafCapacity / 4);
-		addPointGateFromDomain(micro, domain, std::max<size_t>(micro.leafCapacity * 2, 32));
-		repaired.levels.push_back(micro);
+		micro._numLevels = std::min<size_t>(3, maxDepth - repaired.totalLevels());
+		micro._leafCapacity = std::max<size_t>(options._minLeafCapacity, repaired._levels.back()._leafCapacity / 2);
+		micro._leafCapacity = clampPowerOfTwo(micro._leafCapacity, std::max<size_t>(1, options._minLeafCapacity), std::max<size_t>(1, options._maxLeafCapacity));
+		micro._minPrimitivesToSplit = std::max<size_t>(2, micro._leafCapacity / 4);
+		addPointGateFromDomain(micro, domain, std::max<size_t>(micro._leafCapacity * 2, 32));
+		repaired._levels.push_back(micro);
 		addRepairMutation(mutations, std::move(repaired), "tested_points_micro_index", options, seen);
 		if (maybeStop()) return mutations;
 	}
 
-	if (diagnostics.visitedNodeDominated)
+	if (diagnostics._visitedNodeDominated)
 	{
-		SchemaConfig repaired = candidate.config;
-		SchemaLevelConfig& root = repaired.levels.front();
-		if (measuredRecords.empty() || measuredRecords.front().pointFeatures.flatnessScore >= measuredRecords.front().pointFeatures.verticalityScore)
+		SchemaConfig repaired = candidate._config;
+		SchemaLevelConfig& root = repaired._levels.front();
+		if (measuredRecords.empty() || measuredRecords.front()._pointFeatures._flatnessScore >= measuredRecords.front()._pointFeatures._verticalityScore)
 			assignRepairPrimitive(root, SchemaPrimitiveKind::QuadTree, options);
 		else
 			assignRepairPrimitive(root, SchemaPrimitiveKind::Octree, options);
 		loosenLeafCapacity(root, options);
-		if (root.numLevels > 1)
-			--root.numLevels;
+		if (root._numLevels > 1)
+			--root._numLevels;
 		addRepairMutation(mutations, std::move(repaired), "visited_nodes_coarsen_root", options, seen);
 		if (maybeStop()) return mutations;
 	}
 
-	if (diagnostics.fullContainmentDominated)
+	if (diagnostics._fullContainmentDominated)
 	{
-		SchemaConfig repaired = candidate.config;
-		SchemaLevelConfig& root = repaired.levels.front();
+		SchemaConfig repaired = candidate._config;
+		SchemaLevelConfig& root = repaired._levels.front();
 		const bool allowGrid = !queryMinimalPrimitiveProfile(options);
 		if (allowGrid)
 			assignRepairPrimitive(root, SchemaPrimitiveKind::RegularGrid, options);
-		else if (measuredRecords.empty() || measuredRecords.front().pointFeatures.flatnessScore >= measuredRecords.front().pointFeatures.verticalityScore)
+		else if (measuredRecords.empty() || measuredRecords.front()._pointFeatures._flatnessScore >= measuredRecords.front()._pointFeatures._verticalityScore)
 			assignRepairPrimitive(root, SchemaPrimitiveKind::QuadTree, options);
 		else
 			assignRepairPrimitive(root, SchemaPrimitiveKind::Octree, options);
@@ -2250,15 +2250,15 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 		if (maybeStop()) return mutations;
 	}
 
-	if (diagnostics.likelySingleChildChains)
+	if (diagnostics._likelySingleChildChains)
 	{
-		SchemaConfig repaired = candidate.config;
-		auto kdLevel = std::find_if(repaired.levels.begin(), repaired.levels.end(), [](const SchemaLevelConfig& level) {
-			return level.type == MultiDataStructure::KDTreeNode || isBIHLevelName(level.typeName);
+		SchemaConfig repaired = candidate._config;
+		auto kdLevel = std::find_if(repaired._levels.begin(), repaired._levels.end(), [](const SchemaLevelConfig& level) {
+			return level._type == MultiDataStructure::KDTreeNode || isBIHLevelName(level._typeName);
 		});
-		if (kdLevel != repaired.levels.end())
+		if (kdLevel != repaired._levels.end())
 		{
-			kdLevel->axisPolicy = kdLevel->axisPolicy == "round_robin"
+			kdLevel->_axisPolicy = kdLevel->_axisPolicy == "round_robin"
 				? "median_longest_axis"
 				: "round_robin";
 		}
@@ -2266,7 +2266,7 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 		{
 			std::uniform_int_distribution<int> policyDistribution(0, 2);
 			static const std::array<const char*, 3> policies = { "xy", "ignore_shortest", "ignore_z" };
-			repaired.levels.front().axisPolicy = policies[policyDistribution(rng)];
+			repaired._levels.front()._axisPolicy = policies[policyDistribution(rng)];
 		}
 		addRepairMutation(mutations, std::move(repaired), "single_child_axis_policy", options, seen);
 		if (maybeStop()) return mutations;
@@ -2274,12 +2274,12 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 
 	if (mutations.empty())
 	{
-		SchemaConfig repaired = candidate.config;
-		SchemaLevelConfig& leafLevel = repaired.levels[repairTargetLeafLevel(repaired)];
-		if (diagnostics.testedPerVisited > 8.0)
+		SchemaConfig repaired = candidate._config;
+		SchemaLevelConfig& leafLevel = repaired._levels[repairTargetLeafLevel(repaired)];
+		if (diagnostics._testedPerVisited > 8.0)
 			tightenLeafCapacity(leafLevel, options);
 		else
-			loosenLeafCapacity(repaired.levels.front(), options);
+			loosenLeafCapacity(repaired._levels.front(), options);
 		addRepairMutation(mutations, std::move(repaired), "balanced_leaf_probe", options, seen);
 	}
 
@@ -2293,21 +2293,21 @@ static std::vector<SearchDataset> makeSyntheticDatasets(size_t scale)
 	datasets.reserve(3);
 
 	SearchDataset flat;
-	flat.name = "synthetic_flat_terrain";
-	flat.source = "synthetic";
-	flat.cloud = SyntheticPointClouds::generateFlatTerrain(n, 100.0f, 100.0f, 0.05f, 101);
+	flat._name = "synthetic_flat_terrain";
+	flat._source = "synthetic";
+	flat._cloud = SyntheticPointClouds::generateFlatTerrain(n, 100.0f, 100.0f, 0.05f, 101);
 	datasets.push_back(std::move(flat));
 
 	SearchDataset facade;
-	facade.name = "synthetic_facade";
-	facade.source = "synthetic";
-	facade.cloud = SyntheticPointClouds::generateFacade(n, 60.0f, 40.0f, 0.2f, 202);
+	facade._name = "synthetic_facade";
+	facade._source = "synthetic";
+	facade._cloud = SyntheticPointClouds::generateFacade(n, 60.0f, 40.0f, 0.2f, 202);
 	datasets.push_back(std::move(facade));
 
 	SearchDataset urban;
-	urban.name = "synthetic_urban_mixed";
-	urban.source = "synthetic";
-	urban.cloud = SyntheticPointClouds::generateUrbanMixed(n, n, 5, 303);
+	urban._name = "synthetic_urban_mixed";
+	urban._source = "synthetic";
+	urban._cloud = SyntheticPointClouds::generateUrbanMixed(n, n, 5, 303);
 	datasets.push_back(std::move(urban));
 
 	return datasets;
@@ -2317,19 +2317,19 @@ static std::vector<SearchDataset> loadDatasets(const Experiments::SchemaSearchOp
 {
 	std::vector<SearchDataset> datasets;
 
-	if (options.includeSyntheticDatasets)
+	if (options._includeSyntheticDatasets)
 	{
-		std::vector<SearchDataset> synthetic = makeSyntheticDatasets(options.syntheticScale);
+		std::vector<SearchDataset> synthetic = makeSyntheticDatasets(options._syntheticScale);
 		datasets.insert(datasets.end(), std::make_move_iterator(synthetic.begin()), std::make_move_iterator(synthetic.end()));
 	}
 
-	for (const std::string& inputPath : options.inputPaths)
+	for (const std::string& inputPath : options._inputPaths)
 	{
 		SearchDataset dataset;
-		dataset.name = datasetNameFromPath(inputPath);
-		dataset.source = inputPath;
-		dataset.cloud = PointCloud::load(inputPath, { options.useBinaryCache, options.rebuildBinaryCache });
-		if (dataset.cloud.empty())
+		dataset._name = datasetNameFromPath(inputPath);
+		dataset._source = inputPath;
+		dataset._cloud = PointCloud::load(inputPath, { options._useBinaryCache, options._rebuildBinaryCache });
+		if (dataset._cloud.empty())
 			throw std::runtime_error("Point cloud is empty: " + inputPath);
 		datasets.push_back(std::move(dataset));
 	}
@@ -2352,9 +2352,9 @@ static std::vector<Experiments::SchemaCandidate> loadSchemas(const std::vector<s
 	for (const std::string& schemaPath : paths)
 	{
 		Experiments::SchemaCandidate loaded;
-		loaded.path = schemaPath;
-		loaded.config = Config::loadSchemaConfig(schemaPath);
-		loaded.name = loaded.config.name;
+		loaded._path = schemaPath;
+		loaded._config = Config::loadSchemaConfig(schemaPath);
+		loaded._name = loaded._config._name;
 		schemas.push_back(std::move(loaded));
 	}
 
@@ -2366,7 +2366,7 @@ static void appendGeneratedSchemas(
 	const Experiments::SchemaGenerationOptions& options,
 	const Experiments::ConditionDomain* domain = nullptr)
 {
-	if (options.count == 0)
+	if (options._count == 0)
 		return;
 
 	// Pass the per-cloud condition domain so the generator calibrates conditional thresholds to actual cloud statistics instead of generic fallbacks that never fire.
@@ -2401,7 +2401,7 @@ static void appendBaselineSchemas(std::vector<Experiments::SchemaCandidate>& sch
 {
 	std::unordered_set<std::string> existing;
 	for (const Experiments::SchemaCandidate& candidate : schemas)
-		existing.insert(candidate.path);
+		existing.insert(candidate._path);
 
 	size_t added = 0;
 	for (const std::string& path : baselineSchemaPaths(cudaEvaluator))
@@ -2412,18 +2412,18 @@ static void appendBaselineSchemas(std::vector<Experiments::SchemaCandidate>& sch
 			continue;
 
 		Experiments::SchemaCandidate baseline;
-		baseline.path = key;
+		baseline._path = key;
 		try
 		{
-			baseline.config = Config::loadSchemaConfig(key);
+			baseline._config = Config::loadSchemaConfig(key);
 		}
 		catch (const std::exception& exception)
 		{
 			std::cerr << "Warning: skipped baseline schema " << path << " (" << exception.what() << ")\n";
 			continue;
 		}
-		baseline.name = baseline.config.name;
-		baseline.isBaseline = true;
+		baseline._name = baseline._config._name;
+		baseline._isBaseline = true;
 		schemas.push_back(std::move(baseline));
 		existing.insert(key);
 		++added;
@@ -2448,56 +2448,56 @@ static std::vector<Experiments::SchemaCandidate> selectBenchmarkSchemas(
 	if (schemas.empty())
 		return {};
 
-	if (options.benchmarkTopK == 0 || options.benchmarkTopK >= schemas.size())
+	if (options._benchmarkTopK == 0 || options._benchmarkTopK >= schemas.size())
 		return schemas;
 
 	if (!rankModel.has_value())
 	{
-		if (!options.estimatePrefilter)
-			return std::vector<Experiments::SchemaCandidate>(schemas.begin(), schemas.begin() + options.benchmarkTopK);
+		if (!options._estimatePrefilter)
+			return std::vector<Experiments::SchemaCandidate>(schemas.begin(), schemas.begin() + options._benchmarkTopK);
 
 		// Cheap model-free pre-filter: rank by the zero-build query-cost estimate and keep the cheapest K rather than an arbitrary first-K prefix.
 		const Experiments::ScoreWeights weights = effectiveScoreWeights(workload, options);
-		const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset.cloud);
+		const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset._cloud);
 		const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
 
 		std::vector<size_t> order(schemas.size());
 		std::iota(order.begin(), order.end(), size_t(0));
 		std::vector<double> cost(schemas.size());
 		for (size_t i = 0; i < schemas.size(); ++i)
-			cost[i] = Experiments::estimateSchemaQueryCost(schemas[i].config, features, workloadFeatures, weights.visitProxyAlpha);
+			cost[i] = Experiments::estimateSchemaQueryCost(schemas[i]._config, features, workloadFeatures, weights._visitProxyAlpha);
 		std::stable_sort(order.begin(), order.end(), [&cost](size_t a, size_t b) { return cost[a] < cost[b]; });
 
 		std::vector<Experiments::SchemaCandidate> selected;
-		selected.reserve(options.benchmarkTopK);
-		for (size_t k = 0; k < options.benchmarkTopK && k < order.size(); ++k)
+		selected.reserve(options._benchmarkTopK);
+		for (size_t k = 0; k < options._benchmarkTopK && k < order.size(); ++k)
 			selected.push_back(schemas[order[k]]);
 		std::cout << "  estimate pre-filter: kept " << selected.size() << " of " << schemas.size()
-			<< " candidates by zero-build cost on '" << dataset.name << "'\n";
+			<< " candidates by zero-build cost on '" << dataset._name << "'\n";
 		return selected;
 	}
 
 	const std::vector<Experiments::CandidatePrediction> predictions = Experiments::scoreSchemaCandidates(
 		rankModel.value(),
 		workload,
-		dataset.cloud,
+		dataset._cloud,
 		schemas);
 
 	std::unordered_map<std::string, const Experiments::SchemaCandidate*> byKey;
 	byKey.reserve(schemas.size());
 	for (const Experiments::SchemaCandidate& schema : schemas)
-		byKey[candidateKey(schema.config.name, schema.path)] = &schema;
+		byKey[candidateKey(schema._config._name, schema._path)] = &schema;
 
 	std::vector<Experiments::SchemaCandidate> selected;
-	selected.reserve(std::min(options.benchmarkTopK, predictions.size()));
+	selected.reserve(std::min(options._benchmarkTopK, predictions.size()));
 	for (const Experiments::CandidatePrediction& prediction : predictions)
 	{
-		const auto found = byKey.find(candidateKey(prediction.schemaName, prediction.schemaPath));
+		const auto found = byKey.find(candidateKey(prediction._schemaName, prediction._schemaPath));
 		if (found == byKey.end())
 			continue;
 
 		selected.push_back(*found->second);
-		if (selected.size() >= options.benchmarkTopK)
+		if (selected.size() >= options._benchmarkTopK)
 			break;
 	}
 
@@ -2506,19 +2506,19 @@ static std::vector<Experiments::SchemaCandidate> selectBenchmarkSchemas(
 
 static std::vector<Experiments::WorkloadProfile> loadWorkloads(const Experiments::SchemaSearchOptions& options)
 {
-	const std::vector<std::string>& paths = options.workloadPaths.empty() ? defaultWorkloadPaths() : options.workloadPaths;
+	const std::vector<std::string>& paths = options._workloadPaths.empty() ? defaultWorkloadPaths() : options._workloadPaths;
 	std::vector<Experiments::WorkloadProfile> workloads;
 	workloads.reserve(paths.size());
 
 	for (const std::string& workloadPath : paths)
 	{
 		Experiments::WorkloadProfile profile = Experiments::loadWorkloadProfile(workloadPath);
-		if (options.queryCountOverride > 0)
-			profile.numQueries = options.queryCountOverride;
-		if (options.knnKOverride > 0)
-			profile.knnK = options.knnKOverride;
-		if (options.querySeedOverride)
-			profile.querySeed = options.querySeed;
+		if (options._queryCountOverride > 0)
+			profile._numQueries = options._queryCountOverride;
+		if (options._knnKOverride > 0)
+			profile._knnK = options._knnKOverride;
+		if (options._querySeedOverride)
+			profile._querySeed = options._querySeed;
 		workloads.push_back(std::move(profile));
 	}
 
@@ -2528,9 +2528,9 @@ static std::vector<Experiments::WorkloadProfile> loadWorkloads(const Experiments
 static std::vector<double> queryTypeWeights(const Experiments::WorkloadProfile& profile)
 {
 	std::vector<double> weights = {
-		std::max(0.0, profile.rangeWeight),
-		std::max(0.0, profile.radiusWeight),
-		std::max(0.0, profile.knnWeight),
+		std::max(0.0, profile._rangeWeight),
+		std::max(0.0, profile._radiusWeight),
+		std::max(0.0, profile._knnWeight),
 	};
 
 	if (weights[0] == 0.0 && weights[1] == 0.0 && weights[2] == 0.0)
@@ -2549,23 +2549,23 @@ enum class QueryCenterMode
 
 struct StratifiedQuerySpec
 {
-	PreparedQueryKind kind = PreparedQueryKind::Range;
-	std::string name;
-	double scale = 0.01;
-	QueryCenterMode centerMode = QueryCenterMode::Random;
+	PreparedQueryKind _kind = PreparedQueryKind::Range;
+	std::string _name;
+	double _scale = 0.01;
+	QueryCenterMode _centerMode = QueryCenterMode::Random;
 };
 
 static std::vector<StratifiedQuerySpec> stratifiedQuerySpecs(const Experiments::WorkloadProfile& profile)
 {
 	std::vector<StratifiedQuerySpec> specs;
-	const double rangeMin = std::min(profile.rangeScaleMin, profile.rangeScaleMax);
-	const double rangeMax = std::max(profile.rangeScaleMin, profile.rangeScaleMax);
+	const double rangeMin = std::min(profile._rangeScaleMin, profile._rangeScaleMax);
+	const double rangeMax = std::max(profile._rangeScaleMin, profile._rangeScaleMax);
 	const double rangeMid = 0.5 * (rangeMin + rangeMax);
-	const double radiusMin = std::min(profile.radiusScaleMin, profile.radiusScaleMax);
-	const double radiusMax = std::max(profile.radiusScaleMin, profile.radiusScaleMax);
+	const double radiusMin = std::min(profile._radiusScaleMin, profile._radiusScaleMax);
+	const double radiusMax = std::max(profile._radiusScaleMin, profile._radiusScaleMax);
 	const double radiusMid = 0.5 * (radiusMin + radiusMax);
 
-	if (profile.rangeWeight > 0.0)
+	if (profile._rangeWeight > 0.0)
 	{
 		specs.push_back({ PreparedQueryKind::Range, "range_small", rangeMin, QueryCenterMode::Random });
 		specs.push_back({ PreparedQueryKind::Range, "range_medium", rangeMid, QueryCenterMode::Random });
@@ -2573,7 +2573,7 @@ static std::vector<StratifiedQuerySpec> stratifiedQuerySpecs(const Experiments::
 		specs.push_back({ PreparedQueryKind::Range, "range_near_empty", rangeMin, QueryCenterMode::Outside });
 		specs.push_back({ PreparedQueryKind::Range, "range_dense", rangeMin, QueryCenterMode::Dense });
 	}
-	if (profile.radiusWeight > 0.0)
+	if (profile._radiusWeight > 0.0)
 	{
 		specs.push_back({ PreparedQueryKind::Radius, "radius_small", radiusMin, QueryCenterMode::Random });
 		specs.push_back({ PreparedQueryKind::Radius, "radius_medium", radiusMid, QueryCenterMode::Random });
@@ -2581,7 +2581,7 @@ static std::vector<StratifiedQuerySpec> stratifiedQuerySpecs(const Experiments::
 		specs.push_back({ PreparedQueryKind::Radius, "radius_dense", radiusMin, QueryCenterMode::Dense });
 		specs.push_back({ PreparedQueryKind::Radius, "radius_boundary", radiusMid, QueryCenterMode::Boundary });
 	}
-	if (profile.knnWeight > 0.0)
+	if (profile._knnWeight > 0.0)
 	{
 		specs.push_back({ PreparedQueryKind::Knn, "knn_dense", 0.0, QueryCenterMode::Dense });
 		specs.push_back({ PreparedQueryKind::Knn, "knn_outside", 0.0, QueryCenterMode::Outside });
@@ -2618,82 +2618,82 @@ static PreparedWorkload prepareWorkloadProfile(
 	bool cudaEvaluator)
 {
 	PreparedWorkload prepared;
-	if (profile.numQueries == 0)
+	if (profile._numQueries == 0)
 		return prepared;
 
-	std::mt19937 rng(profile.querySeed);
-	if (profile.stratifyQueries)
+	std::mt19937 rng(profile._querySeed);
+	if (profile._stratifyQueries)
 	{
 		const std::vector<StratifiedQuerySpec> specs = stratifiedQuerySpecs(profile);
 		bool nextRangeIsCount = false;
 		if (cudaEvaluator)
 		{
-			prepared.cudaQueries.reserve(profile.numQueries);
-			prepared.cudaStrata.reserve(profile.numQueries);
-			for (size_t i = 0; i < profile.numQueries; ++i)
+			prepared._cudaQueries.reserve(profile._numQueries);
+			prepared._cudaStrata.reserve(profile._numQueries);
+			for (size_t i = 0; i < profile._numQueries; ++i)
 			{
 				const StratifiedQuerySpec& spec = specs[i % specs.size()];
-				const glm::vec3 center = centerForStratum(rng, cloud, spec.centerMode);
+				const glm::vec3 center = centerForStratum(rng, cloud, spec._centerMode);
 				PointGpu::Query query;
-				if (spec.kind == PreparedQueryKind::Range)
+				if (spec._kind == PreparedQueryKind::Range)
 				{
-					query.type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
-					query.bounds = queryBoxAtScale(center, cloud, spec.scale);
+					query._type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
+					query._bounds = queryBoxAtScale(center, cloud, spec._scale);
 					if (nextRangeIsCount)
-						++prepared.countRangeQueries;
+						++prepared._countRangeQueries;
 					else
-						++prepared.rangeQueries;
+						++prepared._rangeQueries;
 					nextRangeIsCount = !nextRangeIsCount;
 				}
-				else if (spec.kind == PreparedQueryKind::Radius)
+				else if (spec._kind == PreparedQueryKind::Radius)
 				{
-					query.type = PointGpu::QueryType::Radius;
+					query._type = PointGpu::QueryType::Radius;
 					query.center = center;
 					const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
 					const float largestRange = std::max({ range.x, range.y, range.z, 1.0f });
-					query.radius = largestRange * static_cast<float>(spec.scale);
-					++prepared.radiusQueries;
+					query._radius = largestRange * static_cast<float>(spec._scale);
+					++prepared._radiusQueries;
 				}
 				else
 				{
-					query.type = PointGpu::QueryType::Knn;
+					query._type = PointGpu::QueryType::Knn;
 					query.center = center;
-					query.k = profile.knnK;
-					++prepared.knnQueries;
+					query._k = profile._knnK;
+					++prepared._knnQueries;
 				}
-				prepared.cudaQueries.push_back(query);
-				prepared.cudaStrata.push_back(spec.name);
+				prepared._cudaQueries.push_back(query);
+				prepared._cudaStrata.push_back(spec._name);
 			}
 			return prepared;
 		}
 
-		prepared.cpuQueries.reserve(profile.numQueries);
-		for (size_t i = 0; i < profile.numQueries; ++i)
+		prepared._cpuQueries.reserve(profile._numQueries);
+		for (size_t i = 0; i < profile._numQueries; ++i)
 		{
 			const StratifiedQuerySpec& spec = specs[i % specs.size()];
-			const glm::vec3 center = centerForStratum(rng, cloud, spec.centerMode);
+			const glm::vec3 center = centerForStratum(rng, cloud, spec._centerMode);
 			PreparedCpuQuery query;
-			query.kind = spec.kind;
-			query.stratum = spec.name;
-			if (spec.kind == PreparedQueryKind::Range)
+			query._kind = spec._kind;
+			query._stratum = spec._name;
+			if (spec._kind == PreparedQueryKind::Range)
 			{
-				query.bounds = queryBoxAtScale(center, cloud, spec.scale);
-				++prepared.rangeQueries;
+				query._bounds = queryBoxAtScale(center, cloud, spec._scale);
+				++prepared._rangeQueries;
 			}
-			else if (spec.kind == PreparedQueryKind::Radius)
+			else if (spec._kind == PreparedQueryKind::Radius)
 			{
 				query.center = center;
 				const glm::vec3 range = glm::max(cloud.coordinateRange(), glm::vec3(0.001f));
 				const float largestRange = std::max({ range.x, range.y, range.z, 1.0f });
-				query.radius = largestRange * static_cast<float>(spec.scale);
-				++prepared.radiusQueries;
+				query._radius = largestRange * static_cast<float>(spec._scale);
+				++prepared._radiusQueries;
 			}
 			else
 			{
 				query.center = center;
-				++prepared.knnQueries;
+				++prepared._knnQueries;
 			}
-			prepared.cpuQueries.push_back(query);
+			prepared._cpuQueries.push_back(query);
 		}
 		return prepared;
 	}
@@ -2702,74 +2702,74 @@ static PreparedWorkload prepareWorkloadProfile(
 	{
 		std::vector<double> weights = queryTypeWeights(profile);
 
-		prepared.cudaQueries.reserve(profile.numQueries);
+		prepared._cudaQueries.reserve(profile._numQueries);
 		std::discrete_distribution<size_t> queryType(weights.begin(), weights.end());
 		bool nextRangeIsCount = false;
-		for (size_t i = 0; i < profile.numQueries; ++i)
+		for (size_t i = 0; i < profile._numQueries; ++i)
 		{
 			const size_t type = queryType(rng);
 			PointGpu::Query query;
 			if (type == 0)
 			{
-				query.type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
-				query.bounds = randomQueryBox(rng, cloud, profile);
+				query._type = nextRangeIsCount ? PointGpu::QueryType::CountRange : PointGpu::QueryType::Range;
+				query._bounds = randomQueryBox(rng, cloud, profile);
 				if (nextRangeIsCount)
-					++prepared.countRangeQueries;
+					++prepared._countRangeQueries;
 				else
-					++prepared.rangeQueries;
+					++prepared._rangeQueries;
 				nextRangeIsCount = !nextRangeIsCount;
 			}
 			else if (type == 1)
 			{
-				query.type = PointGpu::QueryType::Radius;
+				query._type = PointGpu::QueryType::Radius;
 				query.center = randomPointInBounds(rng, cloud.bounds());
-				query.radius = randomQueryRadius(rng, cloud, profile);
-				++prepared.radiusQueries;
+				query._radius = randomQueryRadius(rng, cloud, profile);
+				++prepared._radiusQueries;
 			}
 			else
 			{
-				query.type = PointGpu::QueryType::Knn;
+				query._type = PointGpu::QueryType::Knn;
 				query.center = randomPointInBounds(rng, cloud.bounds());
-				query.k = profile.knnK;
-				++prepared.knnQueries;
+				query._k = profile._knnK;
+				++prepared._knnQueries;
 			}
-			prepared.cudaQueries.push_back(query);
-			prepared.cudaStrata.push_back({});
+			prepared._cudaQueries.push_back(query);
+			prepared._cudaStrata.push_back({});
 		}
 
 		return prepared;
 	}
 
-	prepared.cpuQueries.reserve(profile.numQueries);
+	prepared._cpuQueries.reserve(profile._numQueries);
 	const std::vector<double> weights = queryTypeWeights(profile);
 	std::discrete_distribution<size_t> queryType(weights.begin(), weights.end());
-	for (size_t i = 0; i < profile.numQueries; ++i)
+	for (size_t i = 0; i < profile._numQueries; ++i)
 	{
 		const size_t type = queryType(rng);
 		PreparedCpuQuery query;
 		if (type == 0)
 		{
-			query.kind = PreparedQueryKind::Range;
-			query.bounds = randomQueryBox(rng, cloud, profile);
-			query.stratum = "range";
-			++prepared.rangeQueries;
+			query._kind = PreparedQueryKind::Range;
+			query._bounds = randomQueryBox(rng, cloud, profile);
+			query._stratum = "range";
+			++prepared._rangeQueries;
 		}
 		else if (type == 1)
 		{
-			query.kind = PreparedQueryKind::Radius;
+			query._kind = PreparedQueryKind::Radius;
 			query.center = randomPointInBounds(rng, cloud.bounds());
-			query.radius = randomQueryRadius(rng, cloud, profile);
-			query.stratum = "radius";
-			++prepared.radiusQueries;
+			query._radius = randomQueryRadius(rng, cloud, profile);
+			query._stratum = "radius";
+			++prepared._radiusQueries;
 		}
 		else
 		{
-			query.kind = PreparedQueryKind::Knn;
+			query._kind = PreparedQueryKind::Knn;
 			query.center = randomPointInBounds(rng, cloud.bounds());
-			query.stratum = "knn";
-			++prepared.knnQueries;
+			query._stratum = "knn";
+			++prepared._knnQueries;
 		}
-		prepared.cpuQueries.push_back(query);
+		prepared._cpuQueries.push_back(query);
 	}
 
 	return prepared;
@@ -2857,17 +2857,17 @@ static std::string formatStratumSummary(const std::map<std::string, Experiments:
 	bool first = true;
 	for (const auto& [name, metrics] : metricsByStratum)
 	{
-		if (metrics.totalQueries == 0)
+		if (metrics._totalQueries == 0)
 			continue;
 		if (!first)
 			output << ';';
 		first = false;
 		output << name
-			<< "|q=" << metrics.totalQueries
-			<< "|avg_ms=" << metrics.averageLatencyMs
-			<< "|p95_ms=" << metrics.p95LatencyMs
-			<< "|visited=" << metrics.averageVisitedNodes
-			<< "|tested=" << metrics.averageTestedPoints;
+			<< "|q=" << metrics._totalQueries
+			<< "|avg_ms=" << metrics._averageLatencyMs
+			<< "|p95_ms=" << metrics._p95LatencyMs
+			<< "|visited=" << metrics._averageVisitedNodes
+			<< "|tested=" << metrics._averageTestedPoints;
 	}
 	return output.str();
 }
@@ -2899,11 +2899,11 @@ static void appendQueryTraceRow(
 	const std::string& backend)
 {
 	output << std::fixed << std::setprecision(6)
-		<< csvEscape(dataset.name) << ','
-		<< csvEscape(dataset.source) << ','
-		<< csvEscape(schema.config.name) << ','
-		<< csvEscape(schema.path) << ','
-		<< csvEscape(workload.name) << ','
+		<< csvEscape(dataset._name) << ','
+		<< csvEscape(dataset._source) << ','
+		<< csvEscape(schema._config._name) << ','
+		<< csvEscape(schema._path) << ','
+		<< csvEscape(workload._name) << ','
 		<< csvEscape(scoreStage) << ','
 		<< queryId << ','
 		<< csvEscape(queryType) << ',';
@@ -2939,17 +2939,17 @@ static void appendQueryTraceRow(
 	output
 		<< radius << ','
 		<< k << ','
-		<< stats.elapsedMs << ','
-		<< stats.visitedNodes << ','
-		<< stats.testedPoints << ','
-		<< stats.returnedPoints << ','
-		<< stats.fullyContainedNodes << ','
-		<< csvEscape(formatDepthBreakdown(stats.breakdown)) << ','
-		<< csvEscape(formatMapBreakdown(stats.breakdown.visitedByStructure)) << ','
-		<< csvEscape(formatMapBreakdown(stats.breakdown.testedPointsByStructure)) << ','
-		<< csvEscape(formatMapBreakdown(stats.breakdown.fullyContainedByStructure)) << ','
+		<< stats._elapsedMs << ','
+		<< stats._visitedNodes << ','
+		<< stats._testedPoints << ','
+		<< stats._returnedPoints << ','
+		<< stats._fullyContainedNodes << ','
+		<< csvEscape(formatDepthBreakdown(stats._breakdown)) << ','
+		<< csvEscape(formatMapBreakdown(stats._breakdown._visitedByStructure)) << ','
+		<< csvEscape(formatMapBreakdown(stats._breakdown._testedPointsByStructure)) << ','
+		<< csvEscape(formatMapBreakdown(stats._breakdown._fullyContainedByStructure)) << ','
 		<< csvEscape(backend) << ','
-		<< workload.querySeed << '\n';
+		<< workload._querySeed << '\n';
 }
 
 static void appendSchemaQueryTrace(
@@ -2962,7 +2962,7 @@ static void appendSchemaQueryTrace(
 	const std::string& backend,
 	const std::string& scoreStage)
 {
-	if (tracePath.empty() || run.samples.empty())
+	if (tracePath.empty() || run._samples.empty())
 		return;
 
 	createParentDirectory(tracePath);
@@ -2974,14 +2974,14 @@ static void appendSchemaQueryTrace(
 	if (writeHeader)
 		writeQueryTraceHeader(output);
 
-	if (!prepared.cpuQueries.empty())
+	if (!prepared._cpuQueries.empty())
 	{
-		const size_t count = std::min(prepared.cpuQueries.size(), run.samples.size());
+		const size_t count = std::min(prepared._cpuQueries.size(), run._samples.size());
 		for (size_t i = 0; i < count; ++i)
 		{
-			const PreparedCpuQuery& query = prepared.cpuQueries[i];
-			const bool hasBounds = query.kind == PreparedQueryKind::Range;
-			const bool hasCenter = query.kind == PreparedQueryKind::Radius || query.kind == PreparedQueryKind::Knn;
+			const PreparedCpuQuery& query = prepared._cpuQueries[i];
+			const bool hasBounds = query._kind == PreparedQueryKind::Range;
+			const bool hasCenter = query._kind == PreparedQueryKind::Radius || query._kind == PreparedQueryKind::Knn;
 			appendQueryTraceRow(
 				output,
 				dataset,
@@ -2989,25 +2989,25 @@ static void appendSchemaQueryTrace(
 				workload,
 				scoreStage,
 				i,
-				queryKindName(query.kind),
-				query.stratum,
-				hasBounds ? &query.bounds : nullptr,
+				queryKindName(query._kind),
+				query._stratum,
+				hasBounds ? &query._bounds : nullptr,
 				hasCenter ? &query.center : nullptr,
-				query.kind == PreparedQueryKind::Radius ? query.radius : 0.0f,
-				query.kind == PreparedQueryKind::Knn ? workload.knnK : size_t(0),
-				run.samples[i],
+				query._kind == PreparedQueryKind::Radius ? query._radius : 0.0f,
+				query._kind == PreparedQueryKind::Knn ? workload._knnK : size_t(0),
+				run._samples[i],
 				backend);
 		}
 		return;
 	}
 
-	const size_t count = std::min(prepared.cudaQueries.size(), run.samples.size());
+	const size_t count = std::min(prepared._cudaQueries.size(), run._samples.size());
 	for (size_t i = 0; i < count; ++i)
 	{
-		const PointGpu::Query& query = prepared.cudaQueries[i];
-		const std::string queryStratum = i < prepared.cudaStrata.size() ? prepared.cudaStrata[i] : std::string();
-		const bool hasBounds = query.type == PointGpu::QueryType::Range || query.type == PointGpu::QueryType::CountRange;
-		const bool hasCenter = query.type == PointGpu::QueryType::Radius || query.type == PointGpu::QueryType::Knn;
+		const PointGpu::Query& query = prepared._cudaQueries[i];
+		const std::string queryStratum = i < prepared._cudaStrata.size() ? prepared._cudaStrata[i] : std::string();
+		const bool hasBounds = query._type == PointGpu::QueryType::Range || query._type == PointGpu::QueryType::CountRange;
+		const bool hasCenter = query._type == PointGpu::QueryType::Radius || query._type == PointGpu::QueryType::Knn;
 		appendQueryTraceRow(
 			output,
 			dataset,
@@ -3015,13 +3015,13 @@ static void appendSchemaQueryTrace(
 			workload,
 			scoreStage,
 			i,
-			queryKindName(query.type),
+			queryKindName(query._type),
 			queryStratum,
-			hasBounds ? &query.bounds : nullptr,
+			hasBounds ? &query._bounds : nullptr,
 			hasCenter ? &query.center : nullptr,
-			query.type == PointGpu::QueryType::Radius ? query.radius : 0.0f,
-			query.type == PointGpu::QueryType::Knn ? query.k : size_t(0),
-			run.samples[i],
+			query._type == PointGpu::QueryType::Radius ? query._radius : 0.0f,
+			query._type == PointGpu::QueryType::Knn ? query._k : size_t(0),
+			run._samples[i],
 			backend);
 	}
 }
@@ -3039,20 +3039,20 @@ static void fillLatencyReliability(Experiments::QueryMetrics& metrics, const std
 		variance += (value - mean) * (value - mean);
 	variance /= n;
 
-	metrics.measurementRepeats = repeatMeanLatencies.size();
-	metrics.latencyMeanMs = mean;
-	metrics.latencyStdDevMs = std::sqrt(variance);
-	metrics.latencyCoeffVar = mean > 0.0 ? metrics.latencyStdDevMs / mean : 0.0;
+	metrics._measurementRepeats = repeatMeanLatencies.size();
+	metrics._latencyMeanMs = mean;
+	metrics._latencyStdDevMs = std::sqrt(variance);
+	metrics._latencyCoeffVar = mean > 0.0 ? metrics._latencyStdDevMs / mean : 0.0;
 	const auto [ciMean, ciLow, ciHigh] = Experiments::bootstrapMeanCI(repeatMeanLatencies, 1000, 0x5EED1234u);
 	(void)ciMean;
-	metrics.latencyCiLowMs = ciLow;
-	metrics.latencyCiHighMs = ciHigh;
+	metrics._latencyCiLowMs = ciLow;
+	metrics._latencyCiHighMs = ciHigh;
 }
 
 static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index, size_t repeats = 1)
 {
 	WorkloadRun result;
-	if (prepared.cpuQueries.empty())
+	if (prepared._cpuQueries.empty())
 		return result;
 
 	std::vector<PointSpatialIndex::QueryStats> samples;
@@ -3060,72 +3060,72 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 	std::vector<PointSpatialIndex::QueryStats> radiusSamples;
 	std::vector<PointSpatialIndex::QueryStats> knnSamples;
 	std::map<std::string, std::vector<PointSpatialIndex::QueryStats>> stratumSamples;
-	samples.reserve(prepared.cpuQueries.size());
-	rangeSamples.reserve(prepared.rangeQueries);
-	radiusSamples.reserve(prepared.radiusQueries);
-	knnSamples.reserve(prepared.knnQueries);
+	samples.reserve(prepared._cpuQueries.size());
+	rangeSamples.reserve(prepared._rangeQueries);
+	radiusSamples.reserve(prepared._radiusQueries);
+	knnSamples.reserve(prepared._knnQueries);
 
-	for (const PreparedCpuQuery& query : prepared.cpuQueries)
+	for (const PreparedCpuQuery& query : prepared._cpuQueries)
 	{
-		if (query.kind == PreparedQueryKind::Range)
+		if (query._kind == PreparedQueryKind::Range)
 		{
-			PointSpatialIndex::QueryStats stats = index.rangeQuery(query.bounds).stats;
-			stratumSamples[query.stratum].push_back(stats);
+			PointSpatialIndex::QueryStats stats = index.rangeQuery(query._bounds)._stats;
+			stratumSamples[query._stratum].push_back(stats);
 			rangeSamples.push_back(stats);
 			samples.push_back(std::move(stats));
-			++result.rangeQueries;
+			++result._rangeQueries;
 			continue;
 		}
 
-		if (query.kind == PreparedQueryKind::Radius)
+		if (query._kind == PreparedQueryKind::Radius)
 		{
-			PointSpatialIndex::QueryStats stats = index.radiusQuery(query.center, query.radius).stats;
-			stratumSamples[query.stratum].push_back(stats);
+			PointSpatialIndex::QueryStats stats = index.radiusQuery(query.center, query._radius)._stats;
+			stratumSamples[query._stratum].push_back(stats);
 			radiusSamples.push_back(stats);
 			samples.push_back(std::move(stats));
-			++result.radiusQueries;
+			++result._radiusQueries;
 			continue;
 		}
 
-		PointSpatialIndex::QueryStats stats = index.knnQuery(query.center, knnK).stats;
-		stratumSamples[query.stratum].push_back(stats);
+		PointSpatialIndex::QueryStats stats = index.knnQuery(query.center, knnK)._stats;
+		stratumSamples[query._stratum].push_back(stats);
 		knnSamples.push_back(stats);
 		samples.push_back(std::move(stats));
-		++result.knnQueries;
+		++result._knnQueries;
 	}
 
-	result.samples = samples;
-	result.metrics = Experiments::summarizeQueryStats(samples);
-	result.rangeMetrics = Experiments::summarizeQueryStats(rangeSamples);
-	result.radiusMetrics = Experiments::summarizeQueryStats(radiusSamples);
-	result.knnMetrics = Experiments::summarizeQueryStats(knnSamples);
+	result._samples = samples;
+	result._metrics = Experiments::summarizeQueryStats(samples);
+	result._rangeMetrics = Experiments::summarizeQueryStats(rangeSamples);
+	result._radiusMetrics = Experiments::summarizeQueryStats(radiusSamples);
+	result._knnMetrics = Experiments::summarizeQueryStats(knnSamples);
 	for (const auto& [name, stratum] : stratumSamples)
 	{
 		if (!name.empty())
-			result.stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
+			result._stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
 	}
-	result.stratumSummary = formatStratumSummary(result.stratumMetrics);
+	result._stratumSummary = formatStratumSummary(result._stratumMetrics);
 
 	if (repeats > 1)
 	{
 		std::vector<double> repeatMeanLatencies;
 		repeatMeanLatencies.reserve(repeats);
-		repeatMeanLatencies.push_back(result.metrics.averageLatencyMs);
+		repeatMeanLatencies.push_back(result._metrics._averageLatencyMs);
 		for (size_t r = 1; r < repeats; ++r)
 		{
 			double totalMs = 0.0;
-			for (const PreparedCpuQuery& query : prepared.cpuQueries)
+			for (const PreparedCpuQuery& query : prepared._cpuQueries)
 			{
-				if (query.kind == PreparedQueryKind::Range)
-					totalMs += index.rangeQuery(query.bounds).stats.elapsedMs;
-				else if (query.kind == PreparedQueryKind::Radius)
-					totalMs += index.radiusQuery(query.center, query.radius).stats.elapsedMs;
+				if (query._kind == PreparedQueryKind::Range)
+					totalMs += index.rangeQuery(query._bounds)._stats._elapsedMs;
+				else if (query._kind == PreparedQueryKind::Radius)
+					totalMs += index.radiusQuery(query.center, query._radius)._stats._elapsedMs;
 				else
-					totalMs += index.knnQuery(query.center, knnK).stats.elapsedMs;
+					totalMs += index.knnQuery(query.center, knnK)._stats._elapsedMs;
 			}
-			repeatMeanLatencies.push_back(totalMs / static_cast<double>(prepared.cpuQueries.size()));
+			repeatMeanLatencies.push_back(totalMs / static_cast<double>(prepared._cpuQueries.size()));
 		}
-		fillLatencyReliability(result.metrics, repeatMeanLatencies);
+		fillLatencyReliability(result._metrics, repeatMeanLatencies);
 	}
 
 	return result;
@@ -3139,34 +3139,34 @@ static WorkloadRun runCudaWorkloadProfile(
 	size_t repeats = 1)
 {
 	WorkloadRun result;
-	if (prepared.cudaQueries.empty())
+	if (prepared._cudaQueries.empty())
 		return result;
 
-	const PointGpu::QueryResult queryResult = index.query(prepared.cudaQueries, cudaOptions);
-	result.metrics = queryResult.metrics;
-	result.gpuQueryMs = queryResult.gpuQueryTimeMs;
-	result.samples.reserve(queryResult.samples.size());
+	const PointGpu::QueryResult queryResult = index.query(prepared._cudaQueries, cudaOptions);
+	result._metrics = queryResult._metrics;
+	result._gpuQueryMs = queryResult._gpuQueryTimeMs;
+	result._samples.reserve(queryResult._samples.size());
 	std::vector<PointSpatialIndex::QueryStats> rangeSamples;
 	std::vector<PointSpatialIndex::QueryStats> countRangeSamples;
 	std::vector<PointSpatialIndex::QueryStats> radiusSamples;
 	std::vector<PointSpatialIndex::QueryStats> knnSamples;
 	std::map<std::string, std::vector<PointSpatialIndex::QueryStats>> stratumSamples;
-	rangeSamples.reserve(queryResult.rangeQueries);
-	countRangeSamples.reserve(queryResult.countRangeQueries);
-	radiusSamples.reserve(queryResult.radiusQueries);
-	knnSamples.reserve(queryResult.knnQueries);
-	const size_t sampleCount = std::min(queryResult.samples.size(), prepared.cudaQueries.size());
+	rangeSamples.reserve(queryResult._rangeQueries);
+	countRangeSamples.reserve(queryResult._countRangeQueries);
+	radiusSamples.reserve(queryResult._radiusQueries);
+	knnSamples.reserve(queryResult._knnQueries);
+	const size_t sampleCount = std::min(queryResult._samples.size(), prepared._cudaQueries.size());
 	for (size_t i = 0; i < sampleCount; ++i)
 	{
-		const PointGpu::QuerySample& sample = queryResult.samples[i];
+		const PointGpu::QuerySample& sample = queryResult._samples[i];
 		PointSpatialIndex::QueryStats stats;
-		stats.visitedNodes = sample.visitedNodes;
-		stats.testedPoints = sample.testedPoints;
-		stats.returnedPoints = sample.returnedPoints;
-		stats.elapsedMs = sample.elapsedMs;
-		if (i < prepared.cudaStrata.size() && !prepared.cudaStrata[i].empty())
-			stratumSamples[prepared.cudaStrata[i]].push_back(stats);
-		switch (prepared.cudaQueries[i].type)
+		stats._visitedNodes = sample._visitedNodes;
+		stats._testedPoints = sample._testedPoints;
+		stats._returnedPoints = sample._returnedPoints;
+		stats._elapsedMs = sample._elapsedMs;
+		if (i < prepared._cudaStrata.size() && !prepared._cudaStrata[i].empty())
+			stratumSamples[prepared._cudaStrata[i]].push_back(stats);
+		switch (prepared._cudaQueries[i]._type)
 		{
 		case PointGpu::QueryType::Range:
 			rangeSamples.push_back(stats);
@@ -3181,31 +3181,31 @@ static WorkloadRun runCudaWorkloadProfile(
 			knnSamples.push_back(stats);
 			break;
 		}
-		result.samples.push_back(stats);
+		result._samples.push_back(stats);
 	}
-	result.rangeQueries = queryResult.rangeQueries;
-	result.countRangeQueries = queryResult.countRangeQueries;
-	result.radiusQueries = queryResult.radiusQueries;
-	result.knnQueries = queryResult.knnQueries;
-	result.rangeMetrics = Experiments::summarizeQueryStats(rangeSamples);
-	result.countRangeMetrics = Experiments::summarizeQueryStats(countRangeSamples);
-	result.radiusMetrics = Experiments::summarizeQueryStats(radiusSamples);
-	result.knnMetrics = Experiments::summarizeQueryStats(knnSamples);
+	result._rangeQueries = queryResult._rangeQueries;
+	result._countRangeQueries = queryResult._countRangeQueries;
+	result._radiusQueries = queryResult._radiusQueries;
+	result._knnQueries = queryResult._knnQueries;
+	result._rangeMetrics = Experiments::summarizeQueryStats(rangeSamples);
+	result._countRangeMetrics = Experiments::summarizeQueryStats(countRangeSamples);
+	result._radiusMetrics = Experiments::summarizeQueryStats(radiusSamples);
+	result._knnMetrics = Experiments::summarizeQueryStats(knnSamples);
 	for (const auto& [name, stratum] : stratumSamples)
-		result.stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
-	result.stratumSummary = formatStratumSummary(result.stratumMetrics);
+		result._stratumMetrics[name] = Experiments::summarizeQueryStats(stratum);
+	result._stratumSummary = formatStratumSummary(result._stratumMetrics);
 
 	if (repeats > 1)
 	{
 		std::vector<double> repeatMeanLatencies;
 		repeatMeanLatencies.reserve(repeats);
-		repeatMeanLatencies.push_back(result.metrics.averageLatencyMs);
+		repeatMeanLatencies.push_back(result._metrics._averageLatencyMs);
 		for (size_t r = 1; r < repeats; ++r)
 		{
-			const PointGpu::QueryResult rerun = index.query(prepared.cudaQueries, cudaOptions);
-			repeatMeanLatencies.push_back(rerun.metrics.averageLatencyMs);
+			const PointGpu::QueryResult rerun = index.query(prepared._cudaQueries, cudaOptions);
+			repeatMeanLatencies.push_back(rerun._metrics._averageLatencyMs);
 		}
-		fillLatencyReliability(result.metrics, repeatMeanLatencies);
+		fillLatencyReliability(result._metrics, repeatMeanLatencies);
 	}
 
 	return result;
@@ -3215,11 +3215,11 @@ static SchemaConfig effectiveSchemaForEvaluation(
 	const Experiments::SchemaCandidate& schema,
 	const Experiments::SchemaSearchOptions& options)
 {
-	SchemaConfig config = schema.config;
-	if (!useCudaEvaluator(options) && options.enableLeafMicroIndexes)
+	SchemaConfig config = schema._config;
+	if (!useCudaEvaluator(options) && options._enableLeafMicroIndexes)
 	{
-		config.buildPolicy.enableLeafMicroIndexes = true;
-		config.buildPolicy.leafMicroIndexThreshold = options.leafMicroIndexThreshold;
+		config._buildPolicy._enableLeafMicroIndexes = true;
+		config._buildPolicy._leafMicroIndexThreshold = options._leafMicroIndexThreshold;
 	}
 	return config;
 }
@@ -3255,103 +3255,103 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 		const PointGpu::Options cudaOptions = cudaOptionsFrom(options);
 		const std::string currentSignature = schemaSignature(effectiveConfig);
 		auto applyBuildResult = [&](const PointGpu::BuildResult& build) {
-			buildMetrics = build.metrics;
-			cudaDevice = build.device;
-			cudaBuilder = build.builder;
-			gpuUploadMs = build.uploadTimeMs;
-			gpuBuildMs = build.gpuBuildTimeMs;
-			gpuMemoryBytes = build.gpuMemoryBytes;
-			if (build.activeStructureTypes > 0)
+			buildMetrics = build._metrics;
+			cudaDevice = build._device;
+			cudaBuilder = build._builder;
+			gpuUploadMs = build._uploadTimeMs;
+			gpuBuildMs = build._gpuBuildTimeMs;
+			gpuMemoryBytes = build._gpuMemoryBytes;
+			if (build._activeStructureTypes > 0)
 			{
-				activeStats.activeStructureTypes = build.activeStructureTypes;
-				activeStats.nestedActiveFraction = build.nestedActiveFraction;
-				activeStats.summary = build.activeStructureSummary;
+				activeStats._activeStructureTypes = build._activeStructureTypes;
+				activeStats._nestedActiveFraction = build._nestedActiveFraction;
+				activeStats._summary = build._activeStructureSummary;
 			}
 		};
 
-		if (isBIHBuilder(cudaOptions.builder))
+		if (isBIHBuilder(cudaOptions._builder))
 		{
 			PointGpu::BIH localIndex;
 			PointGpu::BIH* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->bih, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_bih, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
-		else if (isHGridBuilder(cudaOptions.builder))
+		else if (isHGridBuilder(cudaOptions._builder))
 		{
 			PointGpu::HGrid localIndex;
 			PointGpu::HGrid* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->hgrid, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_hgrid, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
-		else if (isKDTreeBuilder(cudaOptions.builder))
+		else if (isKDTreeBuilder(cudaOptions._builder))
 		{
 			PointGpu::KDTree localIndex;
 			PointGpu::KDTree* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->kdTree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_kdTree, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
-		else if (isOctreeBuilder(cudaOptions.builder))
+		else if (isOctreeBuilder(cudaOptions._builder))
 		{
 			PointGpu::Octree localIndex;
 			PointGpu::Octree* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->octree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_octree, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
-		else if (isQuadTreeBuilder(cudaOptions.builder))
+		else if (isQuadTreeBuilder(cudaOptions._builder))
 		{
 			PointGpu::QuadTree localIndex;
 			PointGpu::QuadTree* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->quadTree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_quadTree, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
-		else if (isRegularGridBuilder(cudaOptions.builder))
+		else if (isRegularGridBuilder(cudaOptions._builder))
 		{
 			PointGpu::RegularGrid localIndex;
 			PointGpu::RegularGrid* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->regularGrid, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_regularGrid, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
-		else if (isMixedBuilder(cudaOptions.builder))
+		else if (isMixedBuilder(cudaOptions._builder))
 		{
 			PointGpu::MixedTree localIndex;
 			PointGpu::MixedTree* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->mixedTree, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_mixedTree, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
 		else
 		{
@@ -3359,90 +3359,90 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 			PointGpu::LBVH* indexPtr = &localIndex;
 			PointGpu::BuildResult build;
 			if (cudaCacheEntry)
-				build = cudaBuildOrReuse(cudaCacheEntry->lbvh, currentSignature, dataset.cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
+				build = cudaBuildOrReuse(cudaCacheEntry->_lbvh, currentSignature, dataset._cloud, effectiveConfig, cudaOptions, *cudaCacheEntry, indexPtr);
 			else
-				build = localIndex.build(dataset.cloud, effectiveConfig, cudaOptions);
+				build = localIndex.build(dataset._cloud, effectiveConfig, cudaOptions);
 			applyBuildResult(build);
-			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options.measurementRepeats);
+			workloadRun = runCudaWorkloadProfile(preparedWorkload, *indexPtr, cudaOptions, options._measurementRepeats);
 		}
 	}
 	else
 	{
 		PointSpatialIndex index;
 		const auto buildBegin = std::chrono::steady_clock::now();
-		index.build(dataset.cloud, effectiveConfig);
+		index.build(dataset._cloud, effectiveConfig);
 		const auto buildEnd = std::chrono::steady_clock::now();
 
 		buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd), effectiveConfig);
 		activeStats = collectActiveStructureStats(index.root(), effectiveConfig);
-		workloadRun = runWorkloadProfile(preparedWorkload, workload.knnK, index, options.measurementRepeats);
+		workloadRun = runWorkloadProfile(preparedWorkload, workload._knnK, index, options._measurementRepeats);
 	}
 
 	appendSchemaQueryTrace(
-		options.queryTracePath,
+		options._queryTracePath,
 		dataset,
 		schema,
 		workload,
 		preparedWorkload,
 		workloadRun,
 		backend,
-		options.scoreStage.empty() ? std::string("final") : options.scoreStage);
+		options._scoreStage.empty() ? std::string("final") : options._scoreStage);
 
 	Experiments::SchemaSearchRecord record;
-	record.datasetName = dataset.name;
-	record.datasetSource = dataset.source;
-	record.numPoints = dataset.cloud.size();
-	record.workloadName = workload.name;
-	record.rangeWeight = workload.rangeWeight;
-	record.radiusWeight = workload.radiusWeight;
-	record.knnWeight = workload.knnWeight;
-	record.numQueries = workload.numQueries;
-	record.knnK = workload.knnK;
-	record.querySeed = workload.querySeed;
-	record.schemaName = effectiveConfig.name;
-	record.schemaPath = schema.path;
-	record.buildMetrics = buildMetrics;
-	record.queryMetrics = workloadRun.metrics;
-	record.rangeMetrics = workloadRun.rangeMetrics;
-	record.countRangeMetrics = workloadRun.countRangeMetrics;
-	record.radiusMetrics = workloadRun.radiusMetrics;
-	record.knnMetrics = workloadRun.knnMetrics;
-	record.rangeQueries = workloadRun.rangeQueries;
-	record.countRangeQueries = workloadRun.countRangeQueries;
-	record.radiusQueries = workloadRun.radiusQueries;
-	record.knnQueries = workloadRun.knnQueries;
-	record.queryStrataSummary = workloadRun.stratumSummary;
-	record.weights = effectiveScoreWeights(workload, options);
-	record.scoreMode = scoreModeForWeights(record.weights);
-	record.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-	record.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(record.weights);
-	record.score = Experiments::computeSchemaSearchScore(
-		record.buildMetrics,
-		record.queryMetrics,
-		record.weights,
-		record.scoreMemoryMb,
-		record.scoreImbalancePenalty);
-	record.pointFeatures = pointFeatures;
-	record.workloadFeatures = workloadFeatures;
-	record.estimatedQueryCost = Experiments::estimateSchemaQueryCost(
-		effectiveConfig, pointFeatures, workloadFeatures, record.weights.visitProxyAlpha);
-	record.backend = backend;
-	record.knnBackend = record.knnQueries == 0
+	record._datasetName = dataset._name;
+	record._datasetSource = dataset._source;
+	record._numPoints = dataset._cloud.size();
+	record._workloadName = workload._name;
+	record._rangeWeight = workload._rangeWeight;
+	record._radiusWeight = workload._radiusWeight;
+	record._knnWeight = workload._knnWeight;
+	record._numQueries = workload._numQueries;
+	record._knnK = workload._knnK;
+	record._querySeed = workload._querySeed;
+	record._schemaName = effectiveConfig._name;
+	record._schemaPath = schema._path;
+	record._buildMetrics = buildMetrics;
+	record._queryMetrics = workloadRun._metrics;
+	record._rangeMetrics = workloadRun._rangeMetrics;
+	record._countRangeMetrics = workloadRun._countRangeMetrics;
+	record._radiusMetrics = workloadRun._radiusMetrics;
+	record._knnMetrics = workloadRun._knnMetrics;
+	record._rangeQueries = workloadRun._rangeQueries;
+	record._countRangeQueries = workloadRun._countRangeQueries;
+	record._radiusQueries = workloadRun._radiusQueries;
+	record._knnQueries = workloadRun._knnQueries;
+	record._queryStrataSummary = workloadRun._stratumSummary;
+	record._weights = effectiveScoreWeights(workload, options);
+	record._scoreMode = scoreModeForWeights(record._weights);
+	record._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
+	record._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(record._weights);
+	record._score = Experiments::computeSchemaSearchScore(
+		record._buildMetrics,
+		record._queryMetrics,
+		record._weights,
+		record._scoreMemoryMb,
+		record._scoreImbalancePenalty);
+	record._pointFeatures = pointFeatures;
+	record._workloadFeatures = workloadFeatures;
+	record._estimatedQueryCost = Experiments::estimateSchemaQueryCost(
+		effectiveConfig, pointFeatures, workloadFeatures, record._weights._visitProxyAlpha);
+	record._backend = backend;
+	record._knnBackend = record._knnQueries == 0
 		? "none"
 		: (backend == "cuda" ? "bruteforce_gpu_scan" : "cpu_tree_knn");
-	record.cudaDevice = cudaDevice;
-	record.cudaBuilder = cudaBuilder;
-	record.gpuUploadMs = gpuUploadMs;
-	record.gpuBuildMs = gpuBuildMs;
-	record.gpuQueryMs = workloadRun.gpuQueryMs;
-	record.gpuMemoryBytes = gpuMemoryBytes;
-	record.conditionalLevels = schemaConditionalLevels(effectiveConfig);
-	record.conditionFields = schemaConditionFields(effectiveConfig);
-	record.conditionSummary = schemaConditionSummary(effectiveConfig);
-	record.isBaseline = schema.isBaseline;
-	record.activeStructureTypes = activeStats.activeStructureTypes;
-	record.nestedActiveFraction = activeStats.nestedActiveFraction;
-	record.activeStructureSummary = activeStats.summary;
+	record._cudaDevice = cudaDevice;
+	record._cudaBuilder = cudaBuilder;
+	record._gpuUploadMs = gpuUploadMs;
+	record._gpuBuildMs = gpuBuildMs;
+	record._gpuQueryMs = workloadRun._gpuQueryMs;
+	record._gpuMemoryBytes = gpuMemoryBytes;
+	record._conditionalLevels = schemaConditionalLevels(effectiveConfig);
+	record._conditionFields = schemaConditionFields(effectiveConfig);
+	record._conditionSummary = schemaConditionSummary(effectiveConfig);
+	record._isBaseline = schema._isBaseline;
+	record._activeStructureTypes = activeStats._activeStructureTypes;
+	record._nestedActiveFraction = activeStats._nestedActiveFraction;
+	record._activeStructureSummary = activeStats._summary;
 	return record;
 }
 
@@ -3456,54 +3456,54 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidateCached(
 	const Experiments::SchemaSearchOptions& options,
 	CudaIndexCacheEntry* cudaCacheEntry = nullptr)
 {
-	Experiments::EvaluationCache* cache = options.scoreCache;
-	if (cache && cache->enabled() && !options.rebuildScoreCache && options.queryTracePath.empty())
+	Experiments::EvaluationCache* cache = options._scoreCache;
+	if (cache && cache->enabled() && !options._rebuildScoreCache && options._queryTracePath.empty())
 	{
 		const std::string backendName = useCudaEvaluator(options) ? "cuda" : "cpu";
 		const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
 		std::string cudaBuilder;
 		if (useCudaEvaluator(options))
-			cudaBuilder = cudaOptionsFrom(options).builder;
+			cudaBuilder = cudaOptionsFrom(options)._builder;
 
 		const Experiments::EvaluationCacheKey key = Experiments::makeEvaluationCacheKey(
 			schemaSignature(effectiveConfig),
-			dataset.name,
-			dataset.cloud.size(),
-			dataset.cloud.bounds().min(),
-			dataset.cloud.bounds().max(),
+			dataset._name,
+			dataset._cloud.size(),
+			dataset._cloud.bounds().min(),
+			dataset._cloud.bounds().max(),
 			workload,
 			backendName,
 			cudaBuilder,
 			effectiveScoreWeights(workload, options));
 
 		Experiments::SchemaSearchRecord cached;
-		cached.datasetName = dataset.name;
-		cached.datasetSource = dataset.source;
-		cached.numPoints = dataset.cloud.size();
-		cached.workloadName = workload.name;
-		cached.rangeWeight = workload.rangeWeight;
-		cached.radiusWeight = workload.radiusWeight;
-		cached.knnWeight = workload.knnWeight;
-		cached.numQueries = workload.numQueries;
-		cached.knnK = workload.knnK;
-		cached.querySeed = workload.querySeed;
-		cached.schemaName = schema.config.name;
-		cached.schemaPath = schema.path;
-		cached.weights = effectiveScoreWeights(workload, options);
-		cached.scoreMode = scoreModeForWeights(cached.weights);
-		cached.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-		cached.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(cached.weights);
-		cached.pointFeatures = pointFeatures;
-		cached.workloadFeatures = workloadFeatures;
-		cached.isBaseline = schema.isBaseline;
+		cached._datasetName = dataset._name;
+		cached._datasetSource = dataset._source;
+		cached._numPoints = dataset._cloud.size();
+		cached._workloadName = workload._name;
+		cached._rangeWeight = workload._rangeWeight;
+		cached._radiusWeight = workload._radiusWeight;
+		cached._knnWeight = workload._knnWeight;
+		cached._numQueries = workload._numQueries;
+		cached._knnK = workload._knnK;
+		cached._querySeed = workload._querySeed;
+		cached._schemaName = schema._config._name;
+		cached._schemaPath = schema._path;
+		cached._weights = effectiveScoreWeights(workload, options);
+		cached._scoreMode = scoreModeForWeights(cached._weights);
+		cached._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
+		cached._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(cached._weights);
+		cached._pointFeatures = pointFeatures;
+		cached._workloadFeatures = workloadFeatures;
+		cached._isBaseline = schema._isBaseline;
 
 		if (cache->tryGet(key, cached))
 		{
-			cached.isBaseline = schema.isBaseline;
-			cached.scoreMode = scoreModeForWeights(effectiveScoreWeights(workload, options));
-			cached.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-			cached.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(effectiveScoreWeights(workload, options));
-			if (options.deepNestedSearch && !useCudaEvaluator(options) && cached.activeStructureTypes == 0)
+			cached._isBaseline = schema._isBaseline;
+			cached._scoreMode = scoreModeForWeights(effectiveScoreWeights(workload, options));
+			cached._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
+			cached._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(effectiveScoreWeights(workload, options));
+			if (options._deepNestedSearch && !useCudaEvaluator(options) && cached._activeStructureTypes == 0)
 			{
 				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidate(
 					dataset, pointFeatures, workload, workloadFeatures, preparedWorkload, schema, options, cudaCacheEntry);
@@ -3531,8 +3531,8 @@ static EvaluatedCandidate evaluateCandidate(
 	CudaIndexCache* cudaCache = nullptr)
 {
 	EvaluatedCandidate evaluation;
-	evaluation.candidate = candidate;
-	evaluation.records.reserve(datasets.size() * workloads.size());
+	evaluation._candidate = candidate;
+	evaluation._records.reserve(datasets.size() * workloads.size());
 
 	double scoreSum = 0.0;
 	size_t scoreCount = 0;
@@ -3544,56 +3544,56 @@ static EvaluatedCandidate evaluateCandidate(
 			const Experiments::ScoreWeights weights = effectiveScoreWeights(workload, options);
 			const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(workload, weights);
 			CudaIndexCacheEntry* cudaEntry = cudaCache && useCudaEvaluator(options)
-				? &(*cudaCache)[datasetContext.dataset]
+				? &(*cudaCache)[datasetContext._dataset]
 				: nullptr;
 
 			// Wrap each per-(dataset, workload) evaluation so a single failed candidate gets a sentinel infinite-score record instead of killing the whole optimizer run.
 			try
 			{
 				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidateCached(
-					*datasetContext.dataset,
-					datasetContext.features,
+					*datasetContext._dataset,
+					datasetContext._features,
 					workload,
 					workloadFeatures,
-					datasetContext.preparedWorkloads[workloadIndex],
+					datasetContext._preparedWorkloads[workloadIndex],
 					candidate,
 					options,
 					cudaEntry);
-				scoreSum += record.score;
+				scoreSum += record._score;
 				++scoreCount;
-				evaluation.records.push_back(std::move(record));
+				evaluation._records.push_back(std::move(record));
 			}
 			catch (const std::exception& exception)
 			{
-				std::cerr << "    candidate '" << candidate.config.name
-					<< "' failed on dataset '" << datasetContext.dataset->name
-					<< "' / workload '" << workload.name << "': " << exception.what() << '\n';
+				std::cerr << "    candidate '" << candidate._config._name
+					<< "' failed on dataset '" << datasetContext._dataset->_name
+					<< "' / workload '" << workload._name << "': " << exception.what() << '\n';
 				Experiments::SchemaSearchRecord failed;
-				failed.datasetName = datasetContext.dataset->name;
-				failed.datasetSource = datasetContext.dataset->source;
-				failed.numPoints = datasetContext.dataset->cloud.size();
-				failed.workloadName = workload.name;
-				failed.rangeWeight = workload.rangeWeight;
-				failed.radiusWeight = workload.radiusWeight;
-				failed.knnWeight = workload.knnWeight;
-				failed.numQueries = workload.numQueries;
-				failed.knnK = workload.knnK;
-				failed.querySeed = workload.querySeed;
-				failed.schemaName = candidate.config.name;
-				failed.schemaPath = candidate.path;
-				failed.weights = weights;
-				failed.scoreMode = scoreModeForWeights(failed.weights);
-				failed.scoreStage = options.scoreStage.empty() ? std::string("final") : options.scoreStage;
-				failed.scoreIsFinalLatency = options.scoreIsFinalLatency && scoreWeightsAreDefault(failed.weights);
-				failed.pointFeatures = datasetContext.features;
-				failed.workloadFeatures = workloadFeatures;
-				failed.backend = useCudaEvaluator(options) ? "cuda_failed" : "cpu_failed";
-				failed.knnBackend = workload.knnWeight > 0.0
+				failed._datasetName = datasetContext._dataset->_name;
+				failed._datasetSource = datasetContext._dataset->_source;
+				failed._numPoints = datasetContext._dataset->_cloud.size();
+				failed._workloadName = workload._name;
+				failed._rangeWeight = workload._rangeWeight;
+				failed._radiusWeight = workload._radiusWeight;
+				failed._knnWeight = workload._knnWeight;
+				failed._numQueries = workload._numQueries;
+				failed._knnK = workload._knnK;
+				failed._querySeed = workload._querySeed;
+				failed._schemaName = candidate._config._name;
+				failed._schemaPath = candidate._path;
+				failed._weights = weights;
+				failed._scoreMode = scoreModeForWeights(failed._weights);
+				failed._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
+				failed._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(failed._weights);
+				failed._pointFeatures = datasetContext._features;
+				failed._workloadFeatures = workloadFeatures;
+				failed._backend = useCudaEvaluator(options) ? "cuda_failed" : "cpu_failed";
+				failed._knnBackend = workload._knnWeight > 0.0
 					? (useCudaEvaluator(options) ? "bruteforce_gpu_scan" : "cpu_tree_knn")
 					: "none";
-				failed.score = std::numeric_limits<double>::infinity();
-				failed.isBaseline = candidate.isBaseline;
-				evaluation.records.push_back(std::move(failed));
+				failed._score = std::numeric_limits<double>::infinity();
+				failed._isBaseline = candidate._isBaseline;
+				evaluation._records.push_back(std::move(failed));
 			}
 		}
 	}
@@ -3667,131 +3667,131 @@ static void writeSearchRows(const std::string& csvPath, const std::vector<Experi
 	for (const Experiments::SchemaSearchRecord& record : records)
 	{
 		output
-			<< csvEscape(record.datasetName) << ','
-			<< csvEscape(record.datasetSource) << ','
-			<< record.numPoints << ','
-			<< csvEscape(record.workloadName) << ','
-			<< record.rangeWeight << ','
-			<< record.radiusWeight << ','
-			<< record.knnWeight << ','
-			<< record.numQueries << ','
-			<< record.knnK << ','
-			<< record.querySeed << ','
-			<< record.workloadFeatures.rangeScaleMin << ','
-			<< record.workloadFeatures.rangeScaleMax << ','
-			<< record.workloadFeatures.radiusScaleMin << ','
-			<< record.workloadFeatures.radiusScaleMax << ','
-			<< record.pointFeatures.sampleSize << ','
-			<< record.pointFeatures.bboxX << ','
-			<< record.pointFeatures.bboxY << ','
-			<< record.pointFeatures.bboxZ << ','
-			<< record.pointFeatures.aspectXY << ','
-			<< record.pointFeatures.aspectXZ << ','
-			<< record.pointFeatures.aspectYZ << ','
-			<< record.pointFeatures.densityBbox << ','
-			<< record.pointFeatures.heightMean << ','
-			<< record.pointFeatures.heightStd << ','
-			<< record.pointFeatures.heightRange << ','
-			<< record.pointFeatures.covEig0 << ','
-			<< record.pointFeatures.covEig1 << ','
-			<< record.pointFeatures.covEig2 << ','
-			<< record.pointFeatures.linearity << ','
-			<< record.pointFeatures.planarity << ','
-			<< record.pointFeatures.scattering << ','
-			<< record.pointFeatures.occupancyRatio8 << ','
-			<< record.pointFeatures.occupancyEntropy8 << ','
-			<< record.pointFeatures.densityCv8 << ','
-			<< record.pointFeatures.verticalityScore << ','
-			<< record.pointFeatures.flatnessScore << ','
-			<< record.workloadFeatures.wRange << ','
-			<< record.workloadFeatures.wRadius << ','
-			<< record.workloadFeatures.wKnn << ','
-			<< record.workloadFeatures.queryScaleMean << ','
-			<< record.workloadFeatures.queryScaleStd << ','
-			<< record.workloadFeatures.buildWeight << ','
-			<< record.workloadFeatures.memoryWeight << ','
-			<< csvEscape(record.schemaName) << ','
-			<< csvEscape(record.schemaPath) << ','
-			<< record.buildMetrics.buildTimeMs << ','
-			<< record.buildMetrics.numNodes << ','
-			<< record.buildMetrics.numLeaves << ','
-			<< record.buildMetrics.maxDepth << ','
-			<< record.buildMetrics.averageLeafOccupancy << ','
-			<< record.buildMetrics.maxLeafOccupancy << ','
-			<< record.buildMetrics.leafOccupancyP50 << ','
-			<< record.buildMetrics.leafOccupancyP90 << ','
-			<< record.buildMetrics.leafOccupancyP99 << ','
-			<< record.buildMetrics.averageDepth << ','
-			<< record.buildMetrics.averageFanout << ','
-			<< record.buildMetrics.maxFanout << ','
-			<< record.buildMetrics.emptyChildRatio << ','
-			<< record.buildMetrics.singleChildNodeCount << ','
-			<< record.buildMetrics.meanTightBoundsVolumeRatio << ','
-			<< record.buildMetrics.microIndexedLeaves << ','
-			<< record.buildMetrics.microIndexedPoints << ','
-			<< csvEscape(record.buildMetrics.nodeFanoutSummary) << ','
-			<< record.buildMetrics.memoryEstimateBytes << ','
-			<< record.queryMetrics.totalQueries << ','
-			<< record.queryMetrics.averageLatencyMs << ','
-			<< record.queryMetrics.medianLatencyMs << ','
-			<< record.queryMetrics.p95LatencyMs << ','
-			<< record.queryMetrics.throughputQueriesPerSecond << ','
-			<< record.queryMetrics.averageVisitedNodes << ','
-			<< record.queryMetrics.averageTestedPoints << ','
-			<< record.queryMetrics.averageReturnedPoints << ','
-			<< record.rangeQueries << ','
-			<< record.radiusQueries << ','
-			<< record.knnQueries << ','
-			<< csvEscape(record.queryStrataSummary) << ','
-			<< record.score << ','
-			<< record.scoreMemoryMb << ','
-			<< record.scoreImbalancePenalty << ','
-			<< record.weights.lambdaLatency << ','
-			<< record.weights.lambdaBuild << ','
-			<< record.weights.lambdaMemory << ','
-			<< record.weights.lambdaImbalance << ','
-			<< csvEscape(record.backend) << ','
-			<< csvEscape(record.knnBackend) << ','
-			<< record.cudaDevice << ','
-			<< csvEscape(record.cudaBuilder) << ','
-			<< record.gpuUploadMs << ','
-			<< record.gpuBuildMs << ','
-			<< record.gpuQueryMs << ','
-			<< record.gpuMemoryBytes << ','
-			<< record.countRangeQueries << ','
-			<< record.conditionalLevels << ','
-			<< record.conditionFields << ','
-			<< csvEscape(record.conditionSummary) << ','
-			<< (record.isBaseline ? 1 : 0) << ','
-			<< record.activeStructureTypes << ','
-			<< record.nestedActiveFraction << ','
-			<< csvEscape(record.activeStructureSummary) << ','
-			<< csvEscape(record.bestBaselineSchema) << ','
-			<< record.bestBaselineScore << ','
-			<< record.relativeSpeedupVsBaseline << ','
-			<< record.confirmSeedsUsed << ','
-			<< record.latencyMean << ','
-			<< record.latencyCiLow << ','
-			<< record.latencyCiHigh << ','
-			<< record.p95LatencyMean << ','
-			<< record.p95LatencyCiLow << ','
-			<< record.p95LatencyCiHigh << ','
-			<< record.gpuBuildMean << ','
-			<< record.gpuBuildCiLow << ','
-			<< record.gpuBuildCiHigh << ','
-			<< csvEscape(record.scoreMode) << ','
-			<< csvEscape(record.scoreStage) << ','
-			<< (record.scoreIsFinalLatency ? 1 : 0) << ','
-			<< record.queryMetrics.totalQueries << ','
-			<< (record.weights.useVisitProxy ? 1 : 0) << ','
-			<< record.weights.visitProxyAlpha << ','
-			<< record.queryMetrics.measurementRepeats << ','
-			<< record.queryMetrics.latencyStdDevMs << ','
-			<< record.queryMetrics.latencyCoeffVar << ','
-			<< record.queryMetrics.latencyCiLowMs << ','
-			<< record.queryMetrics.latencyCiHighMs << ','
-			<< (record.rankingConfident ? 1 : 0) << ','
-			<< record.estimatedQueryCost << '\n';
+			<< csvEscape(record._datasetName) << ','
+			<< csvEscape(record._datasetSource) << ','
+			<< record._numPoints << ','
+			<< csvEscape(record._workloadName) << ','
+			<< record._rangeWeight << ','
+			<< record._radiusWeight << ','
+			<< record._knnWeight << ','
+			<< record._numQueries << ','
+			<< record._knnK << ','
+			<< record._querySeed << ','
+			<< record._workloadFeatures._rangeScaleMin << ','
+			<< record._workloadFeatures._rangeScaleMax << ','
+			<< record._workloadFeatures._radiusScaleMin << ','
+			<< record._workloadFeatures._radiusScaleMax << ','
+			<< record._pointFeatures._sampleSize << ','
+			<< record._pointFeatures._bboxX << ','
+			<< record._pointFeatures._bboxY << ','
+			<< record._pointFeatures._bboxZ << ','
+			<< record._pointFeatures._aspectXY << ','
+			<< record._pointFeatures._aspectXZ << ','
+			<< record._pointFeatures._aspectYZ << ','
+			<< record._pointFeatures._densityBbox << ','
+			<< record._pointFeatures._heightMean << ','
+			<< record._pointFeatures._heightStd << ','
+			<< record._pointFeatures._heightRange << ','
+			<< record._pointFeatures._covEig0 << ','
+			<< record._pointFeatures._covEig1 << ','
+			<< record._pointFeatures._covEig2 << ','
+			<< record._pointFeatures._linearity << ','
+			<< record._pointFeatures._planarity << ','
+			<< record._pointFeatures._scattering << ','
+			<< record._pointFeatures._occupancyRatio8 << ','
+			<< record._pointFeatures._occupancyEntropy8 << ','
+			<< record._pointFeatures._densityCv8 << ','
+			<< record._pointFeatures._verticalityScore << ','
+			<< record._pointFeatures._flatnessScore << ','
+			<< record._workloadFeatures._wRange << ','
+			<< record._workloadFeatures._wRadius << ','
+			<< record._workloadFeatures._wKnn << ','
+			<< record._workloadFeatures._queryScaleMean << ','
+			<< record._workloadFeatures._queryScaleStd << ','
+			<< record._workloadFeatures._buildWeight << ','
+			<< record._workloadFeatures._memoryWeight << ','
+			<< csvEscape(record._schemaName) << ','
+			<< csvEscape(record._schemaPath) << ','
+			<< record._buildMetrics._buildTimeMs << ','
+			<< record._buildMetrics._numNodes << ','
+			<< record._buildMetrics._numLeaves << ','
+			<< record._buildMetrics._maxDepth << ','
+			<< record._buildMetrics._averageLeafOccupancy << ','
+			<< record._buildMetrics._maxLeafOccupancy << ','
+			<< record._buildMetrics._leafOccupancyP50 << ','
+			<< record._buildMetrics._leafOccupancyP90 << ','
+			<< record._buildMetrics._leafOccupancyP99 << ','
+			<< record._buildMetrics._averageDepth << ','
+			<< record._buildMetrics._averageFanout << ','
+			<< record._buildMetrics._maxFanout << ','
+			<< record._buildMetrics._emptyChildRatio << ','
+			<< record._buildMetrics._singleChildNodeCount << ','
+			<< record._buildMetrics._meanTightBoundsVolumeRatio << ','
+			<< record._buildMetrics._microIndexedLeaves << ','
+			<< record._buildMetrics._microIndexedPoints << ','
+			<< csvEscape(record._buildMetrics._nodeFanoutSummary) << ','
+			<< record._buildMetrics._memoryEstimateBytes << ','
+			<< record._queryMetrics._totalQueries << ','
+			<< record._queryMetrics._averageLatencyMs << ','
+			<< record._queryMetrics._medianLatencyMs << ','
+			<< record._queryMetrics._p95LatencyMs << ','
+			<< record._queryMetrics._throughputQueriesPerSecond << ','
+			<< record._queryMetrics._averageVisitedNodes << ','
+			<< record._queryMetrics._averageTestedPoints << ','
+			<< record._queryMetrics._averageReturnedPoints << ','
+			<< record._rangeQueries << ','
+			<< record._radiusQueries << ','
+			<< record._knnQueries << ','
+			<< csvEscape(record._queryStrataSummary) << ','
+			<< record._score << ','
+			<< record._scoreMemoryMb << ','
+			<< record._scoreImbalancePenalty << ','
+			<< record._weights._lambdaLatency << ','
+			<< record._weights._lambdaBuild << ','
+			<< record._weights._lambdaMemory << ','
+			<< record._weights._lambdaImbalance << ','
+			<< csvEscape(record._backend) << ','
+			<< csvEscape(record._knnBackend) << ','
+			<< record._cudaDevice << ','
+			<< csvEscape(record._cudaBuilder) << ','
+			<< record._gpuUploadMs << ','
+			<< record._gpuBuildMs << ','
+			<< record._gpuQueryMs << ','
+			<< record._gpuMemoryBytes << ','
+			<< record._countRangeQueries << ','
+			<< record._conditionalLevels << ','
+			<< record._conditionFields << ','
+			<< csvEscape(record._conditionSummary) << ','
+			<< (record._isBaseline ? 1 : 0) << ','
+			<< record._activeStructureTypes << ','
+			<< record._nestedActiveFraction << ','
+			<< csvEscape(record._activeStructureSummary) << ','
+			<< csvEscape(record._bestBaselineSchema) << ','
+			<< record._bestBaselineScore << ','
+			<< record._relativeSpeedupVsBaseline << ','
+			<< record._confirmSeedsUsed << ','
+			<< record._latencyMean << ','
+			<< record._latencyCiLow << ','
+			<< record._latencyCiHigh << ','
+			<< record._p95LatencyMean << ','
+			<< record._p95LatencyCiLow << ','
+			<< record._p95LatencyCiHigh << ','
+			<< record._gpuBuildMean << ','
+			<< record._gpuBuildCiLow << ','
+			<< record._gpuBuildCiHigh << ','
+			<< csvEscape(record._scoreMode) << ','
+			<< csvEscape(record._scoreStage) << ','
+			<< (record._scoreIsFinalLatency ? 1 : 0) << ','
+			<< record._queryMetrics._totalQueries << ','
+			<< (record._weights._useVisitProxy ? 1 : 0) << ','
+			<< record._weights._visitProxyAlpha << ','
+			<< record._queryMetrics._measurementRepeats << ','
+			<< record._queryMetrics._latencyStdDevMs << ','
+			<< record._queryMetrics._latencyCoeffVar << ','
+			<< record._queryMetrics._latencyCiLowMs << ','
+			<< record._queryMetrics._latencyCiHighMs << ','
+			<< (record._rankingConfident ? 1 : 0) << ','
+			<< record._estimatedQueryCost << '\n';
 	}
 }
 
@@ -3800,7 +3800,7 @@ static size_t countCandidatesForBest(const std::vector<Experiments::SchemaSearch
 	size_t count = 0;
 	for (const Experiments::SchemaSearchRecord& record : records)
 	{
-		if (record.datasetName == best.datasetName && record.workloadName == best.workloadName)
+		if (record._datasetName == best._datasetName && record._workloadName == best._workloadName)
 			++count;
 	}
 	return count;
@@ -3838,109 +3838,109 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 	for (const Experiments::SchemaSearchRecord& record : bestRecords)
 	{
 		output
-			<< csvEscape(record.datasetName) << ','
-			<< csvEscape(record.workloadName) << ','
-			<< record.numPoints << ','
-			<< record.pointFeatures.sampleSize << ','
-			<< record.pointFeatures.bboxX << ','
-			<< record.pointFeatures.bboxY << ','
-			<< record.pointFeatures.bboxZ << ','
-			<< record.pointFeatures.aspectXY << ','
-			<< record.pointFeatures.aspectXZ << ','
-			<< record.pointFeatures.aspectYZ << ','
-			<< record.pointFeatures.densityBbox << ','
-			<< record.pointFeatures.heightMean << ','
-			<< record.pointFeatures.heightStd << ','
-			<< record.pointFeatures.heightRange << ','
-			<< record.pointFeatures.covEig0 << ','
-			<< record.pointFeatures.covEig1 << ','
-			<< record.pointFeatures.covEig2 << ','
-			<< record.pointFeatures.linearity << ','
-			<< record.pointFeatures.planarity << ','
-			<< record.pointFeatures.scattering << ','
-			<< record.pointFeatures.occupancyRatio8 << ','
-			<< record.pointFeatures.occupancyEntropy8 << ','
-			<< record.pointFeatures.densityCv8 << ','
-			<< record.pointFeatures.verticalityScore << ','
-			<< record.pointFeatures.flatnessScore << ','
-			<< record.workloadFeatures.wRange << ','
-			<< record.workloadFeatures.wRadius << ','
-			<< record.workloadFeatures.wKnn << ','
-			<< record.workloadFeatures.knnK << ','
-			<< record.workloadFeatures.numQueries << ','
-			<< csvEscape(record.queryStrataSummary) << ','
-			<< record.workloadFeatures.rangeScaleMin << ','
-			<< record.workloadFeatures.rangeScaleMax << ','
-			<< record.workloadFeatures.radiusScaleMin << ','
-			<< record.workloadFeatures.radiusScaleMax << ','
-			<< record.workloadFeatures.queryScaleMean << ','
-			<< record.workloadFeatures.queryScaleStd << ','
-			<< record.workloadFeatures.buildWeight << ','
-			<< record.workloadFeatures.memoryWeight << ','
-			<< csvEscape(record.schemaName) << ','
-			<< csvEscape(record.schemaPath) << ','
-			<< record.score << ','
-			<< record.queryMetrics.averageLatencyMs << ','
-			<< record.buildMetrics.buildTimeMs << ','
-			<< record.buildMetrics.memoryEstimateBytes << ','
-			<< record.buildMetrics.leafOccupancyP50 << ','
-			<< record.buildMetrics.leafOccupancyP90 << ','
-			<< record.buildMetrics.leafOccupancyP99 << ','
-			<< record.buildMetrics.averageDepth << ','
-			<< record.buildMetrics.averageFanout << ','
-			<< record.buildMetrics.maxFanout << ','
-			<< record.buildMetrics.emptyChildRatio << ','
-			<< record.buildMetrics.singleChildNodeCount << ','
-			<< record.buildMetrics.meanTightBoundsVolumeRatio << ','
-			<< record.buildMetrics.microIndexedLeaves << ','
-			<< record.buildMetrics.microIndexedPoints << ','
-			<< csvEscape(record.buildMetrics.nodeFanoutSummary) << ','
+			<< csvEscape(record._datasetName) << ','
+			<< csvEscape(record._workloadName) << ','
+			<< record._numPoints << ','
+			<< record._pointFeatures._sampleSize << ','
+			<< record._pointFeatures._bboxX << ','
+			<< record._pointFeatures._bboxY << ','
+			<< record._pointFeatures._bboxZ << ','
+			<< record._pointFeatures._aspectXY << ','
+			<< record._pointFeatures._aspectXZ << ','
+			<< record._pointFeatures._aspectYZ << ','
+			<< record._pointFeatures._densityBbox << ','
+			<< record._pointFeatures._heightMean << ','
+			<< record._pointFeatures._heightStd << ','
+			<< record._pointFeatures._heightRange << ','
+			<< record._pointFeatures._covEig0 << ','
+			<< record._pointFeatures._covEig1 << ','
+			<< record._pointFeatures._covEig2 << ','
+			<< record._pointFeatures._linearity << ','
+			<< record._pointFeatures._planarity << ','
+			<< record._pointFeatures._scattering << ','
+			<< record._pointFeatures._occupancyRatio8 << ','
+			<< record._pointFeatures._occupancyEntropy8 << ','
+			<< record._pointFeatures._densityCv8 << ','
+			<< record._pointFeatures._verticalityScore << ','
+			<< record._pointFeatures._flatnessScore << ','
+			<< record._workloadFeatures._wRange << ','
+			<< record._workloadFeatures._wRadius << ','
+			<< record._workloadFeatures._wKnn << ','
+			<< record._workloadFeatures._knnK << ','
+			<< record._workloadFeatures._numQueries << ','
+			<< csvEscape(record._queryStrataSummary) << ','
+			<< record._workloadFeatures._rangeScaleMin << ','
+			<< record._workloadFeatures._rangeScaleMax << ','
+			<< record._workloadFeatures._radiusScaleMin << ','
+			<< record._workloadFeatures._radiusScaleMax << ','
+			<< record._workloadFeatures._queryScaleMean << ','
+			<< record._workloadFeatures._queryScaleStd << ','
+			<< record._workloadFeatures._buildWeight << ','
+			<< record._workloadFeatures._memoryWeight << ','
+			<< csvEscape(record._schemaName) << ','
+			<< csvEscape(record._schemaPath) << ','
+			<< record._score << ','
+			<< record._queryMetrics._averageLatencyMs << ','
+			<< record._buildMetrics._buildTimeMs << ','
+			<< record._buildMetrics._memoryEstimateBytes << ','
+			<< record._buildMetrics._leafOccupancyP50 << ','
+			<< record._buildMetrics._leafOccupancyP90 << ','
+			<< record._buildMetrics._leafOccupancyP99 << ','
+			<< record._buildMetrics._averageDepth << ','
+			<< record._buildMetrics._averageFanout << ','
+			<< record._buildMetrics._maxFanout << ','
+			<< record._buildMetrics._emptyChildRatio << ','
+			<< record._buildMetrics._singleChildNodeCount << ','
+			<< record._buildMetrics._meanTightBoundsVolumeRatio << ','
+			<< record._buildMetrics._microIndexedLeaves << ','
+			<< record._buildMetrics._microIndexedPoints << ','
+			<< csvEscape(record._buildMetrics._nodeFanoutSummary) << ','
 			<< countCandidatesForBest(records, record) << ','
-			<< csvEscape(record.backend) << ','
-			<< csvEscape(record.knnBackend) << ','
-			<< record.cudaDevice << ','
-			<< csvEscape(record.cudaBuilder) << ','
-			<< record.gpuUploadMs << ','
-			<< record.gpuBuildMs << ','
-			<< record.gpuQueryMs << ','
-			<< record.gpuMemoryBytes << ','
-			<< record.conditionalLevels << ','
-			<< record.conditionFields << ','
-			<< csvEscape(record.conditionSummary) << ','
-			<< (record.isBaseline ? 1 : 0) << ','
-			<< record.activeStructureTypes << ','
-			<< record.nestedActiveFraction << ','
-			<< csvEscape(record.activeStructureSummary) << ','
-			<< csvEscape(record.bestBaselineSchema) << ','
-			<< record.bestBaselineScore << ','
-			<< record.relativeSpeedupVsBaseline << ','
-			<< record.confirmSeedsUsed << ','
-			<< record.latencyMean << ','
-			<< record.latencyCiLow << ','
-			<< record.latencyCiHigh << ','
-			<< record.p95LatencyMean << ','
-			<< record.p95LatencyCiLow << ','
-			<< record.p95LatencyCiHigh << ','
-			<< record.gpuBuildMean << ','
-			<< record.gpuBuildCiLow << ','
-			<< record.gpuBuildCiHigh << ','
-			<< record.weights.lambdaLatency << ','
-			<< record.weights.lambdaBuild << ','
-			<< record.weights.lambdaMemory << ','
-			<< record.weights.lambdaImbalance << ','
-			<< csvEscape(record.scoreMode) << ','
-			<< csvEscape(record.scoreStage) << ','
-			<< (record.scoreIsFinalLatency ? 1 : 0) << ','
-			<< record.queryMetrics.totalQueries << ','
-			<< (record.weights.useVisitProxy ? 1 : 0) << ','
-			<< record.weights.visitProxyAlpha << ','
-			<< record.queryMetrics.measurementRepeats << ','
-			<< record.queryMetrics.latencyStdDevMs << ','
-			<< record.queryMetrics.latencyCoeffVar << ','
-			<< record.queryMetrics.latencyCiLowMs << ','
-			<< record.queryMetrics.latencyCiHighMs << ','
-			<< (record.rankingConfident ? 1 : 0) << ','
-			<< record.estimatedQueryCost << '\n';
+			<< csvEscape(record._backend) << ','
+			<< csvEscape(record._knnBackend) << ','
+			<< record._cudaDevice << ','
+			<< csvEscape(record._cudaBuilder) << ','
+			<< record._gpuUploadMs << ','
+			<< record._gpuBuildMs << ','
+			<< record._gpuQueryMs << ','
+			<< record._gpuMemoryBytes << ','
+			<< record._conditionalLevels << ','
+			<< record._conditionFields << ','
+			<< csvEscape(record._conditionSummary) << ','
+			<< (record._isBaseline ? 1 : 0) << ','
+			<< record._activeStructureTypes << ','
+			<< record._nestedActiveFraction << ','
+			<< csvEscape(record._activeStructureSummary) << ','
+			<< csvEscape(record._bestBaselineSchema) << ','
+			<< record._bestBaselineScore << ','
+			<< record._relativeSpeedupVsBaseline << ','
+			<< record._confirmSeedsUsed << ','
+			<< record._latencyMean << ','
+			<< record._latencyCiLow << ','
+			<< record._latencyCiHigh << ','
+			<< record._p95LatencyMean << ','
+			<< record._p95LatencyCiLow << ','
+			<< record._p95LatencyCiHigh << ','
+			<< record._gpuBuildMean << ','
+			<< record._gpuBuildCiLow << ','
+			<< record._gpuBuildCiHigh << ','
+			<< record._weights._lambdaLatency << ','
+			<< record._weights._lambdaBuild << ','
+			<< record._weights._lambdaMemory << ','
+			<< record._weights._lambdaImbalance << ','
+			<< csvEscape(record._scoreMode) << ','
+			<< csvEscape(record._scoreStage) << ','
+			<< (record._scoreIsFinalLatency ? 1 : 0) << ','
+			<< record._queryMetrics._totalQueries << ','
+			<< (record._weights._useVisitProxy ? 1 : 0) << ','
+			<< record._weights._visitProxyAlpha << ','
+			<< record._queryMetrics._measurementRepeats << ','
+			<< record._queryMetrics._latencyStdDevMs << ','
+			<< record._queryMetrics._latencyCoeffVar << ','
+			<< record._queryMetrics._latencyCiLowMs << ','
+			<< record._queryMetrics._latencyCiHighMs << ','
+			<< (record._rankingConfident ? 1 : 0) << ','
+			<< record._estimatedQueryCost << '\n';
 	}
 }
 
@@ -3972,93 +3972,93 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 	output << std::fixed << std::setprecision(6);
 	for (const Experiments::SchemaSearchRecord& record : front)
 	{
-		const double memoryMb = (record.backend == "cuda" && record.gpuMemoryBytes > 0)
-			? static_cast<double>(record.gpuMemoryBytes) / (1024.0 * 1024.0)
-			: static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
-		const double imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
-			? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+		const double memoryMb = (record._backend == "cuda" && record._gpuMemoryBytes > 0)
+			? static_cast<double>(record._gpuMemoryBytes) / (1024.0 * 1024.0)
+			: static_cast<double>(record._buildMetrics._memoryEstimateBytes) / (1024.0 * 1024.0);
+		const double imbalancePenalty = record._buildMetrics._averageLeafOccupancy > 0.0
+			? static_cast<double>(record._buildMetrics._maxLeafOccupancy) / record._buildMetrics._averageLeafOccupancy
 			: 0.0;
 		output
-			<< csvEscape(record.datasetName) << ','
-			<< csvEscape(record.workloadName) << ','
-			<< csvEscape(record.queryStrataSummary) << ','
-			<< record.paretoRank << ','
-			<< (record.paretoKnee ? 1 : 0) << ','
-			<< csvEscape(record.schemaName) << ','
-			<< csvEscape(record.schemaPath) << ','
-			<< record.score << ','
-			<< record.queryMetrics.averageLatencyMs << ','
-			<< record.buildMetrics.buildTimeMs << ','
+			<< csvEscape(record._datasetName) << ','
+			<< csvEscape(record._workloadName) << ','
+			<< csvEscape(record._queryStrataSummary) << ','
+			<< record._paretoRank << ','
+			<< (record._paretoKnee ? 1 : 0) << ','
+			<< csvEscape(record._schemaName) << ','
+			<< csvEscape(record._schemaPath) << ','
+			<< record._score << ','
+			<< record._queryMetrics._averageLatencyMs << ','
+			<< record._buildMetrics._buildTimeMs << ','
 			<< memoryMb << ','
-			<< record.buildMetrics.memoryEstimateBytes << ','
+			<< record._buildMetrics._memoryEstimateBytes << ','
 			<< imbalancePenalty << ','
-			<< record.buildMetrics.leafOccupancyP90 << ','
-			<< record.buildMetrics.emptyChildRatio << ','
-			<< record.buildMetrics.meanTightBoundsVolumeRatio << ','
-			<< record.buildMetrics.microIndexedLeaves << ','
-			<< record.buildMetrics.microIndexedPoints << ','
-			<< record.queryMetrics.p95LatencyMs << ','
-			<< record.queryMetrics.throughputQueriesPerSecond << ','
-			<< csvEscape(record.backend) << ','
-			<< csvEscape(record.knnBackend) << ','
-			<< csvEscape(record.cudaBuilder) << ','
-			<< (record.isBaseline ? 1 : 0) << ','
-			<< record.conditionalLevels << ','
-			<< record.conditionFields << ','
-			<< record.activeStructureTypes << ','
-			<< record.nestedActiveFraction << ','
-			<< record.confirmSeedsUsed << ','
-			<< record.latencyMean << ','
-			<< record.latencyCiLow << ','
-			<< record.latencyCiHigh << ','
-			<< record.p95LatencyMean << ','
-			<< record.p95LatencyCiLow << ','
-			<< record.p95LatencyCiHigh << ','
-			<< record.gpuBuildMean << ','
-			<< record.gpuBuildCiLow << ','
-			<< record.gpuBuildCiHigh << ','
-			<< record.weights.lambdaLatency << ','
-			<< record.weights.lambdaBuild << ','
-			<< record.weights.lambdaMemory << ','
-			<< record.weights.lambdaImbalance << ','
-			<< csvEscape(record.scoreMode) << ','
-			<< csvEscape(record.scoreStage) << ','
-			<< (record.scoreIsFinalLatency ? 1 : 0) << ','
-			<< record.queryMetrics.totalQueries << ','
-			<< (record.weights.useVisitProxy ? 1 : 0) << ','
-			<< record.weights.visitProxyAlpha << ','
-			<< record.queryMetrics.measurementRepeats << ','
-			<< record.queryMetrics.latencyStdDevMs << ','
-			<< record.queryMetrics.latencyCoeffVar << ','
-			<< record.queryMetrics.latencyCiLowMs << ','
-			<< record.queryMetrics.latencyCiHighMs << ','
-			<< (record.rankingConfident ? 1 : 0) << ','
-			<< record.estimatedQueryCost << '\n';
+			<< record._buildMetrics._leafOccupancyP90 << ','
+			<< record._buildMetrics._emptyChildRatio << ','
+			<< record._buildMetrics._meanTightBoundsVolumeRatio << ','
+			<< record._buildMetrics._microIndexedLeaves << ','
+			<< record._buildMetrics._microIndexedPoints << ','
+			<< record._queryMetrics._p95LatencyMs << ','
+			<< record._queryMetrics._throughputQueriesPerSecond << ','
+			<< csvEscape(record._backend) << ','
+			<< csvEscape(record._knnBackend) << ','
+			<< csvEscape(record._cudaBuilder) << ','
+			<< (record._isBaseline ? 1 : 0) << ','
+			<< record._conditionalLevels << ','
+			<< record._conditionFields << ','
+			<< record._activeStructureTypes << ','
+			<< record._nestedActiveFraction << ','
+			<< record._confirmSeedsUsed << ','
+			<< record._latencyMean << ','
+			<< record._latencyCiLow << ','
+			<< record._latencyCiHigh << ','
+			<< record._p95LatencyMean << ','
+			<< record._p95LatencyCiLow << ','
+			<< record._p95LatencyCiHigh << ','
+			<< record._gpuBuildMean << ','
+			<< record._gpuBuildCiLow << ','
+			<< record._gpuBuildCiHigh << ','
+			<< record._weights._lambdaLatency << ','
+			<< record._weights._lambdaBuild << ','
+			<< record._weights._lambdaMemory << ','
+			<< record._weights._lambdaImbalance << ','
+			<< csvEscape(record._scoreMode) << ','
+			<< csvEscape(record._scoreStage) << ','
+			<< (record._scoreIsFinalLatency ? 1 : 0) << ','
+			<< record._queryMetrics._totalQueries << ','
+			<< (record._weights._useVisitProxy ? 1 : 0) << ','
+			<< record._weights._visitProxyAlpha << ','
+			<< record._queryMetrics._measurementRepeats << ','
+			<< record._queryMetrics._latencyStdDevMs << ','
+			<< record._queryMetrics._latencyCoeffVar << ','
+			<< record._queryMetrics._latencyCiLowMs << ','
+			<< record._queryMetrics._latencyCiHighMs << ','
+			<< (record._rankingConfident ? 1 : 0) << ','
+			<< record._estimatedQueryCost << '\n';
 	}
 }
 
 static std::string recordGroupKey(const Experiments::SchemaSearchRecord& record)
 {
-	return record.datasetName + "\n" + record.workloadName;
+	return record._datasetName + "\n" + record._workloadName;
 }
 
 static double reportLatencyMs(const Experiments::SchemaSearchRecord& record)
 {
-	return record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
-		? record.latencyMean
-		: record.queryMetrics.averageLatencyMs;
+	return record._confirmSeedsUsed > 0 && record._latencyMean > 0.0
+		? record._latencyMean
+		: record._queryMetrics._averageLatencyMs;
 }
 
 static double reportBuildMs(const Experiments::SchemaSearchRecord& record)
 {
-	return record.confirmSeedsUsed > 0 && record.gpuBuildMean > 0.0
-		? record.gpuBuildMean
-		: record.buildMetrics.buildTimeMs;
+	return record._confirmSeedsUsed > 0 && record._gpuBuildMean > 0.0
+		? record._gpuBuildMean
+		: record._buildMetrics._buildTimeMs;
 }
 
 static double reportMemoryMb(const Experiments::SchemaSearchRecord& record)
 {
-	return static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
+	return static_cast<double>(record._buildMetrics._memoryEstimateBytes) / (1024.0 * 1024.0);
 }
 
 static const Experiments::SchemaSearchRecord* bestRecordBy(
@@ -4091,10 +4091,10 @@ static void printMetricWinner(
 		return;
 	}
 
-	std::cout << "    " << label << ": " << record->schemaName
+	std::cout << "    " << label << ": " << record->_schemaName
 		<< " (" << metric(*record) << ' ' << unit
-		<< ", score " << record->score
-		<< ", " << record->scoreMode << ")\n";
+		<< ", score " << record->_score
+		<< ", " << record->_scoreMode << ")\n";
 }
 
 static void reportMetricSummaries(
@@ -4109,8 +4109,8 @@ static void reportMetricSummaries(
 		groups[recordGroupKey(record)].push_back(&record);
 
 	std::cout << "  metric winners:\n";
-	const double memoryBudgetMb = options.cuda.memoryBudgetMb > 0
-		? static_cast<double>(options.cuda.memoryBudgetMb)
+	const double memoryBudgetMb = options._cuda._memoryBudgetMb > 0
+		? static_cast<double>(options._cuda._memoryBudgetMb)
 		: 0.0;
 	for (const auto& [key, group] : groups)
 	{
@@ -4142,11 +4142,11 @@ static void annotateBaselineComparisons(std::vector<Experiments::SchemaSearchRec
 	std::unordered_map<std::string, const Experiments::SchemaSearchRecord*> bestBaselines;
 	for (const Experiments::SchemaSearchRecord& record : records)
 	{
-		if (!record.isBaseline)
+		if (!record._isBaseline)
 			continue;
 		const std::string key = recordGroupKey(record);
 		const auto existing = bestBaselines.find(key);
-		if (existing == bestBaselines.end() || record.score < existing->second->score)
+		if (existing == bestBaselines.end() || record._score < existing->second->_score)
 			bestBaselines[key] = &record;
 	}
 
@@ -4157,10 +4157,10 @@ static void annotateBaselineComparisons(std::vector<Experiments::SchemaSearchRec
 			continue;
 
 		const Experiments::SchemaSearchRecord& best = *baseline->second;
-		record.bestBaselineSchema = best.schemaName;
-		record.bestBaselineScore = best.score;
-		record.relativeSpeedupVsBaseline = best.queryMetrics.averageLatencyMs > 0.0
-			? (best.queryMetrics.averageLatencyMs - record.queryMetrics.averageLatencyMs) / best.queryMetrics.averageLatencyMs
+		record._bestBaselineSchema = best._schemaName;
+		record._bestBaselineScore = best._score;
+		record._relativeSpeedupVsBaseline = best._queryMetrics._averageLatencyMs > 0.0
+			? (best._queryMetrics._averageLatencyMs - record._queryMetrics._averageLatencyMs) / best._queryMetrics._averageLatencyMs
 			: 0.0;
 	}
 }
@@ -4172,16 +4172,16 @@ static void reportDeepNestedOutcome(const std::vector<Experiments::SchemaSearchR
 	for (const Experiments::SchemaSearchRecord& record : records)
 	{
 		const std::string key = recordGroupKey(record);
-		if (record.isBaseline)
+		if (record._isBaseline)
 		{
 			const auto existing = bestBaselines.find(key);
-			if (existing == bestBaselines.end() || record.queryMetrics.averageLatencyMs < existing->second->queryMetrics.averageLatencyMs)
+			if (existing == bestBaselines.end() || record._queryMetrics._averageLatencyMs < existing->second->_queryMetrics._averageLatencyMs)
 				bestBaselines[key] = &record;
 		}
 		else if (recordCountsAsNested(record))
 		{
 			const auto existing = bestNested.find(key);
-			if (existing == bestNested.end() || record.queryMetrics.averageLatencyMs < existing->second->queryMetrics.averageLatencyMs)
+			if (existing == bestNested.end() || record._queryMetrics._averageLatencyMs < existing->second->_queryMetrics._averageLatencyMs)
 				bestNested[key] = &record;
 		}
 	}
@@ -4191,22 +4191,22 @@ static void reportDeepNestedOutcome(const std::vector<Experiments::SchemaSearchR
 		const auto nested = bestNested.find(key);
 		if (nested == bestNested.end())
 		{
-			std::cout << "  deep nested outcome: " << baseline->datasetName << " / " << baseline->workloadName
+			std::cout << "  deep nested outcome: " << baseline->_datasetName << " / " << baseline->_workloadName
 				<< " has no runtime-nested finalist (>=2 active types and >=5% nested fraction)\n";
 			continue;
 		}
 
 		const Experiments::SchemaSearchRecord& nestedRecord = *nested->second;
-		const double meanSpeedup = baseline->queryMetrics.averageLatencyMs > 0.0
-			? (baseline->queryMetrics.averageLatencyMs - nestedRecord.queryMetrics.averageLatencyMs) / baseline->queryMetrics.averageLatencyMs
+		const double meanSpeedup = baseline->_queryMetrics._averageLatencyMs > 0.0
+			? (baseline->_queryMetrics._averageLatencyMs - nestedRecord._queryMetrics._averageLatencyMs) / baseline->_queryMetrics._averageLatencyMs
 			: 0.0;
-		const bool p95NoWorse = nestedRecord.queryMetrics.p95LatencyMs <= baseline->queryMetrics.p95LatencyMs;
-		std::cout << "  deep nested outcome: " << baseline->datasetName << " / " << baseline->workloadName
-			<< " best nested " << nestedRecord.schemaName
-			<< " vs baseline " << baseline->schemaName
+		const bool p95NoWorse = nestedRecord._queryMetrics._p95LatencyMs <= baseline->_queryMetrics._p95LatencyMs;
+		std::cout << "  deep nested outcome: " << baseline->_datasetName << " / " << baseline->_workloadName
+			<< " best nested " << nestedRecord._schemaName
+			<< " vs baseline " << baseline->_schemaName
 			<< ", mean speedup " << (meanSpeedup * 100.0) << "%"
 			<< ", p95 " << (p95NoWorse ? "no worse" : "worse")
-			<< ", nested active fraction " << nestedRecord.nestedActiveFraction;
+			<< ", nested active fraction " << nestedRecord._nestedActiveFraction;
 		if (meanSpeedup >= 0.05 && p95NoWorse)
 			std::cout << " (target met)";
 		std::cout << '\n';
@@ -4215,10 +4215,10 @@ static void reportDeepNestedOutcome(const std::vector<Experiments::SchemaSearchR
 
 struct ActiveExplainEntry
 {
-	std::string typeName;
-	size_t nodes = 0;
-	size_t leafPoints = 0;
-	bool schemaOnly = false;
+	std::string _typeName;
+	size_t _nodes = 0;
+	size_t _leafPoints = 0;
+	bool _schemaOnly = false;
 };
 
 static size_t parseSizeField(const std::string& value, const std::string& key)
@@ -4268,11 +4268,11 @@ static std::vector<ActiveExplainEntry> parseActiveStructureSummary(const std::st
 		if (separator != std::string::npos)
 		{
 			ActiveExplainEntry entry;
-			entry.typeName = token.substr(0, separator);
+			entry._typeName = token.substr(0, separator);
 			const std::string fields = token.substr(separator + 1);
-			entry.schemaOnly = fields.find("schema") != std::string::npos;
-			entry.nodes = parseSizeField(fields, "nodes=");
-			entry.leafPoints = parseSizeField(fields, "points=");
+			entry._schemaOnly = fields.find("schema") != std::string::npos;
+			entry._nodes = parseSizeField(fields, "nodes=");
+			entry._leafPoints = parseSizeField(fields, "points=");
 			entries.push_back(std::move(entry));
 		}
 		if (end == std::string::npos)
@@ -4299,8 +4299,8 @@ static std::string formatMs(double value)
 static std::string schemaLevelDisplayName(const SchemaLevelConfig& level)
 {
 	std::string name = levelJsonTypeName(level);
-	if (!level.axisPolicy.empty())
-		name += "(" + level.axisPolicy + ")";
+	if (!level._axisPolicy.empty())
+		name += "(" + level._axisPolicy + ")";
 	return name;
 }
 
@@ -4308,15 +4308,15 @@ static std::string schemaChainForReport(const Experiments::SchemaSearchRecord& r
 {
 	SchemaConfig schema;
 	bool hasSchema = false;
-	if (!record.schemaPath.empty() && record.schemaPath.rfind("generated:", 0) != 0)
+	if (!record._schemaPath.empty() && record._schemaPath.rfind("generated:", 0) != 0)
 	{
 		std::error_code error;
-		if (std::filesystem::exists(record.schemaPath, error))
+		if (std::filesystem::exists(record._schemaPath, error))
 		{
 			try
 			{
-				schema = Config::loadSchemaConfig(record.schemaPath);
-				hasSchema = !schema.levels.empty();
+				schema = Config::loadSchemaConfig(record._schemaPath);
+				hasSchema = !schema._levels.empty();
 			}
 			catch (...)
 			{
@@ -4330,18 +4330,18 @@ static std::string schemaChainForReport(const Experiments::SchemaSearchRecord& r
 		if (loadedSchema)
 			*loadedSchema = schema;
 		std::ostringstream out;
-		for (size_t i = 0; i < schema.levels.size(); ++i)
+		for (size_t i = 0; i < schema._levels.size(); ++i)
 		{
 			if (i > 0)
 				out << " -> ";
-			out << schemaLevelDisplayName(schema.levels[i]);
+			out << schemaLevelDisplayName(schema._levels[i]);
 		}
 		return out.str();
 	}
 
 	if (loadedSchema)
 		*loadedSchema = {};
-	return record.schemaName;
+	return record._schemaName;
 }
 
 static const ActiveExplainEntry* dominantLeafStructure(const std::vector<ActiveExplainEntry>& entries)
@@ -4349,7 +4349,7 @@ static const ActiveExplainEntry* dominantLeafStructure(const std::vector<ActiveE
 	const ActiveExplainEntry* best = nullptr;
 	for (const ActiveExplainEntry& entry : entries)
 	{
-		if (!best || entry.leafPoints > best->leafPoints)
+		if (!best || entry._leafPoints > best->_leafPoints)
 			best = &entry;
 	}
 	return best;
@@ -4357,12 +4357,12 @@ static const ActiveExplainEntry* dominantLeafStructure(const std::vector<ActiveE
 
 static const SchemaLevelConfig* levelForDominantStructure(const SchemaConfig& schema, const std::string& shortName)
 {
-	for (auto it = schema.levels.rbegin(); it != schema.levels.rend(); ++it)
+	for (auto it = schema._levels.rbegin(); it != schema._levels.rend(); ++it)
 	{
 		if (schemaTypeShortName(*it) == shortName)
 			return &*it;
 	}
-	return schema.levels.empty() ? nullptr : &schema.levels.back();
+	return schema._levels.empty() ? nullptr : &schema._levels.back();
 }
 
 static std::string metricComparisonPhrase(const char* verb, const char* noun, double baseline, double current)
@@ -4387,16 +4387,16 @@ static void writeQueryBehaviorLine(
 	const Experiments::QueryMetrics& metrics,
 	const Experiments::QueryMetrics* baselineMetrics)
 {
-	if (metrics.totalQueries == 0)
+	if (metrics._totalQueries == 0)
 		return;
 
 	output << "- " << label << ": ";
-	if (baselineMetrics && baselineMetrics->totalQueries > 0)
+	if (baselineMetrics && baselineMetrics->_totalQueries > 0)
 	{
 		const std::string nodePhrase = metricComparisonPhrase(
-			"visits", "nodes", baselineMetrics->averageVisitedNodes, metrics.averageVisitedNodes);
+			"visits", "nodes", baselineMetrics->_averageVisitedNodes, metrics._averageVisitedNodes);
 		const std::string pointPhrase = metricComparisonPhrase(
-			"tests", "points", baselineMetrics->averageTestedPoints, metrics.averageTestedPoints);
+			"tests", "points", baselineMetrics->_averageTestedPoints, metrics._averageTestedPoints);
 		if (!nodePhrase.empty())
 			output << nodePhrase;
 		if (!nodePhrase.empty() && !pointPhrase.empty())
@@ -4408,11 +4408,11 @@ static void writeQueryBehaviorLine(
 	}
 	else
 	{
-		output << "avg " << metrics.averageVisitedNodes << " visited nodes, "
-			<< metrics.averageTestedPoints << " tested points";
+		output << "avg " << metrics._averageVisitedNodes << " visited nodes, "
+			<< metrics._averageTestedPoints << " tested points";
 	}
-	if (metrics.averageFullyContainedNodes > 0.0)
-		output << "; " << metrics.averageFullyContainedNodes << " fully-contained nodes/query";
+	if (metrics._averageFullyContainedNodes > 0.0)
+		output << "; " << metrics._averageFullyContainedNodes << " fully-contained nodes/query";
 	output << '\n';
 }
 
@@ -4423,43 +4423,43 @@ static void writeDiagnosis(
 	const std::vector<ActiveExplainEntry>& activeEntries)
 {
 	Experiments::SchemaCandidate candidate;
-	candidate.config = schema;
-	candidate.name = record.schemaName;
+	candidate._config = schema;
+	candidate._name = record._schemaName;
 	const Experiments::SchemaRepairDiagnostics diagnostics = diagnoseRepairInternal(candidate, { record });
 	const ActiveExplainEntry* dominant = dominantLeafStructure(activeEntries);
-	const SchemaLevelConfig* dominantLevel = dominant ? levelForDominantStructure(schema, dominant->typeName) : nullptr;
-	const std::string dominantName = dominant ? displayTypeName(dominant->typeName) : "leaf";
+	const SchemaLevelConfig* dominantLevel = dominant ? levelForDominantStructure(schema, dominant->_typeName) : nullptr;
+	const std::string dominantName = dominant ? displayTypeName(dominant->_typeName) : "leaf";
 
 	output << "Diagnosis:\n";
-	if (record.isBaseline)
+	if (record._isBaseline)
 		output << "- Baseline control; use this row as the comparison reference for mixed schemas.\n";
-	if (diagnostics.highLeafOccupancy && dominantLevel)
+	if (diagnostics._highLeafOccupancy && dominantLevel)
 	{
-		output << "- Reduce " << dominantName << " leafCapacity from " << dominantLevel->leafCapacity
-			<< " to " << std::max<size_t>(1, dominantLevel->leafCapacity / 2)
+		output << "- Reduce " << dominantName << " leafCapacity from " << dominantLevel->_leafCapacity
+			<< " to " << std::max<size_t>(1, dominantLevel->_leafCapacity / 2)
 			<< " or add one more level in that block.\n";
 	}
-	if (diagnostics.testedPointDominated)
+	if (diagnostics._testedPointDominated)
 	{
 		output << "- Tested-points dominate traversal; add a gated leaf micro-index or tighten the deepest leaf capacity.\n";
-		if (dominant && (dominant->typeName == "kd" || dominant->typeName == "bih") &&
-			record.pointFeatures.verticalityScore >= record.pointFeatures.flatnessScore)
+		if (dominant && (dominant->_typeName == "kd" || dominant->_typeName == "bih") &&
+			record._pointFeatures._verticalityScore >= record._pointFeatures._flatnessScore)
 		{
 			output << "- Try HGrid before " << dominantName << " for dense vertical regions.\n";
 		}
 	}
-	if (diagnostics.visitedNodeDominated)
+	if (diagnostics._visitedNodeDominated)
 		output << "- Visited-node count is high while leaf scans are light; coarsen the root or switch the upper block.\n";
-	if (diagnostics.fullContainmentDominated)
+	if (diagnostics._fullContainmentDominated)
 		output << "- Full-containment shortcuts are carrying the range workload; prefer coarser Grid/QuadTree blocks for this query scale.\n";
-	if (diagnostics.likelySingleChildChains)
+	if (diagnostics._likelySingleChildChains)
 		output << "- Many nodes likely collapse into one-child chains; flip KDTree axisPolicy or use QuadTree xy/ignore_shortest for terrain-shaped regions.\n";
-	if (!diagnostics.highLeafOccupancy &&
-		!diagnostics.testedPointDominated &&
-		!diagnostics.visitedNodeDominated &&
-		!diagnostics.fullContainmentDominated &&
-		!diagnostics.likelySingleChildChains &&
-		!record.isBaseline)
+	if (!diagnostics._highLeafOccupancy &&
+		!diagnostics._testedPointDominated &&
+		!diagnostics._visitedNodeDominated &&
+		!diagnostics._fullContainmentDominated &&
+		!diagnostics._likelySingleChildChains &&
+		!record._isBaseline)
 	{
 		output << "- No dominant counter bottleneck; confirm with more query seeds before structural changes.\n";
 	}
@@ -4484,11 +4484,11 @@ static void writeSchemaExplainReport(
 	std::map<std::string, const Experiments::SchemaSearchRecord*> bestBaselines;
 	for (const Experiments::SchemaSearchRecord& record : records)
 	{
-		if (!record.isBaseline)
+		if (!record._isBaseline)
 			continue;
 		const std::string key = recordGroupKey(record);
 		const auto existing = bestBaselines.find(key);
-		if (existing == bestBaselines.end() || record.score < existing->second->score)
+		if (existing == bestBaselines.end() || record._score < existing->second->_score)
 			bestBaselines[key] = &record;
 	}
 
@@ -4498,9 +4498,9 @@ static void writeSchemaExplainReport(
 	for (auto& [key, group] : groups)
 	{
 		std::sort(group.begin(), group.end(), [](const auto* left, const auto* right) {
-			if (left->score == right->score)
-				return left->schemaName < right->schemaName;
-			return left->score < right->score;
+			if (left->_score == right->_score)
+				return left->_schemaName < right->_schemaName;
+			return left->_score < right->_score;
 		});
 
 		const size_t separator = key.find('\n');
@@ -4511,63 +4511,63 @@ static void writeSchemaExplainReport(
 
 		output << "## " << dataset << " / " << workload << "\n\n";
 		if (baseline)
-			output << "Best baseline: `" << baseline->schemaName << "` (score " << baseline->score << ")\n\n";
+			output << "Best baseline: `" << baseline->_schemaName << "` (score " << baseline->_score << ")\n\n";
 
 		for (const Experiments::SchemaSearchRecord* record : group)
 		{
 			SchemaConfig schema;
 			const std::string chain = schemaChainForReport(*record, &schema);
-			const std::vector<ActiveExplainEntry> activeEntries = parseActiveStructureSummary(record->activeStructureSummary);
-			output << "### " << record->schemaName << "\n\n";
+			const std::vector<ActiveExplainEntry> activeEntries = parseActiveStructureSummary(record->_activeStructureSummary);
+			output << "### " << record->_schemaName << "\n\n";
 			output << "Schema: " << chain << "\n\n";
-			output << "- Score: " << record->score << " (" << record->scoreMode << ", " << record->scoreStage << ")\n";
-			output << "- Avg latency: " << formatMs(record->queryMetrics.averageLatencyMs)
-				<< ", p95: " << formatMs(record->queryMetrics.p95LatencyMs)
-				<< ", build: " << formatMs(record->buildMetrics.buildTimeMs) << "\n";
-			if (!record->bestBaselineSchema.empty())
-				output << "- Speedup vs baseline: " << formatPercent(record->relativeSpeedupVsBaseline) << "\n";
+			output << "- Score: " << record->_score << " (" << record->_scoreMode << ", " << record->_scoreStage << ")\n";
+			output << "- Avg latency: " << formatMs(record->_queryMetrics._averageLatencyMs)
+				<< ", p95: " << formatMs(record->_queryMetrics._p95LatencyMs)
+				<< ", build: " << formatMs(record->_buildMetrics._buildTimeMs) << "\n";
+			if (!record->_bestBaselineSchema.empty())
+				output << "- Speedup vs baseline: " << formatPercent(record->_relativeSpeedupVsBaseline) << "\n";
 			output << '\n';
 
 			output << "Active structures:\n";
 			if (activeEntries.empty())
 			{
 				output << "- unavailable";
-				if (!record->activeStructureSummary.empty())
-					output << " (`" << record->activeStructureSummary << "`)";
+				if (!record->_activeStructureSummary.empty())
+					output << " (`" << record->_activeStructureSummary << "`)";
 				output << '\n';
 			}
 			else
 			{
-				const double totalNodes = static_cast<double>(std::max<size_t>(1, record->buildMetrics.numNodes));
-				const double totalPoints = static_cast<double>(std::max<size_t>(1, record->buildMetrics.indexedPoints > 0
-					? record->buildMetrics.indexedPoints
-					: record->numPoints));
+				const double totalNodes = static_cast<double>(std::max<size_t>(1, record->_buildMetrics._numNodes));
+				const double totalPoints = static_cast<double>(std::max<size_t>(1, record->_buildMetrics._indexedPoints > 0
+					? record->_buildMetrics._indexedPoints
+					: record->_numPoints));
 				for (const ActiveExplainEntry& entry : activeEntries)
 				{
-					output << "- " << displayTypeName(entry.typeName) << ": ";
-					if (entry.schemaOnly)
+					output << "- " << displayTypeName(entry._typeName) << ": ";
+					if (entry._schemaOnly)
 						output << "schema-level present";
 					else
-						output << formatPercent(static_cast<double>(entry.nodes) / totalNodes) << " nodes, "
-							<< formatPercent(static_cast<double>(entry.leafPoints) / totalPoints) << " leaf points";
+						output << formatPercent(static_cast<double>(entry._nodes) / totalNodes) << " nodes, "
+							<< formatPercent(static_cast<double>(entry._leafPoints) / totalPoints) << " leaf points";
 					output << '\n';
 				}
 			}
 			output << '\n';
 
 			output << "Query behavior:\n";
-			writeQueryBehaviorLine(output, "Range", record->rangeMetrics, baseline ? &baseline->rangeMetrics : nullptr);
-			writeQueryBehaviorLine(output, "Count range", record->countRangeMetrics, baseline ? &baseline->countRangeMetrics : nullptr);
-			writeQueryBehaviorLine(output, "Radius", record->radiusMetrics, baseline ? &baseline->radiusMetrics : nullptr);
-			writeQueryBehaviorLine(output, "KNN", record->knnMetrics, baseline ? &baseline->knnMetrics : nullptr);
-			if (record->rangeMetrics.totalQueries == 0 &&
-				record->countRangeMetrics.totalQueries == 0 &&
-				record->radiusMetrics.totalQueries == 0 &&
-				record->knnMetrics.totalQueries == 0)
+			writeQueryBehaviorLine(output, "Range", record->_rangeMetrics, baseline ? &baseline->_rangeMetrics : nullptr);
+			writeQueryBehaviorLine(output, "Count range", record->_countRangeMetrics, baseline ? &baseline->_countRangeMetrics : nullptr);
+			writeQueryBehaviorLine(output, "Radius", record->_radiusMetrics, baseline ? &baseline->_radiusMetrics : nullptr);
+			writeQueryBehaviorLine(output, "KNN", record->_knnMetrics, baseline ? &baseline->_knnMetrics : nullptr);
+			if (record->_rangeMetrics._totalQueries == 0 &&
+				record->_countRangeMetrics._totalQueries == 0 &&
+				record->_radiusMetrics._totalQueries == 0 &&
+				record->_knnMetrics._totalQueries == 0)
 			{
 				output << "- Per-query-family metrics unavailable; avg "
-					<< record->queryMetrics.averageVisitedNodes << " visited nodes and "
-					<< record->queryMetrics.averageTestedPoints << " tested points/query.\n";
+					<< record->_queryMetrics._averageVisitedNodes << " visited nodes and "
+					<< record->_queryMetrics._averageTestedPoints << " tested points/query.\n";
 			}
 			output << '\n';
 
@@ -4585,7 +4585,7 @@ static std::vector<Experiments::SchemaCandidate> uniqueCandidates(
 	unique.reserve(candidates.size());
 	for (const Experiments::SchemaCandidate& candidate : candidates)
 	{
-		const std::string signature = schemaSignature(candidate.config);
+		const std::string signature = schemaSignature(candidate._config);
 		if (!seenSignatures.insert(signature).second)
 			continue;
 
@@ -4598,7 +4598,7 @@ static void appendRecords(
 	std::vector<Experiments::SchemaSearchRecord>& records,
 	const EvaluatedCandidate& evaluation)
 {
-	records.insert(records.end(), evaluation.records.begin(), evaluation.records.end());
+	records.insert(records.end(), evaluation._records.begin(), evaluation._records.end());
 }
 
 static void emitProgress(
@@ -4618,55 +4618,55 @@ static void sortEvaluations(std::vector<EvaluatedCandidate>& evaluations)
 
 struct CandidateObjectives
 {
-	double avgLatencyMs = 0.0;
-	double buildTimeMs = 0.0;
-	double memoryMb = 0.0;
-	double imbalancePenalty = 0.0;
+	double _avgLatencyMs = 0.0;
+	double _buildTimeMs = 0.0;
+	double _memoryMb = 0.0;
+	double _imbalancePenalty = 0.0;
 };
 
 // Averages the four Pareto objectives across a candidate's per-(dataset, workload) records, weighting all datasets equally like aggregateScore does.
 static CandidateObjectives objectivesOf(const EvaluatedCandidate& evaluation)
 {
 	CandidateObjectives obj;
-	if (evaluation.records.empty())
+	if (evaluation._records.empty())
 		return obj;
-	for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+	for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 	{
 		// Seed-averaged mean when multi-seed confirmation ran, else the single-seed estimate; mirrors selectParetoRecords so optimizer and CSV agree on "latency".
-		const double latency = record.confirmSeedsUsed > 0
-			? record.latencyMean
-			: record.queryMetrics.averageLatencyMs;
-		const double memoryMb = static_cast<double>(record.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
-		const double imbalance = record.buildMetrics.averageLeafOccupancy > 0.0
-			? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+		const double latency = record._confirmSeedsUsed > 0
+			? record._latencyMean
+			: record._queryMetrics._averageLatencyMs;
+		const double memoryMb = static_cast<double>(record._buildMetrics._memoryEstimateBytes) / (1024.0 * 1024.0);
+		const double imbalance = record._buildMetrics._averageLeafOccupancy > 0.0
+			? static_cast<double>(record._buildMetrics._maxLeafOccupancy) / record._buildMetrics._averageLeafOccupancy
 			: 0.0;
-		obj.avgLatencyMs += latency;
-		obj.buildTimeMs += record.buildMetrics.buildTimeMs;
-		obj.memoryMb += memoryMb;
-		obj.imbalancePenalty += imbalance;
+		obj._avgLatencyMs += latency;
+		obj._buildTimeMs += record._buildMetrics._buildTimeMs;
+		obj._memoryMb += memoryMb;
+		obj._imbalancePenalty += imbalance;
 	}
-	const double n = static_cast<double>(evaluation.records.size());
-	obj.avgLatencyMs /= n;
-	obj.buildTimeMs /= n;
-	obj.memoryMb /= n;
-	obj.imbalancePenalty /= n;
+	const double n = static_cast<double>(evaluation._records.size());
+	obj._avgLatencyMs /= n;
+	obj._buildTimeMs /= n;
+	obj._memoryMb /= n;
+	obj._imbalancePenalty /= n;
 	return obj;
 }
 
 static bool dominatesCandidate(const CandidateObjectives& a, const CandidateObjectives& b)
 {
 	const bool allLeq =
-		a.avgLatencyMs <= b.avgLatencyMs &&
-		a.buildTimeMs <= b.buildTimeMs &&
-		a.memoryMb <= b.memoryMb &&
-		a.imbalancePenalty <= b.imbalancePenalty;
+		a._avgLatencyMs <= b._avgLatencyMs &&
+		a._buildTimeMs <= b._buildTimeMs &&
+		a._memoryMb <= b._memoryMb &&
+		a._imbalancePenalty <= b._imbalancePenalty;
 	if (!allLeq)
 		return false;
 	return
-		a.avgLatencyMs < b.avgLatencyMs ||
-		a.buildTimeMs < b.buildTimeMs ||
-		a.memoryMb < b.memoryMb ||
-		a.imbalancePenalty < b.imbalancePenalty;
+		a._avgLatencyMs < b._avgLatencyMs ||
+		a._buildTimeMs < b._buildTimeMs ||
+		a._memoryMb < b._memoryMb ||
+		a._imbalancePenalty < b._imbalancePenalty;
 }
 
 // NSGA-II fast non-dominated sort + crowding distance: populates paretoFront (0 = best) and crowdingDistance, sorting by front then larger crowding so elites stay spread across the front.
@@ -4680,8 +4680,8 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 	for (size_t i = 0; i < n; ++i)
 	{
 		objectives[i] = objectivesOf(evaluations[i]);
-		evaluations[i].paretoFront = -1;
-		evaluations[i].crowdingDistance = 0.0;
+		evaluations[i]._paretoFront = -1;
+		evaluations[i]._crowdingDistance = 0.0;
 	}
 
 	std::vector<std::vector<size_t>> dominatedBy(n);
@@ -4702,7 +4702,7 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 		}
 		if (dominationCount[p] == 0)
 		{
-			evaluations[p].paretoFront = 0;
+			evaluations[p]._paretoFront = 0;
 			currentFront.push_back(p);
 		}
 	}
@@ -4719,7 +4719,7 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 					continue;
 				if (--dominationCount[q] == 0)
 				{
-					evaluations[q].paretoFront = rank + 1;
+					evaluations[q]._paretoFront = rank + 1;
 					nextFront.push_back(q);
 				}
 			}
@@ -4731,15 +4731,15 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 	// Crowding distance per front; each objective's extreme candidate gets +inf so front edges are always preserved.
 	std::map<int, std::vector<size_t>> fronts;
 	for (size_t i = 0; i < n; ++i)
-		fronts[evaluations[i].paretoFront].push_back(i);
+		fronts[evaluations[i]._paretoFront].push_back(i);
 
 	auto objectiveValue = [&](size_t idx, int axis) {
 		switch (axis)
 		{
-		case 0: return objectives[idx].avgLatencyMs;
-		case 1: return objectives[idx].buildTimeMs;
-		case 2: return objectives[idx].memoryMb;
-		default: return objectives[idx].imbalancePenalty;
+		case 0: return objectives[idx]._avgLatencyMs;
+		case 1: return objectives[idx]._buildTimeMs;
+		case 2: return objectives[idx]._memoryMb;
+		default: return objectives[idx]._imbalancePenalty;
 		}
 	};
 
@@ -4748,7 +4748,7 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 		if (indices.size() <= 2)
 		{
 			for (const size_t idx : indices)
-				evaluations[idx].crowdingDistance = std::numeric_limits<double>::infinity();
+				evaluations[idx]._crowdingDistance = std::numeric_limits<double>::infinity();
 			continue;
 		}
 		for (int axis = 0; axis < 4; ++axis)
@@ -4758,27 +4758,27 @@ static void nsga2RankAndSort(std::vector<EvaluatedCandidate>& evaluations)
 			});
 			const double lo = objectiveValue(indices.front(), axis);
 			const double hi = objectiveValue(indices.back(), axis);
-			evaluations[indices.front()].crowdingDistance = std::numeric_limits<double>::infinity();
-			evaluations[indices.back()].crowdingDistance = std::numeric_limits<double>::infinity();
+			evaluations[indices.front()]._crowdingDistance = std::numeric_limits<double>::infinity();
+			evaluations[indices.back()]._crowdingDistance = std::numeric_limits<double>::infinity();
 			if (hi <= lo)
 				continue;
 			const double range = hi - lo;
 			for (size_t i = 1; i + 1 < indices.size(); ++i)
 			{
-				if (std::isinf(evaluations[indices[i]].crowdingDistance))
+				if (std::isinf(evaluations[indices[i]]._crowdingDistance))
 					continue;
 				const double prev = objectiveValue(indices[i - 1], axis);
 				const double next = objectiveValue(indices[i + 1], axis);
-				evaluations[indices[i]].crowdingDistance += (next - prev) / range;
+				evaluations[indices[i]]._crowdingDistance += (next - prev) / range;
 			}
 		}
 	}
 
 	std::sort(evaluations.begin(), evaluations.end(), [](const EvaluatedCandidate& a, const EvaluatedCandidate& b) {
-		if (a.paretoFront != b.paretoFront)
-			return a.paretoFront < b.paretoFront;
-		if (a.crowdingDistance != b.crowdingDistance)
-			return a.crowdingDistance > b.crowdingDistance;
+		if (a._paretoFront != b._paretoFront)
+			return a._paretoFront < b._paretoFront;
+		if (a._crowdingDistance != b._crowdingDistance)
+			return a._crowdingDistance > b._crowdingDistance;
 		// Tie-break by scalar score: on a near-1D front every edge candidate gets +inf crowding, so without this the worst-but-edge one could land at archive[0] and poison the elite pool.
 		return a.aggregateScore < b.aggregateScore;
 	});
@@ -4802,11 +4802,11 @@ static std::vector<DatasetContext> makeDatasetContexts(
 	for (const SearchDataset& dataset : datasets)
 	{
 		DatasetContext context;
-		context.dataset = &dataset;
-		context.features = Experiments::extractPointCloudFeatures(dataset.cloud);
-		context.preparedWorkloads.reserve(workloads.size());
+		context._dataset = &dataset;
+		context._features = Experiments::extractPointCloudFeatures(dataset._cloud);
+		context._preparedWorkloads.reserve(workloads.size());
 		for (const Experiments::WorkloadProfile& workload : workloads)
-			context.preparedWorkloads.push_back(prepareWorkloadProfile(workload, dataset.cloud, cudaEvaluator));
+			context._preparedWorkloads.push_back(prepareWorkloadProfile(workload, dataset._cloud, cudaEvaluator));
 		contexts.push_back(std::move(context));
 	}
 	return contexts;
@@ -4824,11 +4824,11 @@ static std::vector<DatasetContext> makeDatasetContextsFromPointers(
 		if (!dataset)
 			continue;
 		DatasetContext context;
-		context.dataset = dataset;
-		context.features = Experiments::extractPointCloudFeatures(dataset->cloud);
-		context.preparedWorkloads.reserve(workloads.size());
+		context._dataset = dataset;
+		context._features = Experiments::extractPointCloudFeatures(dataset->_cloud);
+		context._preparedWorkloads.reserve(workloads.size());
 		for (const Experiments::WorkloadProfile& workload : workloads)
-			context.preparedWorkloads.push_back(prepareWorkloadProfile(workload, dataset->cloud, cudaEvaluator));
+			context._preparedWorkloads.push_back(prepareWorkloadProfile(workload, dataset->_cloud, cudaEvaluator));
 		contexts.push_back(std::move(context));
 	}
 	return contexts;
@@ -4858,9 +4858,9 @@ static std::vector<SearchDataset> makeProxyDatasets(const std::vector<SearchData
 	for (const SearchDataset& dataset : datasets)
 	{
 		SearchDataset item;
-		item.name = dataset.name + "_proxy";
-		item.source = dataset.source;
-		item.cloud = downsampleCloud(dataset.cloud, pointCap);
+		item._name = dataset._name + "_proxy";
+		item._source = dataset._source;
+		item._cloud = downsampleCloud(dataset._cloud, pointCap);
 		proxy.push_back(std::move(item));
 	}
 	return proxy;
@@ -4874,7 +4874,7 @@ static std::vector<Experiments::WorkloadProfile> withQueryCount(
 		return workloads;
 
 	for (Experiments::WorkloadProfile& workload : workloads)
-		workload.numQueries = queryCount;
+		workload._numQueries = queryCount;
 	return workloads;
 }
 
@@ -4902,8 +4902,8 @@ static std::vector<size_t> deepLeafCandidates(
 	const Experiments::SchemaGenerationOptions& options,
 	const Experiments::ConditionDomain& domain)
 {
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
 	std::vector<size_t> values;
 	for (size_t value = clampPowerOfTwo(minLeaf, minLeaf, maxLeaf); value <= maxLeaf; value *= 2)
 	{
@@ -4911,7 +4911,7 @@ static std::vector<size_t> deepLeafCandidates(
 		if (value > maxLeaf / 2)
 			break;
 	}
-	for (const size_t threshold : domain.pointThresholds)
+	for (const size_t threshold : domain._pointThresholds)
 		values.push_back(clampPowerOfTwo(threshold, minLeaf, maxLeaf));
 	return thinSortedValues(values, 8);
 }
@@ -4920,9 +4920,9 @@ static std::vector<size_t> deepPointThresholdCandidates(
 	const Experiments::SchemaGenerationOptions& options,
 	const Experiments::ConditionDomain& domain)
 {
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxThreshold = std::max<size_t>(minLeaf * 2, std::min<size_t>(options.maxLeafCapacity * 16, 1 << 20));
-	std::vector<size_t> values = domain.pointThresholds.empty() ? fallbackPointThresholds() : domain.pointThresholds;
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxThreshold = std::max<size_t>(minLeaf * 2, std::min<size_t>(options._maxLeafCapacity * 16, 1 << 20));
+	std::vector<size_t> values = domain._pointThresholds.empty() ? fallbackPointThresholds() : domain._pointThresholds;
 	for (const size_t fallback : fallbackPointThresholds())
 		values.push_back(fallback);
 	for (size_t& value : values)
@@ -4945,15 +4945,15 @@ static double representativeQueryScale(const std::vector<Experiments::WorkloadPr
 	double totalWeight = 0.0;
 	for (const Experiments::WorkloadProfile& workload : workloads)
 	{
-		if (workload.rangeWeight > 0.0)
+		if (workload._rangeWeight > 0.0)
 		{
-			weighted += workload.rangeWeight * 0.5 * (workload.rangeScaleMin + workload.rangeScaleMax);
-			totalWeight += workload.rangeWeight;
+			weighted += workload._rangeWeight * 0.5 * (workload._rangeScaleMin + workload._rangeScaleMax);
+			totalWeight += workload._rangeWeight;
 		}
-		if (workload.radiusWeight > 0.0)
+		if (workload._radiusWeight > 0.0)
 		{
-			weighted += workload.radiusWeight * 0.5 * (workload.radiusScaleMin + workload.radiusScaleMax);
-			totalWeight += workload.radiusWeight;
+			weighted += workload._radiusWeight * 0.5 * (workload._radiusScaleMin + workload._radiusScaleMax);
+			totalWeight += workload._radiusWeight;
 		}
 	}
 	return totalWeight > 0.0 ? weighted / totalWeight : 0.05;
@@ -4963,7 +4963,7 @@ static std::vector<size_t> deepHandoffDepthCandidates(
 	const Experiments::SchemaGenerationOptions& options,
 	const std::vector<Experiments::WorkloadProfile>& workloads)
 {
-	const size_t maxDepth = std::max<size_t>(2, options.maxDepth);
+	const size_t maxDepth = std::max<size_t>(2, options._maxDepth);
 	const double scale = std::clamp(representativeQueryScale(workloads), 0.001, 0.5);
 	const size_t suggested = std::clamp(
 		static_cast<size_t>(std::ceil(std::log2(1.0 / scale))),
@@ -4982,15 +4982,15 @@ static std::vector<size_t> deepHandoffDepthCandidates(
 static SchemaLevelConfig makeDeepLevel(const std::string& typeName, size_t numLevels, size_t leafCapacity)
 {
 	SchemaLevelConfig level;
-	level.typeName = typeName;
-	level.type = Config::parseDataStructureLevel(typeName);
-	level.numLevels = std::max<size_t>(1, numLevels);
-	level.leafCapacity = std::max<size_t>(2, leafCapacity);
-	level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
-	if (level.type == MultiDataStructure::QuadTreeNode)
-		level.axisPolicy = "xy";
-	else if (level.type == MultiDataStructure::KDTreeNode)
-		level.axisPolicy = "median_longest_axis";
+	level._typeName = typeName;
+	level._type = Config::parseDataStructureLevel(typeName);
+	level._numLevels = std::max<size_t>(1, numLevels);
+	level._leafCapacity = std::max<size_t>(2, leafCapacity);
+	level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
+	if (level._type == MultiDataStructure::QuadTreeNode)
+		level._axisPolicy = "xy";
+	else if (level._type == MultiDataStructure::KDTreeNode)
+		level._axisPolicy = "median_longest_axis";
 	return level;
 }
 
@@ -5007,10 +5007,10 @@ static bool deepTypeAllowedByProfile(const std::string& typeName, const Experime
 
 static bool isDeepNestedSchema(const SchemaConfig& schema)
 {
-	if (schema.levels.size() < 2)
+	if (schema._levels.size() < 2)
 		return false;
 	std::set<std::string> types;
-	for (const SchemaLevelConfig& level : schema.levels)
+	for (const SchemaLevelConfig& level : schema._levels)
 		types.insert(schemaTypeShortName(level));
 	return types.size() >= 2;
 }
@@ -5026,26 +5026,26 @@ static SchemaLevelCondition makeDeepSecondStageCondition(
 	size_t variant)
 {
 	SchemaLevelCondition condition;
-	condition.minPoints = minPoints;
+	condition._minPoints = minPoints;
 
 	if (isRegularGridLevelName(secondType) || isHGridLevelName(secondType) ||
 		isRegularGridLevelName(firstType) || isHGridLevelName(firstType))
 	{
-		condition.minDensity = density;
+		condition._minDensity = density;
 	}
 	else if (Config::parseDataStructureLevel(secondType) == MultiDataStructure::OctreeNode)
 	{
-		condition.minHeightRatio = heightRatio;
+		condition._minHeightRatio = heightRatio;
 	}
 	else if (Config::parseDataStructureLevel(firstType) == MultiDataStructure::QuadTreeNode)
 	{
-		condition.minHeightRatio = heightRatio;
+		condition._minHeightRatio = heightRatio;
 	}
 
 	if (variant % 4 == 1 && extentX > 0.0)
-		condition.minExtentX = extentX;
+		condition._minExtentX = extentX;
 	else if (variant % 4 == 2 && extentZ > 0.0)
-		condition.minExtentZ = extentZ;
+		condition._minExtentZ = extentZ;
 
 	return condition;
 }
@@ -5056,16 +5056,16 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 	const std::vector<Experiments::WorkloadProfile>& workloads)
 {
 	Experiments::SchemaGenerationOptions options = baseOptions;
-	options.minBlocks = std::max<size_t>(2, options.minBlocks);
-	options.maxBlocks = std::max(options.minBlocks, options.maxBlocks);
-	options.maxDepth = std::max<size_t>(2, options.maxDepth);
-	options.conditionalLevels = true;
-	options.conditionalProbability = std::max(0.75, options.conditionalProbability);
+	options._minBlocks = std::max<size_t>(2, options._minBlocks);
+	options._maxBlocks = std::max(options._minBlocks, options._maxBlocks);
+	options._maxDepth = std::max<size_t>(2, options._maxDepth);
+	options._conditionalLevels = true;
+	options._conditionalProbability = std::max(0.75, options._conditionalProbability);
 
 	struct DeepFamily
 	{
 		const char* first = "";
-		std::vector<const char*> seconds;
+		std::vector<const char*> _seconds;
 	};
 
 	const std::array<DeepFamily, 5> families = {
@@ -5079,23 +5079,23 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 	const std::vector<size_t> firstDepths = deepHandoffDepthCandidates(options, workloads);
 	const std::vector<size_t> leafValues = deepLeafCandidates(options, domain);
 	const std::vector<size_t> pointThresholds = deepPointThresholdCandidates(options, domain);
-	const std::vector<double> heightValues = deepDoubleCandidates(domain.heightRatioThresholds, fallbackHeightRatioThresholds(), 6);
-	const std::vector<double> densityValues = deepDoubleCandidates(domain.densityThresholds, { 0.0001, 0.001, 0.01, 0.1 }, 6);
-	const std::vector<double> extentXValues = deepDoubleCandidates(domain.extentXThresholds, {}, 4);
-	const std::vector<double> extentZValues = deepDoubleCandidates(domain.extentZThresholds, {}, 4);
+	const std::vector<double> heightValues = deepDoubleCandidates(domain._heightRatioThresholds, fallbackHeightRatioThresholds(), 6);
+	const std::vector<double> densityValues = deepDoubleCandidates(domain._densityThresholds, { 0.0001, 0.001, 0.01, 0.1 }, 6);
+	const std::vector<double> extentXValues = deepDoubleCandidates(domain._extentXThresholds, {}, 4);
+	const std::vector<double> extentZValues = deepDoubleCandidates(domain._extentZThresholds, {}, 4);
 	const std::array<size_t, 5> secondDepthSeeds = { 1, 2, 3, 4, 6 };
 
 	std::unordered_set<std::string> seen;
 	std::vector<Experiments::SchemaCandidate> candidates;
-	candidates.reserve(options.count);
+	candidates.reserve(options._count);
 
-	std::mt19937 rng(options.seed);
+	std::mt19937 rng(options._seed);
 	size_t variant = 0;
 	for (const DeepFamily& family : families)
 	{
 		if (!deepTypeAllowedByProfile(family.first, options))
 			continue;
-		for (const char* secondType : family.seconds)
+		for (const char* secondType : family._seconds)
 		{
 			if (!deepTypeAllowedByProfile(secondType, options))
 				continue;
@@ -5103,7 +5103,7 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 			{
 				for (const size_t secondDepthSeed : secondDepthSeeds)
 				{
-					if (firstDepth + secondDepthSeed > options.maxDepth)
+					if (firstDepth + secondDepthSeed > options._maxDepth)
 						continue;
 					for (const size_t leaf : leafValues)
 					{
@@ -5115,14 +5115,14 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 							const double extentZ = extentZValues.empty() ? 0.0 : extentZValues[(variant / 5) % extentZValues.size()];
 
 							SchemaConfig schema;
-							schema.levels.push_back(makeDeepLevel(family.first, firstDepth, leaf));
-							maybeAssignAdaptiveLeafCapacity(schema.levels.back(), rng, options);
+							schema._levels.push_back(makeDeepLevel(family.first, firstDepth, leaf));
+							maybeAssignAdaptiveLeafCapacity(schema._levels.back(), rng, options);
 							SchemaLevelConfig second = makeDeepLevel(
 								secondType,
 								secondDepthSeed,
-								std::max<size_t>(options.minLeafCapacity, leaf / 2));
+								std::max<size_t>(options._minLeafCapacity, leaf / 2));
 							maybeAssignAdaptiveLeafCapacity(second, rng, options);
-							second.condition = makeDeepSecondStageCondition(
+							second._condition = makeDeepSecondStageCondition(
 								family.first,
 								secondType,
 								minPoints,
@@ -5131,7 +5131,7 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 								extentX,
 								extentZ,
 								variant);
-							schema.levels.push_back(second);
+							schema._levels.push_back(second);
 							normalizeSchemaForGeneration(schema, options);
 							if (!isDeepNestedSchema(schema))
 							{
@@ -5141,10 +5141,10 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 
 							const std::string signature = schemaSignature(schema);
 							if (seen.insert(signature).second)
-								candidates.push_back(materializeGeneratedSchema(schema, "deep", options.outputDirectory));
+								candidates.push_back(materializeGeneratedSchema(schema, "deep", options._outputDirectory));
 							++variant;
 
-							if (candidates.size() >= options.count)
+							if (candidates.size() >= options._count)
 								return candidates;
 						}
 					}
@@ -5153,35 +5153,35 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 		}
 	}
 
-	if (candidates.size() < options.count)
+	if (candidates.size() < options._count)
 	{
 		Experiments::SchemaGenerationOptions fallback = options;
-		fallback.count = options.count - candidates.size();
-		fallback.minBlocks = 2;
+		fallback._count = options._count - candidates.size();
+		fallback._minBlocks = 2;
 		std::vector<Experiments::SchemaCandidate> randomNested = Experiments::generateSchemaCandidates(fallback, &domain);
 		for (Experiments::SchemaCandidate& candidate : randomNested)
 		{
-			if (!isDeepNestedSchema(candidate.config))
+			if (!isDeepNestedSchema(candidate._config))
 				continue;
-			const std::string signature = schemaSignature(candidate.config);
+			const std::string signature = schemaSignature(candidate._config);
 			if (seen.insert(signature).second)
 				candidates.push_back(std::move(candidate));
-			if (candidates.size() >= options.count)
+			if (candidates.size() >= options._count)
 				break;
 		}
 	}
 
-	if (candidates.size() < options.count)
-		std::cerr << "Warning: generated " << candidates.size() << " deep nested schemas from requested " << options.count << '\n';
+	if (candidates.size() < options._count)
+		std::cerr << "Warning: generated " << candidates.size() << " deep nested schemas from requested " << options._count << '\n';
 	return candidates;
 }
 
 // Key for the candidate's root (primary) block type, so the diversifier can keep at least one survivor per family when advancing top-K between rungs.
 static std::string primaryBlockKey(const SchemaConfig& schema)
 {
-	if (schema.levels.empty())
+	if (schema._levels.empty())
 		return "";
-	return schemaTypeShortName(schema.levels.front());
+	return schemaTypeShortName(schema._levels.front());
 }
 
 static std::vector<Experiments::SchemaCandidate> topCandidates(
@@ -5200,15 +5200,15 @@ static std::vector<Experiments::SchemaCandidate> topCandidates(
 	// Pass 1: take the best of each primary-block type, in score order.
 	for (size_t i = 0; i < evaluations.size() && result.size() < limit; ++i)
 	{
-		const Experiments::SchemaCandidate& candidate = evaluations[i].candidate;
-		const std::string primary = primaryBlockKey(candidate.config);
+		const Experiments::SchemaCandidate& candidate = evaluations[i]._candidate;
+		const std::string primary = primaryBlockKey(candidate._config);
 		if (!primarySeen.insert(primary).second)
 		{
 			deferred.push_back(i);
 			continue;
 		}
 		result.push_back(candidate);
-		picked.insert(candidate.path.empty() ? candidate.name : candidate.path);
+		picked.insert(candidate._path.empty() ? candidate._name : candidate._path);
 	}
 
 	// Pass 2: fill remaining slots from the deferred pool, still in score order.
@@ -5216,9 +5216,9 @@ static std::vector<Experiments::SchemaCandidate> topCandidates(
 	{
 		if (result.size() >= limit)
 			break;
-		const Experiments::SchemaCandidate& candidate = evaluations[i].candidate;
+		const Experiments::SchemaCandidate& candidate = evaluations[i]._candidate;
 		result.push_back(candidate);
-		picked.insert(candidate.path.empty() ? candidate.name : candidate.path);
+		picked.insert(candidate._path.empty() ? candidate._name : candidate._path);
 	}
 
 	const size_t diverseCount = primarySeen.size();
@@ -5229,12 +5229,12 @@ static std::vector<Experiments::SchemaCandidate> topCandidates(
 	size_t baselinesAdded = 0;
 	for (const EvaluatedCandidate& evaluation : evaluations)
 	{
-		if (!evaluation.candidate.isBaseline)
+		if (!evaluation._candidate._isBaseline)
 			continue;
-		const std::string key = evaluation.candidate.path.empty() ? evaluation.candidate.name : evaluation.candidate.path;
+		const std::string key = evaluation._candidate._path.empty() ? evaluation._candidate._name : evaluation._candidate._path;
 		if (!picked.insert(key).second)
 			continue;
-		result.push_back(evaluation.candidate);
+		result.push_back(evaluation._candidate);
 		++baselinesAdded;
 	}
 	if (baselinesAdded > 0)
@@ -5255,7 +5255,7 @@ static std::vector<Experiments::SchemaCandidate> topSearchCandidatesWithBaseline
 	searchEvaluations.reserve(evaluations.size());
 	for (const EvaluatedCandidate& evaluation : evaluations)
 	{
-		if (!evaluation.candidate.isBaseline)
+		if (!evaluation._candidate._isBaseline)
 			searchEvaluations.push_back(evaluation);
 	}
 
@@ -5268,14 +5268,14 @@ static std::vector<Experiments::SchemaCandidate> topSearchCandidatesWithBaseline
 
 static bool recordCountsAsNested(const Experiments::SchemaSearchRecord& record)
 {
-	return !record.isBaseline &&
-		record.activeStructureTypes >= 2 &&
-		record.nestedActiveFraction >= 0.05;
+	return !record._isBaseline &&
+		record._activeStructureTypes >= 2 &&
+		record._nestedActiveFraction >= 0.05;
 }
 
 static bool evaluationCountsAsNested(const EvaluatedCandidate& evaluation)
 {
-	for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+	for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 	{
 		if (recordCountsAsNested(record))
 			return true;
@@ -5288,7 +5288,7 @@ static void appendUniqueCandidate(
 	std::unordered_set<std::string>& picked,
 	const Experiments::SchemaCandidate& candidate)
 {
-	const std::string key = candidate.path.empty() ? candidate.config.name : candidate.path;
+	const std::string key = candidate._path.empty() ? candidate._config._name : candidate._path;
 	if (picked.insert(key).second)
 		out.push_back(candidate);
 }
@@ -5306,8 +5306,8 @@ static std::vector<Experiments::SchemaCandidate> topDeepNestedCandidates(
 	{
 		if (result.size() >= limit)
 			break;
-		if (!evaluation.candidate.isBaseline && evaluationCountsAsNested(evaluation))
-			appendUniqueCandidate(result, picked, evaluation.candidate);
+		if (!evaluation._candidate._isBaseline && evaluationCountsAsNested(evaluation))
+			appendUniqueCandidate(result, picked, evaluation._candidate);
 	}
 
 	if (result.size() < limit)
@@ -5316,8 +5316,8 @@ static std::vector<Experiments::SchemaCandidate> topDeepNestedCandidates(
 		{
 			if (result.size() >= limit)
 				break;
-			if (!evaluation.candidate.isBaseline)
-				appendUniqueCandidate(result, picked, evaluation.candidate);
+			if (!evaluation._candidate._isBaseline)
+				appendUniqueCandidate(result, picked, evaluation._candidate);
 		}
 	}
 
@@ -5326,10 +5326,10 @@ static std::vector<Experiments::SchemaCandidate> topDeepNestedCandidates(
 		size_t baselinesAdded = 0;
 		for (const EvaluatedCandidate& evaluation : evaluations)
 		{
-			if (!evaluation.candidate.isBaseline)
+			if (!evaluation._candidate._isBaseline)
 				continue;
 			const size_t previousSize = result.size();
-			appendUniqueCandidate(result, picked, evaluation.candidate);
+			appendUniqueCandidate(result, picked, evaluation._candidate);
 			if (result.size() != previousSize)
 				++baselinesAdded;
 		}
@@ -5344,24 +5344,24 @@ static std::optional<Experiments::SchemaCandidate> bestBaselineCandidate(const s
 {
 	for (const EvaluatedCandidate& evaluation : evaluations)
 	{
-		if (evaluation.candidate.isBaseline)
-			return evaluation.candidate;
+		if (evaluation._candidate._isBaseline)
+			return evaluation._candidate;
 	}
 	return std::nullopt;
 }
 
 struct LocalCellStats
 {
-	size_t count = 0;
+	size_t _count = 0;
 	glm::vec3 min = glm::vec3(std::numeric_limits<float>::max());
 	glm::vec3 max = glm::vec3(std::numeric_limits<float>::lowest());
 };
 
 struct LocalOpportunityStats
 {
-	std::map<std::string, size_t> suggestedTypes;
-	double dominantShare = 0.0;
-	size_t testedCells = 0;
+	std::map<std::string, size_t> _suggestedTypes;
+	double _dominantShare = 0.0;
+	size_t _testedCells = 0;
 };
 
 static LocalOpportunityStats estimateLocalOpportunity(const PointCloud& cloud, size_t pointCap)
@@ -5388,7 +5388,7 @@ static LocalOpportunityStats estimateLocalOpportunity(const PointCloud& cloud, s
 		const size_t iy = static_cast<size_t>(normalized.y * gridResolution);
 		const size_t iz = static_cast<size_t>(normalized.z * gridResolution);
 		LocalCellStats& cell = cells[ix + gridResolution * (iy + gridResolution * iz)];
-		++cell.count;
+		++cell._count;
 		cell.min = glm::min(cell.min, position);
 		cell.max = glm::max(cell.max, position);
 	}
@@ -5397,12 +5397,12 @@ static LocalOpportunityStats estimateLocalOpportunity(const PointCloud& cloud, s
 	std::vector<size_t> counts;
 	for (const LocalCellStats& cell : cells)
 	{
-		if (cell.count == 0)
+		if (cell._count == 0)
 			continue;
 		const glm::vec3 cellExtent = glm::max(cell.max - cell.min, glm::vec3(static_cast<float>(EPSILON)));
 		const double volume = static_cast<double>(cellExtent.x) * cellExtent.y * cellExtent.z;
-		densities.push_back(volume > EPSILON ? static_cast<double>(cell.count) / volume : 0.0);
-		counts.push_back(cell.count);
+		densities.push_back(volume > EPSILON ? static_cast<double>(cell._count) / volume : 0.0);
+		counts.push_back(cell._count);
 	}
 	if (counts.empty())
 		return result;
@@ -5413,7 +5413,7 @@ static LocalOpportunityStats estimateLocalOpportunity(const PointCloud& cloud, s
 
 	for (const LocalCellStats& cell : cells)
 	{
-		if (cell.count < std::max<size_t>(4, medianCount / 2))
+		if (cell._count < std::max<size_t>(4, medianCount / 2))
 			continue;
 
 		const glm::vec3 cellExtent = glm::max(cell.max - cell.min, glm::vec3(static_cast<float>(EPSILON)));
@@ -5421,26 +5421,26 @@ static LocalOpportunityStats estimateLocalOpportunity(const PointCloud& cloud, s
 		const double heightRatio = static_cast<double>(cellExtent.z) / horizontal;
 		const double minExtent = std::max(EPSILON, static_cast<double>(std::min({ cellExtent.x, cellExtent.y, cellExtent.z })));
 		const double maxExtent = static_cast<double>(std::max({ cellExtent.x, cellExtent.y, cellExtent.z }));
-		const double density = static_cast<double>(cell.count) /
+		const double density = static_cast<double>(cell._count) /
 			std::max(EPSILON, static_cast<double>(cellExtent.x) * cellExtent.y * cellExtent.z);
 
 		std::string winner = "ot";
 		if (heightRatio < 0.18)
 			winner = "qt";
-		else if (density > medianDensity * 1.75 && cell.count > medianCount)
+		else if (density > medianDensity * 1.75 && cell._count > medianCount)
 			winner = "rg";
 		else if (maxExtent / minExtent > 3.0)
 			winner = "kd";
 
-		++result.suggestedTypes[winner];
-		++result.testedCells;
+		++result._suggestedTypes[winner];
+		++result._testedCells;
 	}
 
 	size_t dominant = 0;
-	for (const auto& [typeName, count] : result.suggestedTypes)
+	for (const auto& [typeName, count] : result._suggestedTypes)
 		dominant = std::max(dominant, count);
-	result.dominantShare = result.testedCells > 0
-		? static_cast<double>(dominant) / static_cast<double>(result.testedCells)
+	result._dominantShare = result._testedCells > 0
+		? static_cast<double>(dominant) / static_cast<double>(result._testedCells)
 		: 0.0;
 	return result;
 }
@@ -5450,13 +5450,13 @@ static void printLocalOpportunity(
 	const Experiments::SchemaCandidate& bestBaseline,
 	size_t pointCap)
 {
-	const LocalOpportunityStats local = estimateLocalOpportunity(dataset.cloud, pointCap);
-	const std::string globalType = bestBaseline.config.levels.empty()
+	const LocalOpportunityStats local = estimateLocalOpportunity(dataset._cloud, pointCap);
+	const std::string globalType = bestBaseline._config._levels.empty()
 		? std::string()
-		: schemaTypeShortName(bestBaseline.config.levels.front());
+		: schemaTypeShortName(bestBaseline._config._levels.front());
 
-	std::cout << "    local opportunity: " << local.testedCells << " shallow occupied cells";
-	if (local.testedCells == 0)
+	std::cout << "    local opportunity: " << local._testedCells << " shallow occupied cells";
+	if (local._testedCells == 0)
 	{
 		std::cout << " (insufficient local samples)\n";
 		return;
@@ -5465,7 +5465,7 @@ static void printLocalOpportunity(
 	std::cout << ", suggested second-stage types ";
 	bool first = true;
 	bool differsFromGlobal = false;
-	for (const auto& [typeName, count] : local.suggestedTypes)
+	for (const auto& [typeName, count] : local._suggestedTypes)
 	{
 		if (!first)
 			std::cout << "; ";
@@ -5474,8 +5474,8 @@ static void printLocalOpportunity(
 		if (typeName != globalType)
 			differsFromGlobal = true;
 	}
-	std::cout << ", dominant share " << local.dominantShare;
-	if (!differsFromGlobal || local.suggestedTypes.size() <= 1)
+	std::cout << ", dominant share " << local._dominantShare;
+	if (!differsFromGlobal || local._suggestedTypes.size() <= 1)
 		std::cout << " (low nested-opportunity signal)";
 	else
 		std::cout << " (local winners differ from global " << globalType << ")";
@@ -5502,8 +5502,8 @@ static void runDeepNestedDiagnostics(
 	}
 
 	Experiments::SchemaSearchOptions diagnosticOptions = options;
-	diagnosticOptions.evaluator = "cpu";
-	diagnosticOptions.weights.useVisitProxy = false;
+	diagnosticOptions._evaluator = "cpu";
+	diagnosticOptions._weights._useVisitProxy = false;
 	const std::vector<Experiments::WorkloadProfile> diagnosticWorkloads = withQueryCount(workloads, 64);
 	const std::vector<DatasetContext> contexts = makeDatasetContexts(datasets, diagnosticWorkloads, false);
 	std::cout << "  deep nested diagnostics: pure baselines at 64 queries\n";
@@ -5516,11 +5516,11 @@ static void runDeepNestedDiagnostics(
 	if (baselineEvaluations.empty())
 		return;
 
-	const Experiments::SchemaCandidate& bestBaseline = baselineEvaluations.front().candidate;
-	std::cout << "    best pure baseline: " << bestBaseline.config.name
+	const Experiments::SchemaCandidate& bestBaseline = baselineEvaluations.front()._candidate;
+	std::cout << "    best pure baseline: " << bestBaseline._config._name
 		<< " aggregate score " << baselineEvaluations.front().aggregateScore << '\n';
 	for (const SearchDataset& dataset : datasets)
-		printLocalOpportunity(dataset, bestBaseline, options.autoConditions.proxyPointCap);
+		printLocalOpportunity(dataset, bestBaseline, options._autoConditions._proxyPointCap);
 }
 
 static std::vector<Experiments::WorkloadProfile> makeRobustnessWorkloads(
@@ -5535,9 +5535,9 @@ static std::vector<Experiments::WorkloadProfile> makeRobustnessWorkloads(
 		for (const Experiments::WorkloadProfile& workload : workloads)
 		{
 			Experiments::WorkloadProfile copy = workload;
-			copy.name = workload.name + "_robust_seed" + std::to_string(seedIndex);
-			copy.numQueries = queryCount;
-			copy.querySeed = workload.querySeed + static_cast<uint32_t>(7919 * (seedIndex + 1));
+			copy._name = workload._name + "_robust_seed" + std::to_string(seedIndex);
+			copy._numQueries = queryCount;
+			copy._querySeed = workload._querySeed + static_cast<uint32_t>(7919 * (seedIndex + 1));
 			robust.push_back(copy);
 		}
 	}
@@ -5550,7 +5550,7 @@ static void appendBaselineControls(
 {
 	std::unordered_set<std::string> picked;
 	for (const Experiments::SchemaCandidate& candidate : candidates)
-		picked.insert(candidate.path.empty() ? candidate.config.name : candidate.path);
+		picked.insert(candidate._path.empty() ? candidate._config._name : candidate._path);
 	for (const Experiments::SchemaCandidate& baseline : baselines)
 		appendUniqueCandidate(candidates, picked, baseline);
 }
@@ -5576,18 +5576,18 @@ static void runDeepCudaConfirmation(
 	{
 		std::unordered_set<std::string> picked;
 		for (const Experiments::SchemaCandidate& candidate : candidates)
-			picked.insert(candidate.path.empty() ? candidate.config.name : candidate.path);
+			picked.insert(candidate._path.empty() ? candidate._config._name : candidate._path);
 		appendUniqueCandidate(candidates, picked, baseline.value());
 	}
 	if (candidates.empty())
 		return;
 
 	Experiments::SchemaSearchOptions cudaOptions = options;
-	cudaOptions.evaluator = "cuda";
-	cudaOptions.cuda.builder = "mixed";
-	if (cudaOptions.cuda.device < 0)
-		cudaOptions.cuda.device = 0;
-	cudaOptions.weights.useVisitProxy = false;
+	cudaOptions._evaluator = "cuda";
+	cudaOptions._cuda._builder = "mixed";
+	if (cudaOptions._cuda._device < 0)
+		cudaOptions._cuda._device = 0;
+	cudaOptions._weights._useVisitProxy = false;
 
 	const std::vector<Experiments::WorkloadProfile> cudaWorkloads = withQueryCount(workloads, 64);
 	const std::vector<DatasetContext> cudaContexts = makeDatasetContexts(datasets, cudaWorkloads, true);
@@ -5599,7 +5599,7 @@ static void runDeepCudaConfirmation(
 		cudaWorkloads,
 		cudaOptions);
 	if (!cudaEvaluations.empty())
-		std::cout << "    cuda confirmation best: " << cudaEvaluations.front().candidate.config.name
+		std::cout << "    cuda confirmation best: " << cudaEvaluations.front()._candidate._config._name
 			<< " aggregate score " << cudaEvaluations.front().aggregateScore << " (report only)\n";
 }
 
@@ -5610,12 +5610,12 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 	const std::vector<Experiments::WorkloadProfile>& workloads,
 	const Experiments::SchemaSearchOptions& options)
 {
-	const size_t parallelWorkers = (!useCudaEvaluator(options) && options.parallelDispatch > 1)
-		? std::min(options.parallelDispatch, candidates.size())
+	const size_t parallelWorkers = (!useCudaEvaluator(options) && options._parallelDispatch > 1)
+		? std::min(options._parallelDispatch, candidates.size())
 		: 1;
 
 	std::cout << "  auto-conditions " << label << ": " << candidates.size() << " candidates, "
-		<< (workloads.empty() ? size_t(0) : workloads.front().numQueries) << " queries";
+		<< (workloads.empty() ? size_t(0) : workloads.front()._numQueries) << " queries";
 	if (parallelWorkers > 1)
 		std::cout << " (parallel CPU workers: " << parallelWorkers << ")";
 	std::cout << '\n';
@@ -5645,7 +5645,7 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 		for (size_t i = 0; i < candidates.size(); ++i)
 		{
 			std::cout << "    " << label << " [" << (i + 1) << "/" << candidates.size() << "] "
-				<< candidates[i].config.name << "  aggregate score " << evaluations[i].aggregateScore << '\n';
+				<< candidates[i]._config._name << "  aggregate score " << evaluations[i].aggregateScore << '\n';
 		}
 	}
 	else
@@ -5654,7 +5654,7 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 		for (size_t i = 0; i < candidates.size(); ++i)
 		{
 			const Experiments::SchemaCandidate& candidate = candidates[i];
-			std::cout << "    " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate.config.name << '\n';
+			std::cout << "    " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate._config._name << '\n';
 			evaluations[i] = evaluateCandidate(candidate, contexts, workloads, options, &cudaCache);
 			std::cout << "      aggregate score " << evaluations[i].aggregateScore << '\n';
 		}
@@ -5662,7 +5662,7 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 
 	sortEvaluations(evaluations);
 	if (!evaluations.empty())
-		std::cout << "    " << label << " best: " << evaluations.front().candidate.config.name << " score " << evaluations.front().aggregateScore << '\n';
+		std::cout << "    " << label << " best: " << evaluations.front()._candidate._config._name << " score " << evaluations.front().aggregateScore << '\n';
 	return evaluations;
 }
 
@@ -5714,7 +5714,7 @@ static void writeSchemaCopy(const Experiments::SchemaCandidate& candidate, const
 	std::ofstream output(path);
 	if (!output.is_open())
 		throw std::runtime_error("Unable to write auto-condition schema: " + path.string());
-	output << schemaConfigToJson(candidate.config);
+	output << schemaConfigToJson(candidate._config);
 }
 
 static void writeMeasuredSelectorArtifact(
@@ -5734,39 +5734,39 @@ static void writeMeasuredSelectorArtifact(
 	output << std::fixed << std::setprecision(6);
 	output << "{\n";
 	output << "  \"model_type\": \"measured_best_schema\",\n";
-	output << "  \"dataset_name\": \"" << jsonEscape(selected.datasetName) << "\",\n";
-	output << "  \"dataset_path\": \"" << jsonEscape(selected.datasetSource) << "\",\n";
-	output << "  \"workload_name\": \"" << jsonEscape(selected.workloadName) << "\",\n";
-	output << "  \"workload_profile_path\": \"" << jsonEscape(selected.workloadName) << "\",\n";
+	output << "  \"dataset_name\": \"" << jsonEscape(selected._datasetName) << "\",\n";
+	output << "  \"dataset_path\": \"" << jsonEscape(selected._datasetSource) << "\",\n";
+	output << "  \"workload_name\": \"" << jsonEscape(selected._workloadName) << "\",\n";
+	output << "  \"workload_profile_path\": \"" << jsonEscape(selected._workloadName) << "\",\n";
 	output << "  \"selected_schema\": {\n";
-	output << "    \"name\": \"" << jsonEscape(selected.schemaName) << "\",\n";
-	output << "    \"path\": \"" << jsonEscape(selected.schemaPath) << "\",\n";
-	output << "    \"score\": " << selected.score << ",\n";
-	output << "    \"score_mode\": \"" << jsonEscape(selected.scoreMode) << "\",\n";
-	output << "    \"score_stage\": \"" << jsonEscape(selected.scoreStage) << "\",\n";
-	output << "    \"score_is_final_latency\": " << (selected.scoreIsFinalLatency ? "true" : "false") << ",\n";
-	output << "    \"avg_latency_ms\": " << selected.queryMetrics.averageLatencyMs << ",\n";
-	output << "    \"build_time_ms\": " << selected.buildMetrics.buildTimeMs << ",\n";
-	output << "    \"memory_estimate_bytes\": " << selected.buildMetrics.memoryEstimateBytes << "\n";
+	output << "    \"name\": \"" << jsonEscape(selected._schemaName) << "\",\n";
+	output << "    \"path\": \"" << jsonEscape(selected._schemaPath) << "\",\n";
+	output << "    \"score\": " << selected._score << ",\n";
+	output << "    \"score_mode\": \"" << jsonEscape(selected._scoreMode) << "\",\n";
+	output << "    \"score_stage\": \"" << jsonEscape(selected._scoreStage) << "\",\n";
+	output << "    \"score_is_final_latency\": " << (selected._scoreIsFinalLatency ? "true" : "false") << ",\n";
+	output << "    \"avg_latency_ms\": " << selected._queryMetrics._averageLatencyMs << ",\n";
+	output << "    \"build_time_ms\": " << selected._buildMetrics._buildTimeMs << ",\n";
+	output << "    \"memory_estimate_bytes\": " << selected._buildMetrics._memoryEstimateBytes << "\n";
 	output << "  },\n";
 	output << "  \"candidate_scores\": [\n";
 	bool first = true;
 	for (const Experiments::SchemaSearchRecord& record : records)
 	{
-		if (record.datasetName != selected.datasetName || record.workloadName != selected.workloadName)
+		if (record._datasetName != selected._datasetName || record._workloadName != selected._workloadName)
 			continue;
 		output << (first ? "" : ",\n");
 		first = false;
 		output << "    {\n";
-		output << "      \"name\": \"" << jsonEscape(record.schemaName) << "\",\n";
-		output << "      \"path\": \"" << jsonEscape(record.schemaPath) << "\",\n";
-		output << "      \"score\": " << record.score << ",\n";
-		output << "      \"score_mode\": \"" << jsonEscape(record.scoreMode) << "\",\n";
-		output << "      \"score_stage\": \"" << jsonEscape(record.scoreStage) << "\",\n";
-		output << "      \"score_is_final_latency\": " << (record.scoreIsFinalLatency ? "true" : "false") << ",\n";
-		output << "      \"avg_latency_ms\": " << record.queryMetrics.averageLatencyMs << ",\n";
-		output << "      \"build_time_ms\": " << record.buildMetrics.buildTimeMs << ",\n";
-		output << "      \"memory_estimate_bytes\": " << record.buildMetrics.memoryEstimateBytes << "\n";
+		output << "      \"name\": \"" << jsonEscape(record._schemaName) << "\",\n";
+		output << "      \"path\": \"" << jsonEscape(record._schemaPath) << "\",\n";
+		output << "      \"score\": " << record._score << ",\n";
+		output << "      \"score_mode\": \"" << jsonEscape(record._scoreMode) << "\",\n";
+		output << "      \"score_stage\": \"" << jsonEscape(record._scoreStage) << "\",\n";
+		output << "      \"score_is_final_latency\": " << (record._scoreIsFinalLatency ? "true" : "false") << ",\n";
+		output << "      \"avg_latency_ms\": " << record._queryMetrics._averageLatencyMs << ",\n";
+		output << "      \"build_time_ms\": " << record._buildMetrics._buildTimeMs << ",\n";
+		output << "      \"memory_estimate_bytes\": " << record._buildMetrics._memoryEstimateBytes << "\n";
 		output << "    }";
 	}
 	output << "\n  ],\n";
@@ -5785,41 +5785,41 @@ static void writeAutoConditionArtifacts(
 
 	std::unordered_map<std::string, const Experiments::SchemaCandidate*> candidatesByKey;
 	for (const EvaluatedCandidate& evaluation : finalEvaluations)
-		candidatesByKey[candidateKey(evaluation.candidate.config.name, evaluation.candidate.path)] = &evaluation.candidate;
+		candidatesByKey[candidateKey(evaluation._candidate._config._name, evaluation._candidate._path)] = &evaluation._candidate;
 
 	std::vector<Experiments::SchemaSearchRecord> bestRecords = Experiments::selectBestRecords(records);
 	for (Experiments::SchemaSearchRecord& best : bestRecords)
 	{
-		const std::string originalPath = best.schemaPath;
-		const auto found = candidatesByKey.find(candidateKey(best.schemaName, originalPath));
+		const std::string originalPath = best._schemaPath;
+		const auto found = candidatesByKey.find(candidateKey(best._schemaName, originalPath));
 		if (found == candidatesByKey.end())
 			continue;
 
 		const std::filesystem::path outputPath =
-			std::filesystem::path(options.autoConditions.outputDirectory) /
-			(safeFileStem(best.datasetName + "_" + best.workloadName) + "_best_schema.json");
+			std::filesystem::path(options._autoConditions._outputDirectory) /
+			(safeFileStem(best._datasetName + "_" + best._workloadName) + "_best_schema.json");
 		writeSchemaCopy(*found->second, outputPath);
 
 		for (Experiments::SchemaSearchRecord& record : records)
 		{
-			if (record.datasetName == best.datasetName &&
-				record.workloadName == best.workloadName &&
-				record.schemaName == best.schemaName &&
-				record.schemaPath == originalPath)
+			if (record._datasetName == best._datasetName &&
+				record._workloadName == best._workloadName &&
+				record._schemaName == best._schemaName &&
+				record._schemaPath == originalPath)
 			{
-				record.schemaPath = outputPath.string();
+				record._schemaPath = outputPath.string();
 			}
 		}
-		best.schemaPath = outputPath.string();
+		best._schemaPath = outputPath.string();
 		std::cout << "  auto-condition schema: " << outputPath.string() << '\n';
 	}
 
 	bestRecords = Experiments::selectBestRecords(records);
 	if (!bestRecords.empty())
 	{
-		writeMeasuredSelectorArtifact(options.autoConditions.selectorOutputPath, bestRecords.front(), records, options.csvPath);
-		if (!options.autoConditions.selectorOutputPath.empty())
-			std::cout << "  auto-condition selector: " << options.autoConditions.selectorOutputPath << '\n';
+		writeMeasuredSelectorArtifact(options._autoConditions._selectorOutputPath, bestRecords.front(), records, options._csvPath);
+		if (!options._autoConditions._selectorOutputPath.empty())
+			std::cout << "  auto-condition selector: " << options._autoConditions._selectorOutputPath << '\n';
 	}
 }
 
@@ -5829,54 +5829,54 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 	const std::vector<Experiments::WorkloadProfile>& workloads,
 	const std::vector<Experiments::SchemaCandidate>& configuredSchemas)
 {
-	const Experiments::AutoConditionOptions& autoOptions = options.autoConditions;
+	const Experiments::AutoConditionOptions& autoOptions = options._autoConditions;
 	if (datasets.empty())
 		return {};
 
 	for (const Experiments::WorkloadProfile& workload : workloads)
 	{
-		if (workload.knnWeight > 0.0)
-			std::cout << "  warning: auto-condition tuning is optimized for range/radius workloads; KNN in workload '" << workload.name << "' may make search expensive\n";
+		if (workload._knnWeight > 0.0)
+			std::cout << "  warning: auto-condition tuning is optimized for range/radius workloads; KNN in workload '" << workload._name << "' may make search expensive\n";
 	}
 
-	Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front().cloud, autoOptions.proxyPointCap);
+	Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front()._cloud, autoOptions._proxyPointCap);
 	if (useCudaEvaluator(options))
 		restrictConditionDomainToGpuSafe(domain);
-	std::cout << "  auto-conditions: domain from " << domain.samplePoints << " sampled points, "
-		<< domain.sketchNodes << " sketch nodes\n";
-	std::cout << "    point thresholds: " << domain.pointThresholds.size()
-		<< ", density thresholds: " << domain.densityThresholds.size()
-		<< ", height thresholds: " << domain.heightRatioThresholds.size() << '\n';
+	std::cout << "  auto-conditions: domain from " << domain._samplePoints << " sampled points, "
+		<< domain._sketchNodes << " sketch nodes\n";
+	std::cout << "    point thresholds: " << domain._pointThresholds.size()
+		<< ", density thresholds: " << domain._densityThresholds.size()
+		<< ", height thresholds: " << domain._heightRatioThresholds.size() << '\n';
 
-	Experiments::SchemaGenerationOptions generation = options.generation;
-	const size_t proxyBudget = std::max<size_t>(1, autoOptions.proxyCandidateCount);
-	generation.conditionalLevels = true;
-	generation.conditionalProbability = std::max(generation.conditionalProbability, 0.75);
+	Experiments::SchemaGenerationOptions generation = options._generation;
+	const size_t proxyBudget = std::max<size_t>(1, autoOptions._proxyCandidateCount);
+	generation._conditionalLevels = true;
+	generation._conditionalProbability = std::max(generation._conditionalProbability, 0.75);
 
 	std::vector<Experiments::SchemaCandidate> baselines;
 	for (const Experiments::SchemaCandidate& candidate : configuredSchemas)
 	{
-		if (candidate.isBaseline)
+		if (candidate._isBaseline)
 			baselines.push_back(candidate);
 	}
 
 	std::vector<Experiments::SchemaCandidate> candidates;
-	if (options.deepNestedSearch)
+	if (options._deepNestedSearch)
 	{
 		runDeepNestedDiagnostics(options, datasets, workloads, baselines);
-		generation.count = proxyBudget;
-		generation.minBlocks = std::max<size_t>(2, generation.minBlocks);
-		generation.maxBlocks = std::max(generation.maxBlocks, generation.minBlocks);
+		generation._count = proxyBudget;
+		generation._minBlocks = std::max<size_t>(2, generation._minBlocks);
+		generation._maxBlocks = std::max(generation._maxBlocks, generation._minBlocks);
 		std::vector<Experiments::SchemaCandidate> generated = generateDeepNestedCandidates(generation, domain, workloads);
 		candidates.insert(candidates.end(), std::make_move_iterator(generated.begin()), std::make_move_iterator(generated.end()));
 	}
 	else
 	{
-		generation.count = configuredSchemas.size() >= proxyBudget
+		generation._count = configuredSchemas.size() >= proxyBudget
 			? size_t(0)
 			: proxyBudget - configuredSchemas.size();
 		candidates = configuredSchemas;
-		if (generation.count > 0)
+		if (generation._count > 0)
 		{
 			std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(generation, &domain);
 			candidates.insert(candidates.end(), std::make_move_iterator(generated.begin()), std::make_move_iterator(generated.end()));
@@ -5889,25 +5889,25 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 		throw std::runtime_error("Auto-condition search has no candidate schemas.");
 
 	Experiments::SchemaSearchOptions discoveryOptions = options;
-	if (options.deepNestedSearch)
-		discoveryOptions.evaluator = "cpu";
+	if (options._deepNestedSearch)
+		discoveryOptions._evaluator = "cpu";
 	const bool cudaEvaluator = useCudaEvaluator(discoveryOptions);
-	const std::vector<SearchDataset> proxyDatasets = makeProxyDatasets(datasets, autoOptions.proxyPointCap);
-	const std::vector<Experiments::WorkloadProfile> proxyWorkloads = withQueryCount(workloads, autoOptions.proxyQueryCount);
+	const std::vector<SearchDataset> proxyDatasets = makeProxyDatasets(datasets, autoOptions._proxyPointCap);
+	const std::vector<Experiments::WorkloadProfile> proxyWorkloads = withQueryCount(workloads, autoOptions._proxyQueryCount);
 	const std::vector<DatasetContext> proxyContexts = makeDatasetContexts(proxyDatasets, proxyWorkloads, cudaEvaluator);
 	// Proxy stage ranks by a deterministic visit-count surrogate (cheap, noise-free); shortlist and confirmation stages fall back to latency.
 	Experiments::SchemaSearchOptions proxyOptions = discoveryOptions;
-	proxyOptions.weights.useVisitProxy = true;
-	proxyOptions.scoreStage = "proxy";
-	proxyOptions.scoreIsFinalLatency = false;
-	if (proxyOptions.weights.visitProxyAlpha <= 0.0)
-		proxyOptions.weights.visitProxyAlpha = 0.1;
+	proxyOptions._weights._useVisitProxy = true;
+	proxyOptions._scoreStage = "proxy";
+	proxyOptions._scoreIsFinalLatency = false;
+	if (proxyOptions._weights._visitProxyAlpha <= 0.0)
+		proxyOptions._weights._visitProxyAlpha = 0.1;
 	// A small lambdaBuild keeps build time honest in the proxy ranking, so schemas with low visit counts but catastrophic build cost can't sweep the proxy cloud and stall the shortlist.
-	if (proxyOptions.weights.lambdaBuild <= 0.0)
-		proxyOptions.weights.lambdaBuild = 1.0;
+	if (proxyOptions._weights._lambdaBuild <= 0.0)
+		proxyOptions._weights._lambdaBuild = 1.0;
 	std::cout << "  auto-conditions: proxy stage uses visit-count surrogate (alpha="
-		<< proxyOptions.weights.visitProxyAlpha
-		<< ", lambdaBuild=" << proxyOptions.weights.lambdaBuild << ")\n";
+		<< proxyOptions._weights._visitProxyAlpha
+		<< ", lambdaBuild=" << proxyOptions._weights._lambdaBuild << ")\n";
 	std::vector<EvaluatedCandidate> proxyEvaluations = evaluateAutoConditionStage(
 		"proxy",
 		candidates,
@@ -5915,16 +5915,16 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 		proxyWorkloads,
 		proxyOptions);
 
-	std::vector<Experiments::SchemaCandidate> shortlist = options.deepNestedSearch
-		? topDeepNestedCandidates(proxyEvaluations, autoOptions.finalTopK, false)
-		: topSearchCandidatesWithBaselineControls(proxyEvaluations, autoOptions.finalTopK, baselines);
-	if (options.deepNestedSearch)
+	std::vector<Experiments::SchemaCandidate> shortlist = options._deepNestedSearch
+		? topDeepNestedCandidates(proxyEvaluations, autoOptions._finalTopK, false)
+		: topSearchCandidatesWithBaselineControls(proxyEvaluations, autoOptions._finalTopK, baselines);
+	if (options._deepNestedSearch)
 		appendBaselineControls(shortlist, baselines);
-	const std::vector<Experiments::WorkloadProfile> shortWorkloads = withQueryCount(workloads, options.deepNestedSearch ? 32 : 16);
+	const std::vector<Experiments::WorkloadProfile> shortWorkloads = withQueryCount(workloads, options._deepNestedSearch ? 32 : 16);
 	const std::vector<DatasetContext> shortContexts = makeDatasetContexts(datasets, shortWorkloads, cudaEvaluator);
 	Experiments::SchemaSearchOptions shortOptions = discoveryOptions;
-	shortOptions.scoreStage = "shortlist";
-	shortOptions.scoreIsFinalLatency = false;
+	shortOptions._scoreStage = "shortlist";
+	shortOptions._scoreIsFinalLatency = false;
 	std::vector<EvaluatedCandidate> shortEvaluations = evaluateAutoConditionStage(
 		"shortlist",
 		shortlist,
@@ -5932,13 +5932,13 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 		shortWorkloads,
 		shortOptions);
 
-	std::vector<Experiments::SchemaCandidate> confirmation = options.deepNestedSearch
-		? topDeepNestedCandidates(shortEvaluations, autoOptions.confirmationTopK, true)
-		: topSearchCandidatesWithBaselineControls(shortEvaluations, autoOptions.confirmationTopK, baselines);
+	std::vector<Experiments::SchemaCandidate> confirmation = options._deepNestedSearch
+		? topDeepNestedCandidates(shortEvaluations, autoOptions._confirmationTopK, true)
+		: topSearchCandidatesWithBaselineControls(shortEvaluations, autoOptions._confirmationTopK, baselines);
 	const std::vector<DatasetContext> confirmationContexts = makeDatasetContexts(datasets, workloads, cudaEvaluator);
 	Experiments::SchemaSearchOptions confirmationOptions = discoveryOptions;
-	confirmationOptions.scoreStage = "confirmation";
-	confirmationOptions.scoreIsFinalLatency = !confirmationOptions.weights.useVisitProxy;
+	confirmationOptions._scoreStage = "confirmation";
+	confirmationOptions._scoreIsFinalLatency = !confirmationOptions._weights._useVisitProxy;
 	std::vector<EvaluatedCandidate> finalEvaluations = evaluateAutoConditionStage(
 		"confirmation",
 		confirmation,
@@ -5950,19 +5950,19 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 	for (const EvaluatedCandidate& evaluation : finalEvaluations)
 	{
 		appendRecords(records, evaluation);
-		for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+		for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 			emitProgress(options, record);
 	}
 
 	std::vector<EvaluatedCandidate> artifactEvaluations = finalEvaluations;
-	if (options.deepNestedSearch)
+	if (options._deepNestedSearch)
 	{
 		std::vector<Experiments::SchemaCandidate> robustCandidates = topDeepNestedCandidates(finalEvaluations, 6, false);
 		if (const std::optional<Experiments::SchemaCandidate> baseline = bestBaselineCandidate(finalEvaluations))
 		{
 			std::unordered_set<std::string> picked;
 			for (const Experiments::SchemaCandidate& candidate : robustCandidates)
-				picked.insert(candidate.path.empty() ? candidate.config.name : candidate.path);
+				picked.insert(candidate._path.empty() ? candidate._config._name : candidate._path);
 			appendUniqueCandidate(robustCandidates, picked, baseline.value());
 		}
 
@@ -5977,7 +5977,7 @@ static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 		for (const EvaluatedCandidate& evaluation : robustEvaluations)
 		{
 			appendRecords(records, evaluation);
-			for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+			for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 				emitProgress(options, record);
 		}
 		if (!robustEvaluations.empty())
@@ -5999,37 +5999,37 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 	const Experiments::SchemaSearchOptions& options,
 	std::vector<Experiments::SchemaSearchRecord>* finalRecordsOut)
 {
-	const Experiments::RungSchedule& schedule = options.evolution.rungSchedule;
-	if (schedule.rungs.empty() || inputBatch.empty())
+	const Experiments::RungSchedule& schedule = options._evolution._rungSchedule;
+	if (schedule._rungs.empty() || inputBatch.empty())
 		return {};
 
 	const bool cudaEvaluator = useCudaEvaluator(options);
 	std::vector<Experiments::SchemaCandidate> current = inputBatch;
 	std::vector<EvaluatedCandidate> evaluations;
 
-	for (size_t r = 0; r < schedule.rungs.size(); ++r)
+	for (size_t r = 0; r < schedule._rungs.size(); ++r)
 	{
-		const Experiments::RungSpec& rung = schedule.rungs[r];
+		const Experiments::RungSpec& rung = schedule._rungs[r];
 
-		const std::vector<Experiments::WorkloadProfile> rungWorkloads = withQueryCount(baseWorkloads, rung.queryCountOverride);
+		const std::vector<Experiments::WorkloadProfile> rungWorkloads = withQueryCount(baseWorkloads, rung._queryCountOverride);
 		const std::vector<DatasetContext> rungContexts = makeDatasetContextsFromPointers(datasetPtrs, rungWorkloads, cudaEvaluator);
 
 		Experiments::SchemaSearchOptions rungOptions = options;
-		rungOptions.weights.useVisitProxy = rung.useVisitProxy;
-		if (rung.useVisitProxy && rung.visitProxyAlpha > 0.0)
-			rungOptions.weights.visitProxyAlpha = rung.visitProxyAlpha;
-		const bool isFinalRung = (r + 1 == schedule.rungs.size());
-		rungOptions.scoreStage = rung.name.empty()
+		rungOptions._weights._useVisitProxy = rung._useVisitProxy;
+		if (rung._useVisitProxy && rung._visitProxyAlpha > 0.0)
+			rungOptions._weights._visitProxyAlpha = rung._visitProxyAlpha;
+		const bool isFinalRung = (r + 1 == schedule._rungs.size());
+		rungOptions._scoreStage = rung._name.empty()
 			? std::string("rung_") + std::to_string(r)
-			: rung.name;
-		rungOptions.scoreIsFinalLatency = isFinalRung && !rungOptions.weights.useVisitProxy;
+			: rung._name;
+		rungOptions._scoreIsFinalLatency = isFinalRung && !rungOptions._weights._useVisitProxy;
 
 		std::ostringstream label;
-		label << batchLabel << " " << rung.name << " ("
+		label << batchLabel << " " << rung._name << " ("
 			<< current.size() << " cand";
-		if (rung.queryCountOverride > 0)
-			label << ", " << rung.queryCountOverride << "q";
-		label << (rung.useVisitProxy ? ", visit-proxy" : ", latency");
+		if (rung._queryCountOverride > 0)
+			label << ", " << rung._queryCountOverride << "q";
+		label << (rung._useVisitProxy ? ", visit-proxy" : ", latency");
 		label << ")";
 
 		evaluations = evaluateAutoConditionStage(label.str(), current, rungContexts, rungWorkloads, rungOptions);
@@ -6038,7 +6038,7 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 		{
 			for (const EvaluatedCandidate& evaluation : evaluations)
 			{
-				for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+				for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 				{
 					finalRecordsOut->push_back(record);
 					emitProgress(options, record);
@@ -6048,9 +6048,9 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 
 		if (!isFinalRung)
 		{
-			const size_t keep = (rung.advanceTopK == 0)
+			const size_t keep = (rung._advanceTopK == 0)
 				? evaluations.size()
-				: std::min(rung.advanceTopK, evaluations.size());
+				: std::min(rung._advanceTopK, evaluations.size());
 
 			// Diverse-by-primary advancement: each primary-block type keeps at least one survivor before slots fill by score, so proxy bias can't starve the latency rung of a whole family.
 			std::vector<size_t> advanceOrder;
@@ -6060,7 +6060,7 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 			deferred.reserve(evaluations.size());
 			for (size_t i = 0; i < evaluations.size() && advanceOrder.size() < keep; ++i)
 			{
-				const std::string primary = primaryBlockKey(evaluations[i].candidate.config);
+				const std::string primary = primaryBlockKey(evaluations[i]._candidate._config);
 				if (primarySeen.insert(primary).second)
 					advanceOrder.push_back(i);
 				else
@@ -6079,13 +6079,13 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 			trimmed.reserve(advanceOrder.size());
 			for (const size_t i : advanceOrder)
 			{
-				current.push_back(evaluations[i].candidate);
+				current.push_back(evaluations[i]._candidate);
 				trimmed.push_back(std::move(evaluations[i]));
 			}
 			evaluations = std::move(trimmed);
 
 			if (primarySeen.size() > 1)
-				std::cout << "      rung '" << rung.name << "' advancing " << current.size()
+				std::cout << "      rung '" << rung._name << "' advancing " << current.size()
 					<< " candidate(s), " << primarySeen.size()
 					<< " distinct primary-block type(s)\n";
 		}
@@ -6101,12 +6101,12 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 	const std::vector<Experiments::SchemaCandidate>& initialCandidates,
 	const Experiments::ConditionDomain* conditionDomain = nullptr)
 {
-	const Experiments::EvolutionOptions& evolution = options.evolution;
-	const size_t populationSize = std::max<size_t>(1, evolution.populationSize);
-	const size_t eliteCount = std::max<size_t>(1, evolution.eliteCount);
-	const double randomFraction = std::clamp(evolution.randomImmigrationRate, 0.0, 1.0);
+	const Experiments::EvolutionOptions& evolution = options._evolution;
+	const size_t populationSize = std::max<size_t>(1, evolution._populationSize);
+	const size_t eliteCount = std::max<size_t>(1, evolution._eliteCount);
+	const double randomFraction = std::clamp(evolution._randomImmigrationRate, 0.0, 1.0);
 
-	std::mt19937 rng(evolution.seed);
+	std::mt19937 rng(evolution._seed);
 	std::unordered_set<std::string> seenSignatures;
 	std::vector<EvaluatedCandidate> archive;
 	std::vector<Experiments::SchemaSearchRecord> records;
@@ -6116,9 +6116,9 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 	std::map<std::string, size_t> topologyCounts;
 	size_t totalEvaluatedCandidates = 0;
 
-	// Picks the ordering helper per options.useNsga2Ranking: NSGA-II by front then crowding distance, else the scalar single-score path.
+	// Picks the ordering helper per options._useNsga2Ranking: NSGA-II by front then crowding distance, else the scalar single-score path.
 	auto rankArchive = [&]() {
-		if (evolution.useNsga2Ranking)
+		if (evolution._useNsga2Ranking)
 			nsga2RankAndSort(archive);
 		else
 			sortEvaluations(archive);
@@ -6129,49 +6129,49 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		throw std::runtime_error("Evolutionary schema optimizer has no initial population.");
 
 	std::cout << "  optimizer: evolutionary mutation search\n";
-	std::cout << "    generations: " << evolution.generations << '\n';
+	std::cout << "    generations: " << evolution._generations << '\n';
 	std::cout << "    population per generation: " << populationSize << '\n';
 	std::cout << "    elites: " << eliteCount << '\n';
-	std::cout << "    mutation rate: " << evolution.mutationRate << '\n';
+	std::cout << "    mutation rate: " << evolution._mutationRate << '\n';
 	std::cout << "    random immigration: " << randomFraction << '\n';
-	if (evolution.repairMutations)
+	if (evolution._repairMutations)
 	{
-		std::cout << "    repair mutations: top-" << std::max<size_t>(1, evolution.repairTopK)
-			<< ", " << std::max<size_t>(1, evolution.repairPerCandidate)
+		std::cout << "    repair mutations: top-" << std::max<size_t>(1, evolution._repairTopK)
+			<< ", " << std::max<size_t>(1, evolution._repairPerCandidate)
 			<< " candidate(s)/parent\n";
 	}
 
-	const bool useRungSchedule = !evolution.rungSchedule.rungs.empty();
+	const bool useRungSchedule = !evolution._rungSchedule._rungs.empty();
 	std::vector<const SearchDataset*> datasetPtrs;
-	Experiments::SurrogateAcquisition surrogate = Experiments::loadSurrogateAcquisition(evolution.rungSchedule.surrogateModelPath);
-	if (surrogate.active)
+	Experiments::SurrogateAcquisition surrogate = Experiments::loadSurrogateAcquisition(evolution._rungSchedule._surrogateModelPath);
+	if (surrogate._active)
 	{
-		std::cout << "    surrogate acquisition: " << surrogate.modelPath
-			<< " (pool=" << evolution.rungSchedule.surrogateCandidatePool
-			<< ", proposals/gen=" << evolution.rungSchedule.surrogateProposalsPerStep << ")\n";
+		std::cout << "    surrogate acquisition: " << surrogate._modelPath
+			<< " (pool=" << evolution._rungSchedule._surrogateCandidatePool
+			<< ", proposals/gen=" << evolution._rungSchedule._surrogateProposalsPerStep << ")\n";
 	}
 	if (useRungSchedule)
 	{
 		datasetPtrs.reserve(datasets.size());
 		for (const DatasetContext& context : datasets)
-			datasetPtrs.push_back(context.dataset);
+			datasetPtrs.push_back(context._dataset);
 
-		std::cout << "    rung schedule: " << evolution.rungSchedule.rungs.size() << " rungs\n";
-		for (size_t r = 0; r < evolution.rungSchedule.rungs.size(); ++r)
+		std::cout << "    rung schedule: " << evolution._rungSchedule._rungs.size() << " rungs\n";
+		for (size_t r = 0; r < evolution._rungSchedule._rungs.size(); ++r)
 		{
-			const Experiments::RungSpec& rung = evolution.rungSchedule.rungs[r];
-			std::cout << "      [" << r << "] " << rung.name
-				<< (rung.useVisitProxy ? " (visit-proxy)" : " (latency)");
-			if (rung.queryCountOverride > 0)
-				std::cout << " queries=" << rung.queryCountOverride;
-			if (rung.advanceTopK > 0 && r + 1 < evolution.rungSchedule.rungs.size())
-				std::cout << " advance top-" << rung.advanceTopK;
+			const Experiments::RungSpec& rung = evolution._rungSchedule._rungs[r];
+			std::cout << "      [" << r << "] " << rung._name
+				<< (rung._useVisitProxy ? " (visit-proxy)" : " (latency)");
+			if (rung._queryCountOverride > 0)
+				std::cout << " queries=" << rung._queryCountOverride;
+			if (rung._advanceTopK > 0 && r + 1 < evolution._rungSchedule._rungs.size())
+				std::cout << " advance top-" << rung._advanceTopK;
 			std::cout << '\n';
 		}
 	}
 
-	const size_t parallelWorkers = (!useCudaEvaluator(options) && options.parallelDispatch > 1)
-		? options.parallelDispatch
+	const size_t parallelWorkers = (!useCudaEvaluator(options) && options._parallelDispatch > 1)
+		? options._parallelDispatch
 		: 1;
 	if (parallelWorkers > 1)
 		std::cout << "    parallel candidate dispatch: " << parallelWorkers << " CPU workers\n";
@@ -6183,7 +6183,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		// Topology audit counts every candidate reaching here, so the diversity report captures attempted search breadth rather than only what the front rewarded.
 		for (const Experiments::SchemaCandidate& candidate : candidates)
 		{
-			++topologyCounts[schemaTopologyKey(candidate.config)];
+			++topologyCounts[schemaTopologyKey(candidate._config)];
 			++totalEvaluatedCandidates;
 		}
 
@@ -6194,13 +6194,13 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			for (size_t i = 0; i < finalEvaluations.size(); ++i)
 			{
 				std::cout << "      " << label << " final [" << (i + 1) << "/" << finalEvaluations.size() << "] "
-					<< finalEvaluations[i].candidate.config.name
+					<< finalEvaluations[i]._candidate._config._name
 					<< "  aggregate score " << finalEvaluations[i].aggregateScore << '\n';
 				archive.push_back(std::move(finalEvaluations[i]));
 			}
 			rankArchive();
 			if (!archive.empty())
-				std::cout << "      best so far: " << archive.front().candidate.config.name
+				std::cout << "      best so far: " << archive.front()._candidate._config._name
 					<< " score " << archive.front().aggregateScore << '\n';
 			return;
 		}
@@ -6231,9 +6231,9 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			{
 				EvaluatedCandidate& evaluation = evaluations[i];
 				std::cout << "      " << label << " [" << (i + 1) << "/" << candidates.size() << "] "
-					<< candidates[i].config.name << "  aggregate score " << evaluation.aggregateScore << '\n';
+					<< candidates[i]._config._name << "  aggregate score " << evaluation.aggregateScore << '\n';
 				appendRecords(records, evaluation);
-				for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+				for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 					emitProgress(options, record);
 				archive.push_back(std::move(evaluation));
 			}
@@ -6243,32 +6243,32 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			for (size_t i = 0; i < candidates.size(); ++i)
 			{
 				const Experiments::SchemaCandidate& candidate = candidates[i];
-				std::cout << "      " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate.config.name << '\n';
+				std::cout << "      " << label << " [" << (i + 1) << "/" << candidates.size() << "] " << candidate._config._name << '\n';
 				const auto candidateStart = std::chrono::steady_clock::now();
 				EvaluatedCandidate evaluation = evaluateCandidate(candidate, datasets, workloads, options, &cudaCache);
 				const auto candidateElapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - candidateStart).count();
 				std::cout << "        aggregate score " << evaluation.aggregateScore;
-				if (!evaluation.records.empty() && evaluation.records.front().backend == "cuda")
-					std::cout << " (" << cudaBuilderDisplayName(evaluation.records.front().cudaBuilder) << ")";
+				if (!evaluation._records.empty() && evaluation._records.front()._backend == "cuda")
+					std::cout << " (" << cudaBuilderDisplayName(evaluation._records.front()._cudaBuilder) << ")";
 				std::cout << " [" << candidateElapsed << " s]";
 				std::cout << '\n';
 				if (candidateElapsed > 30.0)
-					std::cout << "        WARNING: candidate '" << candidate.config.name
+					std::cout << "        WARNING: candidate '" << candidate._config._name
 						<< "' took " << candidateElapsed << " s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.\n";
 				appendRecords(records, evaluation);
-				for (const Experiments::SchemaSearchRecord& record : evaluation.records)
+				for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 					emitProgress(options, record);
 				archive.push_back(std::move(evaluation));
 			}
 		}
 		rankArchive();
 		if (!archive.empty())
-			std::cout << "      best so far: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
+			std::cout << "      best so far: " << archive.front()._candidate._config._name << " score " << archive.front().aggregateScore << '\n';
 	};
 
 	evaluateBatch(batch, "initial");
 
-	for (size_t generation = 1; generation <= evolution.generations; ++generation)
+	for (size_t generation = 1; generation <= evolution._generations; ++generation)
 	{
 		rankArchive();
 		const size_t currentEliteCount = std::min(eliteCount, archive.size());
@@ -6279,34 +6279,34 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		children.reserve(populationSize);
 
 		size_t repairAccepted = 0;
-		if (evolution.repairMutations && children.size() < populationSize)
+		if (evolution._repairMutations && children.size() < populationSize)
 		{
 			const size_t repairParents = std::min({
-				std::max<size_t>(1, evolution.repairTopK),
+				std::max<size_t>(1, evolution._repairTopK),
 				currentEliteCount,
 				archive.size()
 			});
-			const size_t repairsPerParent = std::max<size_t>(1, evolution.repairPerCandidate);
+			const size_t repairsPerParent = std::max<size_t>(1, evolution._repairPerCandidate);
 			for (size_t parentIndex = 0; parentIndex < repairParents && children.size() < populationSize; ++parentIndex)
 			{
 				const EvaluatedCandidate& parent = archive[parentIndex];
 				std::vector<RepairSchemaMutation> repairs = generateRepairSchemaMutations(
-					parent.candidate,
-					parent.records,
-					options.generation,
+					parent._candidate,
+					parent._records,
+					options._generation,
 					conditionDomain,
 					repairsPerParent,
 					rng());
 				for (RepairSchemaMutation& repair : repairs)
 				{
-					const std::string signature = schemaSignature(repair.schema);
+					const std::string signature = schemaSignature(repair._schema);
 					if (!seenSignatures.insert(signature).second)
 						continue;
 
 					const std::string prefix = "repair_g" + std::to_string(generation)
 						+ "_i" + std::to_string(children.size())
-						+ "_" + repair.reason;
-					children.push_back(materializeGeneratedSchema(std::move(repair.schema), prefix, options.generation.outputDirectory));
+						+ "_" + repair._reason;
+					children.push_back(materializeGeneratedSchema(std::move(repair._schema), prefix, options._generation._outputDirectory));
 					++repairAccepted;
 					if (children.size() >= populationSize)
 						break;
@@ -6320,13 +6320,13 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		const size_t randomCount = std::min(remainingAfterRepairs, static_cast<size_t>(std::round(static_cast<double>(populationSize) * randomFraction)));
 		if (randomCount > 0)
 		{
-			Experiments::SchemaGenerationOptions randomOptions = options.generation;
-			randomOptions.count = randomCount;
-			randomOptions.seed = rng();
+			Experiments::SchemaGenerationOptions randomOptions = options._generation;
+			randomOptions._count = randomCount;
+			randomOptions._seed = rng();
 			std::vector<Experiments::SchemaCandidate> immigrants = Experiments::generateSchemaCandidates(randomOptions, conditionDomain);
 			for (const Experiments::SchemaCandidate& immigrant : immigrants)
 			{
-				const std::string signature = schemaSignature(immigrant.config);
+				const std::string signature = schemaSignature(immigrant._config);
 				if (!seenSignatures.insert(signature).second)
 					continue;
 				children.push_back(immigrant);
@@ -6336,27 +6336,27 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		}
 
 		// Bayesian acquisition step: have the surrogate rank a fresh pool and inject its top-K predictions as extra children, cheaply decoupling progress from pure mutation noise.
-		if (surrogate.active
-			&& evolution.rungSchedule.surrogateCandidatePool > 0
-			&& evolution.rungSchedule.surrogateProposalsPerStep > 0
+		if (surrogate._active
+			&& evolution._rungSchedule._surrogateCandidatePool > 0
+			&& evolution._rungSchedule._surrogateProposalsPerStep > 0
 			&& !datasets.empty()
 			&& !workloads.empty()
 			&& children.size() < populationSize)
 		{
 			const size_t budget = populationSize - children.size();
-			const size_t proposalCount = std::min(evolution.rungSchedule.surrogateProposalsPerStep, budget);
+			const size_t proposalCount = std::min(evolution._rungSchedule._surrogateProposalsPerStep, budget);
 			std::vector<Experiments::SchemaCandidate> proposals = Experiments::acquireSurrogateProposals(
 				surrogate,
-				options.generation,
-				evolution.rungSchedule.surrogateCandidatePool,
+				options._generation,
+				evolution._rungSchedule._surrogateCandidatePool,
 				proposalCount,
-				datasets.front().dataset->cloud,
+				datasets.front()._dataset->_cloud,
 				workloads.front(),
 				rng());
 			size_t accepted = 0;
 			for (const Experiments::SchemaCandidate& proposal : proposals)
 			{
-				const std::string signature = schemaSignature(proposal.config);
+				const std::string signature = schemaSignature(proposal._config);
 				if (!seenSignatures.insert(signature).second)
 					continue;
 				children.push_back(proposal);
@@ -6370,7 +6370,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 
 		size_t attempts = 0;
 		const size_t maxAttempts = std::max<size_t>(populationSize * 80, 512);
-		const double crossoverProbability = std::clamp(evolution.crossoverRate, 0.0, 1.0);
+		const double crossoverProbability = std::clamp(evolution._crossoverRate, 0.0, 1.0);
 		std::bernoulli_distribution useCrossover(crossoverProbability);
 		size_t crossoverAccepted = 0;
 		size_t mutationAccepted = 0;
@@ -6386,16 +6386,16 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 				std::uniform_int_distribution<size_t> partnerDistribution(1, currentEliteCount - 1);
 				const size_t bIdx = partnerDistribution(rng);
 				childSchema = crossoverSchemaConfigs(
-					archive[aIdx].candidate.config,
-					archive[bIdx].candidate.config,
+					archive[aIdx]._candidate._config,
+					archive[bIdx]._candidate._config,
 					rng,
-					options.generation);
+					options._generation);
 				wasCrossover = true;
 			}
 			else
 			{
 				const EvaluatedCandidate& parent = archive[eliteDistribution(rng)];
-				childSchema = mutateSchemaConfig(parent.candidate.config, rng, options.generation, evolution, conditionDomain);
+				childSchema = mutateSchemaConfig(parent._candidate._config, rng, options._generation, evolution, conditionDomain);
 			}
 			const std::string signature = schemaSignature(childSchema);
 			if (!seenSignatures.insert(signature).second)
@@ -6404,7 +6404,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			const std::string prefix = wasCrossover
 				? std::string("xover_g") + std::to_string(generation) + "_i" + std::to_string(children.size())
 				: std::string("evolved_g") + std::to_string(generation) + "_i" + std::to_string(children.size());
-			children.push_back(materializeGeneratedSchema(childSchema, prefix, options.generation.outputDirectory));
+			children.push_back(materializeGeneratedSchema(childSchema, prefix, options._generation._outputDirectory));
 			if (wasCrossover)
 				++crossoverAccepted;
 			else
@@ -6412,7 +6412,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		}
 		if (crossoverAccepted + mutationAccepted > 0)
 			std::cout << "      generation " << generation
-				<< " champion: " << archive[0].candidate.config.name
+				<< " champion: " << archive[0]._candidate._config._name
 				<< " (score " << archive[0].aggregateScore << ")\n"
 				<< "      generation " << generation << " children: "
 				<< crossoverAccepted << " crossover + "
@@ -6429,7 +6429,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 
 	rankArchive();
 	if (!archive.empty())
-		std::cout << "  optimizer best aggregate: " << archive.front().candidate.config.name << " score " << archive.front().aggregateScore << '\n';
+		std::cout << "  optimizer best aggregate: " << archive.front()._candidate._config._name << " score " << archive.front().aggregateScore << '\n';
 
 	// Diversity audit: distinct topology shapes vs. total candidates; a low ratio means the GA refined a few corridors instead of exploring the manifold.
 	if (totalEvaluatedCandidates > 0)
@@ -6453,14 +6453,14 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		}
 
 		// Front-0 diversity is the key signal: if every Pareto-front entry shares a topology, ranking/generation needs more pressure. Computed only when NSGA-II ran.
-		if (evolution.useNsga2Ranking)
+		if (evolution._useNsga2Ranking)
 		{
 			std::set<std::string> frontTopologies;
 			for (const EvaluatedCandidate& evaluation : archive)
 			{
-				if (evaluation.paretoFront != 0)
+				if (evaluation._paretoFront != 0)
 					continue;
-				frontTopologies.insert(schemaTopologyKey(evaluation.candidate.config));
+				frontTopologies.insert(schemaTopologyKey(evaluation._candidate._config));
 			}
 			if (!frontTopologies.empty())
 				std::cout << "    Pareto-front-0 distinct topologies: " << frontTopologies.size() << '\n';
@@ -6468,62 +6468,62 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 	}
 
 	// Threshold refinement: runs a (1+lambda)-ES on the top-K conditional candidates using the cheap visit-proxy, then re-measures each refined candidate at full fidelity.
-	if (evolution.refineThresholds && !archive.empty() && !datasets.empty() && !workloads.empty())
+	if (evolution._refineThresholds && !archive.empty() && !datasets.empty() && !workloads.empty())
 	{
-		const size_t topK = std::max<size_t>(1, evolution.refineThresholdsTopK);
+		const size_t topK = std::max<size_t>(1, evolution._refineThresholdsTopK);
 		const size_t available = std::min(topK, archive.size());
 		std::cout << "  threshold refinement: top-" << available
-			<< ", budget " << evolution.refineThresholdsEvaluations << " evals/candidate, sigma0 "
-			<< evolution.refineThresholdsSigma0 << '\n';
+			<< ", budget " << evolution._refineThresholdsEvaluations << " evals/candidate, sigma0 "
+			<< evolution._refineThresholdsSigma0 << '\n';
 
-		Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front().dataset->cloud, options.autoConditions.proxyPointCap > 0 ? options.autoConditions.proxyPointCap : 262144);
+		Experiments::ConditionDomain domain = Experiments::estimateConditionDomain(datasets.front()._dataset->_cloud, options._autoConditions._proxyPointCap > 0 ? options._autoConditions._proxyPointCap : 262144);
 		if (useCudaEvaluator(options))
 			restrictConditionDomainToGpuSafe(domain);
 
 		Experiments::ThresholdRefinementOptions refinerOptions;
-		refinerOptions.enabled = true;
-		refinerOptions.topK = available;
-		refinerOptions.maxEvaluations = evolution.refineThresholdsEvaluations;
-		refinerOptions.sigma0 = evolution.refineThresholdsSigma0;
-		refinerOptions.seed = evolution.refineThresholdsSeed;
-		refinerOptions.outputDirectory = options.generation.outputDirectory.empty()
+		refinerOptions._enabled = true;
+		refinerOptions._topK = available;
+		refinerOptions._maxEvaluations = evolution._refineThresholdsEvaluations;
+		refinerOptions._sigma0 = evolution._refineThresholdsSigma0;
+		refinerOptions._seed = evolution._refineThresholdsSeed;
+		refinerOptions._outputDirectory = options._generation._outputDirectory.empty()
 			? std::string("results/refined_schemas")
-			: options.generation.outputDirectory + "/refined";
+			: options._generation._outputDirectory + "/refined";
 
 		// Visit-proxy score function: scores against the first dataset with useVisitProxy forced on and a small query count, since refinement only needs to navigate the threshold landscape, not produce the final number.
 		Experiments::SchemaSearchOptions proxyOptions = options;
-		proxyOptions.weights.useVisitProxy = true;
-		proxyOptions.scoreStage = "refine_proxy";
-		proxyOptions.scoreIsFinalLatency = false;
-		if (proxyOptions.weights.visitProxyAlpha <= 0.0)
-			proxyOptions.weights.visitProxyAlpha = 0.1;
+		proxyOptions._weights._useVisitProxy = true;
+		proxyOptions._scoreStage = "refine_proxy";
+		proxyOptions._scoreIsFinalLatency = false;
+		if (proxyOptions._weights._visitProxyAlpha <= 0.0)
+			proxyOptions._weights._visitProxyAlpha = 0.1;
 
 		const DatasetContext& primary = datasets.front();
 		const Experiments::WorkloadProfile fullWorkload = workloads.front();
 		Experiments::WorkloadProfile refinerWorkload = fullWorkload;
 		// 8 queries matches the auto-conditions proxy stage default; the refiner just needs cheap deterministic ranking of neighboring threshold vectors.
 		constexpr size_t kRefinerProxyQueryCount = 8;
-		if (refinerWorkload.numQueries > kRefinerProxyQueryCount)
-			refinerWorkload.numQueries = kRefinerProxyQueryCount;
-		const Experiments::WorkloadFeatures primaryWorkloadFeatures = Experiments::extractWorkloadFeatures(refinerWorkload, proxyOptions.weights);
+		if (refinerWorkload._numQueries > kRefinerProxyQueryCount)
+			refinerWorkload._numQueries = kRefinerProxyQueryCount;
+		const Experiments::WorkloadFeatures primaryWorkloadFeatures = Experiments::extractWorkloadFeatures(refinerWorkload, proxyOptions._weights);
 
 		// Separate PreparedWorkload for the trimmed query count so its cache fingerprint reflects the smaller workload and per-seed hits accumulate across iterations.
-		const PreparedWorkload refinerPrepared = prepareWorkloadProfile(refinerWorkload, primary.dataset->cloud, useCudaEvaluator(proxyOptions));
+		const PreparedWorkload refinerPrepared = prepareWorkloadProfile(refinerWorkload, primary._dataset->_cloud, useCudaEvaluator(proxyOptions));
 
-		std::cout << "  refinement workload: " << refinerWorkload.numQueries
-			<< " queries (vs " << fullWorkload.numQueries << " full)\n";
+		std::cout << "  refinement workload: " << refinerWorkload._numQueries
+			<< " queries (vs " << fullWorkload._numQueries << " full)\n";
 
 		Experiments::ThresholdScoreFn scoreFn = [&](const Experiments::SchemaCandidate& trial) {
 			Experiments::SchemaSearchRecord trialRecord = benchmarkSchemaCandidateCached(
-				*primary.dataset,
-				primary.features,
+				*primary._dataset,
+				primary._features,
 				refinerWorkload,
 				primaryWorkloadFeatures,
 				refinerPrepared,
 				trial,
 				proxyOptions,
 				nullptr);
-			return trialRecord.score;
+			return trialRecord._score;
 		};
 
 		std::vector<Experiments::SchemaCandidate> refinedSurvivors;
@@ -6532,27 +6532,27 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		{
 			const EvaluatedCandidate& source = archive[i];
 			Experiments::ThresholdRefinementResult refinement = Experiments::refineSchemaThresholds(
-				source.candidate, domain, refinerOptions, scoreFn);
+				source._candidate, domain, refinerOptions, scoreFn);
 
-			if (refinement.dimensions == 0)
+			if (refinement._dimensions == 0)
 			{
 				std::cout << "    [" << (i + 1) << "/" << available << "] "
-					<< source.candidate.config.name << ": no active threshold dimensions, skipping\n";
+					<< source._candidate._config._name << ": no active threshold dimensions, skipping\n";
 				continue;
 			}
 
 			std::cout << "    [" << (i + 1) << "/" << available << "] "
-				<< source.candidate.config.name
-				<< ": dims=" << refinement.dimensions
-				<< " evals=" << refinement.evaluationsUsed
-				<< " score " << refinement.initialScore << " -> " << refinement.refinedScore
-				<< (refinement.refinedScore < refinement.initialScore ? " (improved)" : " (no improvement)")
+				<< source._candidate._config._name
+				<< ": dims=" << refinement._dimensions
+				<< " evals=" << refinement._evaluationsUsed
+				<< " score " << refinement._initialScore << " -> " << refinement._refinedScore
+				<< (refinement._refinedScore < refinement._initialScore ? " (improved)" : " (no improvement)")
 				<< '\n';
 
-			if (refinement.refinedScore < refinement.initialScore)
-				refinedSurvivors.push_back(std::move(refinement.refinedCandidate));
+			if (refinement._refinedScore < refinement._initialScore)
+				refinedSurvivors.push_back(std::move(refinement._refinedCandidate));
 
-			++refinerOptions.seed; // decorrelate the ES across survivors so they don't all walk in lockstep
+			++refinerOptions._seed; // decorrelate the ES across survivors so they don't all walk in lockstep
 		}
 
 		if (!refinedSurvivors.empty())
@@ -6575,7 +6575,7 @@ static const SearchDataset* findDatasetByName(const std::vector<SearchDataset>& 
 {
 	for (const SearchDataset& dataset : datasets)
 	{
-		if (dataset.name == name)
+		if (dataset._name == name)
 			return &dataset;
 	}
 	return nullptr;
@@ -6585,7 +6585,7 @@ static const Experiments::WorkloadProfile* findWorkloadByName(const std::vector<
 {
 	for (const Experiments::WorkloadProfile& workload : workloads)
 	{
-		if (workload.name == name)
+		if (workload._name == name)
 			return &workload;
 	}
 	return nullptr;
@@ -6597,18 +6597,18 @@ static void runMultiSeedConfirmation(
 	const std::vector<Experiments::WorkloadProfile>& workloads,
 	const Experiments::SchemaSearchOptions& options)
 {
-	if (options.confirmSeeds < 2 || records.empty())
+	if (options._confirmSeeds < 2 || records.empty())
 		return;
 
-	const size_t topK = std::max<size_t>(1, options.confirmTopK);
+	const size_t topK = std::max<size_t>(1, options._confirmTopK);
 	const bool cudaEvaluator = useCudaEvaluator(options);
 
 	std::cout << "  multi-seed confirmation: top-" << topK
-		<< " per (dataset, workload), " << options.confirmSeeds << " seeds each\n";
+		<< " per (dataset, workload), " << options._confirmSeeds << " seeds each\n";
 
 	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
 	for (size_t i = 0; i < records.size(); ++i)
-		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
+		groups[{ records[i]._datasetName, records[i]._workloadName }].push_back(i);
 
 	for (auto& [key, indices] : groups)
 	{
@@ -6619,12 +6619,12 @@ static void runMultiSeedConfirmation(
 
 		// Pick top-K by score within this group. Lower score wins.
 		std::sort(indices.begin(), indices.end(), [&records](size_t a, size_t b) {
-			return records[a].score < records[b].score;
+			return records[a]._score < records[b]._score;
 		});
 		if (indices.size() > topK)
 			indices.resize(topK);
 
-		const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset->cloud);
+		const Experiments::PointCloudFeatures features = Experiments::extractPointCloudFeatures(dataset->_cloud);
 		const Experiments::ScoreWeights weights = effectiveScoreWeights(*workload, options);
 		const Experiments::WorkloadFeatures workloadFeatures = Experiments::extractWorkloadFeatures(*workload, weights);
 
@@ -6633,16 +6633,16 @@ static void runMultiSeedConfirmation(
 			Experiments::SchemaSearchRecord& target = records[recordIndex];
 
 			Experiments::SchemaCandidate candidate;
-			candidate.name = target.schemaName;
-			candidate.path = target.schemaPath;
-			candidate.isBaseline = target.isBaseline;
+			candidate._name = target._schemaName;
+			candidate._path = target._schemaPath;
+			candidate._isBaseline = target._isBaseline;
 			try
 			{
-				candidate.config = Config::loadSchemaConfig(target.schemaPath);
+				candidate._config = Config::loadSchemaConfig(target._schemaPath);
 			}
 			catch (const std::exception& exception)
 			{
-				std::cerr << "    multi-seed confirmation skipped '" << target.schemaName
+				std::cerr << "    multi-seed confirmation skipped '" << target._schemaName
 					<< "' (" << exception.what() << ")\n";
 				continue;
 			}
@@ -6650,17 +6650,17 @@ static void runMultiSeedConfirmation(
 			std::vector<double> latencies;
 			std::vector<double> p95s;
 			std::vector<double> gpuBuilds;
-			latencies.reserve(options.confirmSeeds);
-			p95s.reserve(options.confirmSeeds);
-			gpuBuilds.reserve(options.confirmSeeds);
+			latencies.reserve(options._confirmSeeds);
+			p95s.reserve(options._confirmSeeds);
+			gpuBuilds.reserve(options._confirmSeeds);
 
-			for (size_t s = 0; s < options.confirmSeeds; ++s)
+			for (size_t s = 0; s < options._confirmSeeds; ++s)
 			{
 				Experiments::WorkloadProfile seededWorkload = *workload;
 				// 7919 is a prime offset that decorrelates seeded sub-runs even as the base querySeed is bumped between invocations.
-				seededWorkload.querySeed = workload->querySeed + static_cast<uint32_t>(7919u * (s + 1));
+				seededWorkload._querySeed = workload->_querySeed + static_cast<uint32_t>(7919u * (s + 1));
 				const PreparedWorkload preparedWorkload = prepareWorkloadProfile(
-					seededWorkload, dataset->cloud, cudaEvaluator);
+					seededWorkload, dataset->_cloud, cudaEvaluator);
 
 				Experiments::SchemaSearchRecord trialRecord = benchmarkSchemaCandidateCached(
 					*dataset,
@@ -6672,27 +6672,27 @@ static void runMultiSeedConfirmation(
 					options,
 					nullptr);
 
-				latencies.push_back(trialRecord.queryMetrics.averageLatencyMs);
-				p95s.push_back(trialRecord.queryMetrics.p95LatencyMs);
-				gpuBuilds.push_back(trialRecord.gpuBuildMs);
+				latencies.push_back(trialRecord._queryMetrics._averageLatencyMs);
+				p95s.push_back(trialRecord._queryMetrics._p95LatencyMs);
+				gpuBuilds.push_back(trialRecord._gpuBuildMs);
 			}
 
 			const auto [latMean, latLo, latHi] = Experiments::bootstrapMeanCI(latencies);
 			const auto [p95Mean, p95Lo, p95Hi] = Experiments::bootstrapMeanCI(p95s);
 			const auto [bldMean, bldLo, bldHi] = Experiments::bootstrapMeanCI(gpuBuilds);
 
-			target.confirmSeedsUsed = options.confirmSeeds;
-			target.latencyMean = latMean;
-			target.latencyCiLow = latLo;
-			target.latencyCiHigh = latHi;
-			target.p95LatencyMean = p95Mean;
-			target.p95LatencyCiLow = p95Lo;
-			target.p95LatencyCiHigh = p95Hi;
-			target.gpuBuildMean = bldMean;
-			target.gpuBuildCiLow = bldLo;
-			target.gpuBuildCiHigh = bldHi;
+			target._confirmSeedsUsed = options._confirmSeeds;
+			target._latencyMean = latMean;
+			target._latencyCiLow = latLo;
+			target._latencyCiHigh = latHi;
+			target._p95LatencyMean = p95Mean;
+			target._p95LatencyCiLow = p95Lo;
+			target._p95LatencyCiHigh = p95Hi;
+			target._gpuBuildMean = bldMean;
+			target._gpuBuildCiLow = bldLo;
+			target._gpuBuildCiHigh = bldHi;
 
-			std::cout << "    confirm '" << target.schemaName << "' [" << key.first << "/" << key.second
+			std::cout << "    confirm '" << target._schemaName << "' [" << key.first << "/" << key.second
 				<< "]: latency " << latMean << " ms (95% CI " << latLo << "-" << latHi
 				<< "), gpu build " << bldMean << " ms\n";
 		}
@@ -6706,26 +6706,26 @@ Experiments::EvaluatorResolution Experiments::resolveSchemaSearchEvaluator(
 {
 	const std::string evaluator = lowerCopy(requestedEvaluator);
 	EvaluatorResolution resolution;
-	resolution.requestedCuda = evaluator == "cuda" || evaluator == "gpu";
-	if (!resolution.requestedCuda)
+	resolution._requestedCuda = evaluator == "cuda" || evaluator == "gpu";
+	if (!resolution._requestedCuda)
 	{
-		resolution.evaluator = "cpu";
+		resolution._evaluator = "cpu";
 		return resolution;
 	}
 
 	if (cudaAvailable)
 	{
-		resolution.evaluator = "cuda";
-		resolution.usingCuda = true;
+		resolution._evaluator = "cuda";
+		resolution._usingCuda = true;
 		return resolution;
 	}
 
-	resolution.evaluator = "cpu";
-	resolution.fellBackToCpu = true;
-	resolution.warning = "CUDA evaluator requested but unavailable";
+	resolution._evaluator = "cpu";
+	resolution._fellBackToCpu = true;
+	resolution._warning = "CUDA evaluator requested but unavailable";
 	if (!cudaError.empty())
-		resolution.warning += ": " + cudaError;
-	resolution.warning += "; falling back to CPU.";
+		resolution._warning += ": " + cudaError;
+	resolution._warning += "; falling back to CPU.";
 	return resolution;
 }
 
@@ -6745,18 +6745,18 @@ static void pushAnisotropy(std::vector<double>& anisotropyValues, double x, doub
 Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointCloud& cloud, size_t maxSamplePoints)
 {
 	ConditionDomain domain;
-	domain.samplePoints = std::min(cloud.size(), std::max<size_t>(1, maxSamplePoints));
-	domain.estimatedFromCloud = !cloud.empty();
+	domain._samplePoints = std::min(cloud.size(), std::max<size_t>(1, maxSamplePoints));
+	domain._estimatedFromCloud = !cloud.empty();
 	if (cloud.empty())
 	{
-		domain.pointThresholds = fallbackPointThresholds();
-		domain.heightRatioThresholds = fallbackHeightRatioThresholds();
+		domain._pointThresholds = fallbackPointThresholds();
+		domain._heightRatioThresholds = fallbackHeightRatioThresholds();
 		return domain;
 	}
 
 	struct SketchCell
 	{
-		size_t count = 0;
+		size_t _count = 0;
 	};
 
 	std::vector<size_t> counts;
@@ -6784,7 +6784,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 	addUniqueDouble(extentZValues, rootExtent.z);
 	pushAnisotropy(anisotropyValues, rootExtent.x, rootExtent.y, rootExtent.z);
 
-	const size_t sampleCount = domain.samplePoints;
+	const size_t sampleCount = domain._samplePoints;
 	auto sampleIndexAt = [&](size_t sampleIndex) {
 		if (sampleCount <= 1 || cloud.size() <= 1)
 			return size_t(0);
@@ -6812,7 +6812,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 			}
 
 			const size_t index = (static_cast<size_t>(cell.x) * divisions + static_cast<size_t>(cell.y)) * divisions + static_cast<size_t>(cell.z);
-			++cells[index].count;
+			++cells[index]._count;
 		}
 
 		const glm::dvec3 cellExtent(
@@ -6828,73 +6828,73 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 
 		for (const SketchCell& cell : cells)
 		{
-			if (cell.count == 0)
+			if (cell._count == 0)
 				continue;
 
-			const size_t estimatedCount = std::max<size_t>(1, static_cast<size_t>(std::round(static_cast<double>(cell.count) * sampleScale)));
+			const size_t estimatedCount = std::max<size_t>(1, static_cast<size_t>(std::round(static_cast<double>(cell._count) * sampleScale)));
 			counts.push_back(estimatedCount);
 			addUniqueDouble(densities, cellVolume > 1.0e-9 ? static_cast<double>(estimatedCount) / cellVolume : 0.0);
 			addUniqueDouble(heightRatios, cellHeightRatio);
 			addUniqueDouble(extentXValues, cellExtent.x);
 			addUniqueDouble(extentYValues, cellExtent.y);
 			addUniqueDouble(extentZValues, cellExtent.z);
-			++domain.sketchNodes;
+			++domain._sketchNodes;
 		}
 	};
 
 	addGridSketch(2);
 	addGridSketch(4);
-	++domain.sketchNodes;
+	++domain._sketchNodes;
 
 	static const std::array<double, 5> quantiles = { 0.10, 0.25, 0.50, 0.75, 0.90 };
 	for (const double quantile : quantiles)
 	{
-		addPointThresholdFamily(domain.pointThresholds, quantileValue(counts, quantile));
-		addUniqueDouble(domain.densityThresholds, quantileValue(densities, quantile));
-		addUniqueDouble(domain.heightRatioThresholds, quantileValue(heightRatios, quantile));
-		addUniqueDouble(domain.extentXThresholds, quantileValue(extentXValues, quantile));
-		addUniqueDouble(domain.extentYThresholds, quantileValue(extentYValues, quantile));
-		addUniqueDouble(domain.extentZThresholds, quantileValue(extentZValues, quantile));
+		addPointThresholdFamily(domain._pointThresholds, quantileValue(counts, quantile));
+		addUniqueDouble(domain._densityThresholds, quantileValue(densities, quantile));
+		addUniqueDouble(domain._heightRatioThresholds, quantileValue(heightRatios, quantile));
+		addUniqueDouble(domain._extentXThresholds, quantileValue(extentXValues, quantile));
+		addUniqueDouble(domain._extentYThresholds, quantileValue(extentYValues, quantile));
+		addUniqueDouble(domain._extentZThresholds, quantileValue(extentZValues, quantile));
 		if (!anisotropyValues.empty())
-			addUniqueDouble(domain.anisotropyThresholds, std::clamp(quantileValue(anisotropyValues, quantile), 0.0, 1.0));
+			addUniqueDouble(domain._anisotropyThresholds, std::clamp(quantileValue(anisotropyValues, quantile), 0.0, 1.0));
 	}
 	// Fallback anisotropy gates spanning near-cubic to highly elongated, used when the sketch yielded too few samples.
-	if (domain.anisotropyThresholds.size() < 3)
+	if (domain._anisotropyThresholds.size() < 3)
 	{
 		for (const double fallback : { 0.1, 0.25, 0.4, 0.55, 0.7, 0.85 })
-			addUniqueDouble(domain.anisotropyThresholds, fallback);
+			addUniqueDouble(domain._anisotropyThresholds, fallback);
 	}
 	// Occupancy-entropy thresholds: fixed spread over the normalized [0, 1] range (near 0 fires on clustered nodes, near 1 on uniform ones); no per-cloud anchoring since entropy is already normalized by ln(64).
 	for (const double fallback : { 0.15, 0.30, 0.45, 0.60, 0.75, 0.90 })
-		addUniqueDouble(domain.occupancyEntropyThresholds, fallback);
+		addUniqueDouble(domain._occupancyEntropyThresholds, fallback);
 
 	for (const size_t fallback : fallbackPointThresholds())
 	{
 		if (fallback <= cloud.size() * 2)
-			addUniqueSize(domain.pointThresholds, fallback);
+			addUniqueSize(domain._pointThresholds, fallback);
 	}
 	for (const double fallback : fallbackHeightRatioThresholds())
-		addUniqueDouble(domain.heightRatioThresholds, fallback);
+		addUniqueDouble(domain._heightRatioThresholds, fallback);
 	if (rootDensity > 0.0)
 	{
 		for (const double multiplier : { 0.25, 0.50, 1.0, 2.0, 4.0 })
-			addUniqueDouble(domain.densityThresholds, rootDensity * multiplier);
+			addUniqueDouble(domain._densityThresholds, rootDensity * multiplier);
 	}
 	for (const double divisor : { 1.0, 2.0, 4.0, 8.0 })
 	{
-		addUniqueDouble(domain.extentXThresholds, static_cast<double>(rootExtent.x) / divisor);
-		addUniqueDouble(domain.extentYThresholds, static_cast<double>(rootExtent.y) / divisor);
-		addUniqueDouble(domain.extentZThresholds, static_cast<double>(rootExtent.z) / divisor);
+		addUniqueDouble(domain._extentXThresholds, static_cast<double>(rootExtent.x) / divisor);
+		addUniqueDouble(domain._extentYThresholds, static_cast<double>(rootExtent.y) / divisor);
+		addUniqueDouble(domain._extentZThresholds, static_cast<double>(rootExtent.z) / divisor);
 	}
 
-	sortUniqueValues(domain.pointThresholds);
-	sortUniqueValues(domain.densityThresholds);
-	sortUniqueValues(domain.heightRatioThresholds);
-	sortUniqueValues(domain.extentXThresholds);
-	sortUniqueValues(domain.extentYThresholds);
-	sortUniqueValues(domain.extentZThresholds);
-	sortUniqueValues(domain.anisotropyThresholds);
-	sortUniqueValues(domain.occupancyEntropyThresholds);
+	sortUniqueValues(domain._pointThresholds);
+	sortUniqueValues(domain._densityThresholds);
+	sortUniqueValues(domain._heightRatioThresholds);
+	sortUniqueValues(domain._extentXThresholds);
+	sortUniqueValues(domain._extentYThresholds);
+	sortUniqueValues(domain._extentZThresholds);
+	sortUniqueValues(domain._anisotropyThresholds);
+	sortUniqueValues(domain._occupancyEntropyThresholds);
 	return domain;
 }
 
@@ -6907,35 +6907,35 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 	const SchemaGenerationOptions& options,
 	const ConditionDomain* conditionDomain)
 {
-	if (options.count == 0)
+	if (options._count == 0)
 		return {};
-	const size_t maxDepth = std::max<size_t>(1, options.maxDepth);
-	const size_t maxBlocks = std::min(std::max<size_t>(1, options.maxBlocks), maxDepth);
-	const size_t minBlocks = std::min(std::max<size_t>(1, options.minBlocks), maxBlocks);
-	const size_t minLeaf = std::max<size_t>(1, std::min(options.minLeafCapacity, options.maxLeafCapacity));
-	const size_t maxLeaf = std::max(minLeaf, options.maxLeafCapacity);
-	const double conditionProbability = std::clamp(options.conditionalProbability, 0.0, 1.0);
+	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
+	const size_t maxBlocks = std::min(std::max<size_t>(1, options._maxBlocks), maxDepth);
+	const size_t minBlocks = std::min(std::max<size_t>(1, options._minBlocks), maxBlocks);
+	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
+	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
+	const double conditionProbability = std::clamp(options._conditionalProbability, 0.0, 1.0);
 
-	std::mt19937 rng(options.seed);
+	std::mt19937 rng(options._seed);
 	std::bernoulli_distribution conditionDistribution(conditionProbability);
 	std::unordered_set<std::string> seen;
 	std::vector<SchemaCandidate> candidates;
-	candidates.reserve(options.count);
+	candidates.reserve(options._count);
 
 	size_t attempts = 0;
-	const size_t maxAttempts = std::max<size_t>(options.count * 50, 1024);
-	while (candidates.size() < options.count && attempts++ < maxAttempts)
+	const size_t maxAttempts = std::max<size_t>(options._count * 50, 1024);
+	while (candidates.size() < options._count && attempts++ < maxAttempts)
 	{
 		std::uniform_int_distribution<size_t> blockDistribution(minBlocks, maxBlocks);
 		const size_t numBlocks = blockDistribution(rng);
 
 		SchemaConfig schema;
-		schema.buildPolicy.maxDepth = maxDepth;
-		schema.buildPolicy.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
-		schema.buildPolicy.minPrimitivesToSplit = std::max<size_t>(2, schema.buildPolicy.leafCapacity / 4);
-		schema.buildPolicy.collapseSingleChild = true;
-		schema.buildPolicy.removeEmptyNodes = true;
-		schema.buildPolicy.allowOverlapDuplication = false;
+		schema._buildPolicy._maxDepth = maxDepth;
+		schema._buildPolicy._leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+		schema._buildPolicy._minPrimitivesToSplit = std::max<size_t>(2, schema._buildPolicy._leafCapacity / 4);
+		schema._buildPolicy._collapseSingleChild = true;
+		schema._buildPolicy._removeEmptyNodes = true;
+		schema._buildPolicy._allowOverlapDuplication = false;
 
 		size_t remainingDepth = maxDepth;
 		std::optional<MultiDataStructure::DataStructureLevel> previousType;
@@ -6946,35 +6946,35 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 			std::uniform_int_distribution<size_t> levelDistribution(1, maxLevelForBlock);
 
 			SchemaLevelConfig level;
-			level.type = randomStructureType(rng, previousType);
-			level.typeName = randomTypeNameForBase(level.type, rng, options);
-			level.numLevels = levelDistribution(rng);
-			level.leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
-			level.minPrimitivesToSplit = std::max<size_t>(2, level.leafCapacity / 4);
-			level.axisPolicy = sampleAxisPolicy(rng, level.type);
+			level._type = randomStructureType(rng, previousType);
+			level._typeName = randomTypeNameForBase(level._type, rng, options);
+			level._numLevels = levelDistribution(rng);
+			level._leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
+			level._axisPolicy = sampleAxisPolicy(rng, level._type);
 			maybeAssignAdaptiveLeafCapacity(level, rng, options);
-			if (options.conditionalLevels && block > 0 && conditionDistribution(rng))
-				level.condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, conditionDomain);
+			if (options._conditionalLevels && block > 0 && conditionDistribution(rng))
+				level._condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, conditionDomain);
 
-			schema.levels.push_back(level);
-			previousType = level.type;
-			remainingDepth -= level.numLevels;
+			schema._levels.push_back(level);
+			previousType = level._type;
+			remainingDepth -= level._numLevels;
 		}
 
-		if (schema.levels.empty())
+		if (schema._levels.empty())
 			continue;
 
-		schema.buildPolicy.maxDepth = std::min(maxDepth, schema.totalLevels());
+		schema._buildPolicy._maxDepth = std::min(maxDepth, schema.totalLevels());
 		const std::string signature = schemaSignature(schema);
 		if (!seen.insert(signature).second)
 			continue;
 
-		SchemaCandidate candidate = materializeGeneratedSchema(schema, "generated", options.outputDirectory);
+		SchemaCandidate candidate = materializeGeneratedSchema(schema, "generated", options._outputDirectory);
 		candidates.push_back(std::move(candidate));
 	}
 
-	if (candidates.size() < options.count)
-		std::cerr << "Warning: generated " << candidates.size() << " unique schemas from requested " << options.count << '\n';
+	if (candidates.size() < options._count)
+		std::cerr << "Warning: generated " << candidates.size() << " unique schemas from requested " << options._count << '\n';
 
 	return candidates;
 }
@@ -7007,8 +7007,8 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaRepairCandi
 	candidates.reserve(mutations.size());
 	for (size_t i = 0; i < mutations.size(); ++i)
 	{
-		const std::string prefix = "repair_" + mutations[i].reason + "_" + std::to_string(i);
-		candidates.push_back(materializeGeneratedSchema(std::move(mutations[i].schema), prefix, outputDirectory));
+		const std::string prefix = "repair_" + mutations[i]._reason + "_" + std::to_string(i);
+		candidates.push_back(materializeGeneratedSchema(std::move(mutations[i]._schema), prefix, outputDirectory));
 	}
 	return candidates;
 }
@@ -7026,16 +7026,16 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 	const boost::json::object& root = rootValue.as_object();
 
 	WorkloadProfile profile;
-	profile.name = asString(root, "name", profile.name);
-	profile.numQueries = asSize(root, "numQueries", profile.numQueries);
-	profile.knnK = asSize(root, "knnK", profile.knnK);
-	profile.querySeed = static_cast<uint32_t>(asSize(root, "querySeed", profile.querySeed));
-	profile.stratifyQueries = asBool(root, "stratifyQueries", profile.stratifyQueries);
-	profile.stratifyQueries = asBool(root, "stratifiedQueries", profile.stratifyQueries);
-	profile.rangeScaleMin = asDouble(root, "rangeScaleMin", profile.rangeScaleMin);
-	profile.rangeScaleMax = asDouble(root, "rangeScaleMax", profile.rangeScaleMax);
-	profile.radiusScaleMin = asDouble(root, "radiusScaleMin", profile.radiusScaleMin);
-	profile.radiusScaleMax = asDouble(root, "radiusScaleMax", profile.radiusScaleMax);
+	profile._name = asString(root, "name", profile._name);
+	profile._numQueries = asSize(root, "numQueries", profile._numQueries);
+	profile._knnK = asSize(root, "knnK", profile._knnK);
+	profile._querySeed = static_cast<uint32_t>(asSize(root, "querySeed", profile._querySeed));
+	profile._stratifyQueries = asBool(root, "stratifyQueries", profile._stratifyQueries);
+	profile._stratifyQueries = asBool(root, "stratifiedQueries", profile._stratifyQueries);
+	profile._rangeScaleMin = asDouble(root, "rangeScaleMin", profile._rangeScaleMin);
+	profile._rangeScaleMax = asDouble(root, "rangeScaleMax", profile._rangeScaleMax);
+	profile._radiusScaleMin = asDouble(root, "radiusScaleMin", profile._radiusScaleMin);
+	profile._radiusScaleMax = asDouble(root, "radiusScaleMax", profile._radiusScaleMax);
 
 	if (const boost::json::value* queries = root.if_contains("queries"))
 	{
@@ -7043,9 +7043,9 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 			throw std::runtime_error("Workload queries must be an object");
 
 		const boost::json::object& queryWeights = queries->as_object();
-		profile.rangeWeight = asDouble(queryWeights, "aabb_range", profile.rangeWeight);
-		profile.radiusWeight = asDouble(queryWeights, "radius", profile.radiusWeight);
-		profile.knnWeight = asDouble(queryWeights, "knn", profile.knnWeight);
+		profile._rangeWeight = asDouble(queryWeights, "aabb_range", profile._rangeWeight);
+		profile._radiusWeight = asDouble(queryWeights, "radius", profile._radiusWeight);
+		profile._knnWeight = asDouble(queryWeights, "knn", profile._knnWeight);
 	}
 
 	if (const boost::json::value* queryScales = root.if_contains("queryScales"))
@@ -7054,10 +7054,10 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 			throw std::runtime_error("Workload queryScales must be an object");
 
 		const boost::json::object& scales = queryScales->as_object();
-		parseScaleRange(scales, "aabb_range", profile.rangeScaleMin, profile.rangeScaleMax);
-		parseScaleRange(scales, "range", profile.rangeScaleMin, profile.rangeScaleMax);
-		parseScaleRange(scales, "volume", profile.rangeScaleMin, profile.rangeScaleMax);
-		parseScaleRange(scales, "radius", profile.radiusScaleMin, profile.radiusScaleMax);
+		parseScaleRange(scales, "aabb_range", profile._rangeScaleMin, profile._rangeScaleMax);
+		parseScaleRange(scales, "range", profile._rangeScaleMin, profile._rangeScaleMax);
+		parseScaleRange(scales, "volume", profile._rangeScaleMin, profile._rangeScaleMax);
+		parseScaleRange(scales, "radius", profile._radiusScaleMin, profile._radiusScaleMax);
 	}
 
 	if (const boost::json::value* scoreWeights = root.if_contains("scoreWeights"))
@@ -7065,14 +7065,14 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 		if (!scoreWeights->is_object())
 			throw std::runtime_error("Workload scoreWeights must be an object");
 
-		profile.scoreWeights = parseScoreWeightsObject(scoreWeights->as_object());
-		profile.hasScoreWeights = true;
+		profile._scoreWeights = parseScoreWeightsObject(scoreWeights->as_object());
+		profile._hasScoreWeights = true;
 	}
 
-	normalizeScaleRange(profile.rangeScaleMin, profile.rangeScaleMax);
-	normalizeScaleRange(profile.radiusScaleMin, profile.radiusScaleMax);
+	normalizeScaleRange(profile._rangeScaleMin, profile._rangeScaleMax);
+	normalizeScaleRange(profile._radiusScaleMin, profile._radiusScaleMax);
 
-	if (profile.name.empty())
+	if (profile._name.empty())
 		throw std::runtime_error("Workload profile requires a non-empty name");
 
 	return profile;
@@ -7093,103 +7093,103 @@ Experiments::WorkloadProfile Experiments::loadWorkloadProfile(const std::string&
 static boost::json::object serializeBuildMetricsForOutput(const Experiments::BuildMetrics& metrics)
 {
 	boost::json::object out;
-	out["buildTimeMs"] = metrics.buildTimeMs;
-	out["numNodes"] = metrics.numNodes;
-	out["numLeaves"] = metrics.numLeaves;
-	out["indexedPoints"] = metrics.indexedPoints;
-	out["maxDepth"] = metrics.maxDepth;
-	out["averageLeafOccupancy"] = metrics.averageLeafOccupancy;
-	out["maxLeafOccupancy"] = metrics.maxLeafOccupancy;
-	out["leafOccupancyP50"] = metrics.leafOccupancyP50;
-	out["leafOccupancyP90"] = metrics.leafOccupancyP90;
-	out["leafOccupancyP99"] = metrics.leafOccupancyP99;
-	out["averageDepth"] = metrics.averageDepth;
-	out["averageFanout"] = metrics.averageFanout;
-	out["maxFanout"] = metrics.maxFanout;
-	out["emptyChildRatio"] = metrics.emptyChildRatio;
-	out["singleChildNodeCount"] = metrics.singleChildNodeCount;
-	out["meanTightBoundsVolumeRatio"] = metrics.meanTightBoundsVolumeRatio;
-	out["microIndexedLeaves"] = metrics.microIndexedLeaves;
-	out["microIndexedPoints"] = metrics.microIndexedPoints;
-	out["nodeFanoutSummary"] = metrics.nodeFanoutSummary;
-	out["memoryEstimateBytes"] = metrics.memoryEstimateBytes;
+	out["buildTimeMs"] = metrics._buildTimeMs;
+	out["numNodes"] = metrics._numNodes;
+	out["numLeaves"] = metrics._numLeaves;
+	out["indexedPoints"] = metrics._indexedPoints;
+	out["maxDepth"] = metrics._maxDepth;
+	out["averageLeafOccupancy"] = metrics._averageLeafOccupancy;
+	out["maxLeafOccupancy"] = metrics._maxLeafOccupancy;
+	out["leafOccupancyP50"] = metrics._leafOccupancyP50;
+	out["leafOccupancyP90"] = metrics._leafOccupancyP90;
+	out["leafOccupancyP99"] = metrics._leafOccupancyP99;
+	out["averageDepth"] = metrics._averageDepth;
+	out["averageFanout"] = metrics._averageFanout;
+	out["maxFanout"] = metrics._maxFanout;
+	out["emptyChildRatio"] = metrics._emptyChildRatio;
+	out["singleChildNodeCount"] = metrics._singleChildNodeCount;
+	out["meanTightBoundsVolumeRatio"] = metrics._meanTightBoundsVolumeRatio;
+	out["microIndexedLeaves"] = metrics._microIndexedLeaves;
+	out["microIndexedPoints"] = metrics._microIndexedPoints;
+	out["nodeFanoutSummary"] = metrics._nodeFanoutSummary;
+	out["memoryEstimateBytes"] = metrics._memoryEstimateBytes;
 	return out;
 }
 
 static boost::json::object serializeQueryMetricsForOutput(const Experiments::QueryMetrics& metrics)
 {
 	boost::json::object out;
-	out["totalQueries"] = metrics.totalQueries;
-	out["totalLatencyMs"] = metrics.totalLatencyMs;
-	out["averageLatencyMs"] = metrics.averageLatencyMs;
-	out["medianLatencyMs"] = metrics.medianLatencyMs;
-	out["p95LatencyMs"] = metrics.p95LatencyMs;
-	out["throughputQueriesPerSecond"] = metrics.throughputQueriesPerSecond;
-	out["averageVisitedNodes"] = metrics.averageVisitedNodes;
-	out["averageTestedPoints"] = metrics.averageTestedPoints;
-	out["averageReturnedPoints"] = metrics.averageReturnedPoints;
-	out["averageFullyContainedNodes"] = metrics.averageFullyContainedNodes;
-	out["totalVisitedNodes"] = metrics.totalVisitedNodes;
-	out["totalTestedPoints"] = metrics.totalTestedPoints;
-	out["totalReturnedPoints"] = metrics.totalReturnedPoints;
-	out["totalFullyContainedNodes"] = metrics.totalFullyContainedNodes;
+	out["totalQueries"] = metrics._totalQueries;
+	out["totalLatencyMs"] = metrics._totalLatencyMs;
+	out["averageLatencyMs"] = metrics._averageLatencyMs;
+	out["medianLatencyMs"] = metrics._medianLatencyMs;
+	out["p95LatencyMs"] = metrics._p95LatencyMs;
+	out["throughputQueriesPerSecond"] = metrics._throughputQueriesPerSecond;
+	out["averageVisitedNodes"] = metrics._averageVisitedNodes;
+	out["averageTestedPoints"] = metrics._averageTestedPoints;
+	out["averageReturnedPoints"] = metrics._averageReturnedPoints;
+	out["averageFullyContainedNodes"] = metrics._averageFullyContainedNodes;
+	out["totalVisitedNodes"] = metrics._totalVisitedNodes;
+	out["totalTestedPoints"] = metrics._totalTestedPoints;
+	out["totalReturnedPoints"] = metrics._totalReturnedPoints;
+	out["totalFullyContainedNodes"] = metrics._totalFullyContainedNodes;
 	return out;
 }
 
 static boost::json::object serializeRecordForStdout(const Experiments::SchemaSearchRecord& record)
 {
 	boost::json::object out;
-	out["datasetName"] = record.datasetName;
-	out["datasetSource"] = record.datasetSource;
-	out["numPoints"] = record.numPoints;
-	out["workloadName"] = record.workloadName;
-	out["rangeWeight"] = record.rangeWeight;
-	out["radiusWeight"] = record.radiusWeight;
-	out["knnWeight"] = record.knnWeight;
-	out["numQueries"] = record.numQueries;
-	out["knnK"] = record.knnK;
-	out["querySeed"] = record.querySeed;
-	out["schemaName"] = record.schemaName;
-	out["schemaPath"] = record.schemaPath;
-	out["build"] = serializeBuildMetricsForOutput(record.buildMetrics);
-	out["query"] = serializeQueryMetricsForOutput(record.queryMetrics);
-	out["rangeQueries"] = record.rangeQueries;
-	out["countRangeQueries"] = record.countRangeQueries;
-	out["radiusQueries"] = record.radiusQueries;
-	out["knnQueries"] = record.knnQueries;
-	out["queryStrataSummary"] = record.queryStrataSummary;
-	out["score"] = record.score;
-	out["scoreMemoryMb"] = record.scoreMemoryMb;
-	out["scoreImbalancePenalty"] = record.scoreImbalancePenalty;
-	out["scoreMode"] = record.scoreMode;
-	out["scoreStage"] = record.scoreStage;
-	out["scoreIsFinalLatency"] = record.scoreIsFinalLatency;
-	out["backend"] = record.backend;
-	out["knnBackend"] = record.knnBackend;
-	out["cudaDevice"] = record.cudaDevice;
-	out["cudaBuilder"] = record.cudaBuilder;
-	out["gpuUploadMs"] = record.gpuUploadMs;
-	out["gpuBuildMs"] = record.gpuBuildMs;
-	out["gpuQueryMs"] = record.gpuQueryMs;
-	out["gpuMemoryBytes"] = record.gpuMemoryBytes;
-	out["conditionalLevels"] = record.conditionalLevels;
-	out["conditionFields"] = record.conditionFields;
-	out["conditionSummary"] = record.conditionSummary;
-	out["isBaseline"] = record.isBaseline;
-	out["activeStructureTypes"] = record.activeStructureTypes;
-	out["nestedActiveFraction"] = record.nestedActiveFraction;
-	out["activeStructureSummary"] = record.activeStructureSummary;
-	out["bestBaselineSchema"] = record.bestBaselineSchema;
-	out["bestBaselineScore"] = record.bestBaselineScore;
-	out["relativeSpeedupVsBaseline"] = record.relativeSpeedupVsBaseline;
+	out["datasetName"] = record._datasetName;
+	out["datasetSource"] = record._datasetSource;
+	out["numPoints"] = record._numPoints;
+	out["workloadName"] = record._workloadName;
+	out["rangeWeight"] = record._rangeWeight;
+	out["radiusWeight"] = record._radiusWeight;
+	out["knnWeight"] = record._knnWeight;
+	out["numQueries"] = record._numQueries;
+	out["knnK"] = record._knnK;
+	out["querySeed"] = record._querySeed;
+	out["schemaName"] = record._schemaName;
+	out["schemaPath"] = record._schemaPath;
+	out["build"] = serializeBuildMetricsForOutput(record._buildMetrics);
+	out["query"] = serializeQueryMetricsForOutput(record._queryMetrics);
+	out["rangeQueries"] = record._rangeQueries;
+	out["countRangeQueries"] = record._countRangeQueries;
+	out["radiusQueries"] = record._radiusQueries;
+	out["knnQueries"] = record._knnQueries;
+	out["queryStrataSummary"] = record._queryStrataSummary;
+	out["score"] = record._score;
+	out["scoreMemoryMb"] = record._scoreMemoryMb;
+	out["scoreImbalancePenalty"] = record._scoreImbalancePenalty;
+	out["scoreMode"] = record._scoreMode;
+	out["scoreStage"] = record._scoreStage;
+	out["scoreIsFinalLatency"] = record._scoreIsFinalLatency;
+	out["backend"] = record._backend;
+	out["knnBackend"] = record._knnBackend;
+	out["cudaDevice"] = record._cudaDevice;
+	out["cudaBuilder"] = record._cudaBuilder;
+	out["gpuUploadMs"] = record._gpuUploadMs;
+	out["gpuBuildMs"] = record._gpuBuildMs;
+	out["gpuQueryMs"] = record._gpuQueryMs;
+	out["gpuMemoryBytes"] = record._gpuMemoryBytes;
+	out["conditionalLevels"] = record._conditionalLevels;
+	out["conditionFields"] = record._conditionFields;
+	out["conditionSummary"] = record._conditionSummary;
+	out["isBaseline"] = record._isBaseline;
+	out["activeStructureTypes"] = record._activeStructureTypes;
+	out["nestedActiveFraction"] = record._nestedActiveFraction;
+	out["activeStructureSummary"] = record._activeStructureSummary;
+	out["bestBaselineSchema"] = record._bestBaselineSchema;
+	out["bestBaselineScore"] = record._bestBaselineScore;
+	out["relativeSpeedupVsBaseline"] = record._relativeSpeedupVsBaseline;
 
 	boost::json::object weights;
-	weights["lambdaLatency"] = record.weights.lambdaLatency;
-	weights["lambdaBuild"] = record.weights.lambdaBuild;
-	weights["lambdaMemory"] = record.weights.lambdaMemory;
-	weights["lambdaImbalance"] = record.weights.lambdaImbalance;
-	weights["useVisitProxy"] = record.weights.useVisitProxy;
-	weights["visitProxyAlpha"] = record.weights.visitProxyAlpha;
+	weights["lambdaLatency"] = record._weights._lambdaLatency;
+	weights["lambdaBuild"] = record._weights._lambdaBuild;
+	weights["lambdaMemory"] = record._weights._lambdaMemory;
+	weights["lambdaImbalance"] = record._weights._lambdaImbalance;
+	weights["useVisitProxy"] = record._weights._useVisitProxy;
+	weights["visitProxyAlpha"] = record._weights._visitProxyAlpha;
 	out["weights"] = weights;
 	return out;
 }
@@ -7197,22 +7197,22 @@ static boost::json::object serializeRecordForStdout(const Experiments::SchemaSea
 int Experiments::runEvaluateOne(const SchemaSearchOptions& options)
 {
 	SchemaSearchOptions oneOptions = options;
-	oneOptions.csvPath.clear();
-	oneOptions.bestCsvPath.clear();
-	oneOptions.includeSyntheticDatasets = false;
-	oneOptions.includeConfiguredSchemas = true;
-	oneOptions.generation.count = 0;
-	oneOptions.autoConditions.enabled = false;
-	oneOptions.evolution.enabled = false;
-	oneOptions.benchmarkTopK = 0;
-	oneOptions.pauseAtEnd = false;
-	oneOptions.rankModelPath.clear();
+	oneOptions._csvPath.clear();
+	oneOptions._bestCsvPath.clear();
+	oneOptions._includeSyntheticDatasets = false;
+	oneOptions._includeConfiguredSchemas = true;
+	oneOptions._generation._count = 0;
+	oneOptions._autoConditions._enabled = false;
+	oneOptions._evolution._enabled = false;
+	oneOptions._benchmarkTopK = 0;
+	oneOptions._pauseAtEnd = false;
+	oneOptions._rankModelPath.clear();
 
-	if (oneOptions.inputPaths.empty())
+	if (oneOptions._inputPaths.empty())
 		throw std::runtime_error("evaluate-one requires --input <cloud>");
-	if (oneOptions.schemaPaths.empty())
+	if (oneOptions._schemaPaths.empty())
 		throw std::runtime_error("evaluate-one requires --schema <schema.json>");
-	if (oneOptions.workloadPaths.empty())
+	if (oneOptions._workloadPaths.empty())
 		throw std::runtime_error("evaluate-one requires --workloads <workload.json>");
 
 	std::vector<boost::json::value> captured;
@@ -7249,53 +7249,53 @@ double Experiments::computeSchemaSearchScore(
 	double& memoryMb,
 	double& imbalancePenalty)
 {
-	memoryMb = static_cast<double>(buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
-	imbalancePenalty = buildMetrics.averageLeafOccupancy > 0.0
-		? static_cast<double>(buildMetrics.maxLeafOccupancy) / buildMetrics.averageLeafOccupancy
+	memoryMb = static_cast<double>(buildMetrics._memoryEstimateBytes) / (1024.0 * 1024.0);
+	imbalancePenalty = buildMetrics._averageLeafOccupancy > 0.0
+		? static_cast<double>(buildMetrics._maxLeafOccupancy) / buildMetrics._averageLeafOccupancy
 		: 0.0;
 
-	const double primary = weights.useVisitProxy
-		? queryMetrics.averageVisitedNodes + weights.visitProxyAlpha * queryMetrics.averageTestedPoints
-		: weights.lambdaLatency * queryMetrics.averageLatencyMs;
+	const double primary = weights._useVisitProxy
+		? queryMetrics._averageVisitedNodes + weights._visitProxyAlpha * queryMetrics._averageTestedPoints
+		: weights._lambdaLatency * queryMetrics._averageLatencyMs;
 
 	return primary +
-		weights.lambdaBuild * buildMetrics.buildTimeMs +
-		weights.lambdaMemory * memoryMb +
-		weights.lambdaImbalance * imbalancePenalty;
+		weights._lambdaBuild * buildMetrics._buildTimeMs +
+		weights._lambdaMemory * memoryMb +
+		weights._lambdaImbalance * imbalancePenalty;
 }
 
 // Memory footprint in MB, preferring the measured GPU allocation for CUDA records and falling back to the crude CPU-side estimate, so the memory objective stays honest for GPU runs.
 static double recordMemoryMb(const Experiments::SchemaSearchRecord& record)
 {
-	const size_t bytes = (record.backend == "cuda" && record.gpuMemoryBytes > 0)
-		? record.gpuMemoryBytes
-		: record.buildMetrics.memoryEstimateBytes;
+	const size_t bytes = (record._backend == "cuda" && record._gpuMemoryBytes > 0)
+		? record._gpuMemoryBytes
+		: record._buildMetrics._memoryEstimateBytes;
 	return static_cast<double>(bytes) / (1024.0 * 1024.0);
 }
 
 static double bestSelectionScore(const Experiments::SchemaSearchRecord& record)
 {
-	if (record.weights.useVisitProxy)
-		return record.score;
+	if (record._weights._useVisitProxy)
+		return record._score;
 
-	if (record.confirmSeedsUsed == 0 && record.queryMetrics.averageLatencyMs <= 0.0)
-		return record.score;
+	if (record._confirmSeedsUsed == 0 && record._queryMetrics._averageLatencyMs <= 0.0)
+		return record._score;
 
-	const double primary = record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
-		? record.latencyMean
-		: record.queryMetrics.averageLatencyMs;
-	const double buildMs = record.confirmSeedsUsed > 0 && record.gpuBuildMean > 0.0
-		? record.gpuBuildMean
-		: record.buildMetrics.buildTimeMs;
+	const double primary = record._confirmSeedsUsed > 0 && record._latencyMean > 0.0
+		? record._latencyMean
+		: record._queryMetrics._averageLatencyMs;
+	const double buildMs = record._confirmSeedsUsed > 0 && record._gpuBuildMean > 0.0
+		? record._gpuBuildMean
+		: record._buildMetrics._buildTimeMs;
 	const double memoryMb = recordMemoryMb(record);
-	const double imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
-		? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+	const double imbalancePenalty = record._buildMetrics._averageLeafOccupancy > 0.0
+		? static_cast<double>(record._buildMetrics._maxLeafOccupancy) / record._buildMetrics._averageLeafOccupancy
 		: 0.0;
 
-	return record.weights.lambdaLatency * primary +
-		record.weights.lambdaBuild * buildMs +
-		record.weights.lambdaMemory * memoryMb +
-		record.weights.lambdaImbalance * imbalancePenalty;
+	return record._weights._lambdaLatency * primary +
+		record._weights._lambdaBuild * buildMs +
+		record._weights._lambdaMemory * memoryMb +
+		record._weights._lambdaImbalance * imbalancePenalty;
 }
 
 std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(const std::vector<SchemaSearchRecord>& records)
@@ -7304,7 +7304,7 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectBestRecords(cons
 	for (const SchemaSearchRecord& record : records)
 	{
 		auto existing = std::find_if(best.begin(), best.end(), [&record](const SchemaSearchRecord& candidate) {
-			return candidate.datasetName == record.datasetName && candidate.workloadName == record.workloadName;
+			return candidate._datasetName == record._datasetName && candidate._workloadName == record._workloadName;
 		});
 
 		if (existing == best.end())
@@ -7326,16 +7326,16 @@ bool Experiments::confidentlyBetter(const SchemaSearchRecord& a, const SchemaSea
 	double aHigh = 0.0;
 	double bLow = 0.0;
 	bool haveInterval = false;
-	if (a.confirmSeedsUsed > 0 && b.confirmSeedsUsed > 0 && a.latencyCiHigh > 0.0 && b.latencyCiLow > 0.0)
+	if (a._confirmSeedsUsed > 0 && b._confirmSeedsUsed > 0 && a._latencyCiHigh > 0.0 && b._latencyCiLow > 0.0)
 	{
-		aHigh = a.latencyCiHigh;
-		bLow = b.latencyCiLow;
+		aHigh = a._latencyCiHigh;
+		bLow = b._latencyCiLow;
 		haveInterval = true;
 	}
-	else if (a.queryMetrics.measurementRepeats > 1 && b.queryMetrics.measurementRepeats > 1)
+	else if (a._queryMetrics._measurementRepeats > 1 && b._queryMetrics._measurementRepeats > 1)
 	{
-		aHigh = a.queryMetrics.latencyCiHighMs;
-		bLow = b.queryMetrics.latencyCiLowMs;
+		aHigh = a._queryMetrics._latencyCiHighMs;
+		bLow = b._queryMetrics._latencyCiLowMs;
 		haveInterval = true;
 	}
 
@@ -7348,7 +7348,7 @@ void Experiments::annotateRankingConfidence(std::vector<SchemaSearchRecord>& rec
 {
 	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
 	for (size_t i = 0; i < records.size(); ++i)
-		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
+		groups[{ records[i]._datasetName, records[i]._workloadName }].push_back(i);
 
 	for (auto& [key, indices] : groups)
 	{
@@ -7377,7 +7377,7 @@ void Experiments::annotateRankingConfidence(std::vector<SchemaSearchRecord>& rec
 			? true
 			: Experiments::confidentlyBetter(records[bestIdx], records[runnerIdx]);
 		for (size_t idx : indices)
-			records[idx].rankingConfident = confident;
+			records[idx]._rankingConfident = confident;
 	}
 }
 
@@ -7436,29 +7436,29 @@ void Experiments::reportProxyLatencyCorrelation(const std::vector<SchemaSearchRe
 {
 	struct ProxyGroup
 	{
-		std::vector<double> proxy;
-		std::vector<double> latency;
-		double alpha = 0.0;
+		std::vector<double> _proxy;
+		std::vector<double> _latency;
+		double _alpha = 0.0;
 	};
 
 	std::map<std::pair<std::string, std::string>, ProxyGroup> groups;
 	for (const SchemaSearchRecord& record : records)
 	{
 		// Compare on the real-latency records only; proxy-stage rows did not measure true latency.
-		if (record.weights.useVisitProxy)
+		if (record._weights._useVisitProxy)
 			continue;
-		const double latency = record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
-			? record.latencyMean
-			: record.queryMetrics.averageLatencyMs;
+		const double latency = record._confirmSeedsUsed > 0 && record._latencyMean > 0.0
+			? record._latencyMean
+			: record._queryMetrics._averageLatencyMs;
 		if (latency <= 0.0)
 			continue;
 
-		const double proxy = record.queryMetrics.averageVisitedNodes
-			+ record.weights.visitProxyAlpha * record.queryMetrics.averageTestedPoints;
-		ProxyGroup& group = groups[{ record.datasetName, record.workloadName }];
-		group.proxy.push_back(proxy);
-		group.latency.push_back(latency);
-		group.alpha = record.weights.visitProxyAlpha;
+		const double proxy = record._queryMetrics._averageVisitedNodes
+			+ record._weights._visitProxyAlpha * record._queryMetrics._averageTestedPoints;
+		ProxyGroup& group = groups[{ record._datasetName, record._workloadName }];
+		group._proxy.push_back(proxy);
+		group._latency.push_back(latency);
+		group._alpha = record._weights._visitProxyAlpha;
 	}
 
 	if (groups.empty())
@@ -7478,20 +7478,20 @@ void Experiments::reportProxyLatencyCorrelation(const std::vector<SchemaSearchRe
 
 	for (const auto& [key, group] : groups)
 	{
-		if (group.proxy.size() < 3)
+		if (group._proxy.size() < 3)
 		{
 			std::cout << "    [" << key.first << " / " << key.second << "] n/a ("
-				<< group.proxy.size() << " candidate(s))\n";
+				<< group._proxy.size() << " candidate(s))\n";
 			continue;
 		}
 
-		const double rho = Experiments::spearmanRankCorrelation(group.proxy, group.latency);
+		const double rho = Experiments::spearmanRankCorrelation(group._proxy, group._latency);
 		std::cout << "    [" << key.first << " / " << key.second << "] rho="
 			<< std::fixed << std::setprecision(3) << rho
-			<< " over " << group.proxy.size() << " candidates\n";
+			<< " over " << group._proxy.size() << " candidates\n";
 		if (writeCsv && csv.is_open())
 			csv << csvEscape(key.first) << ',' << csvEscape(key.second) << ','
-				<< group.proxy.size() << ',' << rho << ',' << group.alpha << '\n';
+				<< group._proxy.size() << ',' << rho << ',' << group._alpha << '\n';
 	}
 }
 
@@ -7520,19 +7520,19 @@ double Experiments::estimateSchemaQueryCost(
 	const WorkloadFeatures& workload,
 	double visitProxyAlpha)
 {
-	const double n = std::max(1.0, static_cast<double>(features.numPoints));
-	if (schema.levels.empty())
+	const double n = std::max(1.0, static_cast<double>(features._numPoints));
+	if (schema._levels.empty())
 		return n; // no structure: a query scans the whole cloud
 
-	const SchemaLevelConfig& leafBlock = schema.levels.back();
-	const auto [branching, dims] = primitiveBranchingAndDims(leafBlock.primitiveKind);
+	const SchemaLevelConfig& leafBlock = schema._levels.back();
+	const auto [branching, dims] = primitiveBranchingAndDims(leafBlock._primitiveKind);
 
 	size_t totalDepth = 0;
-	for (const SchemaLevelConfig& level : schema.levels)
-		totalDepth += std::max<size_t>(1, level.numLevels);
+	for (const SchemaLevelConfig& level : schema._levels)
+		totalDepth += std::max<size_t>(1, level._numLevels);
 	totalDepth = std::min<size_t>(totalDepth, 24); // cap to keep pow() finite
 
-	size_t leafCapacity = leafBlock.leafCapacity > 0 ? leafBlock.leafCapacity : schema.buildPolicy.leafCapacity;
+	size_t leafCapacity = leafBlock._leafCapacity > 0 ? leafBlock._leafCapacity : schema._buildPolicy._leafCapacity;
 	leafCapacity = std::max<size_t>(1, leafCapacity);
 
 	// Leaves: as many as needed to reach ~leafCapacity per leaf, but no more than the depth allows.
@@ -7541,7 +7541,7 @@ double Experiments::estimateSchemaQueryCost(
 	const double leaves = std::max(1.0, std::min(idealLeaves, maxLeaves));
 	const double avgLeafPop = n / leaves;
 	const double leavesPerSide = std::pow(leaves, 1.0 / static_cast<double>(dims));
-	const double scale = std::clamp(workload.queryScaleMean, 0.0, 1.0);
+	const double scale = std::clamp(workload._queryScaleMean, 0.0, 1.0);
 
 	// A side-`scale` volume query touches ~(scale * leavesPerSide + 1) leaves per axis; internal ancestors add a geometric b/(b-1) factor.
 	const double volumeVisitedLeaves = std::min(leaves, std::pow(scale * leavesPerSide + 1.0, static_cast<double>(dims)));
@@ -7552,35 +7552,35 @@ double Experiments::estimateSchemaQueryCost(
 
 	// KNN: descend to a leaf then expand to a couple of neighbouring leaves.
 	const double knnCost = static_cast<double>(totalDepth)
-		+ visitProxyAlpha * (2.0 * avgLeafPop + static_cast<double>(workload.knnK));
+		+ visitProxyAlpha * (2.0 * avgLeafPop + static_cast<double>(workload._knnK));
 
-	const double wSum = workload.wRange + workload.wRadius + workload.wKnn;
+	const double wSum = workload._wRange + workload._wRadius + workload._wKnn;
 	if (wSum <= 0.0)
 		return volumeCost;
-	return (workload.wRange * volumeCost + workload.wRadius * volumeCost + workload.wKnn * knnCost) / wSum;
+	return (workload._wRange * volumeCost + workload._wRadius * volumeCost + workload._wKnn * knnCost) / wSum;
 }
 
 void Experiments::reportEstimatedCostCorrelation(const std::vector<SchemaSearchRecord>& records, const std::string& csvPath)
 {
 	struct CostGroup
 	{
-		std::vector<double> estimate;
-		std::vector<double> latency;
+		std::vector<double> _estimate;
+		std::vector<double> _latency;
 	};
 
 	std::map<std::pair<std::string, std::string>, CostGroup> groups;
 	for (const SchemaSearchRecord& record : records)
 	{
-		if (record.weights.useVisitProxy)
+		if (record._weights._useVisitProxy)
 			continue;
-		const double latency = record.confirmSeedsUsed > 0 && record.latencyMean > 0.0
-			? record.latencyMean
-			: record.queryMetrics.averageLatencyMs;
-		if (latency <= 0.0 || record.estimatedQueryCost <= 0.0)
+		const double latency = record._confirmSeedsUsed > 0 && record._latencyMean > 0.0
+			? record._latencyMean
+			: record._queryMetrics._averageLatencyMs;
+		if (latency <= 0.0 || record._estimatedQueryCost <= 0.0)
 			continue;
-		CostGroup& group = groups[{ record.datasetName, record.workloadName }];
-		group.estimate.push_back(record.estimatedQueryCost);
-		group.latency.push_back(latency);
+		CostGroup& group = groups[{ record._datasetName, record._workloadName }];
+		group._estimate.push_back(record._estimatedQueryCost);
+		group._latency.push_back(latency);
 	}
 
 	if (groups.empty())
@@ -7599,42 +7599,42 @@ void Experiments::reportEstimatedCostCorrelation(const std::vector<SchemaSearchR
 
 	for (const auto& [key, group] : groups)
 	{
-		if (group.estimate.size() < 3)
+		if (group._estimate.size() < 3)
 		{
 			std::cout << "    [" << key.first << " / " << key.second << "] n/a ("
-				<< group.estimate.size() << " candidate(s))\n";
+				<< group._estimate.size() << " candidate(s))\n";
 			continue;
 		}
-		const double rho = Experiments::spearmanRankCorrelation(group.estimate, group.latency);
+		const double rho = Experiments::spearmanRankCorrelation(group._estimate, group._latency);
 		std::cout << "    [" << key.first << " / " << key.second << "] rho="
 			<< std::fixed << std::setprecision(3) << rho
-			<< " over " << group.estimate.size() << " candidates\n";
+			<< " over " << group._estimate.size() << " candidates\n";
 		if (writeCsv && csv.is_open())
 			csv << csvEscape(key.first) << ',' << csvEscape(key.second) << ','
-				<< group.estimate.size() << ',' << rho << '\n';
+				<< group._estimate.size() << ',' << rho << '\n';
 	}
 }
 
 struct ParetoMetrics
 {
-	double avgLatencyMs = 0.0;
-	double buildTimeMs = 0.0;
-	double memoryMb = 0.0;
-	double imbalancePenalty = 0.0;
+	double _avgLatencyMs = 0.0;
+	double _buildTimeMs = 0.0;
+	double _memoryMb = 0.0;
+	double _imbalancePenalty = 0.0;
 };
 
 static ParetoMetrics extractParetoMetrics(const Experiments::SchemaSearchRecord& record)
 {
 	ParetoMetrics m;
 	// Prefer the seed-averaged mean after multi-seed confirmation, so a single lucky seed can't fake a Pareto win.
-	m.avgLatencyMs = record.confirmSeedsUsed > 0
-		? record.latencyMean
-		: record.queryMetrics.averageLatencyMs;
-	m.buildTimeMs = record.buildMetrics.buildTimeMs;
+	m._avgLatencyMs = record._confirmSeedsUsed > 0
+		? record._latencyMean
+		: record._queryMetrics._averageLatencyMs;
+	m._buildTimeMs = record._buildMetrics._buildTimeMs;
 	// Prefer the measured GPU footprint, falling back to the closed-form CPU estimate; derived here since scoreMemoryMb may be 0 for cached records.
-	m.memoryMb = recordMemoryMb(record);
-	m.imbalancePenalty = record.buildMetrics.averageLeafOccupancy > 0.0
-		? static_cast<double>(record.buildMetrics.maxLeafOccupancy) / record.buildMetrics.averageLeafOccupancy
+	m._memoryMb = recordMemoryMb(record);
+	m._imbalancePenalty = record._buildMetrics._averageLeafOccupancy > 0.0
+		? static_cast<double>(record._buildMetrics._maxLeafOccupancy) / record._buildMetrics._averageLeafOccupancy
 		: 0.0;
 	return m;
 }
@@ -7642,17 +7642,17 @@ static ParetoMetrics extractParetoMetrics(const Experiments::SchemaSearchRecord&
 static bool dominates(const ParetoMetrics& a, const ParetoMetrics& b)
 {
 	const bool allLEq =
-		a.avgLatencyMs <= b.avgLatencyMs &&
-		a.buildTimeMs <= b.buildTimeMs &&
-		a.memoryMb <= b.memoryMb &&
-		a.imbalancePenalty <= b.imbalancePenalty;
+		a._avgLatencyMs <= b._avgLatencyMs &&
+		a._buildTimeMs <= b._buildTimeMs &&
+		a._memoryMb <= b._memoryMb &&
+		a._imbalancePenalty <= b._imbalancePenalty;
 	if (!allLEq)
 		return false;
 	const bool anyStrict =
-		a.avgLatencyMs < b.avgLatencyMs ||
-		a.buildTimeMs < b.buildTimeMs ||
-		a.memoryMb < b.memoryMb ||
-		a.imbalancePenalty < b.imbalancePenalty;
+		a._avgLatencyMs < b._avgLatencyMs ||
+		a._buildTimeMs < b._buildTimeMs ||
+		a._memoryMb < b._memoryMb ||
+		a._imbalancePenalty < b._imbalancePenalty;
 	return anyStrict;
 }
 
@@ -7675,16 +7675,16 @@ static std::pair<double, double> paretoAxisRange(const std::vector<ParetoMetrics
 
 static std::string describeParetoEntry(const Experiments::SchemaSearchRecord& r)
 {
-	const double latency = r.confirmSeedsUsed > 0 ? r.latencyMean : r.queryMetrics.averageLatencyMs;
-	const double memoryMb = (r.backend == "cuda" && r.gpuMemoryBytes > 0)
-		? static_cast<double>(r.gpuMemoryBytes) / (1024.0 * 1024.0)
-		: static_cast<double>(r.buildMetrics.memoryEstimateBytes) / (1024.0 * 1024.0);
-	const double imbalance = r.buildMetrics.averageLeafOccupancy > 0.0
-		? static_cast<double>(r.buildMetrics.maxLeafOccupancy) / r.buildMetrics.averageLeafOccupancy
+	const double latency = r._confirmSeedsUsed > 0 ? r._latencyMean : r._queryMetrics._averageLatencyMs;
+	const double memoryMb = (r._backend == "cuda" && r._gpuMemoryBytes > 0)
+		? static_cast<double>(r._gpuMemoryBytes) / (1024.0 * 1024.0)
+		: static_cast<double>(r._buildMetrics._memoryEstimateBytes) / (1024.0 * 1024.0);
+	const double imbalance = r._buildMetrics._averageLeafOccupancy > 0.0
+		? static_cast<double>(r._buildMetrics._maxLeafOccupancy) / r._buildMetrics._averageLeafOccupancy
 		: 0.0;
 	std::ostringstream out;
 	out << std::fixed << std::setprecision(4)
-		<< "latency=" << latency << "ms build=" << r.buildMetrics.buildTimeMs
+		<< "latency=" << latency << "ms build=" << r._buildMetrics._buildTimeMs
 		<< "ms mem=" << std::setprecision(2) << memoryMb << "MB imbalance="
 		<< std::setprecision(2) << imbalance;
 	return out.str();
@@ -7695,7 +7695,7 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 	// Group by (dataset, workload) and run O(n^2) non-domination filtering per group; batch sizes stay small enough that the quadratic cost is far cheaper than any single measurement.
 	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
 	for (size_t i = 0; i < records.size(); ++i)
-		groups[{ records[i].datasetName, records[i].workloadName }].push_back(i);
+		groups[{ records[i]._datasetName, records[i]._workloadName }].push_back(i);
 
 	std::vector<SchemaSearchRecord> front;
 	for (const auto& [key, indices] : groups)
@@ -7722,9 +7722,9 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 
 		// Rank non-dominated entries by avgLatencyMs (buildTimeMs as a stable tie-break) so the CSV's fastest front entry sits at rank 0 without re-sorting.
 		std::sort(nonDominated.begin(), nonDominated.end(), [&records](size_t a, size_t b) {
-			if (records[a].queryMetrics.averageLatencyMs != records[b].queryMetrics.averageLatencyMs)
-				return records[a].queryMetrics.averageLatencyMs < records[b].queryMetrics.averageLatencyMs;
-			return records[a].buildMetrics.buildTimeMs < records[b].buildMetrics.buildTimeMs;
+			if (records[a]._queryMetrics._averageLatencyMs != records[b]._queryMetrics._averageLatencyMs)
+				return records[a]._queryMetrics._averageLatencyMs < records[b]._queryMetrics._averageLatencyMs;
+			return records[a]._buildMetrics._buildTimeMs < records[b]._buildMetrics._buildTimeMs;
 		});
 
 		// Knee = front entry closest to the normalized ideal across the four objectives (equal weighting); a single-entry front is its own knee.
@@ -7736,19 +7736,19 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 			for (const size_t idx : nonDominated)
 				objectives.push_back(extractParetoMetrics(records[idx]));
 
-			const auto [loL, hiL] = paretoAxisRange(objectives, &ParetoMetrics::avgLatencyMs);
-			const auto [loB, hiB] = paretoAxisRange(objectives, &ParetoMetrics::buildTimeMs);
-			const auto [loM, hiM] = paretoAxisRange(objectives, &ParetoMetrics::memoryMb);
-			const auto [loI, hiI] = paretoAxisRange(objectives, &ParetoMetrics::imbalancePenalty);
+			const auto [loL, hiL] = paretoAxisRange(objectives, &ParetoMetrics::_avgLatencyMs);
+			const auto [loB, hiB] = paretoAxisRange(objectives, &ParetoMetrics::_buildTimeMs);
+			const auto [loM, hiM] = paretoAxisRange(objectives, &ParetoMetrics::_memoryMb);
+			const auto [loI, hiI] = paretoAxisRange(objectives, &ParetoMetrics::_imbalancePenalty);
 
 			double bestDist = std::numeric_limits<double>::max();
 			for (size_t r = 0; r < objectives.size(); ++r)
 			{
 				const ParetoMetrics& o = objectives[r];
-				const double nl = normalize01(o.avgLatencyMs, loL, hiL);
-				const double nb = normalize01(o.buildTimeMs, loB, hiB);
-				const double nm = normalize01(o.memoryMb, loM, hiM);
-				const double ni = normalize01(o.imbalancePenalty, loI, hiI);
+				const double nl = normalize01(o._avgLatencyMs, loL, hiL);
+				const double nb = normalize01(o._buildTimeMs, loB, hiB);
+				const double nm = normalize01(o._memoryMb, loM, hiM);
+				const double ni = normalize01(o._imbalancePenalty, loI, hiI);
 				const double dist = nl * nl + nb * nb + nm * nm + ni * ni;
 				if (dist < bestDist)
 				{
@@ -7761,8 +7761,8 @@ std::vector<Experiments::SchemaSearchRecord> Experiments::selectParetoRecords(co
 		for (size_t rank = 0; rank < nonDominated.size(); ++rank)
 		{
 			SchemaSearchRecord entry = records[nonDominated[rank]];
-			entry.paretoRank = static_cast<int>(rank);
-			entry.paretoKnee = (rank == kneeRank);
+			entry._paretoRank = static_cast<int>(rank);
+			entry._paretoKnee = (rank == kneeRank);
 			front.push_back(std::move(entry));
 		}
 	}
@@ -7778,7 +7778,7 @@ void Experiments::reportParetoKnee(const std::vector<SchemaSearchRecord>& record
 
 	std::map<std::pair<std::string, std::string>, std::vector<size_t>> groups;
 	for (size_t i = 0; i < front.size(); ++i)
-		groups[{ front[i].datasetName, front[i].workloadName }].push_back(i);
+		groups[{ front[i]._datasetName, front[i]._workloadName }].push_back(i);
 
 	std::cout << "  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):\n";
 	for (const auto& [key, indices] : groups)
@@ -7787,18 +7787,18 @@ void Experiments::reportParetoKnee(const std::vector<SchemaSearchRecord>& record
 		size_t kneeIdx = indices.front();
 		for (const size_t i : indices)
 		{
-			if (front[i].paretoRank == 0)
+			if (front[i]._paretoRank == 0)
 				fastestIdx = i;
-			if (front[i].paretoKnee)
+			if (front[i]._paretoKnee)
 				kneeIdx = i;
 		}
 
 		std::cout << "    [" << key.first << " / " << key.second << "] front size " << indices.size() << "\n";
-		std::cout << "      fastest: " << front[fastestIdx].schemaName << "  " << describeParetoEntry(front[fastestIdx]) << "\n";
+		std::cout << "      fastest: " << front[fastestIdx]._schemaName << "  " << describeParetoEntry(front[fastestIdx]) << "\n";
 		if (kneeIdx == fastestIdx)
 			std::cout << "      knee:    (same as fastest)\n";
 		else
-			std::cout << "      knee:    " << front[kneeIdx].schemaName << "  " << describeParetoEntry(front[kneeIdx]) << "\n";
+			std::cout << "      knee:    " << front[kneeIdx]._schemaName << "  " << describeParetoEntry(front[kneeIdx]) << "\n";
 	}
 }
 
@@ -7836,20 +7836,20 @@ std::tuple<double, double, double> Experiments::bootstrapMeanCI(
 static SchemaConfig makeParitySchema(const std::string& typeName, MultiDataStructure::DataStructureLevel type)
 {
 	SchemaLevelConfig level;
-	level.type = type;
-	level.typeName = typeName;
-	level.numLevels = 6;
-	level.leafCapacity = 64;
-	level.minPrimitivesToSplit = 8;
+	level._type = type;
+	level._typeName = typeName;
+	level._numLevels = 6;
+	level._leafCapacity = 64;
+	level._minPrimitivesToSplit = 8;
 
 	SchemaConfig schema;
-	schema.name = "parity_" + typeName;
-	schema.levels.push_back(level);
-	schema.buildPolicy.maxDepth = 6;
-	schema.buildPolicy.leafCapacity = 64;
-	schema.buildPolicy.minPrimitivesToSplit = 8;
-	schema.buildPolicy.removeEmptyNodes = true;
-	schema.buildPolicy.collapseSingleChild = false;
+	schema._name = "parity_" + typeName;
+	schema._levels.push_back(level);
+	schema._buildPolicy._maxDepth = 6;
+	schema._buildPolicy._leafCapacity = 64;
+	schema._buildPolicy._minPrimitivesToSplit = 8;
+	schema._buildPolicy._removeEmptyNodes = true;
+	schema._buildPolicy._collapseSingleChild = false;
 	return schema;
 }
 
@@ -7870,7 +7870,7 @@ static void runCpuGpuParityCheck(
 
 	const Experiments::WorkloadProfile& workload = workloads.front();
 	PointGpu::Options cudaOptions = cudaOptionsFrom(options);
-	cudaOptions.builder = "mixed";
+	cudaOptions._builder = "mixed";
 
 	const std::vector<SchemaConfig> schemas = {
 		makeParitySchema("Octree", MultiDataStructure::DataStructureLevel::OctreeNode),
@@ -7884,32 +7884,32 @@ static void runCpuGpuParityCheck(
 		csv << "dataset_name,schema_name,workload_name,cpu_nodes,gpu_nodes,cpu_leaves,gpu_leaves,"
 			   "compared_queries,count_matches,max_count_delta,parity_ok\n";
 
-	std::cout << "  CPU/GPU parity check (range+radius returned-count agreement on '" << workload.name << "'):\n";
+	std::cout << "  CPU/GPU parity check (range+radius returned-count agreement on '" << workload._name << "'):\n";
 
 	for (const SearchDataset& dataset : datasets)
 	{
-		const PreparedWorkload prepared = prepareWorkloadProfile(workload, dataset.cloud, false);
+		const PreparedWorkload prepared = prepareWorkloadProfile(workload, dataset._cloud, false);
 		std::vector<PointGpu::Query> gpuQueries;
-		gpuQueries.reserve(prepared.cpuQueries.size());
-		for (const PreparedCpuQuery& q : prepared.cpuQueries)
+		gpuQueries.reserve(prepared._cpuQueries.size());
+		for (const PreparedCpuQuery& q : prepared._cpuQueries)
 		{
 			PointGpu::Query gq;
-			if (q.kind == PreparedQueryKind::Range)
+			if (q._kind == PreparedQueryKind::Range)
 			{
-				gq.type = PointGpu::QueryType::Range;
-				gq.bounds = q.bounds;
+				gq._type = PointGpu::QueryType::Range;
+				gq._bounds = q._bounds;
 			}
-			else if (q.kind == PreparedQueryKind::Radius)
+			else if (q._kind == PreparedQueryKind::Radius)
 			{
-				gq.type = PointGpu::QueryType::Radius;
+				gq._type = PointGpu::QueryType::Radius;
 				gq.center = q.center;
-				gq.radius = q.radius;
+				gq._radius = q._radius;
 			}
 			else
 			{
-				gq.type = PointGpu::QueryType::Knn;
+				gq._type = PointGpu::QueryType::Knn;
 				gq.center = q.center;
-				gq.k = workload.knnK;
+				gq._k = workload._knnK;
 			}
 			gpuQueries.push_back(gq);
 		}
@@ -7917,7 +7917,7 @@ static void runCpuGpuParityCheck(
 		for (const SchemaConfig& schema : schemas)
 		{
 			PointSpatialIndex cpu;
-			cpu.build(dataset.cloud, schema);
+			cpu.build(dataset._cloud, schema);
 			const PointSpatialIndex::Stats cpuStats = cpu.stats();
 
 			PointGpu::MixedTree gpu;
@@ -7925,31 +7925,31 @@ static void runCpuGpuParityCheck(
 			PointGpu::QueryResult gpuResult;
 			try
 			{
-				gpuBuild = gpu.build(dataset.cloud, schema, cudaOptions);
+				gpuBuild = gpu.build(dataset._cloud, schema, cudaOptions);
 				gpuResult = gpu.query(gpuQueries, cudaOptions);
 			}
 			catch (const std::exception& ex)
 			{
-				std::cout << "    [" << dataset.name << " / " << schema.name << "] GPU build/query failed: " << ex.what() << "\n";
+				std::cout << "    [" << dataset._name << " / " << schema._name << "] GPU build/query failed: " << ex.what() << "\n";
 				continue;
 			}
 
 			size_t compared = 0;
 			size_t matches = 0;
 			size_t maxDelta = 0;
-			const size_t n = std::min(prepared.cpuQueries.size(), gpuResult.samples.size());
+			const size_t n = std::min(prepared._cpuQueries.size(), gpuResult._samples.size());
 			for (size_t i = 0; i < n; ++i)
 			{
-				const PreparedCpuQuery& q = prepared.cpuQueries[i];
+				const PreparedCpuQuery& q = prepared._cpuQueries[i];
 				size_t cpuCount = 0;
-				if (q.kind == PreparedQueryKind::Range)
-					cpuCount = cpu.rangeQuery(q.bounds).pointIndices.size();
-				else if (q.kind == PreparedQueryKind::Radius)
-					cpuCount = cpu.radiusQuery(q.center, q.radius).pointIndices.size();
+				if (q._kind == PreparedQueryKind::Range)
+					cpuCount = cpu.rangeQuery(q._bounds)._pointIndices.size();
+				else if (q._kind == PreparedQueryKind::Radius)
+					cpuCount = cpu.radiusQuery(q.center, q._radius)._pointIndices.size();
 				else
 					continue;
 
-				const size_t gpuCount = static_cast<size_t>(gpuResult.samples[i].returnedPoints);
+				const size_t gpuCount = static_cast<size_t>(gpuResult._samples[i]._returnedPoints);
 				const size_t delta = cpuCount > gpuCount ? cpuCount - gpuCount : gpuCount - cpuCount;
 				++compared;
 				if (delta == 0)
@@ -7958,16 +7958,16 @@ static void runCpuGpuParityCheck(
 			}
 
 			const bool parityOk = compared > 0 && matches == compared;
-			std::cout << "    [" << dataset.name << " / " << schema.name << "] "
+			std::cout << "    [" << dataset._name << " / " << schema._name << "] "
 				<< matches << "/" << compared << " range+radius counts match (max delta "
 				<< maxDelta << ")" << (parityOk ? "  OK" : "  MISMATCH")
-				<< "  [cpu nodes/leaves " << cpuStats.numNodes << "/" << cpuStats.numLeaves
-				<< " vs gpu " << gpuBuild.metrics.numNodes << "/" << gpuBuild.metrics.numLeaves << "]\n";
+				<< "  [cpu nodes/leaves " << cpuStats._numNodes << "/" << cpuStats._numLeaves
+				<< " vs gpu " << gpuBuild._metrics._numNodes << "/" << gpuBuild._metrics._numLeaves << "]\n";
 
 			if (csv.is_open())
-				csv << csvEscape(dataset.name) << ',' << csvEscape(schema.name) << ',' << csvEscape(workload.name) << ','
-					<< cpuStats.numNodes << ',' << gpuBuild.metrics.numNodes << ','
-					<< cpuStats.numLeaves << ',' << gpuBuild.metrics.numLeaves << ','
+				csv << csvEscape(dataset._name) << ',' << csvEscape(schema._name) << ',' << csvEscape(workload._name) << ','
+					<< cpuStats._numNodes << ',' << gpuBuild._metrics._numNodes << ','
+					<< cpuStats._numLeaves << ',' << gpuBuild._metrics._numLeaves << ','
 					<< compared << ',' << matches << ',' << maxDelta << ',' << (parityOk ? 1 : 0) << '\n';
 		}
 	}
@@ -7976,53 +7976,53 @@ static void runCpuGpuParityCheck(
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 {
 	SchemaSearchOptions resolvedOptions = options;
-	if (resolvedOptions.deepNestedSearch)
+	if (resolvedOptions._deepNestedSearch)
 	{
-		resolvedOptions.autoConditions.enabled = true;
-		resolvedOptions.includeConfiguredSchemas = false;
-		resolvedOptions.includeBaselineSchemas = true;
-		resolvedOptions.generation.minBlocks = std::max<size_t>(2, resolvedOptions.generation.minBlocks);
-		resolvedOptions.generation.maxBlocks = std::max(resolvedOptions.generation.maxBlocks, resolvedOptions.generation.minBlocks);
-		resolvedOptions.generation.conditionalLevels = true;
-		resolvedOptions.generation.conditionalProbability = std::max(0.75, resolvedOptions.generation.conditionalProbability);
+		resolvedOptions._autoConditions._enabled = true;
+		resolvedOptions._includeConfiguredSchemas = false;
+		resolvedOptions._includeBaselineSchemas = true;
+		resolvedOptions._generation._minBlocks = std::max<size_t>(2, resolvedOptions._generation._minBlocks);
+		resolvedOptions._generation._maxBlocks = std::max(resolvedOptions._generation._maxBlocks, resolvedOptions._generation._minBlocks);
+		resolvedOptions._generation._conditionalLevels = true;
+		resolvedOptions._generation._conditionalProbability = std::max(0.75, resolvedOptions._generation._conditionalProbability);
 	}
 	std::string cudaError;
 	bool cudaAvailable = false;
 	if (useCudaEvaluator(options))
 		cudaAvailable = PointGpu::MixedTree::isAvailable(&cudaError);
-	const EvaluatorResolution evaluatorResolution = resolveSchemaSearchEvaluator(options.evaluator, cudaAvailable, cudaError);
-	resolvedOptions.evaluator = evaluatorResolution.evaluator;
-	resolvedOptions.generation.primitiveProfile = resolvePrimitiveProfile(
-		resolvedOptions.generation.primitiveProfile,
-		evaluatorResolution.usingCuda);
-	if (resolvedOptions.deepNestedSearch)
-		resolvedOptions.generation.primitiveProfile = resolvePrimitiveProfile("query_minimal_cpu", false);
-	if (evaluatorResolution.usingCuda && resolvedOptions.generation.adaptiveLeafCapacity)
+	const EvaluatorResolution evaluatorResolution = resolveSchemaSearchEvaluator(options._evaluator, cudaAvailable, cudaError);
+	resolvedOptions._evaluator = evaluatorResolution._evaluator;
+	resolvedOptions._generation._primitiveProfile = resolvePrimitiveProfile(
+		resolvedOptions._generation._primitiveProfile,
+		evaluatorResolution._usingCuda);
+	if (resolvedOptions._deepNestedSearch)
+		resolvedOptions._generation._primitiveProfile = resolvePrimitiveProfile("query_minimal_cpu", false);
+	if (evaluatorResolution._usingCuda && resolvedOptions._generation._adaptiveLeafCapacity)
 	{
 		std::cout << "  warning: generated adaptive leaf capacity is CPU-only for now; disabling it for CUDA evaluation\n";
-		resolvedOptions.generation.adaptiveLeafCapacity = false;
+		resolvedOptions._generation._adaptiveLeafCapacity = false;
 	}
-	if (evaluatorResolution.usingCuda && (resolvedOptions.generation.conditionalLevels || resolvedOptions.autoConditions.enabled))
+	if (evaluatorResolution._usingCuda && (resolvedOptions._generation._conditionalLevels || resolvedOptions._autoConditions._enabled))
 		std::cout << "  note: occupancy-entropy gates are CPU-only; excluded from CUDA schema generation\n";
 
 	Experiments::EvaluationCache ownedScoreCache;
-	if (!resolvedOptions.scoreCachePath.empty() && resolvedOptions.scoreCache == nullptr)
+	if (!resolvedOptions._scoreCachePath.empty() && resolvedOptions._scoreCache == nullptr)
 	{
-		if (resolvedOptions.rebuildScoreCache)
+		if (resolvedOptions._rebuildScoreCache)
 		{
 			std::error_code error;
-			std::filesystem::remove(resolvedOptions.scoreCachePath, error);
+			std::filesystem::remove(resolvedOptions._scoreCachePath, error);
 		}
-		const bool opened = ownedScoreCache.open(resolvedOptions.scoreCachePath, false);
+		const bool opened = ownedScoreCache.open(resolvedOptions._scoreCachePath, false);
 		if (opened)
 		{
-			resolvedOptions.scoreCache = &ownedScoreCache;
-			std::cout << "  score cache: " << resolvedOptions.scoreCachePath
+			resolvedOptions._scoreCache = &ownedScoreCache;
+			std::cout << "  score cache: " << resolvedOptions._scoreCachePath
 				<< " (" << ownedScoreCache.entryCount() << " entries on load)\n";
 		}
 		else
 		{
-			std::cerr << "Warning: failed to open score cache at " << resolvedOptions.scoreCachePath << "; running uncached\n";
+			std::cerr << "Warning: failed to open score cache at " << resolvedOptions._scoreCachePath << "; running uncached\n";
 		}
 	}
 
@@ -8030,36 +8030,36 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 
 	// Per-cloud condition domain estimated once from the first dataset to calibrate conditional thresholds; only the GA / flat paths consult it (auto-conditions builds its own), and it's skipped on synthetic/empty runs.
 	std::optional<ConditionDomain> sharedConditionDomain;
-	if (!resolvedOptions.autoConditions.enabled && !datasets.empty() && !datasets.front().cloud.empty())
+	if (!resolvedOptions._autoConditions._enabled && !datasets.empty() && !datasets.front()._cloud.empty())
 	{
-		sharedConditionDomain = estimateConditionDomain(datasets.front().cloud,
-			resolvedOptions.autoConditions.proxyPointCap > 0
-				? resolvedOptions.autoConditions.proxyPointCap
+		sharedConditionDomain = estimateConditionDomain(datasets.front()._cloud,
+			resolvedOptions._autoConditions._proxyPointCap > 0
+				? resolvedOptions._autoConditions._proxyPointCap
 				: size_t(262144));
 		if (useCudaEvaluator(resolvedOptions))
 			restrictConditionDomainToGpuSafe(sharedConditionDomain.value());
-		std::cout << "  condition domain from '" << datasets.front().name
-			<< "': " << sharedConditionDomain->pointThresholds.size() << " point, "
-			<< sharedConditionDomain->densityThresholds.size() << " density, "
-			<< sharedConditionDomain->heightRatioThresholds.size() << " height, "
-			<< sharedConditionDomain->anisotropyThresholds.size() << " anisotropy thresholds\n";
+		std::cout << "  condition domain from '" << datasets.front()._name
+			<< "': " << sharedConditionDomain->_pointThresholds.size() << " point, "
+			<< sharedConditionDomain->_densityThresholds.size() << " density, "
+			<< sharedConditionDomain->_heightRatioThresholds.size() << " height, "
+			<< sharedConditionDomain->_anisotropyThresholds.size() << " anisotropy thresholds\n";
 	}
 
-	std::vector<SchemaCandidate> schemas = loadSchemas(resolvedOptions.schemaPaths, resolvedOptions.includeConfiguredSchemas);
-	if (resolvedOptions.includeBaselineSchemas)
+	std::vector<SchemaCandidate> schemas = loadSchemas(resolvedOptions._schemaPaths, resolvedOptions._includeConfiguredSchemas);
+	if (resolvedOptions._includeBaselineSchemas)
 		appendBaselineSchemas(schemas, useCudaEvaluator(resolvedOptions));
-	if (!resolvedOptions.autoConditions.enabled)
-		appendGeneratedSchemas(schemas, resolvedOptions.generation,
+	if (!resolvedOptions._autoConditions._enabled)
+		appendGeneratedSchemas(schemas, resolvedOptions._generation,
 			sharedConditionDomain.has_value() ? &sharedConditionDomain.value() : nullptr);
 	if (schemas.empty())
 	{
-		if (!resolvedOptions.autoConditions.enabled || resolvedOptions.autoConditions.proxyCandidateCount == 0)
+		if (!resolvedOptions._autoConditions._enabled || resolvedOptions._autoConditions._proxyCandidateCount == 0)
 			throw std::runtime_error("Schema search has no schemas. Provide --schemas, omit --generated-only, or use --generate-schemas.");
 	}
 	const std::vector<WorkloadProfile> workloads = loadWorkloads(resolvedOptions);
-	const std::optional<SchemaSelectorModel> rankModel = (resolvedOptions.rankModelPath.empty() || resolvedOptions.evolution.enabled || resolvedOptions.autoConditions.enabled)
+	const std::optional<SchemaSelectorModel> rankModel = (resolvedOptions._rankModelPath.empty() || resolvedOptions._evolution._enabled || resolvedOptions._autoConditions._enabled)
 		? std::optional<SchemaSelectorModel>()
-		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(resolvedOptions.rankModelPath));
+		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(resolvedOptions._rankModelPath));
 
 	std::vector<SchemaSearchRecord> records;
 	records.reserve(datasets.size() * workloads.size() * schemas.size());
@@ -8067,76 +8067,76 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	std::cout << std::fixed << std::setprecision(3);
 	std::cout << "Schema search\n";
 	std::cout << "  evaluator: " << (useCudaEvaluator(resolvedOptions) ? "cuda" : "cpu") << '\n';
-	if (resolvedOptions.deepNestedSearch)
+	if (resolvedOptions._deepNestedSearch)
 		std::cout << "  deep nested search: enabled (CPU discovery, nested candidates only, CUDA confirmation report when available)\n";
-	if (!evaluatorResolution.warning.empty())
-		std::cout << "  warning: " << evaluatorResolution.warning << '\n';
+	if (!evaluatorResolution._warning.empty())
+		std::cout << "  warning: " << evaluatorResolution._warning << '\n';
 	if (useCudaEvaluator(resolvedOptions))
 	{
 		const PointGpu::Options cudaOptions = cudaOptionsFrom(resolvedOptions);
-		std::cout << "  cuda builder: " << cudaBuilderDisplayName(cudaOptions.builder) << '\n';
+		std::cout << "  cuda builder: " << cudaBuilderDisplayName(cudaOptions._builder) << '\n';
 		std::cout << "  cuda device: " << cudaDeviceDescription(cudaOptions) << '\n';
 		std::cout << "  cuda warmup: " << warmUpCudaDevice(cudaOptions) << " ms\n";
-		if (cudaOptions.queryBatchSize > 0)
-			std::cout << "  cuda query batch: " << cudaOptions.queryBatchSize << '\n';
-		if (cudaOptions.memoryBudgetMb > 0)
+		if (cudaOptions._queryBatchSize > 0)
+			std::cout << "  cuda query batch: " << cudaOptions._queryBatchSize << '\n';
+		if (cudaOptions._memoryBudgetMb > 0)
 		{
-			std::cout << "  cuda memory budget: " << cudaOptions.memoryBudgetMb << " MB";
-			if (resolvedOptions.cuda.memoryBudgetMb == 0)
+			std::cout << "  cuda memory budget: " << cudaOptions._memoryBudgetMb << " MB";
+			if (resolvedOptions._cuda._memoryBudgetMb == 0)
 				std::cout << " (auto, 75% of total VRAM)";
 			std::cout << '\n';
 		}
 	}
 	std::cout << "  datasets: " << datasets.size() << '\n';
 	std::cout << "  schemas: " << schemas.size() << '\n';
-	if (resolvedOptions.deepNestedSearch)
+	if (resolvedOptions._deepNestedSearch)
 	{
-		std::cout << "  deep nested candidate budget: " << resolvedOptions.autoConditions.proxyCandidateCount << " requested\n";
-		std::cout << "  generated min blocks: " << resolvedOptions.generation.minBlocks << '\n';
-		std::cout << "  primitive profile: " << resolvedOptions.generation.primitiveProfile << '\n';
-		if (resolvedOptions.generation.conditionalLevels)
-			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
-		if (resolvedOptions.generation.adaptiveLeafCapacity)
-			std::cout << "  adaptive leaf capacity: probability " << resolvedOptions.generation.adaptiveLeafProbability << '\n';
+		std::cout << "  deep nested candidate budget: " << resolvedOptions._autoConditions._proxyCandidateCount << " requested\n";
+		std::cout << "  generated min blocks: " << resolvedOptions._generation._minBlocks << '\n';
+		std::cout << "  primitive profile: " << resolvedOptions._generation._primitiveProfile << '\n';
+		if (resolvedOptions._generation._conditionalLevels)
+			std::cout << "  generated conditions: probability " << resolvedOptions._generation._conditionalProbability << '\n';
+		if (resolvedOptions._generation._adaptiveLeafCapacity)
+			std::cout << "  adaptive leaf capacity: probability " << resolvedOptions._generation._adaptiveLeafProbability << '\n';
 	}
-	else if (resolvedOptions.generation.count > 0)
+	else if (resolvedOptions._generation._count > 0)
 	{
-		std::cout << "  generated schemas: " << resolvedOptions.generation.count << " requested\n";
-		std::cout << "  primitive profile: " << resolvedOptions.generation.primitiveProfile << '\n';
-		if (resolvedOptions.generation.conditionalLevels)
-			std::cout << "  generated conditions: probability " << resolvedOptions.generation.conditionalProbability << '\n';
-		if (resolvedOptions.generation.adaptiveLeafCapacity)
-			std::cout << "  adaptive leaf capacity: probability " << resolvedOptions.generation.adaptiveLeafProbability << '\n';
+		std::cout << "  generated schemas: " << resolvedOptions._generation._count << " requested\n";
+		std::cout << "  primitive profile: " << resolvedOptions._generation._primitiveProfile << '\n';
+		if (resolvedOptions._generation._conditionalLevels)
+			std::cout << "  generated conditions: probability " << resolvedOptions._generation._conditionalProbability << '\n';
+		if (resolvedOptions._generation._adaptiveLeafCapacity)
+			std::cout << "  adaptive leaf capacity: probability " << resolvedOptions._generation._adaptiveLeafProbability << '\n';
 	}
-	if (!resolvedOptions.evolution.enabled && rankModel.has_value())
+	if (!resolvedOptions._evolution._enabled && rankModel.has_value())
 	{
-		std::cout << "  surrogate rank model: " << resolvedOptions.rankModelPath << '\n';
-		if (resolvedOptions.benchmarkTopK > 0)
-			std::cout << "  benchmark top-k: " << resolvedOptions.benchmarkTopK << '\n';
+		std::cout << "  surrogate rank model: " << resolvedOptions._rankModelPath << '\n';
+		if (resolvedOptions._benchmarkTopK > 0)
+			std::cout << "  benchmark top-k: " << resolvedOptions._benchmarkTopK << '\n';
 	}
-	else if (resolvedOptions.evolution.enabled && !resolvedOptions.rankModelPath.empty())
+	else if (resolvedOptions._evolution._enabled && !resolvedOptions._rankModelPath.empty())
 	{
 		std::cout << "  surrogate rank model: not used inside evolutionary loop; measured scores drive selection\n";
 	}
 	std::cout << "  workloads: " << workloads.size() << '\n';
-	if (resolvedOptions.autoConditions.enabled)
+	if (resolvedOptions._autoConditions._enabled)
 	{
 		std::cout << "  auto-conditions: enabled\n";
-		std::cout << "    proxy candidates: " << resolvedOptions.autoConditions.proxyCandidateCount << '\n';
-		std::cout << "    proxy point cap: " << resolvedOptions.autoConditions.proxyPointCap << '\n';
-		std::cout << "    proxy queries: " << resolvedOptions.autoConditions.proxyQueryCount << '\n';
-		std::cout << "    final top-k: " << resolvedOptions.autoConditions.finalTopK << '\n';
-		std::cout << "    confirmation top-k: " << resolvedOptions.autoConditions.confirmationTopK << '\n';
+		std::cout << "    proxy candidates: " << resolvedOptions._autoConditions._proxyCandidateCount << '\n';
+		std::cout << "    proxy point cap: " << resolvedOptions._autoConditions._proxyPointCap << '\n';
+		std::cout << "    proxy queries: " << resolvedOptions._autoConditions._proxyQueryCount << '\n';
+		std::cout << "    final top-k: " << resolvedOptions._autoConditions._finalTopK << '\n';
+		std::cout << "    confirmation top-k: " << resolvedOptions._autoConditions._confirmationTopK << '\n';
 	}
 
-	if (resolvedOptions.autoConditions.enabled)
+	if (resolvedOptions._autoConditions._enabled)
 	{
 		records = runAutoConditionSearch(resolvedOptions, datasets, workloads, schemas);
 	}
 	else
 	{
 		std::vector<DatasetContext> datasetContexts = makeDatasetContexts(datasets, workloads, useCudaEvaluator(resolvedOptions));
-		if (resolvedOptions.evolution.enabled)
+		if (resolvedOptions._evolution._enabled)
 		{
 			records = runEvolutionarySchemaSearch(resolvedOptions, datasetContexts, workloads, schemas,
 				sharedConditionDomain.has_value() ? &sharedConditionDomain.value() : nullptr);
@@ -8146,8 +8146,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 			CudaIndexCache cudaCache;
 			for (const DatasetContext& datasetContext : datasetContexts)
 			{
-				const SearchDataset& dataset = *datasetContext.dataset;
-				std::cout << "  dataset: " << dataset.name << " (" << dataset.cloud.size() << " points)\n";
+				const SearchDataset& dataset = *datasetContext._dataset;
+				std::cout << "  dataset: " << dataset._name << " (" << dataset._cloud.size() << " points)\n";
 
 				for (size_t workloadIndex = 0; workloadIndex < workloads.size(); ++workloadIndex)
 				{
@@ -8161,36 +8161,36 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 						schemas,
 						rankModel);
 
-					std::cout << "    workload: " << workload.name << " (" << workload.numQueries << " queries)\n";
+					std::cout << "    workload: " << workload._name << " (" << workload._numQueries << " queries)\n";
 					if (benchmarkSchemas.size() != schemas.size())
 						std::cout << "      benchmarking " << benchmarkSchemas.size() << " / " << schemas.size() << " schemas after surrogate pruning\n";
 
 					for (const SchemaCandidate& schema : benchmarkSchemas)
 					{
 						CudaIndexCacheEntry* cudaEntry = useCudaEvaluator(resolvedOptions)
-							? &cudaCache[datasetContext.dataset]
+							? &cudaCache[datasetContext._dataset]
 							: nullptr;
 						SchemaSearchRecord record = benchmarkSchemaCandidateCached(
 							dataset,
-							datasetContext.features,
+							datasetContext._features,
 							workload,
 							workloadFeatures,
-							datasetContext.preparedWorkloads[workloadIndex],
+							datasetContext._preparedWorkloads[workloadIndex],
 							schema,
 							resolvedOptions,
 							cudaEntry);
 						records.push_back(record);
 						emitProgress(resolvedOptions, record);
 
-						std::cout << "      " << record.schemaName
-							<< ": score " << record.score
-							<< ", avg " << record.queryMetrics.averageLatencyMs
-							<< " ms, build " << record.buildMetrics.buildTimeMs
+						std::cout << "      " << record._schemaName
+							<< ": score " << record._score
+							<< ", avg " << record._queryMetrics._averageLatencyMs
+							<< " ms, build " << record._buildMetrics._buildTimeMs
 							<< " ms";
-						if (record.backend == "cuda")
-							std::cout << ", gpu build " << record.gpuBuildMs
-								<< " ms, upload " << record.gpuUploadMs
-								<< " ms, gpu query " << record.gpuQueryMs << " ms";
+						if (record._backend == "cuda")
+							std::cout << ", gpu build " << record._gpuBuildMs
+								<< " ms, upload " << record._gpuUploadMs
+								<< " ms, gpu query " << record._gpuQueryMs << " ms";
 						else if (useCudaEvaluator(resolvedOptions))
 							std::cout << ", cpu fallback (GPU-unsupported feature)";
 						std::cout << '\n';
@@ -8203,41 +8203,41 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	runMultiSeedConfirmation(records, datasets, workloads, resolvedOptions);
 	annotateBaselineComparisons(records);
 	annotateRankingConfidence(records);
-	reportProxyLatencyCorrelation(records, resolvedOptions.proxyCorrelationCsvPath);
+	reportProxyLatencyCorrelation(records, resolvedOptions._proxyCorrelationCsvPath);
 	reportEstimatedCostCorrelation(records, std::string());
 	reportParetoKnee(records);
-	if (resolvedOptions.deepNestedSearch)
+	if (resolvedOptions._deepNestedSearch)
 		reportDeepNestedOutcome(records);
 	reportMetricSummaries(records, resolvedOptions);
-	writeSchemaExplainReport(resolvedOptions.explainReportPath, records);
-	writeSearchRows(resolvedOptions.csvPath, records);
-	writeBestRows(resolvedOptions.bestCsvPath, records);
-	writeParetoRows(resolvedOptions.paretoCsvPath, records);
-	if (resolvedOptions.verifyParity)
+	writeSchemaExplainReport(resolvedOptions._explainReportPath, records);
+	writeSearchRows(resolvedOptions._csvPath, records);
+	writeBestRows(resolvedOptions._bestCsvPath, records);
+	writeParetoRows(resolvedOptions._paretoCsvPath, records);
+	if (resolvedOptions._verifyParity)
 		runCpuGpuParityCheck(datasets, workloads, resolvedOptions);
 
 	std::cout << "  wrote rows: " << records.size() << '\n';
-	if (!resolvedOptions.csvPath.empty())
-		std::cout << "  csv: " << resolvedOptions.csvPath << '\n';
-	if (!resolvedOptions.bestCsvPath.empty())
-		std::cout << "  best csv: " << resolvedOptions.bestCsvPath << '\n';
-	if (!resolvedOptions.paretoCsvPath.empty())
+	if (!resolvedOptions._csvPath.empty())
+		std::cout << "  csv: " << resolvedOptions._csvPath << '\n';
+	if (!resolvedOptions._bestCsvPath.empty())
+		std::cout << "  best csv: " << resolvedOptions._bestCsvPath << '\n';
+	if (!resolvedOptions._paretoCsvPath.empty())
 	{
 		const std::vector<SchemaSearchRecord> front = selectParetoRecords(records);
-		std::cout << "  pareto csv: " << resolvedOptions.paretoCsvPath
+		std::cout << "  pareto csv: " << resolvedOptions._paretoCsvPath
 			<< " (" << front.size() << " non-dominated rows)\n";
 	}
-	if (!resolvedOptions.explainReportPath.empty())
-		std::cout << "  explain report: " << resolvedOptions.explainReportPath << '\n';
+	if (!resolvedOptions._explainReportPath.empty())
+		std::cout << "  explain report: " << resolvedOptions._explainReportPath << '\n';
 
-	if (resolvedOptions.scoreCache != nullptr && resolvedOptions.scoreCache->enabled())
+	if (resolvedOptions._scoreCache != nullptr && resolvedOptions._scoreCache->enabled())
 	{
-		const size_t hits = resolvedOptions.scoreCache->hitCount();
-		const size_t misses = resolvedOptions.scoreCache->missCount();
-		std::cout << "  score cache: " << hits << " hits, " << misses << " misses (entries now " << resolvedOptions.scoreCache->entryCount() << ")\n";
+		const size_t hits = resolvedOptions._scoreCache->hitCount();
+		const size_t misses = resolvedOptions._scoreCache->missCount();
+		std::cout << "  score cache: " << hits << " hits, " << misses << " misses (entries now " << resolvedOptions._scoreCache->entryCount() << ")\n";
 	}
 
-	if (resolvedOptions.pauseAtEnd)
+	if (resolvedOptions._pauseAtEnd)
 		std::system("pause");
 
 	return 0;

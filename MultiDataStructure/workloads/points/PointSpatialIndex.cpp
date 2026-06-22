@@ -36,7 +36,7 @@ static std::string normalizedAxisPolicy(std::string value)
 
 static glm::uint ignoredQuadTreeAxis(const SchemaLevelConfig& levelConfig, const AABB& bounds)
 {
-	const std::string policy = normalizedAxisPolicy(levelConfig.axisPolicy.empty() ? std::string("xy") : levelConfig.axisPolicy);
+	const std::string policy = normalizedAxisPolicy(levelConfig._axisPolicy.empty() ? std::string("xy") : levelConfig._axisPolicy);
 	if (policy == "yz" || policy == "ignorex" || policy == "x")
 		return 0;
 	if (policy == "xz" || policy == "ignorey" || policy == "y")
@@ -83,9 +83,9 @@ static double elapsedMilliseconds(const std::chrono::steady_clock::time_point& s
 static size_t schemaBlockEndDepth(const SchemaConfig& schema, size_t schemaDepth)
 {
 	size_t cumulative = 0;
-	for (const SchemaLevelConfig& level : schema.levels)
+	for (const SchemaLevelConfig& level : schema._levels)
 	{
-		cumulative += level.numLevels;
+		cumulative += level._numLevels;
 		if (schemaDepth < cumulative)
 			return cumulative;
 	}
@@ -117,14 +117,14 @@ static SchemaPrimitiveKind primitiveKindForLevel(const SchemaLevelConfig& levelC
 {
 	try
 	{
-		if (!levelConfig.typeName.empty())
-			return Config::parseSchemaPrimitiveKind(levelConfig.typeName);
+		if (!levelConfig._typeName.empty())
+			return Config::parseSchemaPrimitiveKind(levelConfig._typeName);
 	}
 	catch (const std::exception&)
 	{
 	}
 
-	return levelConfig.primitiveKind;
+	return levelConfig._primitiveKind;
 }
 
 static glm::uvec3 gridSubdivisionsForLevel(const SchemaLevelConfig& levelConfig)
@@ -212,17 +212,17 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 	std::iota(_pointOrder.begin(), _pointOrder.end(), 0u);
 
 	_root = std::make_unique<Node>();
-	_root->bounds = cloud.bounds();
-	_root->depth = 0;
-	_root->schemaDepth = 0;
-	_root->pointOffset = 0;
-	_root->pointCount = cloud.size();
+	_root->_bounds = cloud.bounds();
+	_root->_depth = 0;
+	_root->_schemaDepth = 0;
+	_root->_pointOffset = 0;
+	_root->_pointCount = cloud.size();
 
 	BuildScratch scratch;
-	scratch.tempOrder.resize(cloud.size());
-	scratch.childCounts.reserve(64);
-	scratch.childOffsets.reserve(64);
-	scratch.childBounds.reserve(64);
+	scratch._tempOrder.resize(cloud.size());
+	scratch._childCounts.reserve(64);
+	scratch._childOffsets.reserve(64);
+	scratch._childBounds.reserve(64);
 
 	if (!cloud.empty())
 		buildNode(_root, scratch);
@@ -246,8 +246,8 @@ PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds)
 
 	rangeQueryNode(_root.get(), bounds, result);
 
-	result.stats.returnedPoints = result.pointIndices.size();
-	result.stats.elapsedMs = elapsedMilliseconds(start);
+	result._stats._returnedPoints = result._pointIndices.size();
+	result._stats._elapsedMs = elapsedMilliseconds(start);
 	return result;
 }
 
@@ -258,8 +258,8 @@ PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds)
 
 	countRangeNode(_root.get(), bounds, result);
 
-	result.stats.returnedPoints = result.count;
-	result.stats.elapsedMs = elapsedMilliseconds(start);
+	result._stats._returnedPoints = result._count;
+	result._stats._elapsedMs = elapsedMilliseconds(start);
 	return result;
 }
 
@@ -271,8 +271,8 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 	if (radius >= 0.0f)
 		radiusQueryNode(_root.get(), center, radius * radius, result);
 
-	result.stats.returnedPoints = result.pointIndices.size();
-	result.stats.elapsedMs = elapsedMilliseconds(start);
+	result._stats._returnedPoints = result._pointIndices.size();
+	result._stats._elapsedMs = elapsedMilliseconds(start);
 	return result;
 }
 
@@ -281,78 +281,78 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 	const auto start = std::chrono::steady_clock::now();
 	QueryResult result;
 
-	if (_root && _cloud && k > 0 && _root->subtreePointCount > 0)
+	if (_root && _cloud && k > 0 && _root->_subtreePointCount > 0)
 	{
 		struct NodeCandidate
 		{
-			float distance = 0.0f;
-			size_t sequence = 0;
-			const Node* node = nullptr;
+			float _distance = 0.0f;
+			size_t _sequence = 0;
+			const Node* _node = nullptr;
 		};
 
 		struct NodeCandidateGreater
 		{
 			bool operator()(const NodeCandidate& left, const NodeCandidate& right) const
 			{
-				if (left.distance == right.distance)
-					return left.sequence > right.sequence;
-				return left.distance > right.distance;
+				if (left._distance == right._distance)
+					return left._sequence > right._sequence;
+				return left._distance > right._distance;
 			}
 		};
 
 		std::priority_queue<std::pair<float, size_t>> best;
 		std::priority_queue<NodeCandidate, std::vector<NodeCandidate>, NodeCandidateGreater> pending;
 		size_t sequence = 0;
-		pending.push({ distanceSquaredToAABB(_root->tightBounds, center), sequence++, _root.get() });
+		pending.push({ distanceSquaredToAABB(_root->_tightBounds, center), sequence++, _root.get() });
 
 		while (!pending.empty())
 		{
 			const NodeCandidate candidate = pending.top();
 			pending.pop();
-			const Node* node = candidate.node;
-			if (!node || node->subtreePointCount == 0)
+			const Node* node = candidate._node;
+			if (!node || node->_subtreePointCount == 0)
 				continue;
 
-			recordNodeVisit(*node, result.stats);
-			if (best.size() == k && candidate.distance > best.top().first)
+			recordNodeVisit(*node, result._stats);
+			if (best.size() == k && candidate._distance > best.top().first)
 				continue;
 
 			if (node->isLeaf())
 			{
-				if (node->microIndex && node->microIndex->hasKdTree())
+				if (node->_microIndex && node->_microIndex->hasKdTree())
 				{
 					struct MicroCandidate
 					{
-						float distance = 0.0f;
-						uint32_t nodeIndex = 0;
+						float _distance = 0.0f;
+						uint32_t _nodeIndex = 0;
 					};
 
 					struct MicroCandidateGreater
 					{
 						bool operator()(const MicroCandidate& left, const MicroCandidate& right) const
 						{
-							return left.distance > right.distance;
+							return left._distance > right._distance;
 						}
 					};
 
-					const LeafMicroIndex& micro = *node->microIndex;
+					const LeafMicroIndex& micro = *node->_microIndex;
 					std::priority_queue<MicroCandidate, std::vector<MicroCandidate>, MicroCandidateGreater> microPending;
-					microPending.push({ distanceSquaredToAABB(micro.kdNodes.front().bounds, center), 0u });
+					microPending.push({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
 
 					while (!microPending.empty())
 					{
 						const MicroCandidate microCandidate = microPending.top();
 						microPending.pop();
-						if (best.size() == k && microCandidate.distance > best.top().first)
+						if (best.size() == k && microCandidate._distance > best.top().first)
 							continue;
 
-						const LeafMicroIndex::KdNode& microNode = micro.kdNodes[microCandidate.nodeIndex];
+						const LeafMicroIndex::KdNode& microNode = micro._kdNodes[microCandidate._nodeIndex];
 						if (microNode.isLeaf())
 						{
-							recordTestedPoints(*node, microNode.count, result.stats);
-							for (uint32_t i = microNode.begin; i < microNode.begin + microNode.count; ++i)
+							recordTestedPoints(*node, microNode._count, result._stats);
+							for (uint32_t i = microNode._begin; i < microNode._begin + microNode._count; ++i)
 							{
-								const uint32_t orderedIndex = micro.kdOrder[i];
+								const uint32_t orderedIndex = micro._kdOrder[i];
 								const size_t pointIndex = _pointOrder[orderedIndex];
 								const float dx = _orderedX[orderedIndex] - center.x;
 								const float dy = _orderedY[orderedIndex] - center.y;
@@ -374,12 +374,12 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 							continue;
 						}
 
-						for (const uint32_t childIndex : { microNode.left, microNode.right })
+						for (const uint32_t childIndex : { microNode._left, microNode._right })
 						{
 							if (childIndex == std::numeric_limits<uint32_t>::max())
 								continue;
 
-							const float childDistance = distanceSquaredToAABB(micro.kdNodes[childIndex].bounds, center);
+							const float childDistance = distanceSquaredToAABB(micro._kdNodes[childIndex]._bounds, center);
 							if (best.size() == k && childDistance > best.top().first)
 								continue;
 							microPending.push({ childDistance, childIndex });
@@ -388,10 +388,10 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 					continue;
 				}
 
-				recordTestedPoints(*node, node->pointCount, result.stats);
-				for (size_t i = 0; i < node->pointCount; ++i)
+				recordTestedPoints(*node, node->_pointCount, result._stats);
+				for (size_t i = 0; i < node->_pointCount; ++i)
 				{
-					const size_t orderedIndex = node->pointOffset + i;
+					const size_t orderedIndex = node->_pointOffset + i;
 					const size_t pointIndex = _pointOrder[orderedIndex];
 					const float dx = _orderedX[orderedIndex] - center.x;
 					const float dy = _orderedY[orderedIndex] - center.y;
@@ -413,12 +413,12 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 				continue;
 			}
 
-			for (const std::unique_ptr<Node>& child : node->children)
+			for (const std::unique_ptr<Node>& child : node->_children)
 			{
-				if (!child || child->subtreePointCount == 0)
+				if (!child || child->_subtreePointCount == 0)
 					continue;
 
-				const float childDistance = distanceSquaredToAABB(child->tightBounds, center);
+				const float childDistance = distanceSquaredToAABB(child->_tightBounds, center);
 				if (best.size() == k && childDistance > best.top().first)
 					continue;
 
@@ -440,13 +440,13 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 			return left.first < right.first;
 		});
 
-		result.pointIndices.reserve(ordered.size());
+		result._pointIndices.reserve(ordered.size());
 		for (const auto& entry : ordered)
-			result.pointIndices.push_back(entry.second);
+			result._pointIndices.push_back(entry.second);
 	}
 
-	result.stats.returnedPoints = result.pointIndices.size();
-	result.stats.elapsedMs = elapsedMilliseconds(start);
+	result._stats._returnedPoints = result._pointIndices.size();
+	result._stats._elapsedMs = elapsedMilliseconds(start);
 	return result;
 }
 
@@ -456,92 +456,92 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node, BuildScratch& scr
 	if (!activeLevel.has_value())
 		return;
 
-	const SchemaLevelConfig& levelConfig = *activeLevel->config;
-	node->schemaDepth = activeLevel->schemaDepth;
-	node->type = levelConfig.type;
+	const SchemaLevelConfig& levelConfig = *activeLevel->_config;
+	node->_schemaDepth = activeLevel->_schemaDepth;
+	node->_type = levelConfig._type;
 
 	if (!shouldSplit(*node, levelConfig))
 		return;
 
 	float splitValue = 0.0f;
 	glm::uint splitAxis = 0;
-	childBounds(*node, levelConfig, splitValue, splitAxis, scratch.childBounds);
-	const size_t childCount = scratch.childBounds.size();
+	childBounds(*node, levelConfig, splitValue, splitAxis, scratch._childBounds);
+	const size_t childCount = scratch._childBounds.size();
 	if (childCount == 0)
 		return;
 
-	scratch.childCounts.assign(childCount, 0u);
-	for (size_t i = 0; i < node->pointCount; ++i)
+	scratch._childCounts.assign(childCount, 0u);
+	for (size_t i = 0; i < node->_pointCount; ++i)
 	{
-		const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
+		const uint32_t pointIndex = _pointOrder[node->_pointOffset + i];
 		const glm::vec3& position = _cloud->points()[pointIndex].position;
 		const size_t childIndex = locateChild(position, levelConfig, *node, splitValue, splitAxis, childCount);
-		++scratch.childCounts[childIndex];
+		++scratch._childCounts[childIndex];
 	}
 
 	size_t nonEmptyChildren = 0;
 	for (size_t childIndex = 0; childIndex < childCount; ++childIndex)
 	{
-		if (scratch.childCounts[childIndex] > 0)
+		if (scratch._childCounts[childIndex] > 0)
 			++nonEmptyChildren;
 	}
 
 	if (nonEmptyChildren == 0)
 		return;
 
-	scratch.childOffsets.resize(childCount);
-	size_t writeOffset = node->pointOffset;
+	scratch._childOffsets.resize(childCount);
+	size_t writeOffset = node->_pointOffset;
 	for (size_t childIndex = 0; childIndex < childCount; ++childIndex)
 	{
-		scratch.childOffsets[childIndex] = writeOffset;
-		writeOffset += static_cast<size_t>(scratch.childCounts[childIndex]);
+		scratch._childOffsets[childIndex] = writeOffset;
+		writeOffset += static_cast<size_t>(scratch._childCounts[childIndex]);
 	}
 
-	for (size_t i = 0; i < node->pointCount; ++i)
+	for (size_t i = 0; i < node->_pointCount; ++i)
 	{
-		const uint32_t pointIndex = _pointOrder[node->pointOffset + i];
+		const uint32_t pointIndex = _pointOrder[node->_pointOffset + i];
 		const glm::vec3& position = _cloud->points()[pointIndex].position;
 		const size_t childIndex = locateChild(position, levelConfig, *node, splitValue, splitAxis, childCount);
-		scratch.tempOrder[scratch.childOffsets[childIndex]++] = pointIndex;
+		scratch._tempOrder[scratch._childOffsets[childIndex]++] = pointIndex;
 	}
 
-	writeOffset = node->pointOffset;
+	writeOffset = node->_pointOffset;
 	for (size_t childIndex = 0; childIndex < childCount; ++childIndex)
 	{
-		scratch.childOffsets[childIndex] = writeOffset;
-		writeOffset += static_cast<size_t>(scratch.childCounts[childIndex]);
+		scratch._childOffsets[childIndex] = writeOffset;
+		writeOffset += static_cast<size_t>(scratch._childCounts[childIndex]);
 	}
 
 	std::copy(
-		scratch.tempOrder.begin() + static_cast<std::ptrdiff_t>(node->pointOffset),
-		scratch.tempOrder.begin() + static_cast<std::ptrdiff_t>(node->pointOffset + node->pointCount),
-		_pointOrder.begin() + static_cast<std::ptrdiff_t>(node->pointOffset));
+		scratch._tempOrder.begin() + static_cast<std::ptrdiff_t>(node->_pointOffset),
+		scratch._tempOrder.begin() + static_cast<std::ptrdiff_t>(node->_pointOffset + node->_pointCount),
+		_pointOrder.begin() + static_cast<std::ptrdiff_t>(node->_pointOffset));
 
 	std::vector<std::unique_ptr<Node>> children;
 	children.reserve(childCount);
 	for (size_t childIndex = 0; childIndex < childCount; ++childIndex)
 	{
-		if (scratch.childCounts[childIndex] == 0 && _schema.buildPolicy.removeEmptyNodes)
+		if (scratch._childCounts[childIndex] == 0 && _schema._buildPolicy._removeEmptyNodes)
 			continue;
 
 		std::unique_ptr<Node> child = std::make_unique<Node>();
-		child->bounds = scratch.childBounds[childIndex];
-		child->type = levelConfig.type;
-		child->depth = node->depth + 1;
-		child->schemaDepth = activeLevel->schemaDepth + 1;
-		child->pointOffset = scratch.childOffsets[childIndex];
-		child->pointCount = static_cast<size_t>(scratch.childCounts[childIndex]);
+		child->_bounds = scratch._childBounds[childIndex];
+		child->_type = levelConfig._type;
+		child->_depth = node->_depth + 1;
+		child->_schemaDepth = activeLevel->_schemaDepth + 1;
+		child->_pointOffset = scratch._childOffsets[childIndex];
+		child->_pointCount = static_cast<size_t>(scratch._childCounts[childIndex]);
 		children.push_back(std::move(child));
 	}
 
 	for (std::unique_ptr<Node>& child : children)
 		buildNode(child, scratch);
 
-	if (_schema.buildPolicy.collapseSingleChild && nonEmptyChildren == 1 && _schema.buildPolicy.removeEmptyNodes)
+	if (_schema._buildPolicy._collapseSingleChild && nonEmptyChildren == 1 && _schema._buildPolicy._removeEmptyNodes)
 	{
 		for (std::unique_ptr<Node>& child : children)
 		{
-			if (child->pointCount > 0 || !child->children.empty())
+			if (child->_pointCount > 0 || !child->_children.empty())
 			{
 				node = std::move(child);
 				return;
@@ -549,7 +549,7 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node, BuildScratch& scr
 		}
 	}
 
-	node->children = std::move(children);
+	node->_children = std::move(children);
 }
 
 void PointSpatialIndex::rebuildOrderedPointSoA()
@@ -577,35 +577,35 @@ void PointSpatialIndex::computeNodeAggregates(Node* node)
 	if (!node || !_cloud)
 		return;
 
-	node->tightBounds = AABB();
-	node->subtreePointCount = 0;
+	node->_tightBounds = AABB();
+	node->_subtreePointCount = 0;
 
 	if (node->isLeaf())
 	{
-		node->subtreePointCount = node->pointCount;
-		for (size_t i = 0; i < node->pointCount; ++i)
+		node->_subtreePointCount = node->_pointCount;
+		for (size_t i = 0; i < node->_pointCount; ++i)
 		{
-			const size_t orderedIndex = node->pointOffset + i;
-			node->tightBounds.update(glm::vec3(_orderedX[orderedIndex], _orderedY[orderedIndex], _orderedZ[orderedIndex]));
+			const size_t orderedIndex = node->_pointOffset + i;
+			node->_tightBounds.update(glm::vec3(_orderedX[orderedIndex], _orderedY[orderedIndex], _orderedZ[orderedIndex]));
 		}
 
-		if (node->subtreePointCount == 0)
-			node->tightBounds = node->bounds;
+		if (node->_subtreePointCount == 0)
+			node->_tightBounds = node->_bounds;
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 	{
 		computeNodeAggregates(child.get());
-		if (!child || child->subtreePointCount == 0)
+		if (!child || child->_subtreePointCount == 0)
 			continue;
 
-		node->subtreePointCount += child->subtreePointCount;
-		node->tightBounds.update(child->tightBounds);
+		node->_subtreePointCount += child->_subtreePointCount;
+		node->_tightBounds.update(child->_tightBounds);
 	}
 
-	if (node->subtreePointCount == 0)
-		node->tightBounds = node->bounds;
+	if (node->_subtreePointCount == 0)
+		node->_tightBounds = node->_bounds;
 }
 
 void PointSpatialIndex::buildLeafMicroIndexes(Node* node)
@@ -613,35 +613,35 @@ void PointSpatialIndex::buildLeafMicroIndexes(Node* node)
 	if (!node)
 		return;
 
-	node->microIndex.reset();
+	node->_microIndex.reset();
 	if (node->isLeaf())
 	{
-		if (_schema.buildPolicy.enableLeafMicroIndexes &&
-			node->pointCount > _schema.buildPolicy.leafMicroIndexThreshold)
+		if (_schema._buildPolicy._enableLeafMicroIndexes &&
+			node->_pointCount > _schema._buildPolicy._leafMicroIndexThreshold)
 		{
-			node->microIndex = buildLeafMicroIndex(*node);
+			node->_microIndex = buildLeafMicroIndex(*node);
 		}
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 		buildLeafMicroIndexes(child.get());
 }
 
 std::unique_ptr<PointSpatialIndex::LeafMicroIndex> PointSpatialIndex::buildLeafMicroIndex(const Node& node) const
 {
-	if (!_cloud || node.pointCount == 0)
+	if (!_cloud || node._pointCount == 0)
 		return {};
 
 	std::unique_ptr<LeafMicroIndex> index = std::make_unique<LeafMicroIndex>();
-	index->bounds = node.tightBounds;
+	index->_bounds = node._tightBounds;
 
-	const double targetCells = std::max(1.0, static_cast<double>(node.pointCount) / 32.0);
+	const double targetCells = std::max(1.0, static_cast<double>(node._pointCount) / 32.0);
 	const uint32_t side = static_cast<uint32_t>(std::clamp(
 		static_cast<int>(std::ceil(std::cbrt(targetCells))),
 		2,
 		16));
-	const glm::vec3 extent = index->bounds.size();
+	const glm::vec3 extent = index->_bounds.size();
 	index->gridResolution = glm::uvec3(
 		extent.x > static_cast<float>(EPSILON) ? side : 1u,
 		extent.y > static_cast<float>(EPSILON) ? side : 1u,
@@ -651,60 +651,60 @@ std::unique_ptr<PointSpatialIndex::LeafMicroIndex> PointSpatialIndex::buildLeafM
 		static_cast<size_t>(index->gridResolution.y) *
 		static_cast<size_t>(index->gridResolution.z);
 
-	index->gridOffsets.assign(cellCount + 1, 0u);
-	index->gridOrder.resize(node.pointCount);
-	for (size_t i = 0; i < node.pointCount; ++i)
+	index->_gridOffsets.assign(cellCount + 1, 0u);
+	index->_gridOrder.resize(node._pointCount);
+	for (size_t i = 0; i < node._pointCount; ++i)
 	{
-		const uint32_t orderedIndex = static_cast<uint32_t>(node.pointOffset + i);
+		const uint32_t orderedIndex = static_cast<uint32_t>(node._pointOffset + i);
 		const glm::vec3 position(_orderedX[orderedIndex], _orderedY[orderedIndex], _orderedZ[orderedIndex]);
-		const size_t cell = gridChildIndex(position, index->bounds, index->gridResolution);
-		++index->gridOffsets[cell + 1];
+		const size_t cell = gridChildIndex(position, index->_bounds, index->gridResolution);
+		++index->_gridOffsets[cell + 1];
 	}
 
 	for (size_t cell = 0; cell < cellCount; ++cell)
-		index->gridOffsets[cell + 1] += index->gridOffsets[cell];
+		index->_gridOffsets[cell + 1] += index->_gridOffsets[cell];
 
-	std::vector<uint32_t> writeOffsets = index->gridOffsets;
-	for (size_t i = 0; i < node.pointCount; ++i)
+	std::vector<uint32_t> writeOffsets = index->_gridOffsets;
+	for (size_t i = 0; i < node._pointCount; ++i)
 	{
-		const uint32_t orderedIndex = static_cast<uint32_t>(node.pointOffset + i);
+		const uint32_t orderedIndex = static_cast<uint32_t>(node._pointOffset + i);
 		const glm::vec3 position(_orderedX[orderedIndex], _orderedY[orderedIndex], _orderedZ[orderedIndex]);
-		const size_t cell = gridChildIndex(position, index->bounds, index->gridResolution);
-		index->gridOrder[writeOffsets[cell]++] = orderedIndex;
+		const size_t cell = gridChildIndex(position, index->_bounds, index->gridResolution);
+		index->_gridOrder[writeOffsets[cell]++] = orderedIndex;
 	}
 
-	index->kdOrder.resize(node.pointCount);
-	for (size_t i = 0; i < node.pointCount; ++i)
-		index->kdOrder[i] = static_cast<uint32_t>(node.pointOffset + i);
-	buildLeafMicroKdNode(*index, 0u, static_cast<uint32_t>(index->kdOrder.size()), 0u);
+	index->_kdOrder.resize(node._pointCount);
+	for (size_t i = 0; i < node._pointCount; ++i)
+		index->_kdOrder[i] = static_cast<uint32_t>(node._pointOffset + i);
+	buildLeafMicroKdNode(*index, 0u, static_cast<uint32_t>(index->_kdOrder.size()), 0u);
 	return index;
 }
 
 uint32_t PointSpatialIndex::buildLeafMicroKdNode(LeafMicroIndex& index, uint32_t begin, uint32_t end, uint32_t depth) const
 {
-	const uint32_t nodeIndex = static_cast<uint32_t>(index.kdNodes.size());
-	index.kdNodes.push_back({});
-	LeafMicroIndex::KdNode& kdNode = index.kdNodes.back();
-	kdNode.begin = begin;
-	kdNode.count = end - begin;
+	const uint32_t nodeIndex = static_cast<uint32_t>(index._kdNodes.size());
+	index._kdNodes.push_back({});
+	LeafMicroIndex::KdNode& kdNode = index._kdNodes.back();
+	kdNode._begin = begin;
+	kdNode._count = end - begin;
 
 	for (uint32_t i = begin; i < end; ++i)
 	{
-		const uint32_t orderedIndex = index.kdOrder[i];
-		kdNode.bounds.update(glm::vec3(_orderedX[orderedIndex], _orderedY[orderedIndex], _orderedZ[orderedIndex]));
+		const uint32_t orderedIndex = index._kdOrder[i];
+		kdNode._bounds.update(glm::vec3(_orderedX[orderedIndex], _orderedY[orderedIndex], _orderedZ[orderedIndex]));
 	}
 
 	constexpr uint32_t MicroKdLeafCapacity = 32;
-	if (kdNode.count <= MicroKdLeafCapacity)
+	if (kdNode._count <= MicroKdLeafCapacity)
 		return nodeIndex;
 
-	const glm::uint axis = longestAxis(kdNode.bounds);
-	const uint32_t mid = begin + kdNode.count / 2u;
+	const glm::uint axis = longestAxis(kdNode._bounds);
+	const uint32_t mid = begin + kdNode._count / 2u;
 	const auto& orderedCoord = (axis == 0) ? _orderedX : (axis == 1) ? _orderedY : _orderedZ;
 	std::nth_element(
-		index.kdOrder.begin() + begin,
-		index.kdOrder.begin() + mid,
-		index.kdOrder.begin() + end,
+		index._kdOrder.begin() + begin,
+		index._kdOrder.begin() + mid,
+		index._kdOrder.begin() + end,
 		[&](uint32_t left, uint32_t right) {
 			const float leftValue = orderedCoord[left];
 			const float rightValue = orderedCoord[right];
@@ -713,20 +713,20 @@ uint32_t PointSpatialIndex::buildLeafMicroKdNode(LeafMicroIndex& index, uint32_t
 			return leftValue < rightValue;
 		});
 
-	index.kdNodes[nodeIndex].left = buildLeafMicroKdNode(index, begin, mid, depth + 1u);
-	index.kdNodes[nodeIndex].right = buildLeafMicroKdNode(index, mid, end, depth + 1u);
+	index._kdNodes[nodeIndex]._left = buildLeafMicroKdNode(index, begin, mid, depth + 1u);
+	index._kdNodes[nodeIndex]._right = buildLeafMicroKdNode(index, mid, end, depth + 1u);
 	return nodeIndex;
 }
 
 std::optional<PointSpatialIndex::ActiveLevel> PointSpatialIndex::activeLevelForNode(const Node& node) const
 {
 	const size_t totalLevels = _schema.totalLevels();
-	size_t schemaDepth = node.schemaDepth;
+	size_t schemaDepth = node._schemaDepth;
 
 	while (schemaDepth < totalLevels)
 	{
 		const SchemaLevelConfig& levelConfig = _schema.levelForDepth(schemaDepth);
-		if (matchesCondition(node, levelConfig.condition))
+		if (matchesCondition(node, levelConfig._condition))
 			return ActiveLevel{ &levelConfig, schemaDepth };
 
 		schemaDepth = schemaBlockEndDepth(_schema, schemaDepth);
@@ -740,32 +740,32 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 	if (condition.empty())
 		return true;
 
-	const size_t pointCount = node.pointCount;
-	if (belowMin(pointCount, condition.minPoints) || aboveMax(pointCount, condition.maxPoints))
+	const size_t pointCount = node._pointCount;
+	if (belowMin(pointCount, condition._minPoints) || aboveMax(pointCount, condition._maxPoints))
 		return false;
 
-	const glm::vec3 extent = glm::max(node.bounds.size(), glm::vec3(0.0f));
+	const glm::vec3 extent = glm::max(node._bounds.size(), glm::vec3(0.0f));
 	const double horizontalExtent = std::max({ static_cast<double>(extent.x), static_cast<double>(extent.y), EPSILON });
 	const double heightRatio = static_cast<double>(extent.z) / horizontalExtent;
-	if (belowMin(heightRatio, condition.minHeightRatio) || aboveMax(heightRatio, condition.maxHeightRatio))
+	if (belowMin(heightRatio, condition._minHeightRatio) || aboveMax(heightRatio, condition._maxHeightRatio))
 		return false;
 
 	const double volume = static_cast<double>(extent.x) * static_cast<double>(extent.y) * static_cast<double>(extent.z);
 	const double density = volume > EPSILON ? static_cast<double>(pointCount) / volume : 0.0;
-	if (belowMin(density, condition.minDensity) || aboveMax(density, condition.maxDensity))
+	if (belowMin(density, condition._minDensity) || aboveMax(density, condition._maxDensity))
 		return false;
 
 	const double extentX = static_cast<double>(extent.x);
 	const double extentY = static_cast<double>(extent.y);
 	const double extentZ = static_cast<double>(extent.z);
-	if (belowMin(extentX, condition.minExtentX) || aboveMax(extentX, condition.maxExtentX))
+	if (belowMin(extentX, condition._minExtentX) || aboveMax(extentX, condition._maxExtentX))
 		return false;
-	if (belowMin(extentY, condition.minExtentY) || aboveMax(extentY, condition.maxExtentY))
+	if (belowMin(extentY, condition._minExtentY) || aboveMax(extentY, condition._maxExtentY))
 		return false;
-	if (belowMin(extentZ, condition.minExtentZ) || aboveMax(extentZ, condition.maxExtentZ))
+	if (belowMin(extentZ, condition._minExtentZ) || aboveMax(extentZ, condition._maxExtentZ))
 		return false;
 
-	if (condition.minAnisotropy.has_value() || condition.maxAnisotropy.has_value())
+	if (condition._minAnisotropy.has_value() || condition._maxAnisotropy.has_value())
 	{
 		// Anisotropy 1 - shortExtent / longExtent in [0, 1]; skip when the bbox is degenerate.
 		const double minE = std::min({ extentX, extentY, extentZ });
@@ -773,12 +773,12 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 		if (maxE > EPSILON)
 		{
 			const double anisotropy = 1.0 - (minE / maxE);
-			if (belowMin(anisotropy, condition.minAnisotropy) || aboveMax(anisotropy, condition.maxAnisotropy))
+			if (belowMin(anisotropy, condition._minAnisotropy) || aboveMax(anisotropy, condition._maxAnisotropy))
 				return false;
 		}
 	}
 
-	if (condition.minOccupancyEntropy.has_value() || condition.maxOccupancyEntropy.has_value())
+	if (condition._minOccupancyEntropy.has_value() || condition._maxOccupancyEntropy.has_value())
 	{
 		// Shannon entropy over a 4x4x4 sub-grid, normalized to [0, 1]; skip when too few points.
 		const size_t pointThreshold = 16;
@@ -787,10 +787,10 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 			constexpr int kDivisions = 4;
 			constexpr int kCellCount = kDivisions * kDivisions * kDivisions;
 			std::array<size_t, kCellCount> cells{};
-			const glm::vec3 minBound = node.bounds.min();
-			for (size_t i = 0; i < node.pointCount; ++i)
+			const glm::vec3 minBound = node._bounds.min();
+			for (size_t i = 0; i < node._pointCount; ++i)
 			{
-				const uint32_t pointIndex = _pointOrder[node.pointOffset + i];
+				const uint32_t pointIndex = _pointOrder[node._pointOffset + i];
 				const glm::vec3& position = _cloud->points()[pointIndex].position;
 				int cx = static_cast<int>((static_cast<double>(position.x - minBound.x) / extentX) * kDivisions);
 				int cy = static_cast<int>((static_cast<double>(position.y - minBound.y) / extentY) * kDivisions);
@@ -810,7 +810,7 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 				entropy -= probability * std::log(probability);
 			}
 			const double normalized = entropy / std::log(static_cast<double>(kCellCount));
-			if (belowMin(normalized, condition.minOccupancyEntropy) || aboveMax(normalized, condition.maxOccupancyEntropy))
+			if (belowMin(normalized, condition._minOccupancyEntropy) || aboveMax(normalized, condition._maxOccupancyEntropy))
 				return false;
 		}
 	}
@@ -820,21 +820,21 @@ bool PointSpatialIndex::matchesCondition(const Node& node, const SchemaLevelCond
 
 double PointSpatialIndex::nodeDensity(const Node& node) const
 {
-	const glm::vec3 extent = glm::max(node.bounds.size(), glm::vec3(0.0f));
+	const glm::vec3 extent = glm::max(node._bounds.size(), glm::vec3(0.0f));
 	const double volume = static_cast<double>(extent.x) * static_cast<double>(extent.y) * static_cast<double>(extent.z);
-	return volume > EPSILON ? static_cast<double>(node.pointCount) / volume : 0.0;
+	return volume > EPSILON ? static_cast<double>(node._pointCount) / volume : 0.0;
 }
 
 double PointSpatialIndex::nodeHeightRatio(const Node& node) const
 {
-	const glm::vec3 extent = glm::max(node.bounds.size(), glm::vec3(0.0f));
+	const glm::vec3 extent = glm::max(node._bounds.size(), glm::vec3(0.0f));
 	const double horizontalExtent = std::max({ static_cast<double>(extent.x), static_cast<double>(extent.y), EPSILON });
 	return static_cast<double>(extent.z) / horizontalExtent;
 }
 
 double PointSpatialIndex::nodeAnisotropy(const Node& node) const
 {
-	const glm::vec3 extent = glm::max(node.bounds.size(), glm::vec3(0.0f));
+	const glm::vec3 extent = glm::max(node._bounds.size(), glm::vec3(0.0f));
 	const double minExtent = std::min({ static_cast<double>(extent.x), static_cast<double>(extent.y), static_cast<double>(extent.z) });
 	const double maxExtent = std::max({ static_cast<double>(extent.x), static_cast<double>(extent.y), static_cast<double>(extent.z) });
 	if (maxExtent <= EPSILON)
@@ -844,54 +844,54 @@ double PointSpatialIndex::nodeAnisotropy(const Node& node) const
 
 size_t PointSpatialIndex::effectiveLeafCapacity(const Node& node, const SchemaLevelConfig& levelConfig) const
 {
-	const size_t baseCapacity = std::max<size_t>(1, levelConfig.leafCapacity > 0 ? levelConfig.leafCapacity : _schema.buildPolicy.leafCapacity);
-	const AdaptiveLeafCapacityConfig& adaptive = levelConfig.adaptiveLeafCapacity;
-	if (!adaptive.enabled)
+	const size_t baseCapacity = std::max<size_t>(1, levelConfig._leafCapacity > 0 ? levelConfig._leafCapacity : _schema._buildPolicy._leafCapacity);
+	const AdaptiveLeafCapacityConfig& adaptive = levelConfig._adaptiveLeafCapacity;
+	if (!adaptive._enabled)
 		return baseCapacity;
 
-	double capacity = static_cast<double>(baseCapacity) * adaptive.queryMixFactor;
+	double capacity = static_cast<double>(baseCapacity) * adaptive._queryMixFactor;
 	const Node* root = _root.get();
-	if (root && adaptive.densityWeight != 0.0)
+	if (root && adaptive._densityWeight != 0.0)
 	{
 		const double referenceDensity = nodeDensity(*root);
 		const double currentDensity = nodeDensity(node);
 		if (referenceDensity > EPSILON && currentDensity > EPSILON)
-			capacity *= std::pow(clampedAdaptiveFactor(referenceDensity / currentDensity), adaptive.densityWeight);
+			capacity *= std::pow(clampedAdaptiveFactor(referenceDensity / currentDensity), adaptive._densityWeight);
 	}
 
-	if (root && adaptive.heightRatioWeight != 0.0)
+	if (root && adaptive._heightRatioWeight != 0.0)
 	{
 		const double referenceHeightRatio = std::max(nodeHeightRatio(*root), EPSILON);
 		const double currentHeightRatio = std::max(nodeHeightRatio(node), EPSILON);
-		capacity *= std::pow(clampedAdaptiveFactor(referenceHeightRatio / currentHeightRatio), adaptive.heightRatioWeight);
+		capacity *= std::pow(clampedAdaptiveFactor(referenceHeightRatio / currentHeightRatio), adaptive._heightRatioWeight);
 	}
 
-	if (adaptive.anisotropyWeight != 0.0)
+	if (adaptive._anisotropyWeight != 0.0)
 	{
 		const double regularity = std::clamp(1.0 - nodeAnisotropy(node), 0.25, 1.0);
-		capacity *= std::pow(regularity, adaptive.anisotropyWeight);
+		capacity *= std::pow(regularity, adaptive._anisotropyWeight);
 	}
 
 	const size_t fallbackMin = std::max<size_t>(1, baseCapacity / 4);
 	const size_t fallbackMax = baseCapacity > std::numeric_limits<size_t>::max() / 4
 		? std::numeric_limits<size_t>::max()
 		: std::max<size_t>(baseCapacity, baseCapacity * 4);
-	const size_t minCapacity = adaptive.minCapacity > 0 ? adaptive.minCapacity : fallbackMin;
-	const size_t maxCapacity = std::max(minCapacity, adaptive.maxCapacity > 0 ? adaptive.maxCapacity : fallbackMax);
+	const size_t minCapacity = adaptive._minCapacity > 0 ? adaptive._minCapacity : fallbackMin;
+	const size_t maxCapacity = std::max(minCapacity, adaptive._maxCapacity > 0 ? adaptive._maxCapacity : fallbackMax);
 	const double clamped = std::clamp(capacity, static_cast<double>(minCapacity), static_cast<double>(maxCapacity));
 	return static_cast<size_t>(std::max<long long>(1, std::llround(clamped)));
 }
 
 bool PointSpatialIndex::shouldSplit(const Node& node, const SchemaLevelConfig& levelConfig) const
 {
-	const size_t maxDepth = _schema.buildPolicy.maxDepth > 0 ? _schema.buildPolicy.maxDepth : _schema.totalLevels();
-	if (node.depth >= maxDepth || node.schemaDepth >= _schema.totalLevels())
+	const size_t maxDepth = _schema._buildPolicy._maxDepth > 0 ? _schema._buildPolicy._maxDepth : _schema.totalLevels();
+	if (node._depth >= maxDepth || node._schemaDepth >= _schema.totalLevels())
 		return false;
 
 	const size_t leafCapacity = effectiveLeafCapacity(node, levelConfig);
-	const size_t minPointsToSplit = levelConfig.minPrimitivesToSplit > 0 ? levelConfig.minPrimitivesToSplit : _schema.buildPolicy.minPrimitivesToSplit;
+	const size_t minPointsToSplit = levelConfig._minPrimitivesToSplit > 0 ? levelConfig._minPrimitivesToSplit : _schema._buildPolicy._minPrimitivesToSplit;
 
-	return node.pointCount > leafCapacity && node.pointCount >= minPointsToSplit;
+	return node._pointCount > leafCapacity && node._pointCount >= minPointsToSplit;
 }
 
 void PointSpatialIndex::childBounds(const Node& node, const SchemaLevelConfig& levelConfig, float& splitValue, glm::uint& splitAxis, std::vector<AABB>& bounds) const
@@ -902,35 +902,35 @@ void PointSpatialIndex::childBounds(const Node& node, const SchemaLevelConfig& l
 		const glm::uvec3 subdivisions = gridSubdivisionsForLevel(levelConfig);
 		const size_t childCount = static_cast<size_t>(subdivisions.x) * subdivisions.y * subdivisions.z;
 		bounds.resize(childCount);
-		node.bounds.split3D(subdivisions, bounds.data());
+		node._bounds.split3D(subdivisions, bounds.data());
 		return;
 	}
 
-	if (levelConfig.type == MultiDataStructure::DataStructureLevel::OctreeNode)
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::OctreeNode)
 	{
 		bounds.resize(8);
-		node.bounds.split3D(glm::uvec3(2, 2, 2), bounds.data());
+		node._bounds.split3D(glm::uvec3(2, 2, 2), bounds.data());
 		return;
 	}
 
-	if (levelConfig.type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
 	{
 		glm::uvec3 subdivisions(2, 2, 2);
-		subdivisions[ignoredQuadTreeAxis(levelConfig, node.bounds)] = 1;
+		subdivisions[ignoredQuadTreeAxis(levelConfig, node._bounds)] = 1;
 		bounds.resize(4);
-		node.bounds.split3D(subdivisions, bounds.data());
+		node._bounds.split3D(subdivisions, bounds.data());
 		return;
 	}
 
-	splitAxis = longestAxis(node.bounds);
-	splitValue = node.bounds.center()[splitAxis];
-	if (levelConfig.type == MultiDataStructure::DataStructureLevel::KDTreeNode && node.pointCount > 0)
+	splitAxis = longestAxis(node._bounds);
+	splitValue = node._bounds.center()[splitAxis];
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::KDTreeNode && node._pointCount > 0)
 	{
 		std::vector<float> coordinates;
-		coordinates.reserve(node.pointCount);
-		for (size_t i = 0; i < node.pointCount; ++i)
+		coordinates.reserve(node._pointCount);
+		for (size_t i = 0; i < node._pointCount; ++i)
 		{
-			const uint32_t pointIndex = _pointOrder[node.pointOffset + i];
+			const uint32_t pointIndex = _pointOrder[node._pointOffset + i];
 			coordinates.push_back(_cloud->points()[pointIndex].position[splitAxis]);
 		}
 
@@ -940,27 +940,27 @@ void PointSpatialIndex::childBounds(const Node& node, const SchemaLevelConfig& l
 	}
 
 	bounds.resize(2);
-	node.bounds.split2D(splitAxis, splitValue, bounds.data());
+	node._bounds.split2D(splitAxis, splitValue, bounds.data());
 }
 
 size_t PointSpatialIndex::locateChild(const glm::vec3& point, const SchemaLevelConfig& levelConfig, const Node& node, float splitValue, glm::uint splitAxis, size_t numChildren) const
 {
 	if (isGridPrimitive(levelConfig))
-		return std::min(gridChildIndex(point, node.bounds, gridSubdivisionsForLevel(levelConfig)), numChildren - 1);
+		return std::min(gridChildIndex(point, node._bounds, gridSubdivisionsForLevel(levelConfig)), numChildren - 1);
 
-	if (levelConfig.type == MultiDataStructure::DataStructureLevel::OctreeNode)
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::OctreeNode)
 	{
-		const glm::vec3 center = node.bounds.center();
+		const glm::vec3 center = node._bounds.center();
 		const size_t x = point.x >= center.x ? 1 : 0;
 		const size_t y = point.y >= center.y ? 1 : 0;
 		const size_t z = point.z >= center.z ? 1 : 0;
 		return x * 4 + y * 2 + z;
 	}
 
-	if (levelConfig.type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
 	{
-		const glm::uint planarAxis = ignoredQuadTreeAxis(levelConfig, node.bounds);
-		const glm::vec3 center = node.bounds.center();
+		const glm::uint planarAxis = ignoredQuadTreeAxis(levelConfig, node._bounds);
+		const glm::vec3 center = node._bounds.center();
 		glm::uvec3 subdivisions(2, 2, 2);
 		subdivisions[planarAxis] = 1;
 		glm::uvec3 coordinates(0);
@@ -987,17 +987,17 @@ void PointSpatialIndex::collectStats(const Node* node, Stats& stats) const
 	if (!node)
 		return;
 
-	++stats.numNodes;
-	stats.maxDepth = std::max(stats.maxDepth, node->depth);
+	++stats._numNodes;
+	stats._maxDepth = std::max(stats._maxDepth, node->_depth);
 
-	if (node->children.empty())
+	if (node->_children.empty())
 	{
-		++stats.numLeaves;
-		stats.numPoints += node->pointCount;
+		++stats._numLeaves;
+		stats._numPoints += node->_pointCount;
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 		collectStats(child.get(), stats);
 }
 
@@ -1008,55 +1008,55 @@ void PointSpatialIndex::appendSubtreePoints(const Node* node, std::vector<size_t
 
 	if (node->isLeaf())
 	{
-		pointIndices.reserve(pointIndices.size() + node->pointCount);
-		for (size_t i = 0; i < node->pointCount; ++i)
-			pointIndices.push_back(_pointOrder[node->pointOffset + i]);
+		pointIndices.reserve(pointIndices.size() + node->_pointCount);
+		for (size_t i = 0; i < node->_pointCount; ++i)
+			pointIndices.push_back(_pointOrder[node->_pointOffset + i]);
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 		appendSubtreePoints(child.get(), pointIndices);
 }
 
 std::string PointSpatialIndex::structureNameForNode(const Node& node) const
 {
-	if (!_schema.levels.empty() && _schema.totalLevels() > 0)
+	if (!_schema._levels.empty() && _schema.totalLevels() > 0)
 	{
-		const size_t schemaDepth = std::min(node.schemaDepth, _schema.totalLevels() - 1);
+		const size_t schemaDepth = std::min(node._schemaDepth, _schema.totalLevels() - 1);
 		const SchemaLevelConfig& level = _schema.levelForDepth(schemaDepth);
-		if (!level.typeName.empty())
-			return level.typeName;
+		if (!level._typeName.empty())
+			return level._typeName;
 	}
 
-	return Config::dataStructureLevelName(node.type);
+	return Config::dataStructureLevelName(node._type);
 }
 
 void PointSpatialIndex::recordNodeVisit(const Node& node, QueryStats& stats) const
 {
-	++stats.visitedNodes;
-	const size_t depth = std::min(node.depth, QueryStats::MaxBreakdownDepth - 1);
-	++stats.breakdown.visitedByDepth[depth];
-	++stats.breakdown.visitedByStructure[structureNameForNode(node)];
+	++stats._visitedNodes;
+	const size_t depth = std::min(node._depth, QueryStats::MaxBreakdownDepth - 1);
+	++stats._breakdown.visitedByDepth[depth];
+	++stats._breakdown._visitedByStructure[structureNameForNode(node)];
 }
 
 void PointSpatialIndex::recordTestedPoints(const Node& node, size_t count, QueryStats& stats) const
 {
-	stats.testedPoints += count;
+	stats._testedPoints += count;
 	if (count > 0)
-		stats.breakdown.testedPointsByStructure[structureNameForNode(node)] += count;
+		stats._breakdown._testedPointsByStructure[structureNameForNode(node)] += count;
 }
 
 void PointSpatialIndex::recordFullyContainedNode(const Node& node, QueryStats& stats) const
 {
-	++stats.fullyContainedNodes;
-	++stats.breakdown.fullyContainedByStructure[structureNameForNode(node)];
+	++stats._fullyContainedNodes;
+	++stats._breakdown._fullyContainedByStructure[structureNameForNode(node)];
 }
 
 void PointSpatialIndex::rangeQueryMicroGrid(const Node& node, const AABB& bounds, QueryResult& result) const
 {
-	const LeafMicroIndex& micro = *node.microIndex;
-	const glm::uvec3 minCell = gridCoordinates(bounds.min(), micro.bounds, micro.gridResolution);
-	const glm::uvec3 maxCell = gridCoordinates(bounds.max(), micro.bounds, micro.gridResolution);
+	const LeafMicroIndex& micro = *node._microIndex;
+	const glm::uvec3 minCell = gridCoordinates(bounds.min(), micro._bounds, micro.gridResolution);
+	const glm::uvec3 maxCell = gridCoordinates(bounds.max(), micro._bounds, micro.gridResolution);
 	const glm::vec3 minBound = bounds.min();
 	const glm::vec3 maxBound = bounds.max();
 	size_t tested = 0;
@@ -1068,12 +1068,12 @@ void PointSpatialIndex::rangeQueryMicroGrid(const Node& node, const AABB& bounds
 			for (uint32_t z = minCell.z; z <= maxCell.z; ++z)
 			{
 				const size_t cell = x * micro.gridResolution.y * micro.gridResolution.z + y * micro.gridResolution.z + z;
-				const uint32_t begin = micro.gridOffsets[cell];
-				const uint32_t end = micro.gridOffsets[cell + 1];
+				const uint32_t begin = micro._gridOffsets[cell];
+				const uint32_t end = micro._gridOffsets[cell + 1];
 				tested += static_cast<size_t>(end - begin);
 				for (uint32_t offset = begin; offset < end; ++offset)
 				{
-					const uint32_t orderedIndex = micro.gridOrder[offset];
+					const uint32_t orderedIndex = micro._gridOrder[offset];
 					const float px = _orderedX[orderedIndex];
 					const float py = _orderedY[orderedIndex];
 					const float pz = _orderedZ[orderedIndex];
@@ -1081,21 +1081,21 @@ void PointSpatialIndex::rangeQueryMicroGrid(const Node& node, const AABB& bounds
 						py >= minBound.y && py <= maxBound.y &&
 						pz >= minBound.z && pz <= maxBound.z)
 					{
-						result.pointIndices.push_back(_pointOrder[orderedIndex]);
+						result._pointIndices.push_back(_pointOrder[orderedIndex]);
 					}
 				}
 			}
 		}
 	}
 
-	recordTestedPoints(node, tested, result.stats);
+	recordTestedPoints(node, tested, result._stats);
 }
 
 void PointSpatialIndex::countRangeMicroGrid(const Node& node, const AABB& bounds, CountResult& result) const
 {
-	const LeafMicroIndex& micro = *node.microIndex;
-	const glm::uvec3 minCell = gridCoordinates(bounds.min(), micro.bounds, micro.gridResolution);
-	const glm::uvec3 maxCell = gridCoordinates(bounds.max(), micro.bounds, micro.gridResolution);
+	const LeafMicroIndex& micro = *node._microIndex;
+	const glm::uvec3 minCell = gridCoordinates(bounds.min(), micro._bounds, micro.gridResolution);
+	const glm::uvec3 maxCell = gridCoordinates(bounds.max(), micro._bounds, micro.gridResolution);
 	const glm::vec3 minBound = bounds.min();
 	const glm::vec3 maxBound = bounds.max();
 	size_t tested = 0;
@@ -1108,12 +1108,12 @@ void PointSpatialIndex::countRangeMicroGrid(const Node& node, const AABB& bounds
 			for (uint32_t z = minCell.z; z <= maxCell.z; ++z)
 			{
 				const size_t cell = x * micro.gridResolution.y * micro.gridResolution.z + y * micro.gridResolution.z + z;
-				const uint32_t begin = micro.gridOffsets[cell];
-				const uint32_t end = micro.gridOffsets[cell + 1];
+				const uint32_t begin = micro._gridOffsets[cell];
+				const uint32_t end = micro._gridOffsets[cell + 1];
 				tested += static_cast<size_t>(end - begin);
 				for (uint32_t offset = begin; offset < end; ++offset)
 				{
-					const uint32_t orderedIndex = micro.gridOrder[offset];
+					const uint32_t orderedIndex = micro._gridOrder[offset];
 					const float px = _orderedX[orderedIndex];
 					const float py = _orderedY[orderedIndex];
 					const float pz = _orderedZ[orderedIndex];
@@ -1128,17 +1128,17 @@ void PointSpatialIndex::countRangeMicroGrid(const Node& node, const AABB& bounds
 		}
 	}
 
-	recordTestedPoints(node, tested, result.stats);
-	result.count += contained;
+	recordTestedPoints(node, tested, result._stats);
+	result._count += contained;
 }
 
 void PointSpatialIndex::radiusQueryMicroGrid(const Node& node, const glm::vec3& center, float radiusSquared, QueryResult& result) const
 {
-	const LeafMicroIndex& micro = *node.microIndex;
+	const LeafMicroIndex& micro = *node._microIndex;
 	const float radius = std::sqrt(radiusSquared);
 	const AABB queryBounds(center - glm::vec3(radius), center + glm::vec3(radius));
-	const glm::uvec3 minCell = gridCoordinates(queryBounds.min(), micro.bounds, micro.gridResolution);
-	const glm::uvec3 maxCell = gridCoordinates(queryBounds.max(), micro.bounds, micro.gridResolution);
+	const glm::uvec3 minCell = gridCoordinates(queryBounds.min(), micro._bounds, micro.gridResolution);
+	const glm::uvec3 maxCell = gridCoordinates(queryBounds.max(), micro._bounds, micro.gridResolution);
 	size_t tested = 0;
 
 	for (uint32_t x = minCell.x; x <= maxCell.x; ++x)
@@ -1148,27 +1148,27 @@ void PointSpatialIndex::radiusQueryMicroGrid(const Node& node, const glm::vec3& 
 			for (uint32_t z = minCell.z; z <= maxCell.z; ++z)
 			{
 				const glm::uvec3 coordinates(x, y, z);
-				if (distanceSquaredToAABB(gridCellBounds(micro.bounds, micro.gridResolution, coordinates), center) > radiusSquared)
+				if (distanceSquaredToAABB(gridCellBounds(micro._bounds, micro.gridResolution, coordinates), center) > radiusSquared)
 					continue;
 
 				const size_t cell = x * micro.gridResolution.y * micro.gridResolution.z + y * micro.gridResolution.z + z;
-				const uint32_t begin = micro.gridOffsets[cell];
-				const uint32_t end = micro.gridOffsets[cell + 1];
+				const uint32_t begin = micro._gridOffsets[cell];
+				const uint32_t end = micro._gridOffsets[cell + 1];
 				tested += static_cast<size_t>(end - begin);
 				for (uint32_t offset = begin; offset < end; ++offset)
 				{
-					const uint32_t orderedIndex = micro.gridOrder[offset];
+					const uint32_t orderedIndex = micro._gridOrder[offset];
 					const float dx = _orderedX[orderedIndex] - center.x;
 					const float dy = _orderedY[orderedIndex] - center.y;
 					const float dz = _orderedZ[orderedIndex] - center.z;
 					if (dx * dx + dy * dy + dz * dz <= radiusSquared)
-						result.pointIndices.push_back(_pointOrder[orderedIndex]);
+						result._pointIndices.push_back(_pointOrder[orderedIndex]);
 				}
 			}
 		}
 	}
 
-	recordTestedPoints(node, tested, result.stats);
+	recordTestedPoints(node, tested, result._stats);
 }
 
 void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const
@@ -1176,31 +1176,31 @@ void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, Que
 	if (!node || !_cloud)
 		return;
 
-	recordNodeVisit(*node, result.stats);
-	if (node->subtreePointCount == 0 || !node->tightBounds.collides(bounds))
+	recordNodeVisit(*node, result._stats);
+	if (node->_subtreePointCount == 0 || !node->_tightBounds.collides(bounds))
 		return;
 
-	if (containsAABB(bounds, node->tightBounds))
+	if (containsAABB(bounds, node->_tightBounds))
 	{
-		recordFullyContainedNode(*node, result.stats);
-		appendSubtreePoints(node, result.pointIndices);
+		recordFullyContainedNode(*node, result._stats);
+		appendSubtreePoints(node, result._pointIndices);
 		return;
 	}
 
 	if (node->isLeaf())
 	{
-		if (node->microIndex && node->microIndex->hasGrid())
+		if (node->_microIndex && node->_microIndex->hasGrid())
 		{
 			rangeQueryMicroGrid(*node, bounds, result);
 			return;
 		}
 
-		recordTestedPoints(*node, node->pointCount, result.stats);
+		recordTestedPoints(*node, node->_pointCount, result._stats);
 		const glm::vec3 minBound = bounds.min();
 		const glm::vec3 maxBound = bounds.max();
-		for (size_t i = 0; i < node->pointCount; ++i)
+		for (size_t i = 0; i < node->_pointCount; ++i)
 		{
-			const size_t orderedIndex = node->pointOffset + i;
+			const size_t orderedIndex = node->_pointOffset + i;
 			const float x = _orderedX[orderedIndex];
 			const float y = _orderedY[orderedIndex];
 			const float z = _orderedZ[orderedIndex];
@@ -1208,13 +1208,13 @@ void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, Que
 				y >= minBound.y && y <= maxBound.y &&
 				z >= minBound.z && z <= maxBound.z)
 			{
-				result.pointIndices.push_back(_pointOrder[orderedIndex]);
+				result._pointIndices.push_back(_pointOrder[orderedIndex]);
 			}
 		}
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 		rangeQueryNode(child.get(), bounds, result);
 }
 
@@ -1223,32 +1223,32 @@ void PointSpatialIndex::countRangeNode(const Node* node, const AABB& bounds, Cou
 	if (!node || !_cloud)
 		return;
 
-	recordNodeVisit(*node, result.stats);
-	if (node->subtreePointCount == 0 || !node->tightBounds.collides(bounds))
+	recordNodeVisit(*node, result._stats);
+	if (node->_subtreePointCount == 0 || !node->_tightBounds.collides(bounds))
 		return;
 
-	if (containsAABB(bounds, node->tightBounds))
+	if (containsAABB(bounds, node->_tightBounds))
 	{
-		recordFullyContainedNode(*node, result.stats);
-		result.count += node->subtreePointCount;
+		recordFullyContainedNode(*node, result._stats);
+		result._count += node->_subtreePointCount;
 		return;
 	}
 
 	if (node->isLeaf())
 	{
-		if (node->microIndex && node->microIndex->hasGrid())
+		if (node->_microIndex && node->_microIndex->hasGrid())
 		{
 			countRangeMicroGrid(*node, bounds, result);
 			return;
 		}
 
-		recordTestedPoints(*node, node->pointCount, result.stats);
+		recordTestedPoints(*node, node->_pointCount, result._stats);
 		const glm::vec3 minBound = bounds.min();
 		const glm::vec3 maxBound = bounds.max();
 		size_t contained = 0;
-		for (size_t i = 0; i < node->pointCount; ++i)
+		for (size_t i = 0; i < node->_pointCount; ++i)
 		{
-			const size_t orderedIndex = node->pointOffset + i;
+			const size_t orderedIndex = node->_pointOffset + i;
 			const float x = _orderedX[orderedIndex];
 			const float y = _orderedY[orderedIndex];
 			const float z = _orderedZ[orderedIndex];
@@ -1259,11 +1259,11 @@ void PointSpatialIndex::countRangeNode(const Node* node, const AABB& bounds, Cou
 				++contained;
 			}
 		}
-		result.count += contained;
+		result._count += contained;
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 		countRangeNode(child.get(), bounds, result);
 }
 
@@ -1272,31 +1272,31 @@ void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& cente
 	if (!node || !_cloud)
 		return;
 
-	recordNodeVisit(*node, result.stats);
-	if (distanceSquaredToAABB(node->tightBounds, center) > radiusSquared)
+	recordNodeVisit(*node, result._stats);
+	if (distanceSquaredToAABB(node->_tightBounds, center) > radiusSquared)
 		return;
 
 	if (node->isLeaf())
 	{
-		if (node->microIndex && node->microIndex->hasGrid())
+		if (node->_microIndex && node->_microIndex->hasGrid())
 		{
 			radiusQueryMicroGrid(*node, center, radiusSquared, result);
 			return;
 		}
 
-		recordTestedPoints(*node, node->pointCount, result.stats);
-		for (size_t i = 0; i < node->pointCount; ++i)
+		recordTestedPoints(*node, node->_pointCount, result._stats);
+		for (size_t i = 0; i < node->_pointCount; ++i)
 		{
-			const size_t orderedIndex = node->pointOffset + i;
+			const size_t orderedIndex = node->_pointOffset + i;
 			const float dx = _orderedX[orderedIndex] - center.x;
 			const float dy = _orderedY[orderedIndex] - center.y;
 			const float dz = _orderedZ[orderedIndex] - center.z;
 			if (dx * dx + dy * dy + dz * dz <= radiusSquared)
-				result.pointIndices.push_back(_pointOrder[orderedIndex]);
+				result._pointIndices.push_back(_pointOrder[orderedIndex]);
 		}
 		return;
 	}
 
-	for (const std::unique_ptr<Node>& child : node->children)
+	for (const std::unique_ptr<Node>& child : node->_children)
 		radiusQueryNode(child.get(), center, radiusSquared, result);
 }

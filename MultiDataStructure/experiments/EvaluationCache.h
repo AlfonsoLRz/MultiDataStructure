@@ -7,10 +7,10 @@ namespace Experiments
 {
 	struct EvaluationCacheKey
 	{
-		std::string schemaSignature;
-		std::string datasetFingerprint;
-		std::string workloadFingerprint;
-		std::string evaluatorFingerprint;
+		std::string _schemaSignature;
+		std::string _datasetFingerprint;
+		std::string _workloadFingerprint;
+		std::string _evaluatorFingerprint;
 
 		std::string canonical() const;
 	};
@@ -44,7 +44,7 @@ namespace Experiments
 	private:
 		struct Entry
 		{
-			SchemaSearchRecord record;
+			SchemaSearchRecord _record;
 		};
 
 		bool loadFromDisk();

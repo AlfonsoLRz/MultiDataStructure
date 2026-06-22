@@ -3,7 +3,7 @@
 
 //
 
-int CudaHelper::selectedDevice = 0;
+int CudaHelper::_selectedDevice = 0;
 
 // Public methods
 
@@ -18,7 +18,7 @@ CudaHelper::~CudaHelper()
 size_t CudaHelper::getMaxThreadsBlock()
 {
     cudaDeviceProp prop;
-    checkError(cudaGetDeviceProperties(&prop, selectedDevice));
+    checkError(cudaGetDeviceProperties(&prop, _selectedDevice));
 
     return prop.maxThreadsPerBlock;
 }
@@ -26,7 +26,7 @@ size_t CudaHelper::getMaxThreadsBlock()
 void CudaHelper::setDevice(uint8_t deviceIndex)
 {
     int numDevices;
-    selectedDevice = 0;
+    _selectedDevice = 0;
     checkError(cudaGetDeviceCount(&numDevices));
 
     if (deviceIndex == UINT8_MAX)
@@ -42,7 +42,7 @@ void CudaHelper::setDevice(uint8_t deviceIndex)
             size_t score = clockRate * numProcessors;
             if (score > bestScore)
             {
-                selectedDevice = deviceIdx;
+                _selectedDevice = deviceIdx;
                 bestScore = score;
             }
         }
@@ -52,10 +52,10 @@ void CudaHelper::setDevice(uint8_t deviceIndex)
     }
     else
     {
-        selectedDevice = glm::clamp(deviceIndex, static_cast<uint8_t>(0), static_cast<uint8_t>(numDevices));
+        _selectedDevice = glm::clamp(deviceIndex, static_cast<uint8_t>(0), static_cast<uint8_t>(numDevices));
     }
 
-    checkError(cudaSetDevice(selectedDevice));
+    checkError(cudaSetDevice(_selectedDevice));
 }
 
 void CudaHelper::synchronize(const std::string& kernelName)

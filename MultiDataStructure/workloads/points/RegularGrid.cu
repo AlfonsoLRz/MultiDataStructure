@@ -21,9 +21,9 @@ namespace
 
 	size_t leafCapacityForSchema(const SchemaConfig& schema)
 	{
-		size_t leafCapacity = schema.buildPolicy.leafCapacity;
-		if (!schema.levels.empty() && schema.levels.front().leafCapacity > 0)
-			leafCapacity = schema.levels.front().leafCapacity;
+		size_t leafCapacity = schema._buildPolicy._leafCapacity;
+		if (!schema._levels.empty() && schema._levels.front()._leafCapacity > 0)
+			leafCapacity = schema._levels.front()._leafCapacity;
 
 		return std::max<size_t>(1, leafCapacity);
 	}
@@ -33,7 +33,7 @@ namespace
 		uint32_t x = 1;
 		uint32_t y = 1;
 		uint32_t z = 1;
-		size_t cells = 1;
+		size_t _cells = 1;
 	};
 
 	size_t checkedProduct(uint32_t x, uint32_t y, uint32_t z)
@@ -85,7 +85,7 @@ namespace
 		GridShape shape;
 		if (activeAxes == 0 || targetCells <= 1.0)
 		{
-			shape.cells = checkedProduct(shape.x, shape.y, shape.z);
+			shape._cells = checkedProduct(shape.x, shape.y, shape.z);
 			return shape;
 		}
 
@@ -104,11 +104,11 @@ namespace
 		shape.x = dimensions[0];
 		shape.y = dimensions[1];
 		shape.z = dimensions[2];
-		shape.cells = checkedProduct(shape.x, shape.y, shape.z);
-		if (shape.cells > MaxCellsPerLevel)
+		shape._cells = checkedProduct(shape.x, shape.y, shape.z);
+		if (shape._cells > MaxCellsPerLevel)
 		{
 			throw std::runtime_error("RegularGrid post-rounding cell count ("
-				+ std::to_string(shape.cells)
+				+ std::to_string(shape._cells)
 				+ ") exceeds the per-level safety cap ("
 				+ std::to_string(MaxCellsPerLevel)
 				+ ") after axis ceiling.");
@@ -119,20 +119,20 @@ namespace
 	DeviceQuery makeDeviceQuery(const PointGpu::Query& query)
 	{
 		DeviceQuery result{};
-		result.type = static_cast<int>(query.type);
-		const glm::vec3 min = query.bounds.min();
-		const glm::vec3 max = query.bounds.max();
-		result.minX = min.x;
-		result.minY = min.y;
-		result.minZ = min.z;
-		result.maxX = max.x;
-		result.maxY = max.y;
-		result.maxZ = max.z;
-		result.centerX = query.center.x;
-		result.centerY = query.center.y;
-		result.centerZ = query.center.z;
-		result.radius = query.radius;
-		result.knnK = static_cast<uint32_t>(std::min<size_t>(query.k, std::numeric_limits<uint32_t>::max()));
+		result._type = static_cast<int>(query._type);
+		const glm::vec3 min = query._bounds.min();
+		const glm::vec3 max = query._bounds.max();
+		result._minX = min.x;
+		result._minY = min.y;
+		result._minZ = min.z;
+		result._maxX = max.x;
+		result._maxY = max.y;
+		result._maxZ = max.z;
+		result._centerX = query.center.x;
+		result._centerY = query.center.y;
+		result._centerZ = query.center.z;
+		result._radius = query._radius;
+		result._knnK = static_cast<uint32_t>(std::min<size_t>(query._k, std::numeric_limits<uint32_t>::max()));
 		return result;
 	}
 
@@ -143,10 +143,10 @@ namespace
 		for (const PointGpu::QuerySample& sample : samples)
 		{
 			PointSpatialIndex::QueryStats stats;
-			stats.visitedNodes = sample.visitedNodes;
-			stats.testedPoints = sample.testedPoints;
-			stats.returnedPoints = sample.returnedPoints;
-			stats.elapsedMs = sample.elapsedMs;
+			stats._visitedNodes = sample._visitedNodes;
+			stats._testedPoints = sample._testedPoints;
+			stats._returnedPoints = sample._returnedPoints;
+			stats._elapsedMs = sample._elapsedMs;
 			cpuSamples.push_back(stats);
 		}
 		return Experiments::summarizeQueryStats(cpuSamples);
@@ -182,17 +182,17 @@ namespace
 
 	__device__ bool pointInsideRange(const DevicePoint& point, const DeviceQuery& query)
 	{
-		return point.x >= query.minX && point.x <= query.maxX &&
-			point.y >= query.minY && point.y <= query.maxY &&
-			point.z >= query.minZ && point.z <= query.maxZ;
+		return point.x >= query._minX && point.x <= query._maxX &&
+			point.y >= query._minY && point.y <= query._maxY &&
+			point.z >= query._minZ && point.z <= query._maxZ;
 	}
 
 	__device__ bool pointInsideRadius(const DevicePoint& point, const DeviceQuery& query)
 	{
-		const float dx = point.x - query.centerX;
-		const float dy = point.y - query.centerY;
-		const float dz = point.z - query.centerZ;
-		return dx * dx + dy * dy + dz * dz <= query.radius * query.radius;
+		const float dx = point.x - query._centerX;
+		const float dy = point.y - query._centerY;
+		const float dz = point.z - query._centerZ;
+		return dx * dx + dy * dy + dz * dz <= query._radius * query._radius;
 	}
 
 	__device__ bool queryBoxIntersectsGrid(
@@ -285,27 +285,27 @@ namespace
 			return;
 
 		const DeviceQuery query = queries[queryIndex];
-		if (query.type == static_cast<int>(PointGpu::QueryType::Knn))
+		if (query._type == static_cast<int>(PointGpu::QueryType::Knn))
 		{
 			samples[queryIndex] = DeviceQuerySample{};
 			return;
 		}
 
 		const unsigned long long begin = clock64();
-		float queryMinX = query.minX;
-		float queryMinY = query.minY;
-		float queryMinZ = query.minZ;
-		float queryMaxX = query.maxX;
-		float queryMaxY = query.maxY;
-		float queryMaxZ = query.maxZ;
-		if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+		float queryMinX = query._minX;
+		float queryMinY = query._minY;
+		float queryMinZ = query._minZ;
+		float queryMaxX = query._maxX;
+		float queryMaxY = query._maxY;
+		float queryMaxZ = query._maxZ;
+		if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 		{
-			queryMinX = query.centerX - query.radius;
-			queryMinY = query.centerY - query.radius;
-			queryMinZ = query.centerZ - query.radius;
-			queryMaxX = query.centerX + query.radius;
-			queryMaxY = query.centerY + query.radius;
-			queryMaxZ = query.centerZ + query.radius;
+			queryMinX = query._centerX - query._radius;
+			queryMinY = query._centerY - query._radius;
+			queryMinZ = query._centerZ - query._radius;
+			queryMaxX = query._centerX + query._radius;
+			queryMaxY = query._centerY + query._radius;
+			queryMaxZ = query._centerZ + query._radius;
 		}
 
 		unsigned long long visited = 0;
@@ -350,7 +350,7 @@ namespace
 						{
 							++tested;
 							const DevicePoint point = points[sortedIndices[pointSlot]];
-							if (query.type == static_cast<int>(PointGpu::QueryType::Radius))
+							if (query._type == static_cast<int>(PointGpu::QueryType::Radius))
 							{
 								if (pointInsideRadius(point, query))
 									++returned;
@@ -367,45 +367,45 @@ namespace
 
 		const unsigned long long end = clock64();
 		DeviceQuerySample sample{};
-		sample.visitedNodes = visited;
-		sample.testedPoints = tested;
-		sample.returnedPoints = returned;
-		sample.elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
+		sample._visitedNodes = visited;
+		sample._testedPoints = tested;
+		sample._returnedPoints = returned;
+		sample._elapsedMs = clockRateKHz > 0.0f ? static_cast<float>(end - begin) / clockRateKHz : 0.0f;
 		samples[queryIndex] = sample;
 	}
 }
 
 struct PointGpu::RegularGrid::DeviceState
 {
-	DevicePoint* points = nullptr;
-	uint32_t* keys = nullptr;
-	uint32_t* sortedKeys = nullptr;
-	uint32_t* indices = nullptr;
-	uint32_t* sortedIndices = nullptr;
-	uint32_t* cellStarts = nullptr;
-	uint32_t* cellEnds = nullptr;
-	DeviceQuery* queryBuffer = nullptr;
-	DeviceQuerySample* sampleBuffer = nullptr;
-	void* sortTemporary = nullptr;
-	size_t sortTemporaryBytes = 0;
-	size_t queryCapacity = 0;
-	size_t pointCount = 0;
-	size_t cellCount = 0;
-	size_t leafCapacity = 1;
-	size_t baseMemoryBytes = 0;
-	size_t memoryBytes = 0;
-	uint32_t dimX = 1;
-	uint32_t dimY = 1;
-	uint32_t dimZ = 1;
-	float minX = 0.0f;
-	float minY = 0.0f;
-	float minZ = 0.0f;
-	float extentX = 0.0f;
-	float extentY = 0.0f;
-	float extentZ = 0.0f;
-	int device = 0;
-	const PointCloud* cloud = nullptr;
-	bool pointsReady = false;
+	DevicePoint* _points = nullptr;
+	uint32_t* _keys = nullptr;
+	uint32_t* _sortedKeys = nullptr;
+	uint32_t* _indices = nullptr;
+	uint32_t* _sortedIndices = nullptr;
+	uint32_t* _cellStarts = nullptr;
+	uint32_t* _cellEnds = nullptr;
+	DeviceQuery* _queryBuffer = nullptr;
+	DeviceQuerySample* _sampleBuffer = nullptr;
+	void* _sortTemporary = nullptr;
+	size_t _sortTemporaryBytes = 0;
+	size_t _queryCapacity = 0;
+	size_t _pointCount = 0;
+	size_t _cellCount = 0;
+	size_t _leafCapacity = 1;
+	size_t _baseMemoryBytes = 0;
+	size_t _memoryBytes = 0;
+	uint32_t _dimX = 1;
+	uint32_t _dimY = 1;
+	uint32_t _dimZ = 1;
+	float _minX = 0.0f;
+	float _minY = 0.0f;
+	float _minZ = 0.0f;
+	float _extentX = 0.0f;
+	float _extentY = 0.0f;
+	float _extentZ = 0.0f;
+	int _device = 0;
+	const PointCloud* _cloud = nullptr;
+	bool _pointsReady = false;
 };
 
 namespace
@@ -435,23 +435,23 @@ namespace
 	template <typename State>
 	void releaseQueryBuffers(State& state)
 	{
-		cudaFree(state.queryBuffer);
-		cudaFree(state.sampleBuffer);
-		state.queryBuffer = nullptr;
-		state.sampleBuffer = nullptr;
-		state.queryCapacity = 0;
+		cudaFree(state._queryBuffer);
+		cudaFree(state._sampleBuffer);
+		state._queryBuffer = nullptr;
+		state._sampleBuffer = nullptr;
+		state._queryCapacity = 0;
 	}
 
 	template <typename State>
 	void ensureQueryBuffers(State& state, size_t capacity)
 	{
-		if (state.queryCapacity >= capacity && state.queryBuffer && state.sampleBuffer)
+		if (state._queryCapacity >= capacity && state._queryBuffer && state._sampleBuffer)
 			return;
 
 		releaseQueryBuffers(state);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.queryBuffer), sizeof(DeviceQuery) * capacity));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state.sampleBuffer), sizeof(DeviceQuerySample) * capacity));
-		state.queryCapacity = capacity;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._queryBuffer), sizeof(DeviceQuery) * capacity));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&state._sampleBuffer), sizeof(DeviceQuerySample) * capacity));
+		state._queryCapacity = capacity;
 	}
 }
 
@@ -469,24 +469,24 @@ PointGpu::RegularGrid::~RegularGrid()
 void PointGpu::RegularGrid::release()
 {
 	releaseGrid();
-	cudaFree(_state->points);
-	cudaFree(_state->keys);
-	cudaFree(_state->sortedKeys);
-	cudaFree(_state->indices);
-	cudaFree(_state->sortedIndices);
-	cudaFree(_state->sortTemporary);
+	cudaFree(_state->_points);
+	cudaFree(_state->_keys);
+	cudaFree(_state->_sortedKeys);
+	cudaFree(_state->_indices);
+	cudaFree(_state->_sortedIndices);
+	cudaFree(_state->_sortTemporary);
 	releaseQueryBuffers(*_state);
 	*_state = DeviceState();
 }
 
 void PointGpu::RegularGrid::releaseGrid()
 {
-	cudaFree(_state->cellStarts);
-	cudaFree(_state->cellEnds);
-	_state->cellStarts = nullptr;
-	_state->cellEnds = nullptr;
-	_state->cellCount = 0;
-	_state->memoryBytes = _state->baseMemoryBytes;
+	cudaFree(_state->_cellStarts);
+	cudaFree(_state->_cellEnds);
+	_state->_cellStarts = nullptr;
+	_state->_cellEnds = nullptr;
+	_state->_cellCount = 0;
+	_state->_memoryBytes = _state->_baseMemoryBytes;
 }
 
 bool PointGpu::RegularGrid::isAvailable(std::string* error)
@@ -522,7 +522,7 @@ int PointGpu::RegularGrid::deviceCount()
 
 PointGpu::BuildResult PointGpu::RegularGrid::build(const PointCloud& cloud, const SchemaConfig& schema, const Options& options)
 {
-	const std::string builder = options.builder.empty() ? "regular_grid" : options.builder;
+	const std::string builder = options._builder.empty() ? "regular_grid" : options._builder;
 	if (builder != "regular_grid" && builder != "regulargrid" && builder != "grid" && builder != "uniform_grid")
 		throw std::runtime_error("RegularGrid evaluator supports --cuda-builder regular_grid, grid, or uniform_grid.");
 	if (cloud.size() > static_cast<size_t>(std::numeric_limits<uint32_t>::max()))
@@ -533,20 +533,20 @@ PointGpu::BuildResult PointGpu::RegularGrid::build(const PointCloud& cloud, cons
 		throw std::runtime_error("CUDA point evaluator is unavailable: " + availabilityError);
 
 	const int count = deviceCount();
-	const int device = options.device >= 0 ? std::min(options.device, count - 1) : 0;
+	const int device = options._device >= 0 ? std::min(options._device, count - 1) : 0;
 	CudaHelper::checkError(cudaSetDevice(device));
 
 	const bool canReusePoints =
-		_state->pointsReady &&
-		_state->cloud == &cloud &&
-		_state->pointCount == cloud.size() &&
-		_state->device == device;
+		_state->_pointsReady &&
+		_state->_cloud == &cloud &&
+		_state->_pointCount == cloud.size() &&
+		_state->_device == device;
 
 	if (!canReusePoints)
 	{
-		if (_state->points || _state->cellStarts)
+		if (_state->_points || _state->_cellStarts)
 		{
-			CudaHelper::checkError(cudaSetDevice(_state->device));
+			CudaHelper::checkError(cudaSetDevice(_state->_device));
 			release();
 			CudaHelper::checkError(cudaSetDevice(device));
 		}
@@ -560,123 +560,123 @@ PointGpu::BuildResult PointGpu::RegularGrid::build(const PointCloud& cloud, cons
 		releaseGrid();
 	}
 
-	_state->pointCount = cloud.size();
-	_state->leafCapacity = leafCapacityForSchema(schema);
-	_state->device = device;
-	_state->cloud = &cloud;
+	_state->_pointCount = cloud.size();
+	_state->_leafCapacity = leafCapacityForSchema(schema);
+	_state->_device = device;
+	_state->_cloud = &cloud;
 
 	BuildResult result;
-	result.device = device;
-	result.builder = "regular_grid";
+	result._device = device;
+	result._builder = "regular_grid";
 
 	if (cloud.empty())
 		return result;
 
 	const glm::vec3 boundsMin = cloud.bounds().min();
 	const glm::vec3 extent = glm::max(cloud.coordinateRange(), glm::vec3(0.0f));
-	const GridShape shape = chooseGridShape(cloud.size(), _state->leafCapacity, extent);
-	_state->dimX = shape.x;
-	_state->dimY = shape.y;
-	_state->dimZ = shape.z;
-	_state->cellCount = shape.cells;
-	_state->minX = boundsMin.x;
-	_state->minY = boundsMin.y;
-	_state->minZ = boundsMin.z;
-	_state->extentX = extent.x;
-	_state->extentY = extent.y;
-	_state->extentZ = extent.z;
+	const GridShape shape = chooseGridShape(cloud.size(), _state->_leafCapacity, extent);
+	_state->_dimX = shape.x;
+	_state->_dimY = shape.y;
+	_state->_dimZ = shape.z;
+	_state->_cellCount = shape._cells;
+	_state->_minX = boundsMin.x;
+	_state->_minY = boundsMin.y;
+	_state->_minZ = boundsMin.z;
+	_state->_extentX = extent.x;
+	_state->_extentY = extent.y;
+	_state->_extentZ = extent.z;
 
 	if (!canReusePoints)
 	{
 		cudaEvent_t uploadBegin = nullptr;
 		cudaEvent_t uploadEnd = nullptr;
 		CudaHelper::startTimer(uploadBegin, uploadEnd);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->points), sizeof(DevicePoint) * _state->pointCount));
-		CudaHelper::checkError(cudaMemcpy(_state->points, cloud.points().data(), sizeof(DevicePoint) * _state->pointCount, cudaMemcpyHostToDevice));
-		result.uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_points), sizeof(DevicePoint) * _state->_pointCount));
+		CudaHelper::checkError(cudaMemcpy(_state->_points, cloud.points().data(), sizeof(DevicePoint) * _state->_pointCount, cudaMemcpyHostToDevice));
+		result._uploadTimeMs = CudaHelper::stopTimer(uploadBegin, uploadEnd);
 		cudaEventDestroy(uploadBegin);
 		cudaEventDestroy(uploadEnd);
 
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->keys), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->sortedKeys), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->indices), sizeof(uint32_t) * _state->pointCount));
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->sortedIndices), sizeof(uint32_t) * _state->pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_keys), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_sortedKeys), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_indices), sizeof(uint32_t) * _state->_pointCount));
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_sortedIndices), sizeof(uint32_t) * _state->_pointCount));
 
 		CudaHelper::checkError(cub::DeviceRadixSort::SortPairs(
 			nullptr,
-			_state->sortTemporaryBytes,
-			_state->keys,
-			_state->sortedKeys,
-			_state->indices,
-			_state->sortedIndices,
-			static_cast<int>(_state->pointCount)));
-		CudaHelper::checkError(cudaMalloc(&_state->sortTemporary, _state->sortTemporaryBytes));
+			_state->_sortTemporaryBytes,
+			_state->_keys,
+			_state->_sortedKeys,
+			_state->_indices,
+			_state->_sortedIndices,
+			static_cast<int>(_state->_pointCount)));
+		CudaHelper::checkError(cudaMalloc(&_state->_sortTemporary, _state->_sortTemporaryBytes));
 
-		_state->baseMemoryBytes =
-			sizeof(DevicePoint) * _state->pointCount +
-			sizeof(uint32_t) * _state->pointCount * 4 +
-			_state->sortTemporaryBytes;
-		_state->pointsReady = true;
+		_state->_baseMemoryBytes =
+			sizeof(DevicePoint) * _state->_pointCount +
+			sizeof(uint32_t) * _state->_pointCount * 4 +
+			_state->_sortTemporaryBytes;
+		_state->_pointsReady = true;
 	}
 
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->cellStarts), sizeof(uint32_t) * _state->cellCount));
-	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->cellEnds), sizeof(uint32_t) * _state->cellCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_cellStarts), sizeof(uint32_t) * _state->_cellCount));
+	CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&_state->_cellEnds), sizeof(uint32_t) * _state->_cellCount));
 
-	_state->memoryBytes =
-		_state->baseMemoryBytes +
-		sizeof(uint32_t) * _state->cellCount * 2;
-	checkMemoryBudget(_state->memoryBytes, options.memoryBudgetMb);
+	_state->_memoryBytes =
+		_state->_baseMemoryBytes +
+		sizeof(uint32_t) * _state->_cellCount * 2;
+	checkMemoryBudget(_state->_memoryBytes, options._memoryBudgetMb);
 
 	cudaEvent_t buildBegin = nullptr;
 	cudaEvent_t buildEnd = nullptr;
 	CudaHelper::startTimer(buildBegin, buildEnd);
 
-	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->pointCount, ThreadsPerBlock)));
+	const dim3 pointBlocks(static_cast<unsigned int>(divUp(_state->_pointCount, ThreadsPerBlock)));
 	initializePointKeysKernel<<<pointBlocks, ThreadsPerBlock>>>(
-		_state->points,
-		_state->pointCount,
-		_state->minX,
-		_state->minY,
-		_state->minZ,
-		_state->extentX,
-		_state->extentY,
-		_state->extentZ,
-		_state->dimX,
-		_state->dimY,
-		_state->dimZ,
-		_state->keys,
-		_state->indices);
+		_state->_points,
+		_state->_pointCount,
+		_state->_minX,
+		_state->_minY,
+		_state->_minZ,
+		_state->_extentX,
+		_state->_extentY,
+		_state->_extentZ,
+		_state->_dimX,
+		_state->_dimY,
+		_state->_dimZ,
+		_state->_keys,
+		_state->_indices);
 	CudaHelper::synchronize("initializePointKeysKernel");
 
 	CudaHelper::checkError(cub::DeviceRadixSort::SortPairs(
-		_state->sortTemporary,
-		_state->sortTemporaryBytes,
-		_state->keys,
-		_state->sortedKeys,
-		_state->indices,
-		_state->sortedIndices,
-		static_cast<int>(_state->pointCount)));
+		_state->_sortTemporary,
+		_state->_sortTemporaryBytes,
+		_state->_keys,
+		_state->_sortedKeys,
+		_state->_indices,
+		_state->_sortedIndices,
+		static_cast<int>(_state->_pointCount)));
 	CudaHelper::synchronize("cub::DeviceRadixSort::SortPairs");
 
-	const dim3 cellBlocks(static_cast<unsigned int>(divUp(_state->cellCount, ThreadsPerBlock)));
-	initializeCellRangesKernel<<<cellBlocks, ThreadsPerBlock>>>(_state->cellStarts, _state->cellEnds, _state->cellCount);
+	const dim3 cellBlocks(static_cast<unsigned int>(divUp(_state->_cellCount, ThreadsPerBlock)));
+	initializeCellRangesKernel<<<cellBlocks, ThreadsPerBlock>>>(_state->_cellStarts, _state->_cellEnds, _state->_cellCount);
 	CudaHelper::synchronize("initializeCellRangesKernel");
 
-	buildCellRangesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->sortedKeys, _state->pointCount, _state->cellStarts, _state->cellEnds);
+	buildCellRangesKernel<<<pointBlocks, ThreadsPerBlock>>>(_state->_sortedKeys, _state->_pointCount, _state->_cellStarts, _state->_cellEnds);
 	CudaHelper::synchronize("buildCellRangesKernel");
 
-	result.gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
+	result._gpuBuildTimeMs = CudaHelper::stopTimer(buildBegin, buildEnd);
 	cudaEventDestroy(buildBegin);
 	cudaEventDestroy(buildEnd);
 
-	std::vector<uint32_t> hostStarts(_state->cellCount);
-	std::vector<uint32_t> hostEnds(_state->cellCount);
-	CudaHelper::checkError(cudaMemcpy(hostStarts.data(), _state->cellStarts, sizeof(uint32_t) * _state->cellCount, cudaMemcpyDeviceToHost));
-	CudaHelper::checkError(cudaMemcpy(hostEnds.data(), _state->cellEnds, sizeof(uint32_t) * _state->cellCount, cudaMemcpyDeviceToHost));
+	std::vector<uint32_t> hostStarts(_state->_cellCount);
+	std::vector<uint32_t> hostEnds(_state->_cellCount);
+	CudaHelper::checkError(cudaMemcpy(hostStarts.data(), _state->_cellStarts, sizeof(uint32_t) * _state->_cellCount, cudaMemcpyDeviceToHost));
+	CudaHelper::checkError(cudaMemcpy(hostEnds.data(), _state->_cellEnds, sizeof(uint32_t) * _state->_cellCount, cudaMemcpyDeviceToHost));
 
 	size_t nonEmptyCells = 0;
 	size_t maxOccupancy = 0;
-	for (size_t cell = 0; cell < _state->cellCount; ++cell)
+	for (size_t cell = 0; cell < _state->_cellCount; ++cell)
 	{
 		if (hostStarts[cell] == InvalidCellRange || hostEnds[cell] == InvalidCellRange)
 			continue;
@@ -685,45 +685,45 @@ PointGpu::BuildResult PointGpu::RegularGrid::build(const PointCloud& cloud, cons
 		maxOccupancy = std::max<size_t>(maxOccupancy, static_cast<size_t>(hostEnds[cell] - hostStarts[cell]));
 	}
 
-	result.gpuMemoryBytes = _state->memoryBytes;
-	result.metrics.buildTimeMs = result.gpuBuildTimeMs;
-	result.metrics.numNodes = _state->cellCount;
-	result.metrics.numLeaves = nonEmptyCells;
-	result.metrics.indexedPoints = _state->pointCount;
-	result.metrics.maxDepth = 1;
-	result.metrics.averageLeafOccupancy = nonEmptyCells > 0
-		? static_cast<double>(_state->pointCount) / static_cast<double>(nonEmptyCells)
+	result._gpuMemoryBytes = _state->_memoryBytes;
+	result._metrics._buildTimeMs = result._gpuBuildTimeMs;
+	result._metrics._numNodes = _state->_cellCount;
+	result._metrics._numLeaves = nonEmptyCells;
+	result._metrics._indexedPoints = _state->_pointCount;
+	result._metrics._maxDepth = 1;
+	result._metrics._averageLeafOccupancy = nonEmptyCells > 0
+		? static_cast<double>(_state->_pointCount) / static_cast<double>(nonEmptyCells)
 		: 0.0;
-	result.metrics.maxLeafOccupancy = maxOccupancy;
-	result.metrics.memoryEstimateBytes = _state->memoryBytes;
+	result._metrics._maxLeafOccupancy = maxOccupancy;
+	result._metrics._memoryEstimateBytes = _state->_memoryBytes;
 	return result;
 }
 
 PointGpu::QueryResult PointGpu::RegularGrid::query(const std::vector<Query>& queries, const Options& options) const
 {
-	if (!_state || _state->cellCount == 0 || queries.empty())
+	if (!_state || _state->_cellCount == 0 || queries.empty())
 		return {};
 
-	CudaHelper::checkError(cudaSetDevice(_state->device));
+	CudaHelper::checkError(cudaSetDevice(_state->_device));
 
 	QueryResult result;
-	result.samples.reserve(queries.size());
+	result._samples.reserve(queries.size());
 	for (const Query& query : queries)
 	{
-		if (query.type == QueryType::Radius)
-			++result.radiusQueries;
-		else if (query.type == QueryType::CountRange)
-			++result.countRangeQueries;
-		else if (query.type == QueryType::Knn)
-			++result.knnQueries;
+		if (query._type == QueryType::Radius)
+			++result._radiusQueries;
+		else if (query._type == QueryType::CountRange)
+			++result._countRangeQueries;
+		else if (query._type == QueryType::Knn)
+			++result._knnQueries;
 		else
-			++result.rangeQueries;
+			++result._rangeQueries;
 	}
 
-	const size_t batchSize = options.queryBatchSize > 0
-		? std::max<size_t>(1, options.queryBatchSize)
+	const size_t batchSize = options._queryBatchSize > 0
+		? std::max<size_t>(1, options._queryBatchSize)
 		: queries.size();
-	const float clockRate = deviceClockRateKHz(_state->device);
+	const float clockRate = deviceClockRateKHz(_state->_device);
 
 	ensureQueryBuffers(*_state, batchSize);
 
@@ -741,82 +741,82 @@ PointGpu::QueryResult PointGpu::RegularGrid::query(const std::vector<Query>& que
 		for (size_t i = 0; i < currentBatch; ++i)
 			hostQueries.push_back(makeDeviceQuery(queries[offset + i]));
 		const bool batchHasKnn = std::any_of(hostQueries.begin(), hostQueries.end(), [](const DeviceQuery& query) {
-			return query.type == static_cast<int>(PointGpu::QueryType::Knn);
+			return query._type == static_cast<int>(PointGpu::QueryType::Knn);
 		});
 
-		CudaHelper::checkError(cudaMemcpy(_state->queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
+		CudaHelper::checkError(cudaMemcpy(_state->_queryBuffer, hostQueries.data(), sizeof(DeviceQuery) * currentBatch, cudaMemcpyHostToDevice));
 		const dim3 queryBlocks(static_cast<unsigned int>(divUp(currentBatch, ThreadsPerBlock)));
 		queryKernel<<<queryBlocks, ThreadsPerBlock>>>(
-			_state->points,
-			_state->sortedIndices,
-			_state->pointCount,
-			_state->cellStarts,
-			_state->cellEnds,
-			_state->dimX,
-			_state->dimY,
-			_state->dimZ,
-			_state->minX,
-			_state->minY,
-			_state->minZ,
-			_state->extentX,
-			_state->extentY,
-			_state->extentZ,
-			_state->queryBuffer,
+			_state->_points,
+			_state->_sortedIndices,
+			_state->_pointCount,
+			_state->_cellStarts,
+			_state->_cellEnds,
+			_state->_dimX,
+			_state->_dimY,
+			_state->_dimZ,
+			_state->_minX,
+			_state->_minY,
+			_state->_minZ,
+			_state->_extentX,
+			_state->_extentY,
+			_state->_extentZ,
+			_state->_queryBuffer,
 			currentBatch,
 			clockRate,
-			_state->sampleBuffer);
+			_state->_sampleBuffer);
 		CudaHelper::synchronize("regularGridQueryKernel");
 		if (batchHasKnn)
 		{
 			PointGpu::bruteForceKnnKernel<<<static_cast<unsigned int>(currentBatch), ThreadsPerBlock, sizeof(float) * ThreadsPerBlock>>>(
-				_state->points,
-				_state->pointCount,
-				_state->queryBuffer,
+				_state->_points,
+				_state->_pointCount,
+				_state->_queryBuffer,
 				currentBatch,
 				clockRate,
-				_state->sampleBuffer);
+				_state->_sampleBuffer);
 			CudaHelper::synchronize("regularGridKnnQueryKernel");
 		}
 
 		hostSamples.resize(currentBatch);
-		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
+		CudaHelper::checkError(cudaMemcpy(hostSamples.data(), _state->_sampleBuffer, sizeof(DeviceQuerySample) * currentBatch, cudaMemcpyDeviceToHost));
 		for (const DeviceQuerySample& sample : hostSamples)
 		{
 			QuerySample converted;
-			converted.visitedNodes = static_cast<size_t>(sample.visitedNodes);
-			converted.testedPoints = static_cast<size_t>(sample.testedPoints);
-			converted.returnedPoints = static_cast<size_t>(sample.returnedPoints);
-			converted.elapsedMs = sample.elapsedMs;
-			result.samples.push_back(converted);
+			converted._visitedNodes = static_cast<size_t>(sample._visitedNodes);
+			converted._testedPoints = static_cast<size_t>(sample._testedPoints);
+			converted._returnedPoints = static_cast<size_t>(sample._returnedPoints);
+			converted._elapsedMs = sample._elapsedMs;
+			result._samples.push_back(converted);
 		}
 	}
 
-	result.gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
+	result._gpuQueryTimeMs = CudaHelper::stopTimer(queryBegin, queryEnd);
 	cudaEventDestroy(queryBegin);
 	cudaEventDestroy(queryEnd);
 
-	result.metrics = summarizeGpuSamples(result.samples);
+	result._metrics = summarizeGpuSamples(result._samples);
 	return result;
 }
 
 bool PointGpu::RegularGrid::built() const
 {
-	return _state && _state->cellCount > 0;
+	return _state && _state->_cellCount > 0;
 }
 
 size_t PointGpu::RegularGrid::pointCount() const
 {
-	return _state ? _state->pointCount : 0;
+	return _state ? _state->_pointCount : 0;
 }
 
 size_t PointGpu::RegularGrid::cellCount() const
 {
-	return _state ? _state->cellCount : 0;
+	return _state ? _state->_cellCount : 0;
 }
 
 glm::uvec3 PointGpu::RegularGrid::dimensions() const
 {
 	if (!_state)
 		return glm::uvec3(0);
-	return glm::uvec3(_state->dimX, _state->dimY, _state->dimZ);
+	return glm::uvec3(_state->_dimX, _state->_dimY, _state->_dimZ);
 }

@@ -23,7 +23,7 @@ int PointGpu::BIH::deviceCount()
 PointGpu::BuildResult PointGpu::BIH::build(const PointCloud& cloud, const SchemaConfig& schema, const Options& options)
 {
 	Options bihOptions = options;
-	bihOptions.builder = "bih";
+	bihOptions._builder = "bih";
 	return _index->build(cloud, schema, bihOptions);
 }
 

@@ -17,20 +17,20 @@ static bool parseRungSpec(const std::string& token, Experiments::RungSpec& outRu
 	if (parts.size() < 3)
 		return false;
 
-	outRung.name = parts[0];
-	try { outRung.queryCountOverride = static_cast<size_t>(std::stoull(parts[1])); }
+	outRung._name = parts[0];
+	try { outRung._queryCountOverride = static_cast<size_t>(std::stoull(parts[1])); }
 	catch (...) { return false; }
 
 	const std::string& mode = parts[2];
 	if (mode == "visit" || mode == "visit-proxy" || mode == "proxy")
 	{
-		outRung.useVisitProxy = true;
-		if (outRung.visitProxyAlpha <= 0.0)
-			outRung.visitProxyAlpha = 0.1;
+		outRung._useVisitProxy = true;
+		if (outRung._visitProxyAlpha <= 0.0)
+			outRung._visitProxyAlpha = 0.1;
 	}
 	else if (mode == "latency")
 	{
-		outRung.useVisitProxy = false;
+		outRung._useVisitProxy = false;
 	}
 	else
 	{
@@ -39,7 +39,7 @@ static bool parseRungSpec(const std::string& token, Experiments::RungSpec& outRu
 
 	if (parts.size() >= 4 && !parts[3].empty())
 	{
-		try { outRung.advanceTopK = static_cast<size_t>(std::stoull(parts[3])); }
+		try { outRung._advanceTopK = static_cast<size_t>(std::stoull(parts[3])); }
 		catch (...) { return false; }
 	}
 	return true;
@@ -139,58 +139,58 @@ static std::vector<std::string> splitPathList(const std::string& value)
 }
 
 AppConfig::AppConfig()
-	: pointOptions(defaultPointOptions()),
-	  schemaSearchOptions(defaultSchemaSearchOptions())
+	: _pointOptions(defaultPointOptions()),
+	  _schemaSearchOptions(defaultSchemaSearchOptions())
 {
 }
 
 PointBenchmark::Options AppConfig::defaultPointOptions()
 {
 	PointBenchmark::Options options;
-	options.inputPath = AppDefaults::POINT_INPUT_PATH;
-	options.schemaPath = AppDefaults::POINT_SCHEMA_PATH;
-	options.schemaPaths = splitPathList(AppDefaults::POINT_SCHEMA_PATHS);
-	options.outputPath = AppDefaults::POINT_OUTPUT_PATH;
-	options.csvPath = AppDefaults::POINT_CSV_OUTPUT_PATH;
-	options.modelPath = AppDefaults::POINT_MODEL_PATH;
-	options.workloadProfilePath = AppDefaults::POINT_WORKLOAD_PROFILE_PATH;
-	options.useBinaryCache = AppDefaults::POINT_USE_BINARY_CACHE;
-	options.rebuildBinaryCache = AppDefaults::POINT_REBUILD_BINARY_CACHE;
-	options.pauseAtEnd = AppDefaults::PAUSE_AT_END;
-	options.queryCount = AppDefaults::POINT_QUERY_COUNT;
-	options.queryK = AppDefaults::POINT_QUERY_K;
-	options.querySeed = AppDefaults::POINT_QUERY_SEED;
-	options.enableLeafMicroIndexes = AppDefaults::ENABLE_LEAF_MICRO_INDEXES;
-	options.leafMicroIndexThreshold = AppDefaults::LEAF_MICRO_INDEX_THRESHOLD;
+	options._inputPath = AppDefaults::POINT_INPUT_PATH;
+	options._schemaPath = AppDefaults::POINT_SCHEMA_PATH;
+	options._schemaPaths = splitPathList(AppDefaults::POINT_SCHEMA_PATHS);
+	options._outputPath = AppDefaults::POINT_OUTPUT_PATH;
+	options._csvPath = AppDefaults::POINT_CSV_OUTPUT_PATH;
+	options._modelPath = AppDefaults::POINT_MODEL_PATH;
+	options._workloadProfilePath = AppDefaults::POINT_WORKLOAD_PROFILE_PATH;
+	options._useBinaryCache = AppDefaults::POINT_USE_BINARY_CACHE;
+	options._rebuildBinaryCache = AppDefaults::POINT_REBUILD_BINARY_CACHE;
+	options._pauseAtEnd = AppDefaults::PAUSE_AT_END;
+	options._queryCount = AppDefaults::POINT_QUERY_COUNT;
+	options._queryK = AppDefaults::POINT_QUERY_K;
+	options._querySeed = AppDefaults::POINT_QUERY_SEED;
+	options._enableLeafMicroIndexes = AppDefaults::ENABLE_LEAF_MICRO_INDEXES;
+	options._leafMicroIndexThreshold = AppDefaults::LEAF_MICRO_INDEX_THRESHOLD;
 	return options;
 }
 
 Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 {
 	Experiments::SchemaSearchOptions options;
-	options.schemaPaths = splitPathList(AppDefaults::SCHEMA_SEARCH_SCHEMA_PATHS);
-	options.workloadPaths = splitPathList(AppDefaults::SCHEMA_SEARCH_WORKLOAD_PATHS);
-	options.csvPath = AppDefaults::SCHEMA_SEARCH_CSV_PATH;
-	options.bestCsvPath = AppDefaults::SCHEMA_SEARCH_BEST_CSV_PATH;
-	options.paretoCsvPath = AppDefaults::SCHEMA_SEARCH_PARETO_CSV_PATH;
-	options.explainReportPath = AppDefaults::SCHEMA_SEARCH_EXPLAIN_REPORT_PATH;
-	options.syntheticScale = AppDefaults::SCHEMA_SEARCH_SYNTHETIC_SCALE;
-	options.queryCountOverride = AppDefaults::SCHEMA_SEARCH_QUERY_COUNT;
-	options.querySeed = AppDefaults::POINT_QUERY_SEED;
-	options.rankModelPath = AppDefaults::SCHEMA_SEARCH_RANK_MODEL_PATH;
-	options.generation.count = AppDefaults::SCHEMA_SEARCH_GENERATED_COUNT;
-	options.benchmarkTopK = AppDefaults::SCHEMA_SEARCH_BENCHMARK_TOP_K;
-	options.evaluator = AppDefaults::SCHEMA_SEARCH_EVALUATOR;
-	options.cuda.device = AppDefaults::SCHEMA_SEARCH_CUDA_DEVICE;
-	options.cuda.builder = AppDefaults::SCHEMA_SEARCH_CUDA_BUILDER;
-	options.autoConditions.proxyCandidateCount = AppDefaults::AUTO_CONDITION_PROXY_CANDIDATES;
-	options.autoConditions.proxyPointCap = AppDefaults::AUTO_CONDITION_PROXY_POINTS;
-	options.autoConditions.proxyQueryCount = AppDefaults::AUTO_CONDITION_PROXY_QUERIES;
-	options.autoConditions.finalTopK = AppDefaults::AUTO_CONDITION_FINAL_TOP_K;
-	options.autoConditions.confirmationTopK = AppDefaults::AUTO_CONDITION_CONFIRM_TOP_K;
-	options.enableLeafMicroIndexes = AppDefaults::ENABLE_LEAF_MICRO_INDEXES;
-	options.leafMicroIndexThreshold = AppDefaults::LEAF_MICRO_INDEX_THRESHOLD;
-	options.pauseAtEnd = AppDefaults::PAUSE_AT_END;
+	options._schemaPaths = splitPathList(AppDefaults::SCHEMA_SEARCH_SCHEMA_PATHS);
+	options._workloadPaths = splitPathList(AppDefaults::SCHEMA_SEARCH_WORKLOAD_PATHS);
+	options._csvPath = AppDefaults::SCHEMA_SEARCH_CSV_PATH;
+	options._bestCsvPath = AppDefaults::SCHEMA_SEARCH_BEST_CSV_PATH;
+	options._paretoCsvPath = AppDefaults::SCHEMA_SEARCH_PARETO_CSV_PATH;
+	options._explainReportPath = AppDefaults::SCHEMA_SEARCH_EXPLAIN_REPORT_PATH;
+	options._syntheticScale = AppDefaults::SCHEMA_SEARCH_SYNTHETIC_SCALE;
+	options._queryCountOverride = AppDefaults::SCHEMA_SEARCH_QUERY_COUNT;
+	options._querySeed = AppDefaults::POINT_QUERY_SEED;
+	options._rankModelPath = AppDefaults::SCHEMA_SEARCH_RANK_MODEL_PATH;
+	options._generation._count = AppDefaults::SCHEMA_SEARCH_GENERATED_COUNT;
+	options._benchmarkTopK = AppDefaults::SCHEMA_SEARCH_BENCHMARK_TOP_K;
+	options._evaluator = AppDefaults::SCHEMA_SEARCH_EVALUATOR;
+	options._cuda._device = AppDefaults::SCHEMA_SEARCH_CUDA_DEVICE;
+	options._cuda._builder = AppDefaults::SCHEMA_SEARCH_CUDA_BUILDER;
+	options._autoConditions._proxyCandidateCount = AppDefaults::AUTO_CONDITION_PROXY_CANDIDATES;
+	options._autoConditions._proxyPointCap = AppDefaults::AUTO_CONDITION_PROXY_POINTS;
+	options._autoConditions._proxyQueryCount = AppDefaults::AUTO_CONDITION_PROXY_QUERIES;
+	options._autoConditions._finalTopK = AppDefaults::AUTO_CONDITION_FINAL_TOP_K;
+	options._autoConditions._confirmationTopK = AppDefaults::AUTO_CONDITION_CONFIRM_TOP_K;
+	options._enableLeafMicroIndexes = AppDefaults::ENABLE_LEAF_MICRO_INDEXES;
+	options._leafMicroIndexThreshold = AppDefaults::LEAF_MICRO_INDEX_THRESHOLD;
+	options._pauseAtEnd = AppDefaults::PAUSE_AT_END;
 	return options;
 }
 
@@ -204,464 +204,464 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		const std::string arg = argv[i];
 		if (arg == "--help" || arg == "-h")
 		{
-			config.showHelp = true;
+			config._showHelp = true;
 		}
 		else if (arg == "--run-tests")
 		{
-			config.runTests = true;
-			config.pointOptions.pauseAtEnd = false;
-			config.schemaSearchOptions.pauseAtEnd = false;
+			config._runTests = true;
+			config._pointOptions._pauseAtEnd = false;
+			config._schemaSearchOptions._pauseAtEnd = false;
 		}
 		else if (arg == "--gui")
 		{
-			config.mode = "gui";
+			config._mode = "gui";
 			modeWasSpecified = true;
 		}
 		else if (arg == "--no-pause")
 		{
-			config.pointOptions.pauseAtEnd = false;
-			config.schemaSearchOptions.pauseAtEnd = false;
+			config._pointOptions._pauseAtEnd = false;
+			config._schemaSearchOptions._pauseAtEnd = false;
 		}
 		else if (arg == "--no-cache")
 		{
-			config.pointOptions.useBinaryCache = false;
-			config.schemaSearchOptions.useBinaryCache = false;
+			config._pointOptions._useBinaryCache = false;
+			config._schemaSearchOptions._useBinaryCache = false;
 		}
 		else if (arg == "--rebuild-cache")
 		{
-			config.pointOptions.useBinaryCache = true;
-			config.pointOptions.rebuildBinaryCache = true;
-			config.schemaSearchOptions.useBinaryCache = true;
-			config.schemaSearchOptions.rebuildBinaryCache = true;
+			config._pointOptions._useBinaryCache = true;
+			config._pointOptions._rebuildBinaryCache = true;
+			config._schemaSearchOptions._useBinaryCache = true;
+			config._schemaSearchOptions._rebuildBinaryCache = true;
 		}
 		else if (arg == "--mode" && i + 1 < argc)
 		{
-			config.mode = argv[++i];
+			config._mode = argv[++i];
 			modeWasSpecified = true;
 		}
 		else if (arg == "--input" && i + 1 < argc)
 		{
-			config.pointOptions.inputPath = argv[++i];
-			config.schemaSearchOptions.inputPaths.clear();
-			config.schemaSearchOptions.inputPaths.push_back(config.pointOptions.inputPath);
+			config._pointOptions._inputPath = argv[++i];
+			config._schemaSearchOptions._inputPaths.clear();
+			config._schemaSearchOptions._inputPaths.push_back(config._pointOptions._inputPath);
 			if (!modeWasSpecified)
-				config.mode = "points";
+				config._mode = "points";
 		}
 		else if (arg == "--schema" && i + 1 < argc)
 		{
-			config.pointOptions.schemaPath = argv[++i];
-			config.pointOptions.schemaPaths.clear();
-			config.schemaSearchOptions.schemaPaths.clear();
-			config.schemaSearchOptions.schemaPaths.push_back(config.pointOptions.schemaPath);
+			config._pointOptions._schemaPath = argv[++i];
+			config._pointOptions._schemaPaths.clear();
+			config._schemaSearchOptions._schemaPaths.clear();
+			config._schemaSearchOptions._schemaPaths.push_back(config._pointOptions._schemaPath);
 		}
 		else if (arg == "--schemas" && i + 1 < argc)
 		{
-			config.pointOptions.schemaPaths = splitPathList(argv[++i]);
-			config.schemaSearchOptions.schemaPaths = config.pointOptions.schemaPaths;
+			config._pointOptions._schemaPaths = splitPathList(argv[++i]);
+			config._schemaSearchOptions._schemaPaths = config._pointOptions._schemaPaths;
 		}
 		else if (arg == "--workloads" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.workloadPaths = splitPathList(argv[++i]);
+			config._schemaSearchOptions._workloadPaths = splitPathList(argv[++i]);
 		}
 		else if (arg == "--model" && i + 1 < argc)
 		{
-			config.pointOptions.modelPath = argv[++i];
-			config.schemaSearchOptions.rankModelPath = config.pointOptions.modelPath;
+			config._pointOptions._modelPath = argv[++i];
+			config._schemaSearchOptions._rankModelPath = config._pointOptions._modelPath;
 		}
 		else if (arg == "--rank-model" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.rankModelPath = argv[++i];
+			config._schemaSearchOptions._rankModelPath = argv[++i];
 		}
 		else if (arg == "--workload-profile" && i + 1 < argc)
 		{
-			config.pointOptions.workloadProfilePath = argv[++i];
+			config._pointOptions._workloadProfilePath = argv[++i];
 		}
 		else if (arg == "--no-synthetic")
 		{
-			config.schemaSearchOptions.includeSyntheticDatasets = false;
+			config._schemaSearchOptions._includeSyntheticDatasets = false;
 		}
 		else if (arg == "--synthetic-scale" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.syntheticScale = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._syntheticScale = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generate-schemas" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.count = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._generation._count = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-only")
 		{
-			config.schemaSearchOptions.includeConfiguredSchemas = false;
+			config._schemaSearchOptions._includeConfiguredSchemas = false;
 		}
 		else if (arg == "--deep-nested-search")
 		{
-			config.schemaSearchOptions.deepNestedSearch = true;
-			config.schemaSearchOptions.evaluator = "cpu";
-			config.schemaSearchOptions.rankModelPath.clear();
-			config.schemaSearchOptions.includeConfiguredSchemas = false;
-			config.schemaSearchOptions.includeBaselineSchemas = true;
-			config.schemaSearchOptions.autoConditions.enabled = true;
-			config.schemaSearchOptions.autoConditions.proxyCandidateCount = 2048;
-			config.schemaSearchOptions.autoConditions.proxyPointCap = 262144;
-			config.schemaSearchOptions.autoConditions.proxyQueryCount = 8;
-			config.schemaSearchOptions.autoConditions.finalTopK = 128;
-			config.schemaSearchOptions.autoConditions.confirmationTopK = 24;
-			config.schemaSearchOptions.generation.count = 2048;
-			config.schemaSearchOptions.generation.minBlocks = 2;
-			config.schemaSearchOptions.generation.maxBlocks = std::max<size_t>(3, config.schemaSearchOptions.generation.maxBlocks);
-			config.schemaSearchOptions.generation.conditionalLevels = true;
-			config.schemaSearchOptions.generation.conditionalProbability = std::max(0.75, config.schemaSearchOptions.generation.conditionalProbability);
-			config.schemaSearchOptions.queryCountOverride = 256;
-			if (config.schemaSearchOptions.scoreCachePath.empty())
-				config.schemaSearchOptions.scoreCachePath = "results/deep_nested_score_cache.jsonl";
-			config.schemaSearchOptions.cuda.device = 0;
-			config.schemaSearchOptions.cuda.builder = "mixed";
+			config._schemaSearchOptions._deepNestedSearch = true;
+			config._schemaSearchOptions._evaluator = "cpu";
+			config._schemaSearchOptions._rankModelPath.clear();
+			config._schemaSearchOptions._includeConfiguredSchemas = false;
+			config._schemaSearchOptions._includeBaselineSchemas = true;
+			config._schemaSearchOptions._autoConditions._enabled = true;
+			config._schemaSearchOptions._autoConditions._proxyCandidateCount = 2048;
+			config._schemaSearchOptions._autoConditions._proxyPointCap = 262144;
+			config._schemaSearchOptions._autoConditions._proxyQueryCount = 8;
+			config._schemaSearchOptions._autoConditions._finalTopK = 128;
+			config._schemaSearchOptions._autoConditions._confirmationTopK = 24;
+			config._schemaSearchOptions._generation._count = 2048;
+			config._schemaSearchOptions._generation._minBlocks = 2;
+			config._schemaSearchOptions._generation._maxBlocks = std::max<size_t>(3, config._schemaSearchOptions._generation._maxBlocks);
+			config._schemaSearchOptions._generation._conditionalLevels = true;
+			config._schemaSearchOptions._generation._conditionalProbability = std::max(0.75, config._schemaSearchOptions._generation._conditionalProbability);
+			config._schemaSearchOptions._queryCountOverride = 256;
+			if (config._schemaSearchOptions._scoreCachePath.empty())
+				config._schemaSearchOptions._scoreCachePath = "results/deep_nested_score_cache.jsonl";
+			config._schemaSearchOptions._cuda._device = 0;
+			config._schemaSearchOptions._cuda._builder = "mixed";
 		}
 		else if (arg == "--benchmark-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.benchmarkTopK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._benchmarkTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-min-blocks" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.minBlocks = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._generation._minBlocks = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-max-blocks" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.maxBlocks = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._generation._maxBlocks = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-max-depth" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.maxDepth = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._generation._maxDepth = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-min-leaf" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.minLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._generation._minLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-max-leaf" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.maxLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._generation._maxLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--generated-conditional")
 		{
-			config.schemaSearchOptions.generation.conditionalLevels = true;
+			config._schemaSearchOptions._generation._conditionalLevels = true;
 		}
 		else if (arg == "--generated-condition-probability" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.conditionalProbability = std::stod(argv[++i]);
+			config._schemaSearchOptions._generation._conditionalProbability = std::stod(argv[++i]);
 		}
 		else if (arg == "--generated-adaptive-leaf-capacity")
 		{
-			config.schemaSearchOptions.generation.adaptiveLeafCapacity = true;
+			config._schemaSearchOptions._generation._adaptiveLeafCapacity = true;
 		}
 		else if (arg == "--generated-adaptive-leaf-probability" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.adaptiveLeafProbability = std::stod(argv[++i]);
+			config._schemaSearchOptions._generation._adaptiveLeafProbability = std::stod(argv[++i]);
 		}
 		else if (arg == "--generated-seed" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+			config._schemaSearchOptions._generation._seed = static_cast<uint32_t>(std::stoul(argv[++i]));
 		}
 		else if (arg == "--generated-schema-dir" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.outputDirectory = argv[++i];
+			config._schemaSearchOptions._generation._outputDirectory = argv[++i];
 		}
 		else if (arg == "--primitive-profile" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.generation.primitiveProfile = argv[++i];
+			config._schemaSearchOptions._generation._primitiveProfile = argv[++i];
 		}
 		else if (arg == "--query-minimal-primitives")
 		{
-			config.schemaSearchOptions.generation.primitiveProfile = "query_minimal_cpu";
+			config._schemaSearchOptions._generation._primitiveProfile = "query_minimal_cpu";
 		}
 		else if (arg == "--cuda-query-full-primitives")
 		{
-			config.schemaSearchOptions.generation.primitiveProfile = "cuda_query_full";
+			config._schemaSearchOptions._generation._primitiveProfile = "cuda_query_full";
 		}
 		else if (arg == "--all-primitives")
 		{
-			config.schemaSearchOptions.generation.primitiveProfile = "all";
+			config._schemaSearchOptions._generation._primitiveProfile = "all";
 		}
 		else if (arg == "--auto-conditions")
 		{
-			config.schemaSearchOptions.autoConditions.enabled = true;
-			config.schemaSearchOptions.generation.conditionalLevels = true;
+			config._schemaSearchOptions._autoConditions._enabled = true;
+			config._schemaSearchOptions._generation._conditionalLevels = true;
 		}
 		else if (arg == "--condition-proxy-candidates" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.proxyCandidateCount = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._autoConditions._proxyCandidateCount = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--condition-proxy-points" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.proxyPointCap = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._autoConditions._proxyPointCap = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--condition-proxy-queries" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.proxyQueryCount = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._autoConditions._proxyQueryCount = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--condition-final-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.finalTopK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._autoConditions._finalTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--condition-confirm-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.confirmationTopK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._autoConditions._confirmationTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--condition-output-dir" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.outputDirectory = argv[++i];
+			config._schemaSearchOptions._autoConditions._outputDirectory = argv[++i];
 		}
 		else if (arg == "--condition-selector-output" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.autoConditions.selectorOutputPath = argv[++i];
+			config._schemaSearchOptions._autoConditions._selectorOutputPath = argv[++i];
 		}
 		else if (arg == "--optimize-schemas")
 		{
-			config.schemaSearchOptions.evolution.enabled = true;
+			config._schemaSearchOptions._evolution._enabled = true;
 		}
 		else if (arg == "--optimizer-generations" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.generations = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._generations = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--optimizer-population" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.populationSize = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._populationSize = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--optimizer-elites" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.eliteCount = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._eliteCount = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--optimizer-mutation-rate" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.mutationRate = std::stod(argv[++i]);
+			config._schemaSearchOptions._evolution._mutationRate = std::stod(argv[++i]);
 		}
 		else if (arg == "--optimizer-random-fraction" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.randomImmigrationRate = std::stod(argv[++i]);
+			config._schemaSearchOptions._evolution._randomImmigrationRate = std::stod(argv[++i]);
 		}
 		else if (arg == "--optimizer-seed" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.seed = static_cast<uint32_t>(std::stoul(argv[++i]));
+			config._schemaSearchOptions._evolution._seed = static_cast<uint32_t>(std::stoul(argv[++i]));
 		}
 		else if (arg == "--optimizer-crossover-rate" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.crossoverRate = std::stod(argv[++i]);
+			config._schemaSearchOptions._evolution._crossoverRate = std::stod(argv[++i]);
 		}
 		else if (arg == "--optimizer-nsga2")
 		{
-			config.schemaSearchOptions.evolution.useNsga2Ranking = true;
+			config._schemaSearchOptions._evolution._useNsga2Ranking = true;
 		}
 		else if (arg == "--no-optimizer-nsga2")
 		{
-			config.schemaSearchOptions.evolution.useNsga2Ranking = false;
+			config._schemaSearchOptions._evolution._useNsga2Ranking = false;
 		}
 		else if (arg == "--repair-mutations")
 		{
-			config.schemaSearchOptions.evolution.repairMutations = true;
+			config._schemaSearchOptions._evolution._repairMutations = true;
 		}
 		else if (arg == "--no-repair-mutations")
 		{
-			config.schemaSearchOptions.evolution.repairMutations = false;
+			config._schemaSearchOptions._evolution._repairMutations = false;
 		}
 		else if (arg == "--repair-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.repairTopK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._repairTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--repair-per-candidate" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.repairPerCandidate = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._repairPerCandidate = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--rungs" && i + 1 < argc)
 		{
 			const std::string spec = argv[++i];
-			if (!parseRungSchedule(spec, config.schemaSearchOptions.evolution.rungSchedule.rungs))
+			if (!parseRungSchedule(spec, config._schemaSearchOptions._evolution._rungSchedule._rungs))
 				throw std::runtime_error("--rungs expects 'name:queries:visit|latency:advance,...' (e.g. proxy:4:visit:32,full:16:latency:8,confirm:64:latency:0)");
 		}
 		else if (arg == "--rung-surrogate" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.rungSchedule.surrogateModelPath = argv[++i];
+			config._schemaSearchOptions._evolution._rungSchedule._surrogateModelPath = argv[++i];
 		}
 		else if (arg == "--rung-surrogate-pool" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.rungSchedule.surrogateCandidatePool = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._rungSchedule._surrogateCandidatePool = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--rung-surrogate-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.rungSchedule.surrogateProposalsPerStep = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._rungSchedule._surrogateProposalsPerStep = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--refine-thresholds")
 		{
-			config.schemaSearchOptions.evolution.refineThresholds = true;
+			config._schemaSearchOptions._evolution._refineThresholds = true;
 		}
 		else if (arg == "--refine-thresholds-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.refineThresholdsTopK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._refineThresholdsTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--refine-thresholds-evals" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.refineThresholdsEvaluations = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._evolution._refineThresholdsEvaluations = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--refine-thresholds-sigma" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.refineThresholdsSigma0 = std::stod(argv[++i]);
+			config._schemaSearchOptions._evolution._refineThresholdsSigma0 = std::stod(argv[++i]);
 		}
 		else if (arg == "--refine-thresholds-seed" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evolution.refineThresholdsSeed = static_cast<uint32_t>(std::stoul(argv[++i]));
+			config._schemaSearchOptions._evolution._refineThresholdsSeed = static_cast<uint32_t>(std::stoul(argv[++i]));
 		}
 		else if (arg == "--evaluator" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.evaluator = argv[++i];
+			config._schemaSearchOptions._evaluator = argv[++i];
 		}
 		else if (arg == "--cuda-device" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.cuda.device = std::stoi(argv[++i]);
+			config._schemaSearchOptions._cuda._device = std::stoi(argv[++i]);
 		}
 		else if (arg == "--cuda-builder" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.cuda.builder = argv[++i];
+			config._schemaSearchOptions._cuda._builder = argv[++i];
 		}
 		else if (arg == "--cuda-query-batch" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.cuda.queryBatchSize = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._cuda._queryBatchSize = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--cuda-memory-budget-mb" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.cuda.memoryBudgetMb = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._cuda._memoryBudgetMb = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--cuda-knn-backend" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.cuda.knnBackend = argv[++i];
+			config._schemaSearchOptions._cuda._knnBackend = argv[++i];
 		}
 		else if (arg == "--score-build-weight" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.weights.lambdaBuild = std::stod(argv[++i]);
-			config.schemaSearchOptions.scoreWeightsOverride = true;
+			config._schemaSearchOptions._weights._lambdaBuild = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-memory-weight" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.weights.lambdaMemory = std::stod(argv[++i]);
-			config.schemaSearchOptions.scoreWeightsOverride = true;
+			config._schemaSearchOptions._weights._lambdaMemory = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-imbalance-weight" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.weights.lambdaImbalance = std::stod(argv[++i]);
-			config.schemaSearchOptions.scoreWeightsOverride = true;
+			config._schemaSearchOptions._weights._lambdaImbalance = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--output" && i + 1 < argc)
 		{
-			config.pointOptions.outputPath = argv[++i];
+			config._pointOptions._outputPath = argv[++i];
 		}
 		else if (arg == "--csv" && i + 1 < argc)
 		{
-			config.pointOptions.csvPath = argv[++i];
-			config.schemaSearchOptions.csvPath = config.pointOptions.csvPath;
+			config._pointOptions._csvPath = argv[++i];
+			config._schemaSearchOptions._csvPath = config._pointOptions._csvPath;
 		}
 		else if (arg == "--query-trace" && i + 1 < argc)
 		{
-			config.pointOptions.queryTracePath = argv[++i];
-			config.schemaSearchOptions.queryTracePath = config.pointOptions.queryTracePath;
+			config._pointOptions._queryTracePath = argv[++i];
+			config._schemaSearchOptions._queryTracePath = config._pointOptions._queryTracePath;
 		}
 		else if (arg == "--no-csv")
 		{
-			config.pointOptions.csvPath.clear();
-			config.schemaSearchOptions.csvPath.clear();
-			config.schemaSearchOptions.bestCsvPath.clear();
-			config.schemaSearchOptions.paretoCsvPath.clear();
+			config._pointOptions._csvPath.clear();
+			config._schemaSearchOptions._csvPath.clear();
+			config._schemaSearchOptions._bestCsvPath.clear();
+			config._schemaSearchOptions._paretoCsvPath.clear();
 		}
 		else if (arg == "--best-csv" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.bestCsvPath = argv[++i];
+			config._schemaSearchOptions._bestCsvPath = argv[++i];
 		}
 		else if (arg == "--pareto-csv" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.paretoCsvPath = argv[++i];
+			config._schemaSearchOptions._paretoCsvPath = argv[++i];
 		}
 		else if (arg == "--explain-report" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.explainReportPath = argv[++i];
+			config._schemaSearchOptions._explainReportPath = argv[++i];
 		}
 		else if (arg == "--confirm-seeds" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.confirmSeeds = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._confirmSeeds = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--confirm-top" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.confirmTopK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._confirmTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--measure-repeats" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.measurementRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
+			config._schemaSearchOptions._measurementRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
 		}
 		else if (arg == "--proxy-correlation-csv" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.proxyCorrelationCsvPath = argv[++i];
+			config._schemaSearchOptions._proxyCorrelationCsvPath = argv[++i];
 		}
 		else if (arg == "--verify-parity")
 		{
-			config.schemaSearchOptions.verifyParity = true;
+			config._schemaSearchOptions._verifyParity = true;
 		}
 		else if (arg == "--estimate-prefilter")
 		{
-			config.schemaSearchOptions.estimatePrefilter = true;
+			config._schemaSearchOptions._estimatePrefilter = true;
 		}
 		else if (arg == "--queries" && i + 1 < argc)
 		{
-			config.pointOptions.queryCount = static_cast<size_t>(std::stoull(argv[++i]));
-			config.schemaSearchOptions.queryCountOverride = config.pointOptions.queryCount;
+			config._pointOptions._queryCount = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._queryCountOverride = config._pointOptions._queryCount;
 		}
 		else if (arg == "--knn-k" && i + 1 < argc)
 		{
-			config.pointOptions.queryK = static_cast<size_t>(std::stoull(argv[++i]));
-			config.schemaSearchOptions.knnKOverride = config.pointOptions.queryK;
+			config._pointOptions._queryK = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._knnKOverride = config._pointOptions._queryK;
 		}
 		else if (arg == "--leaf-micro-indexes")
 		{
-			config.pointOptions.enableLeafMicroIndexes = true;
-			config.schemaSearchOptions.enableLeafMicroIndexes = true;
+			config._pointOptions._enableLeafMicroIndexes = true;
+			config._schemaSearchOptions._enableLeafMicroIndexes = true;
 		}
 		else if (arg == "--leaf-micro-threshold" && i + 1 < argc)
 		{
-			config.pointOptions.leafMicroIndexThreshold = static_cast<size_t>(std::stoull(argv[++i]));
-			config.schemaSearchOptions.leafMicroIndexThreshold = config.pointOptions.leafMicroIndexThreshold;
+			config._pointOptions._leafMicroIndexThreshold = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._leafMicroIndexThreshold = config._pointOptions._leafMicroIndexThreshold;
 		}
 		else if (arg == "--query-seed" && i + 1 < argc)
 		{
-			config.pointOptions.querySeed = static_cast<uint32_t>(std::stoul(argv[++i]));
-			config.schemaSearchOptions.querySeed = config.pointOptions.querySeed;
-			config.schemaSearchOptions.querySeedOverride = true;
+			config._pointOptions._querySeed = static_cast<uint32_t>(std::stoul(argv[++i]));
+			config._schemaSearchOptions._querySeed = config._pointOptions._querySeed;
+			config._schemaSearchOptions._querySeedOverride = true;
 		}
 		else if (arg == "--score-cache" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.scoreCachePath = argv[++i];
+			config._schemaSearchOptions._scoreCachePath = argv[++i];
 		}
 		else if (arg == "--score-visit-proxy")
 		{
-			config.schemaSearchOptions.weights.useVisitProxy = true;
-			config.schemaSearchOptions.scoreWeightsOverride = true;
+			config._schemaSearchOptions._weights._useVisitProxy = true;
+			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-visit-alpha" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.weights.visitProxyAlpha = std::stod(argv[++i]);
-			config.schemaSearchOptions.scoreWeightsOverride = true;
+			config._schemaSearchOptions._weights._visitProxyAlpha = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--parallel" && i + 1 < argc)
 		{
-			config.schemaSearchOptions.parallelDispatch = static_cast<size_t>(std::stoull(argv[++i]));
+			config._schemaSearchOptions._parallelDispatch = static_cast<size_t>(std::stoull(argv[++i]));
 		}
 		else if (arg == "--no-baselines")
 		{
-			config.schemaSearchOptions.includeBaselineSchemas = false;
+			config._schemaSearchOptions._includeBaselineSchemas = false;
 		}
 		else if (arg == "--include-baselines")
 		{
-			config.schemaSearchOptions.includeBaselineSchemas = true;
+			config._schemaSearchOptions._includeBaselineSchemas = true;
 		}
 		else if (arg == "--no-score-cache")
 		{
-			config.schemaSearchOptions.scoreCachePath.clear();
+			config._schemaSearchOptions._scoreCachePath.clear();
 		}
 		else if (arg == "--rebuild-score-cache")
 		{
-			config.schemaSearchOptions.rebuildScoreCache = true;
+			config._schemaSearchOptions._rebuildScoreCache = true;
 		}
 		else
 		{
@@ -670,15 +670,15 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 	}
 
 	const std::string executablePath = argc > 0 ? argv[0] : std::string();
-	config.pointOptions.schemaPath = resolveExistingPath(config.pointOptions.schemaPath, executablePath);
-	config.pointOptions.modelPath = resolveExistingPath(config.pointOptions.modelPath, executablePath);
-	config.schemaSearchOptions.rankModelPath = resolveExistingPath(config.schemaSearchOptions.rankModelPath, executablePath);
-	config.pointOptions.workloadProfilePath = resolveExistingPath(config.pointOptions.workloadProfilePath, executablePath);
-	for (std::string& schemaPath : config.pointOptions.schemaPaths)
+	config._pointOptions._schemaPath = resolveExistingPath(config._pointOptions._schemaPath, executablePath);
+	config._pointOptions._modelPath = resolveExistingPath(config._pointOptions._modelPath, executablePath);
+	config._schemaSearchOptions._rankModelPath = resolveExistingPath(config._schemaSearchOptions._rankModelPath, executablePath);
+	config._pointOptions._workloadProfilePath = resolveExistingPath(config._pointOptions._workloadProfilePath, executablePath);
+	for (std::string& schemaPath : config._pointOptions._schemaPaths)
 		schemaPath = resolveExistingPath(schemaPath, executablePath);
-	for (std::string& schemaPath : config.schemaSearchOptions.schemaPaths)
+	for (std::string& schemaPath : config._schemaSearchOptions._schemaPaths)
 		schemaPath = resolveExistingPath(schemaPath, executablePath);
-	for (std::string& workloadPath : config.schemaSearchOptions.workloadPaths)
+	for (std::string& workloadPath : config._schemaSearchOptions._workloadPaths)
 		workloadPath = resolveExistingPath(workloadPath, executablePath);
 
 	return config;
@@ -794,7 +794,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --no-synthetic              Use only --input datasets in schema-search mode\n"
 		<< "  --no-cache                  Read the source point cloud without using/writing .mdspc\n"
 		<< "  --rebuild-cache             Read the source point cloud and replace the .mdspc cache\n"
-		<< "  --score-cache <path>        Persistent JSONL cache of (schema,dataset,workload)->score; reuses prior runs\n"
+		<< "  --score-cache <path>        Persistent JSONL cache of (schema,dataset,workload)->_score; reuses prior runs\n"
 		<< "  --no-score-cache            Disable score cache lookup/write for this run\n"
 		<< "  --rebuild-score-cache       Delete the score cache file before this run\n"
 		<< "  --run-tests                 Run smoke tests\n"
@@ -803,7 +803,7 @@ void AppConfig::printHelp(std::ostream& output)
 
 bool AppConfig::wantsTests() const
 {
-	return runTests || mode == "tests";
+	return _runTests || _mode == "tests";
 }
 
 std::string AppConfig::resolveExistingPath(const std::string& configuredPath, const std::string& executablePath)
