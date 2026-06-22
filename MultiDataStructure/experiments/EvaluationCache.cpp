@@ -283,26 +283,26 @@ namespace Experiments
 
 	bool EvaluationCache::open(const std::string& filePath, bool readOnly)
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard<std::mutex> lock(_mutex);
 		close();
-		filePath_ = filePath;
-		readOnly_ = readOnly;
-		if (filePath_.empty())
+		_filePath = filePath;
+		_readOnly = readOnly;
+		if (_filePath.empty())
 			return false;
 
 		std::error_code error;
-		const std::filesystem::path path(filePath_);
+		const std::filesystem::path path(_filePath);
 		if (path.has_parent_path())
 			std::filesystem::create_directories(path.parent_path(), error);
 
 		loadFromDisk();
 
-		if (!readOnly_)
+		if (!_readOnly)
 		{
-			appendStream_.open(filePath_, std::ios::out | std::ios::app);
-			if (!appendStream_.is_open())
+			_appendStream.open(_filePath, std::ios::out | std::ios::app);
+			if (!_appendStream.is_open())
 			{
-				readOnly_ = true;
+				_readOnly = true;
 				return false;
 			}
 		}
@@ -311,19 +311,19 @@ namespace Experiments
 
 	void EvaluationCache::close()
 	{
-		if (appendStream_.is_open())
-			appendStream_.close();
-		filePath_.clear();
-		entries_.clear();
-		hits_.store(0);
-		misses_.store(0);
-		readOnly_ = false;
+		if (_appendStream.is_open())
+			_appendStream.close();
+		_filePath.clear();
+		_entries.clear();
+		_hits.store(0);
+		_misses.store(0);
+		_readOnly = false;
 	}
 
 	bool EvaluationCache::loadFromDisk()
 	{
-		entries_.clear();
-		std::ifstream input(filePath_);
+		_entries.clear();
+		std::ifstream input(_filePath);
 		if (!input.is_open())
 			return false;
 
@@ -344,22 +344,22 @@ namespace Experiments
 
 			Entry entry;
 			decodeRecord(object, entry.record);
-			entries_[keyText] = std::move(entry);
+			_entries[keyText] = std::move(entry);
 		}
 		return true;
 	}
 
 	bool EvaluationCache::tryGet(const EvaluationCacheKey& key, SchemaSearchRecord& outRecord) const
 	{
-		if (filePath_.empty())
+		if (_filePath.empty())
 			return false;
 
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard<std::mutex> lock(_mutex);
 		const std::string canonicalKey = key.canonical();
-		const auto it = entries_.find(canonicalKey);
-		if (it == entries_.end())
+		const auto it = _entries.find(canonicalKey);
+		if (it == _entries.end())
 		{
-			misses_.fetch_add(1);
+			_misses.fetch_add(1);
 			return false;
 		}
 
@@ -406,35 +406,35 @@ namespace Experiments
 		outRecord.pointFeatures = pointFeatures;
 		outRecord.workloadFeatures = workloadFeatures;
 
-		hits_.fetch_add(1);
+		_hits.fetch_add(1);
 		return true;
 	}
 
 	void EvaluationCache::put(const EvaluationCacheKey& key, const SchemaSearchRecord& record)
 	{
-		if (filePath_.empty() || readOnly_)
+		if (_filePath.empty() || _readOnly)
 			return;
 
-		std::lock_guard<std::mutex> lock(mutex_);
+		std::lock_guard<std::mutex> lock(_mutex);
 		const std::string canonicalKey = key.canonical();
 		Entry entry;
 		entry.record = record;
-		entries_[canonicalKey] = std::move(entry);
+		_entries[canonicalKey] = std::move(entry);
 		appendLine(canonicalKey, record);
 	}
 
 	void EvaluationCache::appendLine(const std::string& canonicalKey, const SchemaSearchRecord& record)
 	{
-		if (!appendStream_.is_open())
+		if (!_appendStream.is_open())
 			return;
-		appendStream_ << boost::json::serialize(encodeRecord(canonicalKey, record)) << '\n';
-		appendStream_.flush();
+		_appendStream << boost::json::serialize(encodeRecord(canonicalKey, record)) << '\n';
+		_appendStream.flush();
 	}
 
 	size_t EvaluationCache::entryCount() const
 	{
-		std::lock_guard<std::mutex> lock(mutex_);
-		return entries_.size();
+		std::lock_guard<std::mutex> lock(_mutex);
+		return _entries.size();
 	}
 
 	EvaluationCacheKey makeEvaluationCacheKey(
