@@ -285,9 +285,9 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 	{
 		struct NodeCandidate
 		{
-			float _distance = 0.0f;
-			size_t _sequence = 0;
-			const Node* _node = nullptr;
+			float		_distance = 0.0f;
+			size_t		_sequence = 0;
+			const Node*	_node = nullptr;
 		};
 
 		struct NodeCandidateGreater
@@ -323,8 +323,8 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 				{
 					struct MicroCandidate
 					{
-						float _distance = 0.0f;
-						uint32_t _nodeIndex = 0;
+						float		_distance = 0.0f;
+						uint32_t	_nodeIndex = 0;
 					};
 
 					struct MicroCandidateGreater

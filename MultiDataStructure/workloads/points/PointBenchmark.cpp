@@ -167,9 +167,9 @@ static void writeQueryBreakdownJson(std::ostream& stream, const char* name, cons
 
 struct QueryProfileSection
 {
-	std::vector<PointSpatialIndex::QueryStats> _samples;
-	Experiments::QueryMetrics _metrics;
-	QueryBreakdown _breakdown;
+	std::vector<PointSpatialIndex::QueryStats>	_samples;
+	Experiments::QueryMetrics	_metrics;
+	QueryBreakdown	_breakdown;
 
 	void add(const PointSpatialIndex::QueryStats& stats)
 	{
@@ -185,29 +185,29 @@ struct QueryProfileSection
 
 struct QueryTraceSample
 {
-	size_t _queryId = 0;
-	std::string _queryType;
-	bool _hasBounds = false;
-	AABB _bounds;
-	bool _hasCenter = false;
+	size_t		_queryId = 0;
+	std::string	_queryType;
+	bool		_hasBounds = false;
+	AABB		_bounds;
+	bool		_hasCenter = false;
 	glm::vec3 center = glm::vec3(0.0f);
-	float _radius = 0.0f;
-	size_t _k = 0;
-	PointSpatialIndex::QueryStats _stats;
+	float	_radius = 0.0f;
+	size_t	_k = 0;
+	PointSpatialIndex::QueryStats	_stats;
 };
 
 struct QueryProfileSummary
 {
-	size_t _queryCount = 0;
-	size_t _queryK = 0;
-	uint32_t _seed = 0;
-	QueryProfileSection _range;
-	QueryProfileSection _countRange;
-	QueryProfileSection _radius;
-	QueryProfileSection _knn;
-	Experiments::QueryMetrics _mixed;
-	QueryBreakdown _mixedBreakdown;
-	std::vector<QueryTraceSample> _traces;
+	size_t	_queryCount = 0;
+	size_t	_queryK = 0;
+	uint32_t	_seed = 0;
+	QueryProfileSection	_range;
+	QueryProfileSection	_countRange;
+	QueryProfileSection	_radius;
+	QueryProfileSection	_knn;
+	Experiments::QueryMetrics	_mixed;
+	QueryBreakdown	_mixedBreakdown;
+	std::vector<QueryTraceSample>	_traces;
 
 	size_t totalQueries() const
 	{
@@ -234,15 +234,15 @@ struct QueryProfileSummary
 
 struct LoadedSchema
 {
-	std::string _path;
-	SchemaConfig _config;
-	double _schemaLoadMs = 0.0;
+	std::string		_path;
+	SchemaConfig	_config;
+	double			_schemaLoadMs = 0.0;
 };
 
 struct AutoSelectionLog
 {
-	bool _enabled = false;
-	Experiments::SchemaSelection _selection;
+	bool	_enabled = false;
+	Experiments::SchemaSelection	_selection;
 };
 
 static float randomFloat(std::mt19937& rng, float minValue, float maxValue)

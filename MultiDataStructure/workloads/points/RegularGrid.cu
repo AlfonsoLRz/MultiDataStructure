@@ -33,7 +33,7 @@ namespace
 		uint32_t x = 1;
 		uint32_t y = 1;
 		uint32_t z = 1;
-		size_t _cells = 1;
+		size_t	_cells = 1;
 	};
 
 	size_t checkedProduct(uint32_t x, uint32_t y, uint32_t z)
@@ -377,35 +377,35 @@ namespace
 
 struct PointGpu::RegularGrid::DeviceState
 {
-	DevicePoint* _points = nullptr;
-	uint32_t* _keys = nullptr;
-	uint32_t* _sortedKeys = nullptr;
-	uint32_t* _indices = nullptr;
-	uint32_t* _sortedIndices = nullptr;
-	uint32_t* _cellStarts = nullptr;
-	uint32_t* _cellEnds = nullptr;
-	DeviceQuery* _queryBuffer = nullptr;
-	DeviceQuerySample* _sampleBuffer = nullptr;
-	void* _sortTemporary = nullptr;
-	size_t _sortTemporaryBytes = 0;
-	size_t _queryCapacity = 0;
-	size_t _pointCount = 0;
-	size_t _cellCount = 0;
-	size_t _leafCapacity = 1;
-	size_t _baseMemoryBytes = 0;
-	size_t _memoryBytes = 0;
-	uint32_t _dimX = 1;
-	uint32_t _dimY = 1;
-	uint32_t _dimZ = 1;
-	float _minX = 0.0f;
-	float _minY = 0.0f;
-	float _minZ = 0.0f;
-	float _extentX = 0.0f;
-	float _extentY = 0.0f;
-	float _extentZ = 0.0f;
-	int _device = 0;
-	const PointCloud* _cloud = nullptr;
-	bool _pointsReady = false;
+	DevicePoint*		_points = nullptr;
+	uint32_t*			_keys = nullptr;
+	uint32_t*			_sortedKeys = nullptr;
+	uint32_t*			_indices = nullptr;
+	uint32_t*			_sortedIndices = nullptr;
+	uint32_t*			_cellStarts = nullptr;
+	uint32_t*			_cellEnds = nullptr;
+	DeviceQuery*		_queryBuffer = nullptr;
+	DeviceQuerySample*	_sampleBuffer = nullptr;
+	void*				_sortTemporary = nullptr;
+	size_t				_sortTemporaryBytes = 0;
+	size_t				_queryCapacity = 0;
+	size_t				_pointCount = 0;
+	size_t				_cellCount = 0;
+	size_t				_leafCapacity = 1;
+	size_t				_baseMemoryBytes = 0;
+	size_t				_memoryBytes = 0;
+	uint32_t			_dimX = 1;
+	uint32_t			_dimY = 1;
+	uint32_t			_dimZ = 1;
+	float				_minX = 0.0f;
+	float				_minY = 0.0f;
+	float				_minZ = 0.0f;
+	float				_extentX = 0.0f;
+	float				_extentY = 0.0f;
+	float				_extentZ = 0.0f;
+	int					_device = 0;
+	const PointCloud*	_cloud = nullptr;
+	bool				_pointsReady = false;
 };
 
 namespace

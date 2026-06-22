@@ -51,27 +51,27 @@ namespace
 
 	struct DeviceLevelCondition
 	{
-		uint32_t _flags = 0;
-		uint32_t _minPoints = 0;
-		uint32_t _maxPoints = 0;
-		float _minDensity = 0.0f;
-		float _maxDensity = 0.0f;
-		float _minHeightRatio = 0.0f;
-		float _maxHeightRatio = 0.0f;
-		float _minExtentX = 0.0f;
-		float _maxExtentX = 0.0f;
-		float _minExtentY = 0.0f;
-		float _maxExtentY = 0.0f;
-		float _minExtentZ = 0.0f;
-		float _maxExtentZ = 0.0f;
-		float _minAnisotropy = 0.0f;
-		float _maxAnisotropy = 0.0f;
+		uint32_t	_flags = 0;
+		uint32_t	_minPoints = 0;
+		uint32_t	_maxPoints = 0;
+		float		_minDensity = 0.0f;
+		float		_maxDensity = 0.0f;
+		float		_minHeightRatio = 0.0f;
+		float		_maxHeightRatio = 0.0f;
+		float		_minExtentX = 0.0f;
+		float		_maxExtentX = 0.0f;
+		float		_minExtentY = 0.0f;
+		float		_maxExtentY = 0.0f;
+		float		_minExtentZ = 0.0f;
+		float		_maxExtentZ = 0.0f;
+		float		_minAnisotropy = 0.0f;
+		float		_maxAnisotropy = 0.0f;
 	};
 
 	struct HostActiveTypeAccumulator
 	{
-		size_t _nodes = 0;
-		size_t _leafPoints = 0;
+		size_t	_nodes = 0;
+		size_t	_leafPoints = 0;
 	};
 
 	size_t divUp(size_t value, size_t divisor)
@@ -1398,38 +1398,38 @@ namespace
 
 struct PointGpu::MixedTree::DeviceState
 {
-	DevicePoint* _points = nullptr;
-	uint32_t* _indices = nullptr;
-	uint32_t* _tempIndices = nullptr;
-	LinearMixedTreeNode* _nodes = nullptr;
-	uint32_t* _childCounts = nullptr;
-	uint32_t* _writeCursors = nullptr;
-	int* _splitTypes = nullptr;
-	uint32_t* _leafCapacities = nullptr;
-	uint32_t* _minSplits = nullptr;
-	DeviceLevelCondition* _conditions = nullptr;
-	uint32_t* _schemaBlockEndDepths = nullptr;
-	uint32_t* _nodeCounter = nullptr;
-	uint32_t* _overflowFlag = nullptr;
-	DeviceQuery* _queryBuffer = nullptr;
-	DeviceQuerySample* _sampleBuffer = nullptr;
-	size_t _pointCount = 0;
-	size_t _nodeCapacity = 0;
-	size_t _allocatedNodes = 0;
-	size_t _actualNodes = 0;
-	size_t _actualLeaves = 0;
-	size_t _leafCapacity = 1;
-	size_t _minSplit = 2;
-	size_t _maxDepth = 0;
-	size_t _schemaDepthLimit = 0;
-	size_t _childSlotStride = 2;
-	size_t _levelScratchNodeCapacity = 0;
-	size_t _queryCapacity = 0;
-	size_t _baseMemoryBytes = 0;
-	size_t _memoryBytes = 0;
-	int _device = 0;
-	const PointCloud* _cloud = nullptr;
-	bool _pointsReady = false;
+	DevicePoint*			_points = nullptr;
+	uint32_t*				_indices = nullptr;
+	uint32_t*				_tempIndices = nullptr;
+	LinearMixedTreeNode*	_nodes = nullptr;
+	uint32_t*				_childCounts = nullptr;
+	uint32_t*				_writeCursors = nullptr;
+	int*					_splitTypes = nullptr;
+	uint32_t*				_leafCapacities = nullptr;
+	uint32_t*				_minSplits = nullptr;
+	DeviceLevelCondition*	_conditions = nullptr;
+	uint32_t*				_schemaBlockEndDepths = nullptr;
+	uint32_t*				_nodeCounter = nullptr;
+	uint32_t*				_overflowFlag = nullptr;
+	DeviceQuery*			_queryBuffer = nullptr;
+	DeviceQuerySample*		_sampleBuffer = nullptr;
+	size_t					_pointCount = 0;
+	size_t					_nodeCapacity = 0;
+	size_t					_allocatedNodes = 0;
+	size_t					_actualNodes = 0;
+	size_t					_actualLeaves = 0;
+	size_t					_leafCapacity = 1;
+	size_t					_minSplit = 2;
+	size_t					_maxDepth = 0;
+	size_t					_schemaDepthLimit = 0;
+	size_t					_childSlotStride = 2;
+	size_t					_levelScratchNodeCapacity = 0;
+	size_t					_queryCapacity = 0;
+	size_t					_baseMemoryBytes = 0;
+	size_t					_memoryBytes = 0;
+	int						_device = 0;
+	const PointCloud*		_cloud = nullptr;
+	bool					_pointsReady = false;
 };
 
 namespace

@@ -32,6 +32,6 @@ namespace PointGpu
 		struct DeviceState;
 		void release();
 
-		std::unique_ptr<DeviceState> _state;
+		std::unique_ptr<DeviceState>	_state;
 	};
 }

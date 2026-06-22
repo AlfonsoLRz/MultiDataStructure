@@ -768,30 +768,30 @@ namespace
 
 struct PointGpu::KDTree::DeviceState
 {
-	DevicePoint* _points = nullptr;
-	uint32_t* _indices = nullptr;
-	uint32_t* _tempIndices = nullptr;
-	LinearNode* _nodes = nullptr;
-	uint32_t* _leftCounts = nullptr;
-	uint32_t* _writeCursors = nullptr;
-	DeviceQuery* _queryBuffer = nullptr;
-	DeviceQuerySample* _sampleBuffer = nullptr;
-	uint32_t* _knnIndexBuffer = nullptr;
-	float* _knnDistanceBuffer = nullptr;
-	size_t _pointCount = 0;
-	size_t _nodeCapacity = 0;
-	size_t _actualNodes = 0;
-	size_t _actualLeaves = 0;
-	size_t _leafCapacity = 1;
-	size_t _minSplit = 2;
-	size_t _maxDepth = 0;
-	size_t _queryCapacity = 0;
-	size_t _knnCapacity = 0;
-	size_t _baseMemoryBytes = 0;
-	size_t _memoryBytes = 0;
-	int _device = 0;
-	const PointCloud* _cloud = nullptr;
-	bool _pointsReady = false;
+	DevicePoint*		_points = nullptr;
+	uint32_t*			_indices = nullptr;
+	uint32_t*			_tempIndices = nullptr;
+	LinearNode*			_nodes = nullptr;
+	uint32_t*			_leftCounts = nullptr;
+	uint32_t*			_writeCursors = nullptr;
+	DeviceQuery*		_queryBuffer = nullptr;
+	DeviceQuerySample*	_sampleBuffer = nullptr;
+	uint32_t*			_knnIndexBuffer = nullptr;
+	float*				_knnDistanceBuffer = nullptr;
+	size_t				_pointCount = 0;
+	size_t				_nodeCapacity = 0;
+	size_t				_actualNodes = 0;
+	size_t				_actualLeaves = 0;
+	size_t				_leafCapacity = 1;
+	size_t				_minSplit = 2;
+	size_t				_maxDepth = 0;
+	size_t				_queryCapacity = 0;
+	size_t				_knnCapacity = 0;
+	size_t				_baseMemoryBytes = 0;
+	size_t				_memoryBytes = 0;
+	int					_device = 0;
+	const PointCloud*	_cloud = nullptr;
+	bool				_pointsReady = false;
 };
 
 namespace

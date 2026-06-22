@@ -30,6 +30,6 @@ namespace PointGpu
 		size_t leafCount() const;
 
 	private:
-		std::unique_ptr<KDTree> _index;
+		std::unique_ptr<KDTree>	_index;
 	};
 }

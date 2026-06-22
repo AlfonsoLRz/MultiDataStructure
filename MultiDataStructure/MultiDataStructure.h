@@ -25,20 +25,20 @@ public:
 
 	struct Stats
 	{
-		glm::uint _numLevels = 0;
-		glm::uint _numNodes = 0;
-		glm::uint _numLeaves = 0;
-		glm::uint _numPrimitives = 0;
-		float _averageLeafPrimitives = 0.0f;
+		glm::uint	_numLevels = 0;
+		glm::uint	_numNodes = 0;
+		glm::uint	_numLeaves = 0;
+		glm::uint	_numPrimitives = 0;
+		float		_averageLeafPrimitives = 0.0f;
 	};
 
 public:
 	class SpatialDSNode
 	{
 	public:
-		AABB _aabb;
-		std::vector<const Node*> _primitives;
-		std::vector<std::unique_ptr<SpatialDSNode>> _children;
+		AABB	_aabb;
+		std::vector<const Node*>	_primitives;
+		std::vector<std::unique_ptr<SpatialDSNode>>	_children;
 
 		SpatialDSNode(const AABB& aabb = AABB()) : _aabb(aabb) {}
 		virtual ~SpatialDSNode() = default;
@@ -52,14 +52,14 @@ public:
 	};
 
 private:
-	glm::uint					_maxLevels;
-	std::unique_ptr<SpatialDSNode> _rootNode;
-	glm::uint					_numPrimitives;
-	BuildPolicy					_buildPolicy;
+	glm::uint	_maxLevels;
+	std::unique_ptr<SpatialDSNode>	_rootNode;
+	glm::uint	_numPrimitives;
+	BuildPolicy	_buildPolicy;
 
 	//
 	std::vector<LevelConfig>	_levels;
-	std::vector<glm::uint> 	    _levelCDF;
+	std::vector<glm::uint>		_levelCDF;
 
 private:
 	void insert(SpatialDSNode* dsNode, const Node* node, glm::uint level);
@@ -142,5 +142,5 @@ public:
 	}
 
 private:
-	static inline std::unordered_map<MultiDataStructure::DataStructureLevel, Creator> _creators;
+	static inline std::unordered_map<MultiDataStructure::DataStructureLevel, Creator>	_creators;
 };

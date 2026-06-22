@@ -14,7 +14,7 @@ public:
 class BvhNode : public MultiDataStructure::SpatialDSNode
 {
 private:
-	int _splitAxis;
+	int	_splitAxis;
 
 public:
 	BvhNode(const AABB& aabb = AABB());

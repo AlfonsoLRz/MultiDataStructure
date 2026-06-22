@@ -3,7 +3,7 @@
 class Ray
 {
 public:
-	glm::vec3 _origin, _direction;
+	glm::vec3	_origin, _direction;
 
 public:
 	Ray();

@@ -3,7 +3,7 @@
 class CudaHelper
 {
 protected:
-	static int _selectedDevice;
+	static int	_selectedDevice;
 
 public:
 	CudaHelper();

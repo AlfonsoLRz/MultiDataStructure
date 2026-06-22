@@ -32,6 +32,6 @@ namespace PointGpu
 		void release();
 		void releaseGrid();
 
-		std::unique_ptr<DeviceState> _state;
+		std::unique_ptr<DeviceState>	_state;
 	};
 }

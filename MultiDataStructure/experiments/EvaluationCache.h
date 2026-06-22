@@ -7,10 +7,10 @@ namespace Experiments
 {
 	struct EvaluationCacheKey
 	{
-		std::string _schemaSignature;
-		std::string _datasetFingerprint;
-		std::string _workloadFingerprint;
-		std::string _evaluatorFingerprint;
+		std::string	_schemaSignature;
+		std::string	_datasetFingerprint;
+		std::string	_workloadFingerprint;
+		std::string	_evaluatorFingerprint;
 
 		std::string canonical() const;
 	};
@@ -44,19 +44,19 @@ namespace Experiments
 	private:
 		struct Entry
 		{
-			SchemaSearchRecord _record;
+			SchemaSearchRecord	_record;
 		};
 
 		bool loadFromDisk();
 		void appendLine(const std::string& canonicalKey, const SchemaSearchRecord& record);
 
-		std::string								_filePath;
-		bool									_readOnly = false;
-		mutable std::mutex						_mutex;
+		std::string	_filePath;
+		bool	_readOnly = false;
+		mutable std::mutex	_mutex;
 		std::unordered_map<std::string, Entry>	_entries;
-		std::ofstream							_appendStream;
-		mutable std::atomic<size_t>				_hits{0};
-		mutable std::atomic<size_t>				_misses{0};
+		std::ofstream	_appendStream;
+		mutable std::atomic<size_t>	_hits{0};
+		mutable std::atomic<size_t>	_misses{0};
 	};
 
 	// Builds a cache key from the live evaluation context; the dataset fingerprint (name + point count + bounds) keeps the key stable across paths/seeds, and the caller supplies the schema signature.

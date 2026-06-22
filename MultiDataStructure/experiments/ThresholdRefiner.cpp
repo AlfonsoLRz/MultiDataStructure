@@ -8,9 +8,9 @@
 
 struct DomainBound
 {
-	bool _valid = false;
-	double _lo = 0.0;
-	double _hi = 0.0;
+	bool	_valid = false;
+	double	_lo = 0.0;
+	double	_hi = 0.0;
 };
 
 template <typename TValue>

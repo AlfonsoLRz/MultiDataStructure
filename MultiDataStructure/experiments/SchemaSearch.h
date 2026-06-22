@@ -12,117 +12,117 @@ namespace Experiments
 
 	struct SchemaCandidate
 	{
-		std::string _name;
-		std::string _path;
-		SchemaConfig _config;
-		bool _generated = false;
+		std::string		_name;
+		std::string		_path;
+		SchemaConfig	_config;
+		bool			_generated = false;
 		// Canonical single-block control; force-promoted through every auto-condition stage.
-		bool _isBaseline = false;
+		bool	_isBaseline = false;
 	};
 
 	struct SchemaGenerationOptions
 	{
-		size_t _count = 0;
-		size_t _minBlocks = 1;
-		size_t _maxBlocks = 3;
-		size_t _maxDepth = 12;
-		size_t _minLeafCapacity = 32;
-		size_t _maxLeafCapacity = 32768;
-		bool _conditionalLevels = false;
-		double _conditionalProbability = 0.35;
-		bool _adaptiveLeafCapacity = false;
-		double _adaptiveLeafProbability = 0.25;
-		uint32_t _seed = 1337;
-		std::string _outputDirectory = "results/generated_schemas";
+		size_t		_count = 0;
+		size_t		_minBlocks = 1;
+		size_t		_maxBlocks = 3;
+		size_t		_maxDepth = 12;
+		size_t		_minLeafCapacity = 32;
+		size_t		_maxLeafCapacity = 32768;
+		bool		_conditionalLevels = false;
+		double		_conditionalProbability = 0.35;
+		bool		_adaptiveLeafCapacity = false;
+		double		_adaptiveLeafProbability = 0.25;
+		uint32_t	_seed = 1337;
+		std::string	_outputDirectory = "results/generated_schemas";
 		// "auto" resolves to query_minimal_cpu for CPU discovery, cuda_query_full for CUDA.
-		std::string _primitiveProfile = "auto";
+		std::string	_primitiveProfile = "auto";
 	};
 
 	struct ConditionDomain
 	{
-		std::vector<size_t> _pointThresholds;
-		std::vector<double> _densityThresholds;
-		std::vector<double> _heightRatioThresholds;
-		std::vector<double> _extentXThresholds;
-		std::vector<double> _extentYThresholds;
-		std::vector<double> _extentZThresholds;
+		std::vector<size_t>	_pointThresholds;
+		std::vector<double>	_densityThresholds;
+		std::vector<double>	_heightRatioThresholds;
+		std::vector<double>	_extentXThresholds;
+		std::vector<double>	_extentYThresholds;
+		std::vector<double>	_extentZThresholds;
 		// Anisotropy quantiles (1 - shortExtent/longExtent) over the sketch; empty for uniform clouds.
-		std::vector<double> _anisotropyThresholds;
+		std::vector<double>	_anisotropyThresholds;
 		// Occupancy-entropy thresholds, normalized to [0,1]; seeded from [0.1,0.9] plus the cloud sketch.
-		std::vector<double> _occupancyEntropyThresholds;
-		size_t _samplePoints = 0;
-		size_t _sketchNodes = 0;
-		bool _estimatedFromCloud = false;
+		std::vector<double>	_occupancyEntropyThresholds;
+		size_t				_samplePoints = 0;
+		size_t				_sketchNodes = 0;
+		bool				_estimatedFromCloud = false;
 	};
 
 	struct AutoConditionOptions
 	{
-		bool _enabled = false;
-		size_t _proxyCandidateCount = 256;
-		size_t _proxyPointCap = 262144;
-		size_t _proxyQueryCount = 8;
-		size_t _finalTopK = 16;
-		size_t _confirmationTopK = 4;
-		std::string _outputDirectory = "results/auto_conditions";
-		std::string _selectorOutputPath = "models/local_schema_selector.json";
+		bool		_enabled = false;
+		size_t		_proxyCandidateCount = 256;
+		size_t		_proxyPointCap = 262144;
+		size_t		_proxyQueryCount = 8;
+		size_t		_finalTopK = 16;
+		size_t		_confirmationTopK = 4;
+		std::string	_outputDirectory = "results/auto_conditions";
+		std::string	_selectorOutputPath = "models/local_schema_selector.json";
 	};
 
 	struct ScoreWeights
 	{
-		double _lambdaLatency = 1.0;
-		double _lambdaBuild = 0.0;
-		double _lambdaMemory = 0.0;
-		double _lambdaImbalance = 0.0;
+		double	_lambdaLatency = 1.0;
+		double	_lambdaBuild = 0.0;
+		double	_lambdaMemory = 0.0;
+		double	_lambdaImbalance = 0.0;
 		// Score from cheap kernel counters (visitedNodes + alpha*testedPoints) instead of wall-clock latency.
-		bool _useVisitProxy = false;
-		double _visitProxyAlpha = 0.1;
+		bool	_useVisitProxy = false;
+		double	_visitProxyAlpha = 0.1;
 	};
 
 	struct WorkloadProfile
 	{
-		std::string _name = "mixed";
-		double _rangeWeight = 0.4;
-		double _radiusWeight = 0.3;
-		double _knnWeight = 0.3;
-		double _rangeScaleMin = 0.01;
-		double _rangeScaleMax = 0.05;
-		double _radiusScaleMin = 0.01;
-		double _radiusScaleMax = 0.04;
-		size_t _numQueries = 1000;
-		size_t _knnK = 16;
-		uint32_t _querySeed = 1337;
-		bool _stratifyQueries = false;
-		bool _hasScoreWeights = false;
-		ScoreWeights _scoreWeights;
+		std::string		_name = "mixed";
+		double			_rangeWeight = 0.4;
+		double			_radiusWeight = 0.3;
+		double			_knnWeight = 0.3;
+		double			_rangeScaleMin = 0.01;
+		double			_rangeScaleMax = 0.05;
+		double			_radiusScaleMin = 0.01;
+		double			_radiusScaleMax = 0.04;
+		size_t			_numQueries = 1000;
+		size_t			_knnK = 16;
+		uint32_t		_querySeed = 1337;
+		bool			_stratifyQueries = false;
+		bool			_hasScoreWeights = false;
+		ScoreWeights	_scoreWeights;
 	};
 
 	// One rung in a successive-halving schedule; each rung keeps the top advanceTopK for the next.
 	struct RungSpec
 	{
-		std::string _name = "rung";
+		std::string	_name = "rung";
 		// 0 = use the workload's numQueries; positive overrides for this rung (e.g. 4 proxy, 64 confirm).
-		size_t _queryCountOverride = 0;
+		size_t	_queryCountOverride = 0;
 		// Score this rung by the cheap visit-proxy instead of wall-clock latency.
-		bool _useVisitProxy = false;
-		double _visitProxyAlpha = 0.1;
+		bool	_useVisitProxy = false;
+		double	_visitProxyAlpha = 0.1;
 		// Candidates promoted to the next rung; 0 = promote all.
-		size_t _advanceTopK = 0;
+		size_t	_advanceTopK = 0;
 	};
 
 	struct RungSchedule
 	{
 		// When empty, the optimizer falls back to today's single-rung behavior.
-		std::vector<RungSpec> _rungs;
+		std::vector<RungSpec>	_rungs;
 		// If set, points to an exported selector model JSON used between rungs to sample fresh
 		// genomes via the surrogate (Bayesian acquisition step). Empty disables surrogate
 		// proposals; the GA's mutation/immigration path stays untouched in that case.
-		std::string _surrogateModelPath;
+		std::string	_surrogateModelPath;
 		// Number of fresh candidates the surrogate is asked to propose between rungs. Ignored
 		// when surrogateModelPath is empty.
-		size_t _surrogateProposalsPerStep = 0;
+		size_t	_surrogateProposalsPerStep = 0;
 		// Pool size the surrogate ranks down to `surrogateProposalsPerStep`. Larger pool =
 		// better acquisition at the cost of cheap surrogate evaluations.
-		size_t _surrogateCandidatePool = 0;
+		size_t	_surrogateCandidatePool = 0;
 	};
 
 	// Forward declaration; full definition lives in ThresholdRefiner.h.
@@ -130,199 +130,199 @@ namespace Experiments
 
 	struct EvolutionOptions
 	{
-		bool _enabled = false;
-		size_t _generations = 3;
-		size_t _populationSize = 64;
-		size_t _eliteCount = 6;
-		double _mutationRate = 0.65;
-		double _randomImmigrationRate = 0.20;
-		uint32_t _seed = 1337;
+		bool		_enabled = false;
+		size_t		_generations = 3;
+		size_t		_populationSize = 64;
+		size_t		_eliteCount = 6;
+		double		_mutationRate = 0.65;
+		double		_randomImmigrationRate = 0.20;
+		uint32_t	_seed = 1337;
 		// Multi-fidelity rung schedule per batch; empty = flat evaluate-all-then-mutate.
-		RungSchedule _rungSchedule;
+		RungSchedule	_rungSchedule;
 		// Continuous-threshold post-pass over the GA archive (settings in ThresholdRefiner.h).
-		bool _refineThresholds = false;
-		size_t _refineThresholdsTopK = 4;
-		size_t _refineThresholdsEvaluations = 60;
-		double _refineThresholdsSigma0 = 0.3;
-		uint32_t _refineThresholdsSeed = 1337;
+		bool		_refineThresholds = false;
+		size_t		_refineThresholdsTopK = 4;
+		size_t		_refineThresholdsEvaluations = 60;
+		double		_refineThresholdsSigma0 = 0.3;
+		uint32_t	_refineThresholdsSeed = 1337;
 		// Two-parent crossover probability; 0 = pure mutation.
-		double _crossoverRate = 0.4;
+		double	_crossoverRate = 0.4;
 		// Pick elites by NSGA-II non-dominated-sort + crowding instead of scalar aggregateScore.
-		bool _useNsga2Ranking = true;
+		bool	_useNsga2Ranking = true;
 		// Diagnostic-guided repair mutations from measured bottlenecks before random mutation.
-		bool _repairMutations = false;
-		size_t _repairTopK = 4;
-		size_t _repairPerCandidate = 2;
+		bool	_repairMutations = false;
+		size_t	_repairTopK = 4;
+		size_t	_repairPerCandidate = 2;
 	};
 
 	struct CudaEvaluationOptions
 	{
-		int _device = -1;
-		std::string _builder = "lbvh";
-		size_t _queryBatchSize = 0;
-		size_t _memoryBudgetMb = 0;
-		std::string _knnBackend = "auto";
+		int			_device = -1;
+		std::string	_builder = "lbvh";
+		size_t		_queryBatchSize = 0;
+		size_t		_memoryBudgetMb = 0;
+		std::string	_knnBackend = "auto";
 	};
 
 	struct SchemaSearchOptions
 	{
-		std::vector<std::string> _inputPaths;
-		std::vector<std::string> _schemaPaths;
-		std::vector<std::string> _workloadPaths;
-		std::string _rankModelPath;
-		std::string _csvPath = "results/schema_search.csv";
-		std::string _bestCsvPath = "results/schema_search_best.csv";
+		std::vector<std::string>	_inputPaths;
+		std::vector<std::string>	_schemaPaths;
+		std::vector<std::string>	_workloadPaths;
+		std::string					_rankModelPath;
+		std::string					_csvPath = "results/schema_search.csv";
+		std::string					_bestCsvPath = "results/schema_search_best.csv";
 		// Pareto-front CSV (one non-dominated row per dataset/workload, with pareto_rank); empty = skip.
-		std::string _paretoCsvPath;
+		std::string	_paretoCsvPath;
 		// Markdown explanation report; empty = skip.
-		std::string _explainReportPath;
+		std::string	_explainReportPath;
 		// Per-query CSV trace; empty = disabled (bypasses the score cache so the trace is real).
-		std::string _queryTracePath;
+		std::string	_queryTracePath;
 		// >= 2 re-measures the top-K per dataset/workload with N seeds and records mean + 95% CI.
-		size_t _confirmSeeds = 0;
-		size_t _confirmTopK = 4;
-		bool _includeSyntheticDatasets = true;
-		bool _includeConfiguredSchemas = true;
-		bool _useBinaryCache = true;
-		bool _rebuildBinaryCache = false;
-		bool _pauseAtEnd = false;
-		size_t _syntheticScale = 512;
-		size_t _queryCountOverride = 0;
-		size_t _knnKOverride = 0;
-		size_t _benchmarkTopK = 0;
-		uint32_t _querySeed = 1337;
-		bool _querySeedOverride = false;
-		bool _deepNestedSearch = false;
-		SchemaGenerationOptions _generation;
-		AutoConditionOptions _autoConditions;
-		ScoreWeights _weights;
-		bool _scoreWeightsOverride = false;
-		std::string _scoreStage = "final";
-		bool _scoreIsFinalLatency = true;
-		EvolutionOptions _evolution;
-		std::string _evaluator = "cpu";
-		CudaEvaluationOptions _cuda;
+		size_t					_confirmSeeds = 0;
+		size_t					_confirmTopK = 4;
+		bool					_includeSyntheticDatasets = true;
+		bool					_includeConfiguredSchemas = true;
+		bool					_useBinaryCache = true;
+		bool					_rebuildBinaryCache = false;
+		bool					_pauseAtEnd = false;
+		size_t					_syntheticScale = 512;
+		size_t					_queryCountOverride = 0;
+		size_t					_knnKOverride = 0;
+		size_t					_benchmarkTopK = 0;
+		uint32_t				_querySeed = 1337;
+		bool					_querySeedOverride = false;
+		bool					_deepNestedSearch = false;
+		SchemaGenerationOptions	_generation;
+		AutoConditionOptions	_autoConditions;
+		ScoreWeights			_weights;
+		bool					_scoreWeightsOverride = false;
+		std::string				_scoreStage = "final";
+		bool					_scoreIsFinalLatency = true;
+		EvolutionOptions		_evolution;
+		std::string				_evaluator = "cpu";
+		CudaEvaluationOptions	_cuda;
 		// Always include canonical single-block schemas (pure QuadTree, Octree, KDTree, BVH, plus
 		// GPU-native LBVH, KarrasOctree, RegularGrid, HGrid, BIH) as controls alongside whatever
 		// generated/configured candidates are present. Lets the operator confirm that nested
 		// candidates actually beat the naive baselines instead of just comparing nested to nested.
-		bool _includeBaselineSchemas = true;
-		std::string _scoreCachePath;
-		bool _rebuildScoreCache = false;
-		EvaluationCache* _scoreCache = nullptr;
+		bool				_includeBaselineSchemas = true;
+		std::string			_scoreCachePath;
+		bool				_rebuildScoreCache = false;
+		EvaluationCache*	_scoreCache = nullptr;
 		// Maximum number of CPU candidates to benchmark concurrently in the evolutionary loop.
 		// Only honored when the evaluator is "cpu" (the CUDA path is serialised because the GPU
 		// state and the per-builder build cache are not thread-safe). Default 1 keeps current
 		// behaviour exactly.
-		size_t _parallelDispatch = 1;
-		bool _enableLeafMicroIndexes = false;
-		size_t _leafMicroIndexThreshold = 512;
+		size_t	_parallelDispatch = 1;
+		bool	_enableLeafMicroIndexes = false;
+		size_t	_leafMicroIndexThreshold = 512;
 		// >= 2 re-times each candidate's batch N times and records latency mean/stddev/CV/95% CI (timing noise).
-		size_t _measurementRepeats = 1;
+		size_t	_measurementRepeats = 1;
 		// Sidecar CSV for the proxy/latency correlation report; empty = stdout only.
-		std::string _proxyCorrelationCsvPath;
+		std::string	_proxyCorrelationCsvPath;
 		// With --benchmark-top and no rank model, keep the K cheapest candidates by the zero-build estimate.
-		bool _estimatePrefilter = false;
+		bool	_estimatePrefilter = false;
 		// Build canonical schemas on CPU and GPU and compare per-query returned counts (results/parity_report.csv).
-		bool _verifyParity = false;
+		bool	_verifyParity = false;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
 	};
 
 	struct SchemaSearchRecord
 	{
-		std::string _datasetName;
-		std::string _datasetSource;
-		size_t _numPoints = 0;
-		std::string _workloadName;
-		double _rangeWeight = 0.0;
-		double _radiusWeight = 0.0;
-		double _knnWeight = 0.0;
-		size_t _numQueries = 0;
-		size_t _knnK = 0;
-		uint32_t _querySeed = 0;
-		std::string _schemaName;
-		std::string _schemaPath;
-		BuildMetrics _buildMetrics;
-		QueryMetrics _queryMetrics;
-		QueryMetrics _rangeMetrics;
-		QueryMetrics _countRangeMetrics;
-		QueryMetrics _radiusMetrics;
-		QueryMetrics _knnMetrics;
-		size_t _rangeQueries = 0;
-		size_t _countRangeQueries = 0;
-		size_t _radiusQueries = 0;
-		size_t _knnQueries = 0;
-		std::string _queryStrataSummary;
-		double _score = 0.0;
-		double _scoreMemoryMb = 0.0;
-		double _scoreImbalancePenalty = 0.0;
-		ScoreWeights _weights;
-		std::string _scoreMode = "latency";
-		std::string _scoreStage = "final";
-		bool _scoreIsFinalLatency = true;
-		PointCloudFeatures _pointFeatures;
-		WorkloadFeatures _workloadFeatures;
-		std::string _backend = "cpu";
-		std::string _knnBackend = "none";
-		int _cudaDevice = -1;
-		std::string _cudaBuilder;
-		double _gpuUploadMs = 0.0;
-		double _gpuBuildMs = 0.0;
-		double _gpuQueryMs = 0.0;
-		size_t _gpuMemoryBytes = 0;
-		size_t _conditionalLevels = 0;
-		size_t _conditionFields = 0;
-		std::string _conditionSummary;
-		bool _isBaseline = false;
-		size_t _activeStructureTypes = 0;
-		double _nestedActiveFraction = 0.0;
-		std::string _activeStructureSummary;
-		std::string _bestBaselineSchema;
-		double _bestBaselineScore = 0.0;
-		double _relativeSpeedupVsBaseline = 0.0;
+		std::string			_datasetName;
+		std::string			_datasetSource;
+		size_t				_numPoints = 0;
+		std::string			_workloadName;
+		double				_rangeWeight = 0.0;
+		double				_radiusWeight = 0.0;
+		double				_knnWeight = 0.0;
+		size_t				_numQueries = 0;
+		size_t				_knnK = 0;
+		uint32_t			_querySeed = 0;
+		std::string			_schemaName;
+		std::string			_schemaPath;
+		BuildMetrics		_buildMetrics;
+		QueryMetrics		_queryMetrics;
+		QueryMetrics		_rangeMetrics;
+		QueryMetrics		_countRangeMetrics;
+		QueryMetrics		_radiusMetrics;
+		QueryMetrics		_knnMetrics;
+		size_t				_rangeQueries = 0;
+		size_t				_countRangeQueries = 0;
+		size_t				_radiusQueries = 0;
+		size_t				_knnQueries = 0;
+		std::string			_queryStrataSummary;
+		double				_score = 0.0;
+		double				_scoreMemoryMb = 0.0;
+		double				_scoreImbalancePenalty = 0.0;
+		ScoreWeights		_weights;
+		std::string			_scoreMode = "latency";
+		std::string			_scoreStage = "final";
+		bool				_scoreIsFinalLatency = true;
+		PointCloudFeatures	_pointFeatures;
+		WorkloadFeatures	_workloadFeatures;
+		std::string			_backend = "cpu";
+		std::string			_knnBackend = "none";
+		int					_cudaDevice = -1;
+		std::string			_cudaBuilder;
+		double				_gpuUploadMs = 0.0;
+		double				_gpuBuildMs = 0.0;
+		double				_gpuQueryMs = 0.0;
+		size_t				_gpuMemoryBytes = 0;
+		size_t				_conditionalLevels = 0;
+		size_t				_conditionFields = 0;
+		std::string			_conditionSummary;
+		bool				_isBaseline = false;
+		size_t				_activeStructureTypes = 0;
+		double				_nestedActiveFraction = 0.0;
+		std::string			_activeStructureSummary;
+		std::string			_bestBaselineSchema;
+		double				_bestBaselineScore = 0.0;
+		double				_relativeSpeedupVsBaseline = 0.0;
 		// Pareto-front rank by avgLatencyMs among non-dominated peers; -1 = not on the front.
-		int _paretoRank = -1;
+		int	_paretoRank = -1;
 		// > 0 means the latency/build CI fields below were computed across that many query seeds.
-		size_t _confirmSeedsUsed = 0;
-		double _latencyMean = 0.0;
-		double _latencyCiLow = 0.0;
-		double _latencyCiHigh = 0.0;
-		double _p95LatencyMean = 0.0;
-		double _p95LatencyCiLow = 0.0;
-		double _p95LatencyCiHigh = 0.0;
-		double _gpuBuildMean = 0.0;
-		double _gpuBuildCiLow = 0.0;
-		double _gpuBuildCiHigh = 0.0;
+		size_t	_confirmSeedsUsed = 0;
+		double	_latencyMean = 0.0;
+		double	_latencyCiLow = 0.0;
+		double	_latencyCiHigh = 0.0;
+		double	_p95LatencyMean = 0.0;
+		double	_p95LatencyCiLow = 0.0;
+		double	_p95LatencyCiHigh = 0.0;
+		double	_gpuBuildMean = 0.0;
+		double	_gpuBuildCiLow = 0.0;
+		double	_gpuBuildCiHigh = 0.0;
 		// Winner's latency CI is separated from the runner-up's (see confidentlyBetter); false when single-shot.
-		bool _rankingConfident = false;
+		bool	_rankingConfident = false;
 		// Pareto-front knee: entry closest to the normalized ideal across latency/build/memory/imbalance.
-		bool _paretoKnee = false;
+		bool	_paretoKnee = false;
 		// Zero-build per-query cost estimate from schema + cloud features (see estimateSchemaQueryCost).
-		double _estimatedQueryCost = 0.0;
+		double	_estimatedQueryCost = 0.0;
 	};
 
 	struct SchemaRepairDiagnostics
 	{
-		std::string _bottleneck = "balanced";
-		double _leafOccupancyRatio = 0.0;
-		double _testedPerVisited = 0.0;
-		double _visitedPerQuery = 0.0;
-		double _testedPointFraction = 0.0;
-		double _fullContainmentRatio = 0.0;
-		bool _highLeafOccupancy = false;
-		bool _testedPointDominated = false;
-		bool _visitedNodeDominated = false;
-		bool _fullContainmentDominated = false;
-		bool _likelySingleChildChains = false;
+		std::string	_bottleneck = "balanced";
+		double		_leafOccupancyRatio = 0.0;
+		double		_testedPerVisited = 0.0;
+		double		_visitedPerQuery = 0.0;
+		double		_testedPointFraction = 0.0;
+		double		_fullContainmentRatio = 0.0;
+		bool		_highLeafOccupancy = false;
+		bool		_testedPointDominated = false;
+		bool		_visitedNodeDominated = false;
+		bool		_fullContainmentDominated = false;
+		bool		_likelySingleChildChains = false;
 	};
 
 	struct EvaluatorResolution
 	{
-		std::string _evaluator = "cpu";
-		bool _requestedCuda = false;
-		bool _usingCuda = false;
-		bool _fellBackToCpu = false;
-		std::string _warning;
+		std::string	_evaluator = "cpu";
+		bool		_requestedCuda = false;
+		bool		_usingCuda = false;
+		bool		_fellBackToCpu = false;
+		std::string	_warning;
 	};
 
 	EvaluatorResolution resolveSchemaSearchEvaluator(

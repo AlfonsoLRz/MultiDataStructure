@@ -10,22 +10,22 @@ static constexpr uint32_t LEGACY_FULL_POINT_CACHE_VERSION = 1;
 struct BinaryHeaderPrefix
 {
 	char magic[8] = {};
-	uint32_t _version = CACHE_VERSION;
-	uint64_t _sourceSize = 0;
-	int64_t _sourceWriteTime = 0;
-	uint64_t _numPoints = 0;
+	uint32_t	_version = CACHE_VERSION;
+	uint64_t	_sourceSize = 0;
+	int64_t		_sourceWriteTime = 0;
+	uint64_t	_numPoints = 0;
 };
 
 struct BinaryHeaderMetadata
 {
 	double origin[3] = { 0.0, 0.0, 0.0 };
-	double _scale[3] = { 1.0, 1.0, 1.0 };
+	double	_scale[3] = { 1.0, 1.0, 1.0 };
 };
 
 struct BinaryHeader
 {
-	BinaryHeaderPrefix _prefix;
-	BinaryHeaderMetadata _metadata;
+	BinaryHeaderPrefix		_prefix;
+	BinaryHeaderMetadata	_metadata;
 };
 
 struct BinaryPoint
@@ -40,9 +40,9 @@ struct LegacyBinaryPoint
 	float x = 0.0f;
 	float y = 0.0f;
 	float z = 0.0f;
-	float _intensity = 0.0f;
-	uint32_t _classification = 0;
-	uint64_t _id = 0;
+	float		_intensity = 0.0f;
+	uint32_t	_classification = 0;
+	uint64_t	_id = 0;
 };
 
 static_assert(sizeof(BinaryPoint) == sizeof(PointPrimitive), "Binary point cache must match the position-only point payload.");

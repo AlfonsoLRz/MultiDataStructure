@@ -11,7 +11,7 @@ struct CameraGPU
 	float		_planeWidth;
 
 	glm::vec3	_right;
-	float 		_planeHeight;
+	float		_planeHeight;
 
 	glm::vec3	_up;
 	float		_zfar;
@@ -28,7 +28,7 @@ struct CameraGPU
 struct VertexGPU
 {
 	glm::vec3	_position;
-	float 		_padding1;
+	float		_padding1;
 
 	glm::vec3	_normal;
 	float		_padding2;
@@ -45,7 +45,7 @@ struct MeshGPU
 	glm::vec3	_emissionColor;
 	float		_emissionStrength;
 
-	glm::vec3   _specularColor;
+	glm::vec3	_specularColor;
 	float		_metallic;
 
 	glm::vec3	_max;
@@ -62,18 +62,18 @@ struct MeshGPU
 
 struct Node
 {
-	glm::vec4  _maxPoint;      
-	glm::vec4  _minPoint;     
+	glm::vec4	_maxPoint;      
+	glm::vec4	_minPoint;     
 
-	glm::uint  _triangleIndex; 
-	glm::uint  _numTriangles;  
-	glm::uint  _meshIndex;     
-	glm::uint  _prevIndex1;   
+	glm::uint	_triangleIndex; 
+	glm::uint	_numTriangles;  
+	glm::uint	_meshIndex;     
+	glm::uint	_prevIndex1;   
 
-	glm::uint  _prevIndex2;   
-	glm::uint  _padding1;     
-	glm::uint  _padding2;     
-	glm::uint  _padding3;      
+	glm::uint	_prevIndex2;   
+	glm::uint	_padding1;     
+	glm::uint	_padding2;     
+	glm::uint	_padding3;      
 };
 
 struct RayGPU
@@ -88,7 +88,7 @@ struct HitInfo
 	float		_t;
 
 	glm::vec3	_normal;
-	glm::uint 	_materialIndex;
+	glm::uint	_materialIndex;
 
 	int			_hit;
 	glm::uint	_triangleIndex;
@@ -109,9 +109,9 @@ struct FrameInfoGPU
 	glm::uint	_numEmissiveTriangles;
 	glm::uint	_numBounces;     
 
-	cudaTextureObject_t _skybox;
-	glm::uint	_useSkybox;
-	glm::uint	_numPixels;
+	cudaTextureObject_t	_skybox;
+	glm::uint			_useSkybox;
+	glm::uint			_numPixels;
 
 	glm::uint	_numSamples;
 	float		_multiplyHDR;
@@ -126,13 +126,13 @@ struct BufferInfoGPU
 	glm::u32*	_emissiveIndices;
 
 	Node*	_bvhNodes;
-	float*		_cdfIndicesBuffer;
-	float*		_cdfLightIndicesBuffer;
-	float*		_noiseBuffer;
+	float*	_cdfIndicesBuffer;
+	float*	_cdfLightIndicesBuffer;
+	float*	_noiseBuffer;
 
-	cudaTextureObject_t* _diffuseTexturesBuffer;
-	glm::uint	_numTriangles;
-	glm::uint	_numMeshes;
+	cudaTextureObject_t*	_diffuseTexturesBuffer;
+	glm::uint				_numTriangles;
+	glm::uint				_numMeshes;
 
 	glm::uint	_numBvhNodes;
 	glm::uint	_noiseBufferSize;
@@ -144,9 +144,9 @@ struct TransientInfoGPU
 	glm::uint	_numBounces;
 
 	glm::vec3	_laserPosition;
-	glm::uint   _relayWall;
+	glm::uint	_relayWall;
 
-	glm::uint   _seed;
+	glm::uint	_seed;
 	float		_t0;
 	float		_deltaT;
 	glm::uint	_temporalResolution;

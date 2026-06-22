@@ -5,7 +5,7 @@
 class QuadTreeNode : public MultiDataStructure::SpatialDSNode
 {
 private:
-	int _planarAxis;
+	int	_planarAxis;
 
 public:
 	QuadTreeNode(const AABB& aabb = AABB());

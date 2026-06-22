@@ -25,57 +25,57 @@ namespace PointGpu
 
 	struct Options
 	{
-		int _device = -1;
-		std::string _builder = "lbvh";
-		size_t _queryBatchSize = 0;
-		size_t _memoryBudgetMb = 0;
-		KdAxisPolicy _kdAxisPolicy = KdAxisPolicy::LongestExtent;
+		int				_device = -1;
+		std::string		_builder = "lbvh";
+		size_t			_queryBatchSize = 0;
+		size_t			_memoryBudgetMb = 0;
+		KdAxisPolicy	_kdAxisPolicy = KdAxisPolicy::LongestExtent;
 		// "auto" picks the native backend: KDTree/BIH use gpu_tree_knn for K <= MaxTrackedKnnK, else bruteforce.
-		std::string _knnBackend = "auto";
+		std::string	_knnBackend = "auto";
 	};
 
 	struct Query
 	{
-		QueryType _type = QueryType::Range;
-		AABB _bounds;
+		QueryType	_type = QueryType::Range;
+		AABB		_bounds;
 		glm::vec3 center = glm::vec3(0.0f);
-		float _radius = 0.0f;
-		size_t _k = 0;
+		float	_radius = 0.0f;
+		size_t	_k = 0;
 	};
 
 	struct QuerySample
 	{
-		size_t _visitedNodes = 0;
-		size_t _testedPoints = 0;
-		size_t _returnedPoints = 0;
-		double _elapsedMs = 0.0;
+		size_t	_visitedNodes = 0;
+		size_t	_testedPoints = 0;
+		size_t	_returnedPoints = 0;
+		double	_elapsedMs = 0.0;
 	};
 
 	struct BuildResult
 	{
-		Experiments::BuildMetrics _metrics;
-		double _uploadTimeMs = 0.0;
-		double _gpuBuildTimeMs = 0.0;
-		size_t _gpuMemoryBytes = 0;
-		int _device = 0;
-		std::string _builder = "lbvh";
-		size_t _activeStructureTypes = 0;
-		double _nestedActiveFraction = 0.0;
-		std::string _activeStructureSummary;
+		Experiments::BuildMetrics	_metrics;
+		double	_uploadTimeMs = 0.0;
+		double	_gpuBuildTimeMs = 0.0;
+		size_t	_gpuMemoryBytes = 0;
+		int	_device = 0;
+		std::string	_builder = "lbvh";
+		size_t	_activeStructureTypes = 0;
+		double	_nestedActiveFraction = 0.0;
+		std::string	_activeStructureSummary;
 	};
 
 	struct QueryResult
 	{
-		Experiments::QueryMetrics _metrics;
-		double _gpuQueryTimeMs = 0.0;
-		size_t _rangeQueries = 0;
-		size_t _countRangeQueries = 0;
-		size_t _radiusQueries = 0;
-		size_t _knnQueries = 0;
-		std::string _knnBackend = "none";
-		std::vector<std::vector<uint32_t>> _knnPointIndices;
-		std::vector<std::vector<float>> _knnDistancesSquared;
-		std::vector<QuerySample> _samples;
+		Experiments::QueryMetrics	_metrics;
+		double	_gpuQueryTimeMs = 0.0;
+		size_t	_rangeQueries = 0;
+		size_t	_countRangeQueries = 0;
+		size_t	_radiusQueries = 0;
+		size_t	_knnQueries = 0;
+		std::string	_knnBackend = "none";
+		std::vector<std::vector<uint32_t>>	_knnPointIndices;
+		std::vector<std::vector<float>>	_knnDistancesSquared;
+		std::vector<QuerySample>	_samples;
 	};
 
 	struct DevicePoint
@@ -89,37 +89,37 @@ namespace PointGpu
 
 	struct LinearNode
 	{
-		float _minX;
-		float _minY;
-		float _minZ;
-		float _maxX;
-		float _maxY;
-		float _maxZ;
-		int _left;
-		int _right;
-		int _parent;
-		uint32_t _pointOffset;
-		uint32_t _pointCount;
+		float		_minX;
+		float		_minY;
+		float		_minZ;
+		float		_maxX;
+		float		_maxY;
+		float		_maxZ;
+		int			_left;
+		int			_right;
+		int			_parent;
+		uint32_t	_pointOffset;
+		uint32_t	_pointCount;
 		// flags (KDTree/BIH): bit0 leaf; bits1..2 split axis (valid if bit3); bit3 axis stored; bits4..11 depth; bits12..31 reserved.
-		uint32_t _flags;
+		uint32_t	_flags;
 	};
 
 	struct LinearOctreeNode
 	{
-		float _minX;
-		float _minY;
-		float _minZ;
-		float _maxX;
-		float _maxY;
-		float _maxZ;
-		int _parent;
-		int _childBase;
-		uint32_t _childMask;
-		uint32_t _pointOffset;
-		uint32_t _pointCount;
-		uint32_t _flags;
-		uint32_t _depth;
-		uint32_t _schemaDepth;
+		float		_minX;
+		float		_minY;
+		float		_minZ;
+		float		_maxX;
+		float		_maxY;
+		float		_maxZ;
+		int			_parent;
+		int			_childBase;
+		uint32_t	_childMask;
+		uint32_t	_pointOffset;
+		uint32_t	_pointCount;
+		uint32_t	_flags;
+		uint32_t	_depth;
+		uint32_t	_schemaDepth;
 	};
 
 	using LinearQuadTreeNode = LinearOctreeNode;
@@ -127,26 +127,26 @@ namespace PointGpu
 
 	struct DeviceQuery
 	{
-		int _type;
-		float _minX;
-		float _minY;
-		float _minZ;
-		float _maxX;
-		float _maxY;
-		float _maxZ;
-		float _centerX;
-		float _centerY;
-		float _centerZ;
-		float _radius;
-		uint32_t _knnK;
+		int			_type;
+		float		_minX;
+		float		_minY;
+		float		_minZ;
+		float		_maxX;
+		float		_maxY;
+		float		_maxZ;
+		float		_centerX;
+		float		_centerY;
+		float		_centerZ;
+		float		_radius;
+		uint32_t	_knnK;
 	};
 
 	struct DeviceQuerySample
 	{
-		unsigned long long _visitedNodes;
-		unsigned long long _testedPoints;
-		unsigned long long _returnedPoints;
-		float _elapsedMs;
+		unsigned long long	_visitedNodes;
+		unsigned long long	_testedPoints;
+		unsigned long long	_returnedPoints;
+		float				_elapsedMs;
 	};
 
 #ifdef __CUDACC__

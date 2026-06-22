@@ -59,17 +59,17 @@ static size_t expectedFanoutForNode(const PointSpatialIndex::Node& node, const S
 
 struct TreeHealthAccumulator
 {
-	std::vector<size_t> _occupancies;
-	std::map<size_t, size_t> _fanoutCounts;
-	size_t _totalDepth = 0;
-	size_t _internalNodes = 0;
-	size_t _totalExpectedChildren = 0;
-	size_t _totalPresentChildren = 0;
-	size_t _singleChildNodeCount = 0;
-	double _tightVolumeRatioSum = 0.0;
-	size_t _tightVolumeRatioSamples = 0;
-	size_t _microIndexedLeaves = 0;
-	size_t _microIndexedPoints = 0;
+	std::vector<size_t>			_occupancies;
+	std::map<size_t, size_t>	_fanoutCounts;
+	size_t						_totalDepth = 0;
+	size_t						_internalNodes = 0;
+	size_t						_totalExpectedChildren = 0;
+	size_t						_totalPresentChildren = 0;
+	size_t						_singleChildNodeCount = 0;
+	double						_tightVolumeRatioSum = 0.0;
+	size_t						_tightVolumeRatioSamples = 0;
+	size_t						_microIndexedLeaves = 0;
+	size_t						_microIndexedPoints = 0;
 };
 
 static void collectTreeHealth(const PointSpatialIndex::Node* node, const SchemaConfig* schema, TreeHealthAccumulator& accumulator)

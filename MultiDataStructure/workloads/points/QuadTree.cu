@@ -445,31 +445,31 @@ namespace
 
 struct PointGpu::QuadTree::DeviceState
 {
-	DevicePoint* _points = nullptr;
-	uint32_t* _indices = nullptr;
-	uint32_t* _tempIndices = nullptr;
-	LinearQuadTreeNode* _nodes = nullptr;
-	uint32_t* _childCounts = nullptr;
-	uint32_t* _writeCursors = nullptr;
-	uint32_t* _nodeCounter = nullptr;
-	uint32_t* _overflowFlag = nullptr;
-	DeviceQuery* _queryBuffer = nullptr;
-	DeviceQuerySample* _sampleBuffer = nullptr;
-	size_t _pointCount = 0;
-	size_t _nodeCapacity = 0;
-	size_t _allocatedNodes = 0;
-	size_t _actualNodes = 0;
-	size_t _actualLeaves = 0;
-	size_t _leafCapacity = 1;
-	size_t _minSplit = 2;
-	size_t _maxDepth = 0;
-	size_t _levelScratchNodeCapacity = 0;
-	size_t _queryCapacity = 0;
-	size_t _baseMemoryBytes = 0;
-	size_t _memoryBytes = 0;
-	int _device = 0;
-	const PointCloud* _cloud = nullptr;
-	bool _pointsReady = false;
+	DevicePoint*		_points = nullptr;
+	uint32_t*			_indices = nullptr;
+	uint32_t*			_tempIndices = nullptr;
+	LinearQuadTreeNode*	_nodes = nullptr;
+	uint32_t*			_childCounts = nullptr;
+	uint32_t*			_writeCursors = nullptr;
+	uint32_t*			_nodeCounter = nullptr;
+	uint32_t*			_overflowFlag = nullptr;
+	DeviceQuery*		_queryBuffer = nullptr;
+	DeviceQuerySample*	_sampleBuffer = nullptr;
+	size_t				_pointCount = 0;
+	size_t				_nodeCapacity = 0;
+	size_t				_allocatedNodes = 0;
+	size_t				_actualNodes = 0;
+	size_t				_actualLeaves = 0;
+	size_t				_leafCapacity = 1;
+	size_t				_minSplit = 2;
+	size_t				_maxDepth = 0;
+	size_t				_levelScratchNodeCapacity = 0;
+	size_t				_queryCapacity = 0;
+	size_t				_baseMemoryBytes = 0;
+	size_t				_memoryBytes = 0;
+	int					_device = 0;
+	const PointCloud*	_cloud = nullptr;
+	bool				_pointsReady = false;
 };
 
 namespace

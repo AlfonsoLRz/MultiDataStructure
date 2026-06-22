@@ -13,9 +13,9 @@ protected:
 	Node*		_clusterBufferGPU;
 
 	//
-	AABB		_aabb;
-	GLuint		_numIndices;
-	GLuint		_numMeshes;
+	AABB	_aabb;
+	GLuint	_numIndices;
+	GLuint	_numMeshes;
 
 protected:
 	Node* buildClusterBuffer(glm::u32* sortedFacesBufferGPU);

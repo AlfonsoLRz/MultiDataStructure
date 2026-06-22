@@ -9,9 +9,9 @@ namespace Experiments
 	// A loaded surrogate model built once per run and cheap to query thereafter; active is false when no path was configured or the model failed to load.
 	struct SurrogateAcquisition
 	{
-		SchemaSelectorModel _model;
-		std::string _modelPath;
-		bool _active = false;
+		SchemaSelectorModel	_model;
+		std::string			_modelPath;
+		bool				_active = false;
 	};
 
 	// Loads the selector JSON at modelPath; on any failure returns an inactive acquisition rather than throwing, so the GA falls back to its mutation/immigration path.

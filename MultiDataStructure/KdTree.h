@@ -5,7 +5,7 @@
 class KdTreeNode : public MultiDataStructure::SpatialDSNode
 {
 private:
-	int _splitAxis;
+	int	_splitAxis;
 
 public:
 	KdTreeNode(const AABB& aabb = AABB());

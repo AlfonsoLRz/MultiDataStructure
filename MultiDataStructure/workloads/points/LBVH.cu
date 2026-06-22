@@ -441,29 +441,29 @@ namespace
 
 struct PointGpu::LBVH::DeviceState
 {
-	DevicePoint* _points = nullptr;
-	uint64_t* _keys = nullptr;
-	uint64_t* _sortedKeys = nullptr;
-	uint64_t* _leafKeys = nullptr;
-	uint32_t* _indices = nullptr;
-	uint32_t* _sortedIndices = nullptr;
-	LinearNode* _nodes = nullptr;
-	int* _boundsCounters = nullptr;
-	DeviceQuery* _queryBuffer = nullptr;
-	DeviceQuerySample* _sampleBuffer = nullptr;
-	void* _sortTemporary = nullptr;
-	size_t _sortTemporaryBytes = 0;
-	size_t _queryCapacity = 0;
-	size_t _pointCount = 0;
-	size_t _leafCount = 0;
-	size_t _nodeCount = 0;
-	size_t _leafCapacity = 1;
-	size_t _baseMemoryBytes = 0;
-	size_t _memoryBytes = 0;
-	int _device = 0;
-	std::string _builder = "lbvh";
-	const PointCloud* _cloud = nullptr;
-	bool _sortedReady = false;
+	DevicePoint*		_points = nullptr;
+	uint64_t*			_keys = nullptr;
+	uint64_t*			_sortedKeys = nullptr;
+	uint64_t*			_leafKeys = nullptr;
+	uint32_t*			_indices = nullptr;
+	uint32_t*			_sortedIndices = nullptr;
+	LinearNode*			_nodes = nullptr;
+	int*				_boundsCounters = nullptr;
+	DeviceQuery*		_queryBuffer = nullptr;
+	DeviceQuerySample*	_sampleBuffer = nullptr;
+	void*				_sortTemporary = nullptr;
+	size_t				_sortTemporaryBytes = 0;
+	size_t				_queryCapacity = 0;
+	size_t				_pointCount = 0;
+	size_t				_leafCount = 0;
+	size_t				_nodeCount = 0;
+	size_t				_leafCapacity = 1;
+	size_t				_baseMemoryBytes = 0;
+	size_t				_memoryBytes = 0;
+	int					_device = 0;
+	std::string			_builder = "lbvh";
+	const PointCloud*	_cloud = nullptr;
+	bool				_sortedReady = false;
 };
 
 namespace

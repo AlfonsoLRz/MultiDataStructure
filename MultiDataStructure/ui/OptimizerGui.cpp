@@ -8,230 +8,230 @@ static constexpr size_t TextBufferSize = 512;
 
 struct SchemaEntry
 {
-	std::string _label;
-	std::string _path;
-	bool _selected = true;
+	std::string	_label;
+	std::string	_path;
+	bool		_selected = true;
 };
 
 struct WorkloadEntry
 {
-	std::string _label;
-	std::string _path;
+	std::string	_label;
+	std::string	_path;
 };
 
 struct BestResult
 {
-	std::string _dataset;
-	std::string _workload;
-	std::string _schemaName;
-	std::string _schemaPath;
-	double _score = 0.0;
-	double _averageLatencyMs = 0.0;
-	double _buildTimeMs = 0.0;
-	double _gpuBuildMs = 0.0;
-	double _gpuQueryMs = 0.0;
-	uint64_t _memoryBytes = 0;
-	size_t _candidates = 0;
-	std::string _backend;
-	std::string _scoreMode = "unknown";
-	std::string _scoreStage = "unknown";
-	bool _scoreIsFinalLatency = false;
-	size_t _effectiveQueries = 0;
+	std::string	_dataset;
+	std::string	_workload;
+	std::string	_schemaName;
+	std::string	_schemaPath;
+	double		_score = 0.0;
+	double		_averageLatencyMs = 0.0;
+	double		_buildTimeMs = 0.0;
+	double		_gpuBuildMs = 0.0;
+	double		_gpuQueryMs = 0.0;
+	uint64_t	_memoryBytes = 0;
+	size_t		_candidates = 0;
+	std::string	_backend;
+	std::string	_scoreMode = "unknown";
+	std::string	_scoreStage = "unknown";
+	bool		_scoreIsFinalLatency = false;
+	size_t		_effectiveQueries = 0;
 };
 
 struct LiveRankingEntry
 {
-	size_t _order = 0;
-	std::string _dataset;
-	std::string _workload;
-	std::string _schemaName;
-	std::string _schemaPath;
-	std::string _backend;
-	std::string _cudaBuilder;
-	double _score = 0.0;
-	double _averageLatencyMs = 0.0;
-	double _p95LatencyMs = 0.0;
-	double _buildTimeMs = 0.0;
-	double _gpuBuildMs = 0.0;
-	double _gpuQueryMs = 0.0;
-	double _averageVisitedNodes = 0.0;
-	double _averageTestedPoints = 0.0;
-	uint64_t _memoryBytes = 0;
-	std::string _scoreMode = "latency";
-	std::string _scoreStage = "final";
-	bool _scoreIsFinalLatency = true;
-	size_t _effectiveQueries = 0;
+	size_t		_order = 0;
+	std::string	_dataset;
+	std::string	_workload;
+	std::string	_schemaName;
+	std::string	_schemaPath;
+	std::string	_backend;
+	std::string	_cudaBuilder;
+	double		_score = 0.0;
+	double		_averageLatencyMs = 0.0;
+	double		_p95LatencyMs = 0.0;
+	double		_buildTimeMs = 0.0;
+	double		_gpuBuildMs = 0.0;
+	double		_gpuQueryMs = 0.0;
+	double		_averageVisitedNodes = 0.0;
+	double		_averageTestedPoints = 0.0;
+	uint64_t	_memoryBytes = 0;
+	std::string	_scoreMode = "latency";
+	std::string	_scoreStage = "final";
+	bool		_scoreIsFinalLatency = true;
+	size_t		_effectiveQueries = 0;
 };
 
 struct SchemaFileViewer
 {
-	bool _open = false;
-	bool _wrap = false;
-	std::string _title = "Schema JSON";
-	std::string _path;
-	std::string _content;
-	std::string _error;
+	bool		_open = false;
+	bool		_wrap = false;
+	std::string	_title = "Schema JSON";
+	std::string	_path;
+	std::string	_content;
+	std::string	_error;
 };
 
 struct PreviewBox
 {
 	glm::vec3 min = glm::vec3(0.0f);
 	glm::vec3 max = glm::vec3(0.0f);
-	std::string _typeName;
-	size_t _depth = 0;
+	std::string	_typeName;
+	size_t		_depth = 0;
 };
 
 struct PreviewPhase
 {
-	SchemaLevelConfig _level;
-	std::string _label;
-	size_t _startDepth = 0;
-	size_t _endDepth = 0;
+	SchemaLevelConfig	_level;
+	std::string			_label;
+	size_t				_startDepth = 0;
+	size_t				_endDepth = 0;
 };
 
 struct StructurePreview
 {
-	bool _open = false;
-	bool _needsRebuild = false;
-	bool _truncated = false;
-	bool _showFullSchedule = false;
-	std::string _title = "Structure Preview";
-	std::string _path;
-	std::string _schemaName;
-	std::string _error;
-	std::vector<PreviewBox> _boxes;
-	std::vector<PreviewPhase> _phases;
-	int _phaseIndex = 0;
-	int _maxDepth = 2;
-	int _maxBoxes = 2048;
-	float _yaw = 0.68f;
-	float _pitch = 0.42f;
-	float _zoom = 3.2f;
+	bool	_open = false;
+	bool	_needsRebuild = false;
+	bool	_truncated = false;
+	bool	_showFullSchedule = false;
+	std::string	_title = "Structure Preview";
+	std::string	_path;
+	std::string	_schemaName;
+	std::string	_error;
+	std::vector<PreviewBox>	_boxes;
+	std::vector<PreviewPhase>	_phases;
+	int	_phaseIndex = 0;
+	int	_maxDepth = 2;
+	int	_maxBoxes = 2048;
+	float	_yaw = 0.68f;
+	float	_pitch = 0.42f;
+	float	_zoom = 3.2f;
 };
 
 struct GuiState
 {
-	std::array<char, TextBufferSize> _inputPath{};
-	std::array<char, TextBufferSize> _rankModelPath{};
-	std::array<char, TextBufferSize> _csvPath{};
-	std::array<char, TextBufferSize> _bestCsvPath{};
-	std::array<char, TextBufferSize> _paretoCsvPath{};
-	std::array<char, TextBufferSize> _explainReportPath{};
-	std::array<char, TextBufferSize> _queryTracePath{};
-	std::array<char, TextBufferSize> _generatedSchemaDir{};
-	std::array<char, TextBufferSize> _autoConditionSchemaDir{};
-	std::array<char, TextBufferSize> _selectorOutputPath{};
+	std::array<char, TextBufferSize>	_inputPath{};
+	std::array<char, TextBufferSize>	_rankModelPath{};
+	std::array<char, TextBufferSize>	_csvPath{};
+	std::array<char, TextBufferSize>	_bestCsvPath{};
+	std::array<char, TextBufferSize>	_paretoCsvPath{};
+	std::array<char, TextBufferSize>	_explainReportPath{};
+	std::array<char, TextBufferSize>	_queryTracePath{};
+	std::array<char, TextBufferSize>	_generatedSchemaDir{};
+	std::array<char, TextBufferSize>	_autoConditionSchemaDir{};
+	std::array<char, TextBufferSize>	_selectorOutputPath{};
 
-	std::vector<SchemaEntry> _schemas;
-	std::vector<WorkloadEntry> _workloads;
-	int _selectedWorkload = 0;
+	std::vector<SchemaEntry>	_schemas;
+	std::vector<WorkloadEntry>	_workloads;
+	int	_selectedWorkload = 0;
 
-	bool _autoConditions = true;
-	bool _includeSynthetic = false;
-	bool _useBinaryCache = true;
-	bool _rebuildBinaryCache = false;
-	bool _generateSchemas = true;
-	bool _generatedOnly = true;
-	bool _generatedConditional = true;
-	bool _generatedAdaptiveLeafCapacity = false;
-	bool _queryMinimalPrimitives = true;
-	bool _useRankModel = false;
+	bool	_autoConditions = true;
+	bool	_includeSynthetic = false;
+	bool	_useBinaryCache = true;
+	bool	_rebuildBinaryCache = false;
+	bool	_generateSchemas = true;
+	bool	_generatedOnly = true;
+	bool	_generatedConditional = true;
+	bool	_generatedAdaptiveLeafCapacity = false;
+	bool	_queryMinimalPrimitives = true;
+	bool	_useRankModel = false;
 	// GA path with rungs + threshold refinement; default-on.
-	bool _optimizeSchemas = true;
-	int _evaluator = 0;
-	int _cudaDevice = 0;
-	int _cudaBuilder = 0;
-	int _cudaKnnBackend = 0;
-	int _cudaQueryBatch = 0;
-	int _cudaMemoryBudgetMb = 0;
-	int _liveRankingTopN = 10;
-	bool _advancedEvaluatorOpen = false;
-	bool _advancedScoringOpen = false;
+	bool	_optimizeSchemas = true;
+	int		_evaluator = 0;
+	int		_cudaDevice = 0;
+	int		_cudaBuilder = 0;
+	int		_cudaKnnBackend = 0;
+	int		_cudaQueryBatch = 0;
+	int		_cudaMemoryBudgetMb = 0;
+	int		_liveRankingTopN = 10;
+	bool	_advancedEvaluatorOpen = false;
+	bool	_advancedScoringOpen = false;
 
-	int _queryCount = 64;
-	int _knnK = 16;
-	int _querySeed = 1337;
-	int _syntheticScale = 512;
-	int _generatedCount = 256;
-	int _benchmarkTopK = 32;
-	int _generatedMinBlocks = 2;
-	int _generatedMaxBlocks = 3;
-	int _generatedMaxDepth = 12;
-	int _generatedMinLeaf = 32;
-	int _generatedMaxLeaf = 32768;
-	int _generatedSeed = 1337;
-	int _optimizerGenerations = 3;
-	int _optimizerPopulation = 64;
-	int _optimizerElites = 6;
-	int _optimizerSeed = 1337;
-	int _conditionProxyCandidates = 256;
-	int _conditionProxyPoints = 262144;
-	int _conditionProxyQueries = 8;
-	int _conditionFinalTopK = 16;
-	int _conditionConfirmTopK = 4;
-	float _generatedConditionProbability = 0.5f;
-	float _generatedAdaptiveLeafProbability = 0.25f;
-	float _optimizerMutationRate = 0.65f;
-	float _optimizerRandomFraction = 0.20f;
-	float _scoreBuildWeight = 0.0f;
-	float _scoreMemoryWeight = 0.0f;
-	float _scoreImbalanceWeight = 0.0f;
+	int		_queryCount = 64;
+	int		_knnK = 16;
+	int		_querySeed = 1337;
+	int		_syntheticScale = 512;
+	int		_generatedCount = 256;
+	int		_benchmarkTopK = 32;
+	int		_generatedMinBlocks = 2;
+	int		_generatedMaxBlocks = 3;
+	int		_generatedMaxDepth = 12;
+	int		_generatedMinLeaf = 32;
+	int		_generatedMaxLeaf = 32768;
+	int		_generatedSeed = 1337;
+	int		_optimizerGenerations = 3;
+	int		_optimizerPopulation = 64;
+	int		_optimizerElites = 6;
+	int		_optimizerSeed = 1337;
+	int		_conditionProxyCandidates = 256;
+	int		_conditionProxyPoints = 262144;
+	int		_conditionProxyQueries = 8;
+	int		_conditionFinalTopK = 16;
+	int		_conditionConfirmTopK = 4;
+	float	_generatedConditionProbability = 0.5f;
+	float	_generatedAdaptiveLeafProbability = 0.25f;
+	float	_optimizerMutationRate = 0.65f;
+	float	_optimizerRandomFraction = 0.20f;
+	float	_scoreBuildWeight = 0.0f;
+	float	_scoreMemoryWeight = 0.0f;
+	float	_scoreImbalanceWeight = 0.0f;
 
 	// Score cache and parallel dispatch defaults.
-	bool _scoreCacheEnabled = true;
-	std::array<char, 512> _scoreCachePath{};
-	bool _rebuildScoreCache = false;
-	int _parallelDispatch = 1;
-	bool _includeBaselineSchemas = true;
+	bool					_scoreCacheEnabled = true;
+	std::array<char, 512>	_scoreCachePath{};
+	bool					_rebuildScoreCache = false;
+	int						_parallelDispatch = 1;
+	bool					_includeBaselineSchemas = true;
 
 	// Multi-fidelity rung schedule: visit-proxy, latency, then full-workload confirmation; default-on.
-	bool _useRungSchedule = true;
-	int _rungProxyQueries = 4;
-	int _rungProxyAdvance = 32;
-	float _rungProxyAlpha = 0.1f;
-	int _rungFullQueries = 16;
-	int _rungFullAdvance = 8;
-	int _rungConfirmQueries = 64;
+	bool	_useRungSchedule = true;
+	int		_rungProxyQueries = 4;
+	int		_rungProxyAdvance = 32;
+	float	_rungProxyAlpha = 0.1f;
+	int		_rungFullQueries = 16;
+	int		_rungFullAdvance = 8;
+	int		_rungConfirmQueries = 64;
 	std::array<char, TextBufferSize> rungSurrogatePath{};
-	int _rungSurrogatePool = 0;
-	int _rungSurrogateTop = 0;
+	int	_rungSurrogatePool = 0;
+	int	_rungSurrogateTop = 0;
 
 	// Tune top-K conditional thresholds with a (1+lambda)-ES after the GA, then re-measure improvers; default-on.
-	bool _refineThresholds = true;
-	int _refineThresholdsTopK = 4;
-	int _refineThresholdsEvals = 60;
-	float _refineThresholdsSigma = 0.3f;
-	int _refineThresholdsSeed = 1337;
+	bool	_refineThresholds = true;
+	int		_refineThresholdsTopK = 4;
+	int		_refineThresholdsEvals = 60;
+	float	_refineThresholdsSigma = 0.3f;
+	int		_refineThresholdsSeed = 1337;
 
 	// Re-measure top-K per (dataset, workload) over N seeds for a mean + 95% bootstrap CI; default-on.
-	bool _confirmSeeds = true;
-	int _confirmSeedsCount = 5;
-	int _confirmTopK = 4;
+	bool	_confirmSeeds = true;
+	int		_confirmSeedsCount = 5;
+	int		_confirmTopK = 4;
 
 	// Diversity controls: crossover plus NSGA-II elite ranking; default-on.
-	float _optimizerCrossoverRate = 0.4f;
-	bool _optimizerUseNsga2 = true;
-	bool _repairMutations = true;
-	int _repairTopK = 4;
-	int _repairPerCandidate = 2;
+	float	_optimizerCrossoverRate = 0.4f;
+	bool	_optimizerUseNsga2 = true;
+	bool	_repairMutations = true;
+	int		_repairTopK = 4;
+	int		_repairPerCandidate = 2;
 
-	SchemaFileViewer _fileViewer;
-	StructurePreview _structurePreview;
+	SchemaFileViewer	_fileViewer;
+	StructurePreview	_structurePreview;
 };
 
 struct RunSession
 {
-	std::thread _worker;
-	std::atomic<bool> _running = false;
-	std::atomic<bool> _finished = false;
-	std::mutex _mutex;
-	std::string _status = "Idle";
-	std::string _log;
-	std::string _error;
-	std::vector<BestResult> _bestResults;
-	std::vector<LiveRankingEntry> _liveRanking;
-	size_t _evaluatedCandidates = 0;
-	int _exitCode = 0;
+	std::thread	_worker;
+	std::atomic<bool>	_running = false;
+	std::atomic<bool>	_finished = false;
+	std::mutex	_mutex;
+	std::string	_status = "Idle";
+	std::string	_log;
+	std::string	_error;
+	std::vector<BestResult>	_bestResults;
+	std::vector<LiveRankingEntry>	_liveRanking;
+	size_t	_evaluatedCandidates = 0;
+	int	_exitCode = 0;
 };
 
 template <size_t N>
@@ -934,7 +934,7 @@ protected:
 	}
 
 private:
-	RunSession& _session;
+	RunSession&	_session;
 };
 
 class ScopedStreamCapture
@@ -954,9 +954,9 @@ public:
 	}
 
 private:
-	SessionStreamBuffer _buffer;
-	std::streambuf* _oldOut = nullptr;
-	std::streambuf* _oldErr = nullptr;
+	SessionStreamBuffer	_buffer;
+	std::streambuf*		_oldOut = nullptr;
+	std::streambuf*		_oldErr = nullptr;
 };
 
 static std::vector<SchemaEntry> discoverSchemas()
@@ -2005,8 +2005,8 @@ enum class LineageOperator
 
 struct LineageInfo
 {
-	LineageOperator _op = LineageOperator::Other;
-	int _generation = 0;   // -1 = not part of a generation (e.g. refiner inner loop)
+	LineageOperator	_op = LineageOperator::Other;
+	int				_generation = 0;   // -1 = not part of a generation (e.g. refiner inner loop)
 };
 
 static const char* lineageOperatorLabel(LineageOperator op)
@@ -2098,11 +2098,11 @@ static LineageInfo parseLineage(const std::string& schemaName)
 // Per-generation rollup of the live ranking: operator counts and best candidate.
 struct GenerationBucket
 {
-	int _generation = -1;
-	size_t _total = 0;
+	int		_generation = -1;
+	size_t	_total = 0;
 	std::array<size_t, 6> operatorCounts{};   // indexed by LineageOperator
-	const LiveRankingEntry* _best = nullptr;
-	LineageOperator _bestOp = LineageOperator::Other;
+	const LiveRankingEntry*	_best = nullptr;
+	LineageOperator			_bestOp = LineageOperator::Other;
 };
 
 static std::vector<GenerationBucket> bucketByGeneration(const std::vector<LiveRankingEntry>& ranking)

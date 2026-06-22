@@ -170,20 +170,20 @@ struct PointGpu::HGrid::DeviceState
 {
 	struct Level
 	{
-		std::unique_ptr<RegularGrid> _grid;
-		size_t _leafCapacity = 1;
-		size_t _cellCount = 0;
-		glm::uvec3 _dimensions = glm::uvec3(1);
+		std::unique_ptr<RegularGrid>	_grid;
+		size_t	_leafCapacity = 1;
+		size_t	_cellCount = 0;
+		glm::uvec3	_dimensions = glm::uvec3(1);
 	};
 
-	std::vector<Level> _levels;
-	size_t _pointCount = 0;
-	size_t _totalCellCount = 0;
-	size_t _memoryBytes = 0;
-	int _device = 0;
-	const PointCloud* _cloud = nullptr;
-	AABB _bounds;
-	bool _ready = false;
+	std::vector<Level>	_levels;
+	size_t				_pointCount = 0;
+	size_t				_totalCellCount = 0;
+	size_t				_memoryBytes = 0;
+	int					_device = 0;
+	const PointCloud*	_cloud = nullptr;
+	AABB				_bounds;
+	bool				_ready = false;
 };
 
 PointGpu::HGrid::HGrid()

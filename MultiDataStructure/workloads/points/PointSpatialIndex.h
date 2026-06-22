@@ -11,11 +11,11 @@ public:
 	{
 		struct KdNode
 		{
-			AABB _bounds;
-			uint32_t _begin = 0;
-			uint32_t _count = 0;
-			uint32_t _left = std::numeric_limits<uint32_t>::max();
-			uint32_t _right = std::numeric_limits<uint32_t>::max();
+			AABB		_bounds;
+			uint32_t	_begin = 0;
+			uint32_t	_count = 0;
+			uint32_t	_left = std::numeric_limits<uint32_t>::max();
+			uint32_t	_right = std::numeric_limits<uint32_t>::max();
 
 			bool isLeaf() const
 			{
@@ -24,12 +24,12 @@ public:
 			}
 		};
 
-		AABB _bounds;
+		AABB	_bounds;
 		glm::uvec3 gridResolution = glm::uvec3(1, 1, 1);
-		std::vector<uint32_t> _gridOffsets;
-		std::vector<uint32_t> _gridOrder;
-		std::vector<uint32_t> _kdOrder;
-		std::vector<KdNode> _kdNodes;
+		std::vector<uint32_t>	_gridOffsets;
+		std::vector<uint32_t>	_gridOrder;
+		std::vector<uint32_t>	_kdOrder;
+		std::vector<KdNode>		_kdNodes;
 
 		bool hasGrid() const { return _gridOffsets.size() > 1 && !_gridOrder.empty(); }
 		bool hasKdTree() const { return !_kdNodes.empty() && !_kdOrder.empty(); }
@@ -37,26 +37,26 @@ public:
 
 	struct Node
 	{
-		AABB _bounds;
-		MultiDataStructure::DataStructureLevel _type = MultiDataStructure::DataStructureLevel::OctreeNode;
-		size_t _depth = 0;
-		size_t _schemaDepth = 0;
-		AABB _tightBounds;
-		size_t _subtreePointCount = 0;
-		size_t _pointOffset = 0;
-		size_t _pointCount = 0;
-		std::unique_ptr<LeafMicroIndex> _microIndex;
-		std::vector<std::unique_ptr<Node>> _children;
+		AABB	_bounds;
+		MultiDataStructure::DataStructureLevel	_type = MultiDataStructure::DataStructureLevel::OctreeNode;
+		size_t	_depth = 0;
+		size_t	_schemaDepth = 0;
+		AABB	_tightBounds;
+		size_t	_subtreePointCount = 0;
+		size_t	_pointOffset = 0;
+		size_t	_pointCount = 0;
+		std::unique_ptr<LeafMicroIndex>	_microIndex;
+		std::vector<std::unique_ptr<Node>>	_children;
 
 		bool isLeaf() const { return _children.empty(); }
 	};
 
 	struct Stats
 	{
-		size_t _numNodes = 0;
-		size_t _numLeaves = 0;
-		size_t _numPoints = 0;
-		size_t _maxDepth = 0;
+		size_t	_numNodes = 0;
+		size_t	_numLeaves = 0;
+		size_t	_numPoints = 0;
+		size_t	_maxDepth = 0;
 	};
 
 	struct QueryStats
@@ -66,29 +66,29 @@ public:
 		struct QueryBreakdown
 		{
 			std::array<size_t, MaxBreakdownDepth> visitedByDepth{};
-			std::unordered_map<std::string, size_t> _visitedByStructure;
-			std::unordered_map<std::string, size_t> _testedPointsByStructure;
-			std::unordered_map<std::string, size_t> _fullyContainedByStructure;
+			std::unordered_map<std::string, size_t>	_visitedByStructure;
+			std::unordered_map<std::string, size_t>	_testedPointsByStructure;
+			std::unordered_map<std::string, size_t>	_fullyContainedByStructure;
 		};
 
-		size_t _visitedNodes = 0;
-		size_t _testedPoints = 0;
-		size_t _returnedPoints = 0;
-		size_t _fullyContainedNodes = 0;
-		double _elapsedMs = 0.0;
-		QueryBreakdown _breakdown;
+		size_t			_visitedNodes = 0;
+		size_t			_testedPoints = 0;
+		size_t			_returnedPoints = 0;
+		size_t			_fullyContainedNodes = 0;
+		double			_elapsedMs = 0.0;
+		QueryBreakdown	_breakdown;
 	};
 
 	struct QueryResult
 	{
-		std::vector<size_t> _pointIndices;
-		QueryStats _stats;
+		std::vector<size_t>	_pointIndices;
+		QueryStats			_stats;
 	};
 
 	struct CountResult
 	{
-		size_t _count = 0;
-		QueryStats _stats;
+		size_t		_count = 0;
+		QueryStats	_stats;
 	};
 
 	void build(const PointCloud& cloud, const SchemaConfig& schema);
@@ -102,25 +102,25 @@ public:
 private:
 	struct ActiveLevel
 	{
-		const SchemaLevelConfig* _config = nullptr;
-		size_t _schemaDepth = 0;
+		const SchemaLevelConfig*	_config = nullptr;
+		size_t						_schemaDepth = 0;
 	};
 
 	struct BuildScratch
 	{
-		std::vector<uint32_t> _tempOrder;
-		std::vector<uint32_t> _childCounts;
-		std::vector<size_t> _childOffsets;
-		std::vector<AABB> _childBounds;
+		std::vector<uint32_t>	_tempOrder;
+		std::vector<uint32_t>	_childCounts;
+		std::vector<size_t>		_childOffsets;
+		std::vector<AABB>		_childBounds;
 	};
 
-	const PointCloud* _cloud = nullptr;
-	SchemaConfig _schema;
-	std::unique_ptr<Node> _root;
-	std::vector<uint32_t> _pointOrder;
-	std::vector<float> _orderedX;
-	std::vector<float> _orderedY;
-	std::vector<float> _orderedZ;
+	const PointCloud*		_cloud = nullptr;
+	SchemaConfig			_schema;
+	std::unique_ptr<Node>	_root;
+	std::vector<uint32_t>	_pointOrder;
+	std::vector<float>		_orderedX;
+	std::vector<float>		_orderedY;
+	std::vector<float>		_orderedZ;
 
 	void buildNode(std::unique_ptr<Node>& node, BuildScratch& scratch);
 	void rebuildOrderedPointSoA();

@@ -49,26 +49,26 @@ static const std::vector<std::string>& defaultWorkloadPaths()
 
 struct SearchDataset
 {
-	std::string _name;
-	std::string _source;
-	PointCloud _cloud;
+	std::string	_name;
+	std::string	_source;
+	PointCloud	_cloud;
 };
 
 struct WorkloadRun
 {
-	Experiments::QueryMetrics _metrics;
-	Experiments::QueryMetrics _rangeMetrics;
-	Experiments::QueryMetrics _countRangeMetrics;
-	Experiments::QueryMetrics _radiusMetrics;
-	Experiments::QueryMetrics _knnMetrics;
-	std::vector<PointSpatialIndex::QueryStats> _samples;
-	size_t _rangeQueries = 0;
-	size_t _countRangeQueries = 0;
-	size_t _radiusQueries = 0;
-	size_t _knnQueries = 0;
-	std::map<std::string, Experiments::QueryMetrics> _stratumMetrics;
-	std::string _stratumSummary;
-	double _gpuQueryMs = 0.0;
+	Experiments::QueryMetrics	_metrics;
+	Experiments::QueryMetrics	_rangeMetrics;
+	Experiments::QueryMetrics	_countRangeMetrics;
+	Experiments::QueryMetrics	_radiusMetrics;
+	Experiments::QueryMetrics	_knnMetrics;
+	std::vector<PointSpatialIndex::QueryStats>	_samples;
+	size_t	_rangeQueries = 0;
+	size_t	_countRangeQueries = 0;
+	size_t	_radiusQueries = 0;
+	size_t	_knnQueries = 0;
+	std::map<std::string, Experiments::QueryMetrics>	_stratumMetrics;
+	std::string	_stratumSummary;
+	double	_gpuQueryMs = 0.0;
 };
 
 enum class PreparedQueryKind
@@ -80,22 +80,22 @@ enum class PreparedQueryKind
 
 struct PreparedCpuQuery
 {
-	PreparedQueryKind _kind = PreparedQueryKind::Range;
-	AABB _bounds;
+	PreparedQueryKind	_kind = PreparedQueryKind::Range;
+	AABB				_bounds;
 	glm::vec3 center = glm::vec3(0.0f);
-	float _radius = 0.0f;
-	std::string _stratum;
+	float		_radius = 0.0f;
+	std::string	_stratum;
 };
 
 struct PreparedWorkload
 {
-	std::vector<PreparedCpuQuery> _cpuQueries;
-	std::vector<PointGpu::Query> _cudaQueries;
-	std::vector<std::string> _cudaStrata;
-	size_t _rangeQueries = 0;
-	size_t _countRangeQueries = 0;
-	size_t _radiusQueries = 0;
-	size_t _knnQueries = 0;
+	std::vector<PreparedCpuQuery>	_cpuQueries;
+	std::vector<PointGpu::Query>	_cudaQueries;
+	std::vector<std::string>	_cudaStrata;
+	size_t	_rangeQueries = 0;
+	size_t	_countRangeQueries = 0;
+	size_t	_radiusQueries = 0;
+	size_t	_knnQueries = 0;
 };
 
 static std::string csvEscape(const std::string& value);
@@ -103,42 +103,42 @@ static void createParentDirectory(const std::string& filename);
 
 struct DatasetContext
 {
-	const SearchDataset* _dataset = nullptr;
-	Experiments::PointCloudFeatures _features;
-	std::vector<PreparedWorkload> _preparedWorkloads;
+	const SearchDataset*	_dataset = nullptr;
+	Experiments::PointCloudFeatures	_features;
+	std::vector<PreparedWorkload>	_preparedWorkloads;
 };
 
 struct EvaluatedCandidate
 {
-	Experiments::SchemaCandidate _candidate;
-	std::vector<Experiments::SchemaSearchRecord> _records;
+	Experiments::SchemaCandidate	_candidate;
+	std::vector<Experiments::SchemaSearchRecord>	_records;
 	double aggregateScore = std::numeric_limits<double>::infinity();
 	// NSGA-II tagging: paretoFront -1 = unranked, 0 = current front; crowdingDistance sums normalized objective gaps to same-front neighbors (larger = more isolated).
-	int _paretoFront = -1;
-	double _crowdingDistance = 0.0;
+	int		_paretoFront = -1;
+	double	_crowdingDistance = 0.0;
 };
 
 template <typename TIndex>
 struct CudaCachedBuilder
 {
-	std::unique_ptr<TIndex> _index;
-	std::string _lastSignature;
-	PointGpu::BuildResult _lastResult;
-	bool _hasResult = false;
+	std::unique_ptr<TIndex>	_index;
+	std::string				_lastSignature;
+	PointGpu::BuildResult	_lastResult;
+	bool					_hasResult = false;
 };
 
 struct CudaIndexCacheEntry
 {
-	CudaCachedBuilder<PointGpu::BIH> _bih;
-	CudaCachedBuilder<PointGpu::HGrid> _hgrid;
-	CudaCachedBuilder<PointGpu::KDTree> _kdTree;
-	CudaCachedBuilder<PointGpu::LBVH> _lbvh;
-	CudaCachedBuilder<PointGpu::MixedTree> _mixedTree;
-	CudaCachedBuilder<PointGpu::Octree> _octree;
-	CudaCachedBuilder<PointGpu::QuadTree> _quadTree;
-	CudaCachedBuilder<PointGpu::RegularGrid> _regularGrid;
-	size_t _buildHits = 0;
-	size_t _buildMisses = 0;
+	CudaCachedBuilder<PointGpu::BIH>	_bih;
+	CudaCachedBuilder<PointGpu::HGrid>	_hgrid;
+	CudaCachedBuilder<PointGpu::KDTree>	_kdTree;
+	CudaCachedBuilder<PointGpu::LBVH>	_lbvh;
+	CudaCachedBuilder<PointGpu::MixedTree>	_mixedTree;
+	CudaCachedBuilder<PointGpu::Octree>	_octree;
+	CudaCachedBuilder<PointGpu::QuadTree>	_quadTree;
+	CudaCachedBuilder<PointGpu::RegularGrid>	_regularGrid;
+	size_t	_buildHits = 0;
+	size_t	_buildMisses = 0;
 };
 
 using CudaIndexCache = std::unordered_map<const SearchDataset*, CudaIndexCacheEntry>;
@@ -1181,15 +1181,15 @@ static std::string schemaConditionSummary(const SchemaConfig& schema)
 
 struct ActiveTypeAccumulator
 {
-	size_t _nodes = 0;
-	size_t _leafPoints = 0;
+	size_t	_nodes = 0;
+	size_t	_leafPoints = 0;
 };
 
 struct ActiveStructureStats
 {
-	size_t _activeStructureTypes = 0;
-	double _nestedActiveFraction = 0.0;
-	std::string _summary;
+	size_t		_activeStructureTypes = 0;
+	double		_nestedActiveFraction = 0.0;
+	std::string	_summary;
 };
 
 static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig& schema, const PointSpatialIndex::Node& node)
@@ -1992,8 +1992,8 @@ static SchemaConfig mutateSchemaConfig(
 
 struct RepairSchemaMutation
 {
-	SchemaConfig _schema;
-	std::string _reason;
+	SchemaConfig	_schema;
+	std::string		_reason;
 };
 
 static void assignRepairPrimitive(
@@ -2549,10 +2549,10 @@ enum class QueryCenterMode
 
 struct StratifiedQuerySpec
 {
-	PreparedQueryKind _kind = PreparedQueryKind::Range;
-	std::string _name;
-	double _scale = 0.01;
-	QueryCenterMode _centerMode = QueryCenterMode::Random;
+	PreparedQueryKind	_kind = PreparedQueryKind::Range;
+	std::string			_name;
+	double				_scale = 0.01;
+	QueryCenterMode		_centerMode = QueryCenterMode::Random;
 };
 
 static std::vector<StratifiedQuerySpec> stratifiedQuerySpecs(const Experiments::WorkloadProfile& profile)
@@ -4215,10 +4215,10 @@ static void reportDeepNestedOutcome(const std::vector<Experiments::SchemaSearchR
 
 struct ActiveExplainEntry
 {
-	std::string _typeName;
-	size_t _nodes = 0;
-	size_t _leafPoints = 0;
-	bool _schemaOnly = false;
+	std::string	_typeName;
+	size_t		_nodes = 0;
+	size_t		_leafPoints = 0;
+	bool		_schemaOnly = false;
 };
 
 static size_t parseSizeField(const std::string& value, const std::string& key)
@@ -4618,10 +4618,10 @@ static void sortEvaluations(std::vector<EvaluatedCandidate>& evaluations)
 
 struct CandidateObjectives
 {
-	double _avgLatencyMs = 0.0;
-	double _buildTimeMs = 0.0;
-	double _memoryMb = 0.0;
-	double _imbalancePenalty = 0.0;
+	double	_avgLatencyMs = 0.0;
+	double	_buildTimeMs = 0.0;
+	double	_memoryMb = 0.0;
+	double	_imbalancePenalty = 0.0;
 };
 
 // Averages the four Pareto objectives across a candidate's per-(dataset, workload) records, weighting all datasets equally like aggregateScore does.
@@ -5065,7 +5065,7 @@ static std::vector<Experiments::SchemaCandidate> generateDeepNestedCandidates(
 	struct DeepFamily
 	{
 		const char* first = "";
-		std::vector<const char*> _seconds;
+		std::vector<const char*>	_seconds;
 	};
 
 	const std::array<DeepFamily, 5> families = {
@@ -5352,16 +5352,16 @@ static std::optional<Experiments::SchemaCandidate> bestBaselineCandidate(const s
 
 struct LocalCellStats
 {
-	size_t _count = 0;
+	size_t	_count = 0;
 	glm::vec3 min = glm::vec3(std::numeric_limits<float>::max());
 	glm::vec3 max = glm::vec3(std::numeric_limits<float>::lowest());
 };
 
 struct LocalOpportunityStats
 {
-	std::map<std::string, size_t> _suggestedTypes;
-	double _dominantShare = 0.0;
-	size_t _testedCells = 0;
+	std::map<std::string, size_t>	_suggestedTypes;
+	double	_dominantShare = 0.0;
+	size_t	_testedCells = 0;
 };
 
 static LocalOpportunityStats estimateLocalOpportunity(const PointCloud& cloud, size_t pointCap)
@@ -6756,7 +6756,7 @@ Experiments::ConditionDomain Experiments::estimateConditionDomain(const PointClo
 
 	struct SketchCell
 	{
-		size_t _count = 0;
+		size_t	_count = 0;
 	};
 
 	std::vector<size_t> counts;
@@ -7436,9 +7436,9 @@ void Experiments::reportProxyLatencyCorrelation(const std::vector<SchemaSearchRe
 {
 	struct ProxyGroup
 	{
-		std::vector<double> _proxy;
-		std::vector<double> _latency;
-		double _alpha = 0.0;
+		std::vector<double>	_proxy;
+		std::vector<double>	_latency;
+		double				_alpha = 0.0;
 	};
 
 	std::map<std::pair<std::string, std::string>, ProxyGroup> groups;
@@ -7564,8 +7564,8 @@ void Experiments::reportEstimatedCostCorrelation(const std::vector<SchemaSearchR
 {
 	struct CostGroup
 	{
-		std::vector<double> _estimate;
-		std::vector<double> _latency;
+		std::vector<double>	_estimate;
+		std::vector<double>	_latency;
 	};
 
 	std::map<std::pair<std::string, std::string>, CostGroup> groups;
@@ -7617,10 +7617,10 @@ void Experiments::reportEstimatedCostCorrelation(const std::vector<SchemaSearchR
 
 struct ParetoMetrics
 {
-	double _avgLatencyMs = 0.0;
-	double _buildTimeMs = 0.0;
-	double _memoryMb = 0.0;
-	double _imbalancePenalty = 0.0;
+	double	_avgLatencyMs = 0.0;
+	double	_buildTimeMs = 0.0;
+	double	_memoryMb = 0.0;
+	double	_imbalancePenalty = 0.0;
 };
 
 static ParetoMetrics extractParetoMetrics(const Experiments::SchemaSearchRecord& record)
