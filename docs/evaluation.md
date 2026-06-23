@@ -111,12 +111,47 @@ future work. This is why the **headline comparison is on CPU**: it is the only b
 all schemas (including median/round-robin kd, BIH, adaptive, and entropy-conditioned ones)
 run natively and are therefore mutually comparable.
 
+## Real-data spot-check: Alhambra (100M points, GPU)
+
+A spot-check on the real `Alhambra_100M.las` cloud (99,999,776 points; heterogeneous
+architectural TLS scan), `mixed` workload. CPU is infeasible at this scale — a single
+octree CPU build is ~53 s — so this run is **GPU-only** (`--evaluator cuda --cuda-builder
+mixed`) and necessarily smaller (64 queries, `--confirm-seeds 2`, one workload). It is a
+spot-check, not a full real-data evaluation.
+
+1. **GPU build speedup holds at scale.** Octree builds in ~0.8 s on GPU vs ~53 s on CPU
+   (~65×) — the synthetic appendix's "GPU is a build accelerator" result reproduces on real
+   data.
+2. **Best single primitive = octree, by a wide margin.** Mean per-query latency by single
+   primitive (the `mixed` workload is radius-dominated, ~70k points returned per query over
+   100M): octree ≈ 285 ms, karras_octree 546, lbvh 868, hgrid 894, quadtree 1420, bvh 7759,
+   regular_grid 15215 ms.
+3. **Nesting beats the best single on real data.** Measured apples-to-apples (same 64
+   queries/seed, all returning 70,569 pts), a hand-designed GPU-native nested schema
+   **`grid2d_quadtree_grid3d_octree` reaches 323 ms vs octree's 408 ms — 1.26×**, *larger*
+   than the synthetic 1.12× geomean. `quadtree_octree` (464 ms) does **not** beat octree, so
+   the nesting recipe matters. Alhambra's heterogeneity is consistent with the synthetic
+   finding that nesting pays off on mixed data.
+4. **Reliability limitation surfaced at scale — the auto-tuner is not trustworthy here.**
+   GPU-unsupported candidates (BIH, median/round-robin kd) fall back to a CPU path that, at
+   100M, **returned 0 points with 0.000 ms latency** (e.g. `kdtree` *built* in 90 s but
+   answered nothing). The `--auto-conditions` search mistook those `0 ms` artifacts for the
+   fastest and exported a **degenerate** schema (a single 1,048,576-capacity BVH leaf). So on
+   this cloud the nested win above comes from a *hand-designed* GPU-native schema, not the
+   tuner. A trustworthy auto-tuning result at 100M needs either a GPU-native-only search or a
+   fix to the CPU-fallback query path at scale — a concrete, prioritized follow-up this
+   spot-check exposed.
+
+(First-schema GPU build times absorb warmup/upload — octree's 110 s build in the Stage-B run
+is a warmup artifact; the discovery pass shows ~0.8 s. Data in `results/eval_alhambra/`.)
+
 ## Honest caveats
 
-- **Synthetic only, 3 families.** `synthetic_flat_terrain`, `synthetic_facade`,
-  `synthetic_urban_mixed` (the `building`/`sparse-dense` generators exist but are not wired
-  into schema-search). No real LiDAR cloud here. The natural next step is to repeat the exact
-  protocol with `--input <cloud>.las` (drop `--no-synthetic`).
+- **Headline is synthetic (3 families); one real-data spot-check.** `synthetic_flat_terrain`,
+  `synthetic_facade`, `synthetic_urban_mixed` (the `building`/`sparse-dense` generators exist
+  but are not wired into schema-search). The Alhambra section above is a single GPU-only,
+  one-workload spot-check; a full real-data evaluation (multiple real clouds and workloads,
+  with the auto-tuner reliability fix) is the main outstanding follow-up.
 - **Medium scale (300k points).** Large enough for ms-scale builds and resolvable
   `volume_small_medium` latencies, but small enough that the other workloads' per-query
   latencies (~µs) are near the measurement floor — hence only 3/12 cells are
