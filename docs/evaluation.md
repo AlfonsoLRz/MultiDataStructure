@@ -151,6 +151,17 @@ spot-check, not a full real-data evaluation.
    anyway). This re-confirms **GPU is a build accelerator, not a query accelerator** at this
    scale/workload; a GPU query win would need much larger batched query streams or a faster
    GPU traversal.
+6. **Single-query GPU latency fixed (commit `dbe8d2a`).** The slow GPU query numbers above came
+   from the *one-thread-per-query* kernel, which the dispatcher picked unless a query was large
+   — fine for saturating the GPU with a big batch, catastrophic for one query (a single thread
+   serially traverses 100M points while its block's other 255 threads idle). Making the
+   dispatcher batch-size-aware (a ≤32-query batch now uses the cooperative *block-per-query*
+   kernel) drops a single Alhambra range query from **70.56 ms → 0.37 ms (188×, identical
+   returned counts)** — now competitive with the ~0.5 ms CPU path. So for *interactive single
+   queries* (the realistic access pattern) GPU is viable; the batched "GPU query is slow"
+   result above is large batches of small queries still on the one-thread path. Open
+   follow-ups: multi-block per *large* single query, and a tree-guided kNN to replace the
+   brute-force scan.
 
 (First-schema GPU build times absorb warmup/upload — octree's 110 s build in the earlier
 Stage-B run is a warmup artifact; discovery shows ~0.8 s. Data in `results/eval_alhambra/`.)
