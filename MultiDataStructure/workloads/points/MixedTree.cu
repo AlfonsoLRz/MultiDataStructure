@@ -165,6 +165,14 @@ namespace
 				throw std::runtime_error(
 					"CUDA MixedTree does not currently support occupancy-entropy conditions; "
 					"remove minOccupancyEntropy/maxOccupancyEntropy or use the CPU evaluator.");
+			if (level._type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+			{
+				const std::string policy = normalizedTypeName(level._axisPolicy.empty() ? std::string("median_longest_axis") : level._axisPolicy);
+				if (policy != "centerlongestaxis")
+					throw std::runtime_error(
+						"CUDA MixedTree currently supports KDTree/BIH axisPolicy center_longest_axis only; "
+						"use center_longest_axis or the CPU evaluator.");
+			}
 		}
 	}
 
@@ -1489,6 +1497,10 @@ namespace
 	{
 		if (!cloud || cloud->empty())
 			return false;
+
+		// Few queries can't saturate the GPU one-thread-per-query; give each query a whole block (parallel traversal) to cut single/interactive-query latency.
+		if (queries.size() <= 32)
+			return true;
 
 		const double cloudVolume = std::max(safeVolume(cloud->bounds().size()), 1.0e-12);
 		for (const DeviceQuery& query : queries)
