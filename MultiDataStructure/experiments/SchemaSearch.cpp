@@ -269,6 +269,66 @@ static bool scoreWeightsAreDefault(const Experiments::ScoreWeights& weights)
 		std::abs(weights._visitProxyAlpha - 0.1) <= epsilon;
 }
 
+static std::string normalizeScoreObjective(std::string value)
+{
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+		return c == '_' || c == '-' || c == ' ';
+	}), value.end());
+	if (value.empty() || value == "latency" || value == "querylatency" || value == "query")
+		return "latency";
+	if (value == "balanced" || value == "publication" || value == "paper")
+		return "balanced";
+	if (value == "custom" || value == "weighted" || value == "weightedlatency")
+		return "custom";
+	if (value == "visitproxy" || value == "proxy")
+		return "custom";
+
+	std::cerr << "Warning: unknown score objective '" << value << "'; using latency\n";
+	return "latency";
+}
+
+static Experiments::ScoreWeights scoreWeightsForObjective(const std::string& objective)
+{
+	Experiments::ScoreWeights weights;
+	const std::string normalized = normalizeScoreObjective(objective);
+	if (normalized == "balanced")
+	{
+		weights._lambdaBuild = 0.001;
+		weights._lambdaMemory = 0.01;
+		weights._lambdaImbalance = 0.01;
+	}
+	return weights;
+}
+
+static void applyScoreObjectiveDefaults(Experiments::SchemaSearchOptions& options)
+{
+	options._scoreObjective = normalizeScoreObjective(options._scoreObjective);
+	if (!options._scoreWeightsOverride && options._scoreObjective == "balanced")
+	{
+		options._weights = scoreWeightsForObjective(options._scoreObjective);
+		options._scoreWeightsOverride = true;
+	}
+	if (options._weights._useVisitProxy)
+		options._scoreObjective = "custom";
+}
+
+static std::string scoreObjectiveForWeights(const Experiments::ScoreWeights& weights, const std::string& requestedObjective)
+{
+	if (weights._useVisitProxy)
+		return "custom";
+	const std::string objective = normalizeScoreObjective(requestedObjective);
+	if (objective == "balanced")
+		return "balanced";
+	if (objective == "custom")
+		return "custom";
+	if (scoreWeightsAreDefault(weights))
+		return "latency";
+	return "custom";
+}
+
 static Experiments::ScoreWeights effectiveScoreWeights(
 	const Experiments::WorkloadProfile& workload,
 	const Experiments::SchemaSearchOptions& options)
@@ -1153,6 +1213,46 @@ static bool schemaUsesGpuUnsupportedFeature(const SchemaConfig& schema)
 	});
 }
 
+static std::string normalizedKdAxisPolicy(const SchemaLevelConfig& level)
+{
+	std::string policy = level._axisPolicy.empty() ? std::string("median_longest_axis") : level._axisPolicy;
+	policy.erase(std::remove_if(policy.begin(), policy.end(), [](unsigned char c) {
+		return std::isspace(c) || c == '_' || c == '-';
+	}), policy.end());
+	std::transform(policy.begin(), policy.end(), policy.begin(), [](unsigned char c) {
+		return static_cast<char>(std::tolower(c));
+	});
+	return policy;
+}
+
+static bool schemaUsesUnsupportedCudaKdPolicy(const SchemaConfig& schema, const std::string& cudaBuilder)
+{
+	const bool mixedBuilder = isMixedBuilder(cudaBuilder);
+	const bool kdBuilder = isKDTreeBuilder(cudaBuilder) || isBIHBuilder(cudaBuilder);
+	if (!mixedBuilder && !kdBuilder)
+		return false;
+
+	return std::any_of(schema._levels.begin(), schema._levels.end(), [mixedBuilder](const SchemaLevelConfig& level) {
+		if (level._type != MultiDataStructure::DataStructureLevel::KDTreeNode)
+			return false;
+		const std::string policy = normalizedKdAxisPolicy(level);
+		if (policy == "medianlongestaxis")
+			return true;
+		return mixedBuilder && policy == "roundrobin";
+	});
+}
+
+static std::string gpuSupportStatusForSchema(const SchemaConfig& schema, const Experiments::SchemaSearchOptions& options)
+{
+	if (!useCudaEvaluator(options))
+		return "full";
+	if (schemaUsesGpuUnsupportedFeature(schema))
+		return "cpu_fallback";
+	if (schemaUsesUnsupportedCudaKdPolicy(schema, options._cuda._builder))
+		return "unsupported_policy";
+	return "full";
+}
+
 // CUDA MixedTree has no occupancy-entropy gate; drop those thresholds so a CUDA search samples GPU-runnable schemas instead of silently falling back to the CPU.
 static void restrictConditionDomainToGpuSafe(Experiments::ConditionDomain& domain)
 {
@@ -1568,18 +1668,25 @@ static SchemaLevelConfig randomLevelConfig(
 }
 
 // Coin-flips the axis policy for KDTree/BIH levels: round_robin alternates X/Y/Z by depth, median_longest_axis is the legacy extent-driven default.
-static std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataStructureLevel type)
+static std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataStructureLevel type, bool gpuNativeAxisPolicy)
 {
 	if (type == MultiDataStructure::QuadTreeNode)
 		return "xy";
 	if (type != MultiDataStructure::KDTreeNode)
 		return "";
+	// CUDA MixedTree builds kd/BIH with center_longest_axis only; keep generated schemas GPU-native instead of falling back to the CPU.
+	if (gpuNativeAxisPolicy)
+		return "center_longest_axis";
 	std::bernoulli_distribution coin(0.5);
 	return coin(rng) ? "round_robin" : "median_longest_axis";
 }
 
 static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::SchemaGenerationOptions& options)
 {
+	// CUDA MixedTree builds kd/BIH with center_longest_axis only; force it so generated schemas stay GPU-native instead of falling back to the CPU evaluator.
+	if (options._gpuNativeAxisPolicy && level._type == MultiDataStructure::KDTreeNode)
+		level._axisPolicy = "center_longest_axis";
+
 	if (queryMinimalPrimitiveProfile(options))
 	{
 		level._typeName = Config::dataStructureLevelName(level._type);
@@ -1918,7 +2025,7 @@ static SchemaConfig mutateSchemaConfig(
 		case 0:
 			level._type = randomStructureType(rng, std::nullopt);
 			level._typeName = randomTypeNameForBase(level._type, rng, options);
-			level._axisPolicy = sampleAxisPolicy(rng, level._type);
+			level._axisPolicy = sampleAxisPolicy(rng, level._type, options._gpuNativeAxisPolicy);
 			if (levelIndex == 0)
 				level._condition = {};
 			break;
@@ -2663,6 +2770,15 @@ static PreparedWorkload prepareWorkloadProfile(
 				}
 				prepared._cudaQueries.push_back(query);
 				prepared._cudaStrata.push_back(spec._name);
+
+				// Mirror each GPU query as a CPU query so schemas that fall back to the CPU evaluator measure the same geometry instead of an empty set.
+				PreparedCpuQuery cpuQuery;
+				cpuQuery._kind = spec._kind;
+				cpuQuery._stratum = spec._name;
+				cpuQuery._bounds = query._bounds;
+				cpuQuery.center = center;
+				cpuQuery._radius = query._radius;
+				prepared._cpuQueries.push_back(cpuQuery);
 			}
 			return prepared;
 		}
@@ -2735,6 +2851,28 @@ static PreparedWorkload prepareWorkloadProfile(
 			}
 			prepared._cudaQueries.push_back(query);
 			prepared._cudaStrata.push_back({});
+
+			// Mirror each GPU query as a CPU query for fallback schemas (CountRange folds to Range; the CPU path has no count-only kind).
+			PreparedCpuQuery cpuQuery;
+			if (query._type == PointGpu::QueryType::Radius)
+			{
+				cpuQuery._kind = PreparedQueryKind::Radius;
+				cpuQuery._stratum = "radius";
+			}
+			else if (query._type == PointGpu::QueryType::Knn)
+			{
+				cpuQuery._kind = PreparedQueryKind::Knn;
+				cpuQuery._stratum = "knn";
+			}
+			else
+			{
+				cpuQuery._kind = PreparedQueryKind::Range;
+				cpuQuery._stratum = "range";
+			}
+			cpuQuery._bounds = query._bounds;
+			cpuQuery.center = query.center;
+			cpuQuery._radius = query._radius;
+			prepared._cpuQueries.push_back(cpuQuery);
 		}
 
 		return prepared;
@@ -3244,9 +3382,10 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	size_t gpuMemoryBytes = 0;
 	ActiveStructureStats activeStats;
 	const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
+	const std::string gpuSupportStatus = gpuSupportStatusForSchema(effectiveConfig, options);
 
-	// CUDA can't honor adaptive leaf capacity or occupancy-entropy conditions, so fall back to the CPU evaluator; the record keeps backend = "cpu" to make the fallback visible.
-	const bool cpuFallbackForGpuFeature = useCudaEvaluator(options) && schemaUsesGpuUnsupportedFeature(effectiveConfig);
+	// CUDA can't honor every CPU schema; fall back to the CPU evaluator and tag why instead of silently mixing incomparable rows.
+	const bool cpuFallbackForGpuFeature = useCudaEvaluator(options) && gpuSupportStatus != "full";
 
 	if (useCudaEvaluator(options) && !cpuFallbackForGpuFeature)
 	{
@@ -3413,6 +3552,7 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	record._knnQueries = workloadRun._knnQueries;
 	record._queryStrataSummary = workloadRun._stratumSummary;
 	record._weights = effectiveScoreWeights(workload, options);
+	record._scoreObjective = scoreObjectiveForWeights(record._weights, options._scoreObjective);
 	record._scoreMode = scoreModeForWeights(record._weights);
 	record._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
 	record._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(record._weights);
@@ -3427,6 +3567,7 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	record._estimatedQueryCost = Experiments::estimateSchemaQueryCost(
 		effectiveConfig, pointFeatures, workloadFeatures, record._weights._visitProxyAlpha);
 	record._backend = backend;
+	record._gpuSupportStatus = gpuSupportStatus;
 	record._knnBackend = record._knnQueries == 0
 		? "none"
 		: (backend == "cuda" ? "bruteforce_gpu_scan" : "cpu_tree_knn");
@@ -3490,6 +3631,7 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidateCached(
 		cached._schemaName = schema._config._name;
 		cached._schemaPath = schema._path;
 		cached._weights = effectiveScoreWeights(workload, options);
+		cached._scoreObjective = scoreObjectiveForWeights(cached._weights, options._scoreObjective);
 		cached._scoreMode = scoreModeForWeights(cached._weights);
 		cached._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
 		cached._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(cached._weights);
@@ -3500,9 +3642,12 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidateCached(
 		if (cache->tryGet(key, cached))
 		{
 			cached._isBaseline = schema._isBaseline;
-			cached._scoreMode = scoreModeForWeights(effectiveScoreWeights(workload, options));
+			cached._weights = effectiveScoreWeights(workload, options);
+			cached._scoreObjective = scoreObjectiveForWeights(cached._weights, options._scoreObjective);
+			cached._scoreMode = scoreModeForWeights(cached._weights);
 			cached._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
-			cached._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(effectiveScoreWeights(workload, options));
+			cached._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(cached._weights);
+			cached._gpuSupportStatus = gpuSupportStatusForSchema(effectiveConfig, options);
 			if (options._deepNestedSearch && !useCudaEvaluator(options) && cached._activeStructureTypes == 0)
 			{
 				Experiments::SchemaSearchRecord record = benchmarkSchemaCandidate(
@@ -3582,12 +3727,14 @@ static EvaluatedCandidate evaluateCandidate(
 				failed._schemaName = candidate._config._name;
 				failed._schemaPath = candidate._path;
 				failed._weights = weights;
+				failed._scoreObjective = scoreObjectiveForWeights(failed._weights, options._scoreObjective);
 				failed._scoreMode = scoreModeForWeights(failed._weights);
 				failed._scoreStage = options._scoreStage.empty() ? std::string("final") : options._scoreStage;
 				failed._scoreIsFinalLatency = options._scoreIsFinalLatency && scoreWeightsAreDefault(failed._weights);
 				failed._pointFeatures = datasetContext._features;
 				failed._workloadFeatures = workloadFeatures;
 				failed._backend = useCudaEvaluator(options) ? "cuda_failed" : "cpu_failed";
+				failed._gpuSupportStatus = useCudaEvaluator(options) ? gpuSupportStatusForSchema(effectiveSchemaForEvaluation(candidate, options), options) : "full";
 				failed._knnBackend = workload._knnWeight > 0.0
 					? (useCudaEvaluator(options) ? "bruteforce_gpu_scan" : "cpu_tree_knn")
 					: "none";
@@ -3641,13 +3788,13 @@ static void writeSearchHeader(std::ostream& output)
 		<< "mean_tight_bounds_volume_ratio,micro_indexed_leaves,micro_indexed_points,node_fanout_summary,memory_estimate_bytes,"
 		<< "total_queries,avg_latency_ms,median_latency_ms,p95_latency_ms,throughput_qps,avg_visited_nodes,avg_tested_points,avg_returned_points,"
 		<< "range_queries,radius_queries,knn_queries,query_strata_summary,score,score_memory_mb,score_imbalance_penalty,lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
-		<< "backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries,"
+		<< "backend,gpu_support_status,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,count_range_queries,"
 		<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
 		<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 		<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 		<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
-		<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
+		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
 		<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
 		<< "estimated_query_cost\n";
 }
@@ -3751,6 +3898,7 @@ static void writeSearchRows(const std::string& csvPath, const std::vector<Experi
 			<< record._weights._lambdaMemory << ','
 			<< record._weights._lambdaImbalance << ','
 			<< csvEscape(record._backend) << ','
+			<< csvEscape(record._gpuSupportStatus) << ','
 			<< csvEscape(record._knnBackend) << ','
 			<< record._cudaDevice << ','
 			<< csvEscape(record._cudaBuilder) << ','
@@ -3779,6 +3927,7 @@ static void writeSearchRows(const std::string& csvPath, const std::vector<Experi
 			<< record._gpuBuildMean << ','
 			<< record._gpuBuildCiLow << ','
 			<< record._gpuBuildCiHigh << ','
+			<< csvEscape(record._scoreObjective) << ','
 			<< csvEscape(record._scoreMode) << ','
 			<< csvEscape(record._scoreStage) << ','
 			<< (record._scoreIsFinalLatency ? 1 : 0) << ','
@@ -3824,14 +3973,14 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 		<< "range_scale_min,range_scale_max,radius_scale_min,radius_scale_max,query_scale_mean,query_scale_std,build_weight,memory_weight,best_schema_name,best_schema_path,best_score,"
 		<< "best_avg_latency_ms,best_build_time_ms,best_memory_estimate_bytes,leaf_occupancy_p50,leaf_occupancy_p90,leaf_occupancy_p99,"
 		<< "avg_depth,avg_fanout,max_fanout,empty_child_ratio,single_child_nodes,mean_tight_bounds_volume_ratio,"
-		<< "micro_indexed_leaves,micro_indexed_points,node_fanout_summary,num_candidates,backend,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
+		<< "micro_indexed_leaves,micro_indexed_points,node_fanout_summary,num_candidates,backend,gpu_support_status,knn_backend,cuda_device,cuda_builder,gpu_upload_ms,gpu_build_ms,gpu_query_ms,gpu_memory_bytes,"
 		<< "conditional_levels,condition_fields,condition_summary,is_baseline,active_structure_types,nested_active_fraction,active_structure_summary,"
 		<< "best_baseline_schema,best_baseline_score,relative_speedup_vs_baseline,"
 		<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 		<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 		<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
-		<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
+		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
 		<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
 		<< "estimated_query_cost\n";
 	output << std::fixed << std::setprecision(6);
@@ -3897,6 +4046,7 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 			<< csvEscape(record._buildMetrics._nodeFanoutSummary) << ','
 			<< countCandidatesForBest(records, record) << ','
 			<< csvEscape(record._backend) << ','
+			<< csvEscape(record._gpuSupportStatus) << ','
 			<< csvEscape(record._knnBackend) << ','
 			<< record._cudaDevice << ','
 			<< csvEscape(record._cudaBuilder) << ','
@@ -3928,6 +4078,7 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 			<< record._weights._lambdaBuild << ','
 			<< record._weights._lambdaMemory << ','
 			<< record._weights._lambdaImbalance << ','
+			<< csvEscape(record._scoreObjective) << ','
 			<< csvEscape(record._scoreMode) << ','
 			<< csvEscape(record._scoreStage) << ','
 			<< (record._scoreIsFinalLatency ? 1 : 0) << ','
@@ -3960,13 +4111,13 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 		<< "dataset_name,workload_name,query_strata_summary,pareto_rank,is_knee,schema_name,schema_path,score,"
 		<< "avg_latency_ms,build_time_ms,memory_mb,memory_estimate_bytes,imbalance_penalty,"
 		<< "leaf_occupancy_p90,empty_child_ratio,mean_tight_bounds_volume_ratio,micro_indexed_leaves,micro_indexed_points,"
-		<< "p95_latency_ms,throughput_qps,backend,knn_backend,cuda_builder,is_baseline,"
+		<< "p95_latency_ms,throughput_qps,backend,gpu_support_status,knn_backend,cuda_builder,is_baseline,"
 		<< "conditional_levels,condition_fields,active_structure_types,nested_active_fraction,"
 		<< "confirm_seeds_used,latency_mean_ms,latency_ci_low_ms,latency_ci_high_ms,"
 		<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 		<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
-		<< "score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
+		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
 		<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
 		<< "estimated_query_cost\n";
 	output << std::fixed << std::setprecision(6);
@@ -4000,6 +4151,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 			<< record._queryMetrics._p95LatencyMs << ','
 			<< record._queryMetrics._throughputQueriesPerSecond << ','
 			<< csvEscape(record._backend) << ','
+			<< csvEscape(record._gpuSupportStatus) << ','
 			<< csvEscape(record._knnBackend) << ','
 			<< csvEscape(record._cudaBuilder) << ','
 			<< (record._isBaseline ? 1 : 0) << ','
@@ -4021,6 +4173,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 			<< record._weights._lambdaBuild << ','
 			<< record._weights._lambdaMemory << ','
 			<< record._weights._lambdaImbalance << ','
+			<< csvEscape(record._scoreObjective) << ','
 			<< csvEscape(record._scoreMode) << ','
 			<< csvEscape(record._scoreStage) << ','
 			<< (record._scoreIsFinalLatency ? 1 : 0) << ','
@@ -4094,7 +4247,7 @@ static void printMetricWinner(
 	std::cout << "    " << label << ": " << record->_schemaName
 		<< " (" << metric(*record) << ' ' << unit
 		<< ", score " << record->_score
-		<< ", " << record->_scoreMode << ")\n";
+		<< ", objective " << record->_scoreObjective << ")\n";
 }
 
 static void reportMetricSummaries(
@@ -4520,7 +4673,9 @@ static void writeSchemaExplainReport(
 			const std::vector<ActiveExplainEntry> activeEntries = parseActiveStructureSummary(record->_activeStructureSummary);
 			output << "### " << record->_schemaName << "\n\n";
 			output << "Schema: " << chain << "\n\n";
-			output << "- Score: " << record->_score << " (" << record->_scoreMode << ", " << record->_scoreStage << ")\n";
+			output << "- Score: " << record->_score << " (" << record->_scoreObjective << ", " << record->_scoreMode << ", " << record->_scoreStage << ")\n";
+			if (record->_backend == "cuda" || record->_gpuSupportStatus != "full")
+				output << "- GPU support: " << record->_gpuSupportStatus << "\n";
 			output << "- Avg latency: " << formatMs(record->_queryMetrics._averageLatencyMs)
 				<< ", p95: " << formatMs(record->_queryMetrics._p95LatencyMs)
 				<< ", build: " << formatMs(record->_buildMetrics._buildTimeMs) << "\n";
@@ -5742,9 +5897,11 @@ static void writeMeasuredSelectorArtifact(
 	output << "    \"name\": \"" << jsonEscape(selected._schemaName) << "\",\n";
 	output << "    \"path\": \"" << jsonEscape(selected._schemaPath) << "\",\n";
 	output << "    \"score\": " << selected._score << ",\n";
+	output << "    \"score_objective\": \"" << jsonEscape(selected._scoreObjective) << "\",\n";
 	output << "    \"score_mode\": \"" << jsonEscape(selected._scoreMode) << "\",\n";
 	output << "    \"score_stage\": \"" << jsonEscape(selected._scoreStage) << "\",\n";
 	output << "    \"score_is_final_latency\": " << (selected._scoreIsFinalLatency ? "true" : "false") << ",\n";
+	output << "    \"gpu_support_status\": \"" << jsonEscape(selected._gpuSupportStatus) << "\",\n";
 	output << "    \"avg_latency_ms\": " << selected._queryMetrics._averageLatencyMs << ",\n";
 	output << "    \"build_time_ms\": " << selected._buildMetrics._buildTimeMs << ",\n";
 	output << "    \"memory_estimate_bytes\": " << selected._buildMetrics._memoryEstimateBytes << "\n";
@@ -5761,9 +5918,11 @@ static void writeMeasuredSelectorArtifact(
 		output << "      \"name\": \"" << jsonEscape(record._schemaName) << "\",\n";
 		output << "      \"path\": \"" << jsonEscape(record._schemaPath) << "\",\n";
 		output << "      \"score\": " << record._score << ",\n";
+		output << "      \"score_objective\": \"" << jsonEscape(record._scoreObjective) << "\",\n";
 		output << "      \"score_mode\": \"" << jsonEscape(record._scoreMode) << "\",\n";
 		output << "      \"score_stage\": \"" << jsonEscape(record._scoreStage) << "\",\n";
 		output << "      \"score_is_final_latency\": " << (record._scoreIsFinalLatency ? "true" : "false") << ",\n";
+		output << "      \"gpu_support_status\": \"" << jsonEscape(record._gpuSupportStatus) << "\",\n";
 		output << "      \"avg_latency_ms\": " << record._queryMetrics._averageLatencyMs << ",\n";
 		output << "      \"build_time_ms\": " << record._buildMetrics._buildTimeMs << ",\n";
 		output << "      \"memory_estimate_bytes\": " << record._buildMetrics._memoryEstimateBytes << "\n";
@@ -6951,7 +7110,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 			level._numLevels = levelDistribution(rng);
 			level._leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
-			level._axisPolicy = sampleAxisPolicy(rng, level._type);
+			level._axisPolicy = sampleAxisPolicy(rng, level._type, options._gpuNativeAxisPolicy);
 			maybeAssignAdaptiveLeafCapacity(level, rng, options);
 			if (options._conditionalLevels && block > 0 && conditionDistribution(rng))
 				level._condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, conditionDomain);
@@ -7161,10 +7320,12 @@ static boost::json::object serializeRecordForStdout(const Experiments::SchemaSea
 	out["score"] = record._score;
 	out["scoreMemoryMb"] = record._scoreMemoryMb;
 	out["scoreImbalancePenalty"] = record._scoreImbalancePenalty;
+	out["scoreObjective"] = record._scoreObjective;
 	out["scoreMode"] = record._scoreMode;
 	out["scoreStage"] = record._scoreStage;
 	out["scoreIsFinalLatency"] = record._scoreIsFinalLatency;
 	out["backend"] = record._backend;
+	out["gpuSupportStatus"] = record._gpuSupportStatus;
 	out["knnBackend"] = record._knnBackend;
 	out["cudaDevice"] = record._cudaDevice;
 	out["cudaBuilder"] = record._cudaBuilder;
@@ -7841,6 +8002,8 @@ static SchemaConfig makeParitySchema(const std::string& typeName, MultiDataStruc
 	level._numLevels = 6;
 	level._leafCapacity = 64;
 	level._minPrimitivesToSplit = 8;
+	if (type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+		level._axisPolicy = "center_longest_axis";
 
 	SchemaConfig schema;
 	schema._name = "parity_" + typeName;
@@ -7882,7 +8045,7 @@ static void runCpuGpuParityCheck(
 	std::ofstream csv(csvPath);
 	if (csv.is_open())
 		csv << "dataset_name,schema_name,workload_name,cpu_nodes,gpu_nodes,cpu_leaves,gpu_leaves,"
-			   "compared_queries,count_matches,max_count_delta,parity_ok\n";
+			   "compared_queries,count_matches,max_count_delta,parity_ok,structural_metrics_comparable\n";
 
 	std::cout << "  CPU/GPU parity check (range+radius returned-count agreement on '" << workload._name << "'):\n";
 
@@ -7958,6 +8121,7 @@ static void runCpuGpuParityCheck(
 			}
 
 			const bool parityOk = compared > 0 && matches == compared;
+			const bool structuralComparable = true;
 			std::cout << "    [" << dataset._name << " / " << schema._name << "] "
 				<< matches << "/" << compared << " range+radius counts match (max delta "
 				<< maxDelta << ")" << (parityOk ? "  OK" : "  MISMATCH")
@@ -7968,7 +8132,8 @@ static void runCpuGpuParityCheck(
 				csv << csvEscape(dataset._name) << ',' << csvEscape(schema._name) << ',' << csvEscape(workload._name) << ','
 					<< cpuStats._numNodes << ',' << gpuBuild._metrics._numNodes << ','
 					<< cpuStats._numLeaves << ',' << gpuBuild._metrics._numLeaves << ','
-					<< compared << ',' << matches << ',' << maxDelta << ',' << (parityOk ? 1 : 0) << '\n';
+					<< compared << ',' << matches << ',' << maxDelta << ',' << (parityOk ? 1 : 0) << ','
+					<< (structuralComparable ? 1 : 0) << '\n';
 		}
 	}
 }
@@ -7976,6 +8141,7 @@ static void runCpuGpuParityCheck(
 int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 {
 	SchemaSearchOptions resolvedOptions = options;
+	applyScoreObjectiveDefaults(resolvedOptions);
 	if (resolvedOptions._deepNestedSearch)
 	{
 		resolvedOptions._autoConditions._enabled = true;
@@ -8004,6 +8170,8 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	}
 	if (evaluatorResolution._usingCuda && (resolvedOptions._generation._conditionalLevels || resolvedOptions._autoConditions._enabled))
 		std::cout << "  note: occupancy-entropy gates are CPU-only; excluded from CUDA schema generation\n";
+	// kd/BIH build on the CUDA MixedTree with center_longest_axis only; generate that policy so schemas stay GPU-native instead of falling back to the CPU evaluator.
+	resolvedOptions._generation._gpuNativeAxisPolicy = evaluatorResolution._usingCuda;
 
 	Experiments::EvaluationCache ownedScoreCache;
 	if (!resolvedOptions._scoreCachePath.empty() && resolvedOptions._scoreCache == nullptr)
@@ -8118,6 +8286,12 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 	{
 		std::cout << "  surrogate rank model: not used inside evolutionary loop; measured scores drive selection\n";
 	}
+	std::cout << "  default score objective: " << resolvedOptions._scoreObjective
+		<< " (lambda latency/build/memory/imbalance "
+		<< resolvedOptions._weights._lambdaLatency << '/'
+		<< resolvedOptions._weights._lambdaBuild << '/'
+		<< resolvedOptions._weights._lambdaMemory << '/'
+		<< resolvedOptions._weights._lambdaImbalance << ")\n";
 	std::cout << "  workloads: " << workloads.size() << '\n';
 	if (resolvedOptions._autoConditions._enabled)
 	{
@@ -8191,8 +8365,10 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 							std::cout << ", gpu build " << record._gpuBuildMs
 								<< " ms, upload " << record._gpuUploadMs
 								<< " ms, gpu query " << record._gpuQueryMs << " ms";
-						else if (useCudaEvaluator(resolvedOptions))
+						else if (useCudaEvaluator(resolvedOptions) && record._gpuSupportStatus == "cpu_fallback")
 							std::cout << ", cpu fallback (GPU-unsupported feature)";
+						else if (useCudaEvaluator(resolvedOptions) && record._gpuSupportStatus == "unsupported_policy")
+							std::cout << ", cpu fallback (unsupported CUDA split policy)";
 						std::cout << '\n';
 					}
 				}

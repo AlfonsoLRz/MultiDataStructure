@@ -132,18 +132,28 @@ spot-check, not a full real-data evaluation.
    than the synthetic 1.12× geomean. `quadtree_octree` (464 ms) does **not** beat octree, so
    the nesting recipe matters. Alhambra's heterogeneity is consistent with the synthetic
    finding that nesting pays off on mixed data.
-4. **Reliability limitation surfaced at scale — the auto-tuner is not trustworthy here.**
-   GPU-unsupported candidates (BIH, median/round-robin kd) fall back to a CPU path that, at
-   100M, **returned 0 points with 0.000 ms latency** (e.g. `kdtree` *built* in 90 s but
-   answered nothing). The `--auto-conditions` search mistook those `0 ms` artifacts for the
-   fastest and exported a **degenerate** schema (a single 1,048,576-capacity BVH leaf). So on
-   this cloud the nested win above comes from a *hand-designed* GPU-native schema, not the
-   tuner. A trustworthy auto-tuning result at 100M needs either a GPU-native-only search or a
-   fix to the CPU-fallback query path at scale — a concrete, prioritized follow-up this
-   spot-check exposed.
+4. **A measurement bug surfaced at scale — found and fixed.** GPU-unsupported candidates
+   (BIH, median/round-robin kd) fall back to the CPU evaluator, but under `--evaluator cuda`
+   the workload preparation only built GPU queries, so the CPU-fallback path ran an *empty*
+   query set and reported **0 points / 0.000 ms** (e.g. `kdtree` *built* in 90 s but answered
+   nothing). `--auto-conditions` mistook those `0 ms` artifacts for the fastest and exported a
+   **degenerate** schema (a 1,048,576-capacity BVH leaf). **Fixed** in two parts:
+   (A) the CUDA query-prep now mirrors each GPU query into a CPU query so fallback schemas
+   measure real latencies; (B) the search generates `center_longest_axis` kd/BIH under CUDA so
+   generated candidates stay GPU-native. After the fix the re-run exports a real nested schema
+   (`urban_hybrid`: quadtree→octree→kdtree) and **no row reports 0 ms**.
+5. **What the corrected run reveals: at 100M, CPU traversal beats the GPU query path.** With
+   honest measurement, the radius-heavy `mixed` workload is far faster on CPU-resident schemas
+   (urban_hybrid ~0.53, octree_kdtree ~0.59, bih ~0.64, kdtree ~0.69 ms/query) than on the GPU
+   builders (lbvh ~1.5 s, octree ~4.5 s/query; GPU per-query latency at 100M is high and
+   run-variable). The GPU range/radius traversal over 100M points is overhead/memory-bound, so
+   the tuner now correctly selects a CPU-resident schema (which, using median kd, runs on CPU
+   anyway). This re-confirms **GPU is a build accelerator, not a query accelerator** at this
+   scale/workload; a GPU query win would need much larger batched query streams or a faster
+   GPU traversal.
 
-(First-schema GPU build times absorb warmup/upload — octree's 110 s build in the Stage-B run
-is a warmup artifact; the discovery pass shows ~0.8 s. Data in `results/eval_alhambra/`.)
+(First-schema GPU build times absorb warmup/upload — octree's 110 s build in the earlier
+Stage-B run is a warmup artifact; discovery shows ~0.8 s. Data in `results/eval_alhambra/`.)
 
 ## Honest caveats
 

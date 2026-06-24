@@ -36,6 +36,8 @@ namespace Experiments
 		std::string	_outputDirectory = "results/generated_schemas";
 		// "auto" resolves to query_minimal_cpu for CPU discovery, cuda_query_full for CUDA.
 		std::string	_primitiveProfile = "auto";
+		// Under the CUDA evaluator, force kd/BIH levels to center_longest_axis (the only GPU-built split policy) so generated schemas stay GPU-native instead of falling back to the CPU.
+		bool		_gpuNativeAxisPolicy = false;
 	};
 
 	struct ConditionDomain
@@ -202,6 +204,7 @@ namespace Experiments
 		EvolutionOptions		_evolution;
 		std::string				_evaluator = "cpu";
 		CudaEvaluationOptions	_cuda;
+		std::string				_scoreObjective = "latency";
 		// Always include canonical single-block schemas (pure QuadTree, Octree, KDTree, BVH, plus
 		// GPU-native LBVH, KarrasOctree, RegularGrid, HGrid, BIH) as controls alongside whatever
 		// generated/configured candidates are present. Lets the operator confirm that nested
@@ -257,12 +260,14 @@ namespace Experiments
 		double				_scoreMemoryMb = 0.0;
 		double				_scoreImbalancePenalty = 0.0;
 		ScoreWeights		_weights;
+		std::string			_scoreObjective = "latency";
 		std::string			_scoreMode = "latency";
 		std::string			_scoreStage = "final";
 		bool				_scoreIsFinalLatency = true;
 		PointCloudFeatures	_pointFeatures;
 		WorkloadFeatures	_workloadFeatures;
 		std::string			_backend = "cpu";
+		std::string			_gpuSupportStatus = "full";
 		std::string			_knnBackend = "none";
 		int					_cudaDevice = -1;
 		std::string			_cudaBuilder;
