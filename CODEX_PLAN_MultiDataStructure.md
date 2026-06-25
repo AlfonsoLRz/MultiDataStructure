@@ -39,12 +39,14 @@ The desired research direction is to transform this prototype into a reusable ex
 - the spatial index is configurable,
 - point clouds are first-class data,
 - different query workloads can be benchmarked,
-- candidate nested schemas can be searched automatically,
-- a learner can select a good schema from point-cloud features and workload requirements.
+- candidate schemas (single or nested) are searched automatically by an evolutionary optimizer,
+- a learner/optimizer can synthesize a good schema from point-cloud features and workload requirements.
 
 The first publishable research target should be:
 
-> **Learning to choose nested spatial data structures for heterogeneous point-cloud workloads.**
+> **A workload-aware meta-optimizer that synthesizes the best spatial index — nested or single — for heterogeneous point-cloud workloads.**
+
+This sits in the meta-optimization / instance-optimized data-structures lineage (learned indexes, automated/evolutionary structure synthesis, workload-aware autotuning): the genetic-algorithm optimizer chooses a nested schema when nesting helps and a tuned single primitive when it does not, and reports a Pareto front over latency / build / memory / imbalance.
 
 This is more natural and lower risk than starting directly with path tracing, because point clouds are the natural application of nested spatial indexing and because objective functions such as range-query time, KNN time, memory, storage, node count, and leaf occupancy are easier to measure.
 

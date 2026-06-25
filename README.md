@@ -1,12 +1,12 @@
 # MultiDataStructure
 
-Experimental nested spatial data structures for point-cloud indexing and schema search.
+A workload-aware optimizer that synthesizes the best spatial index — nested or single — for a point cloud and query workload.
 
 ## What this is
 
-This is a research framework for **workload-aware automatic synthesis and tuning of nested spatial indexes** over large point clouds. Given a point cloud and a query workload (range, count-range, radius, kNN), it searches a space of nested, heterogeneous index *schemas* — each level a different primitive (regular grid, hierarchical grid, quadtree, octree, kd-tree, BVH/BIH, LBVH) with optional per-node conditions — and selects one that minimizes query latency, build time, memory, and imbalance. Candidate schemas are evaluated on a CPU reference path and, where supported, on a CUDA `MixedTree` GPU evaluator.
+This is a research framework for **workload-aware meta-optimization of spatial indexes** over large point clouds. Given a point cloud and a query workload (range, count-range, radius, kNN), a **genetic-algorithm optimizer** (the default search) explores a space of index *schemas* — each level a primitive (regular grid, hierarchical grid, quadtree, octree, kd-tree, BVH/BIH, LBVH), optionally nested across levels and conditioned per node — and synthesizes the one that minimizes query latency, build time, memory, and imbalance. The space spans **single primitives and nested combinations alike** (a schema may be a single level or several), so the optimizer returns a *tuned single primitive* when nesting does not help and a *nested schema* when it does. Candidate schemas are evaluated on a CPU reference path and, where supported, on a CUDA `MixedTree` GPU evaluator.
 
-It is a computer-graphics / spatial-data-structures contribution — in the lineage of SAH-guided BVH construction, GPU LBVH/HLBVH/PLOC builders, and instance-optimized / learned index structures — **not** a relational database system. The structures are GPU-resident scientific data structures evaluated directly on query workloads, not through SQL; the "optimization" is over the index design space (physical structure), not query plans. See [docs/evaluation.md](docs/evaluation.md) for the measured comparison of auto-tuned nested indexes against single-primitive baselines.
+It is a computer-graphics / spatial-data-structures contribution — in the lineage of **meta-optimization / instance-optimized data structures** (learned index structures, automated/evolutionary structure synthesis, workload-aware autotuning) and SAH-guided / GPU BVH construction — **not** a relational database system. The structures are GPU-resident scientific data structures evaluated directly on query workloads, not through SQL; the "optimization" is over the index design space (physical structure), not query plans. See [docs/evaluation.md](docs/evaluation.md) for the measured comparison of the optimizer's synthesized index (nested or single) against single-primitive and hand-designed baselines.
 
 ## Build Requirements
 
@@ -31,11 +31,13 @@ Supported point formats are `.las` (uncompressed), `.ply` (ASCII), `.xyz`, and `
 
 ## Schema Search
 
+The **genetic-algorithm optimizer runs by default**. It searches single-and-nested schemas and can export the winning schema per (dataset, workload) for re-measurement:
+
 ```powershell
-.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:\data\cloud.las --no-synthetic --generated-only --generate-schemas 256 --workloads configs\workloads\volume_small_medium.json --queries 64 --evaluator cuda --cuda-device 0 --cuda-builder mixed --csv results\schema_search.csv --best-csv results\schema_search_best.csv --pareto-csv results\schema_search_pareto.csv --no-pause
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:\data\cloud.las --no-synthetic --workloads configs\workloads\volume_small_medium.json --queries 256 --evaluator cuda --cuda-device 0 --cuda-builder mixed --optimizer-output-dir results\evolved_schemas --csv results\schema_search.csv --best-csv results\schema_search_best.csv --pareto-csv results\schema_search_pareto.csv --no-pause
 ```
 
-The CUDA schema-search resolver falls back to CPU with a warning when CUDA is unavailable. CPU discovery defaults to query-minimal primitives; CUDA confirmation can use the fuller primitive set.
+Alternative search strategies (each opts out of the default GA): `--auto-conditions` (fast surrogate-filtered conditional tuning), `--flat-search` (one-pass scan of the candidate set), `--generated-only` (flat scan of generated candidates without the configured schema list), `--deep-nested-search` (CPU-first staged nested search). The CUDA resolver falls back to CPU with a warning when CUDA is unavailable.
 
 ## Schema Primitives
 
