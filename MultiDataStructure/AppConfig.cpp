@@ -198,6 +198,7 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 {
 	AppConfig config;
 	bool modeWasSpecified = false;
+	bool searchModeExplicit = false;
 
 	for (int i = 1; i < argc; ++i)
 	{
@@ -291,9 +292,15 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--generated-only")
 		{
 			config._schemaSearchOptions._includeConfiguredSchemas = false;
+			searchModeExplicit = true;
+		}
+		else if (arg == "--flat-search")
+		{
+			searchModeExplicit = true;
 		}
 		else if (arg == "--deep-nested-search")
 		{
+			searchModeExplicit = true;
 			config._schemaSearchOptions._deepNestedSearch = true;
 			config._schemaSearchOptions._evaluator = "cpu";
 			config._schemaSearchOptions._rankModelPath.clear();
@@ -382,6 +389,7 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		}
 		else if (arg == "--auto-conditions")
 		{
+			searchModeExplicit = true;
 			config._schemaSearchOptions._autoConditions._enabled = true;
 			config._schemaSearchOptions._generation._conditionalLevels = true;
 		}
@@ -415,6 +423,7 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		}
 		else if (arg == "--optimize-schemas")
 		{
+			searchModeExplicit = true;
 			config._schemaSearchOptions._evolution._enabled = true;
 		}
 		else if (arg == "--optimizer-generations" && i + 1 < argc)
@@ -507,6 +516,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._schemaSearchOptions._evolution._refineThresholdsSeed = static_cast<uint32_t>(std::stoul(argv[++i]));
 		}
+		else if (arg == "--optimizer-output-dir" && i + 1 < argc)
+		{
+			config._schemaSearchOptions._evolution._outputDirectory = argv[++i];
+		}
 		else if (arg == "--evaluator" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._evaluator = argv[++i];
@@ -531,19 +544,54 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._schemaSearchOptions._cuda._knnBackend = argv[++i];
 		}
+		else if (arg == "--score-objective" && i + 1 < argc)
+		{
+			std::string objective = argv[++i];
+			std::transform(objective.begin(), objective.end(), objective.begin(), [](unsigned char c) {
+				return static_cast<char>(std::tolower(c));
+			});
+			objective.erase(std::remove_if(objective.begin(), objective.end(), [](unsigned char c) {
+				return c == '_' || c == '-' || c == ' ';
+			}), objective.end());
+			if (objective == "latency" || objective == "querylatency" || objective == "query")
+			{
+				config._schemaSearchOptions._scoreObjective = "latency";
+				config._schemaSearchOptions._weights = Experiments::ScoreWeights{};
+			}
+			else if (objective == "balanced" || objective == "publication" || objective == "paper")
+			{
+				config._schemaSearchOptions._scoreObjective = "balanced";
+				config._schemaSearchOptions._weights = Experiments::ScoreWeights{};
+				config._schemaSearchOptions._weights._lambdaBuild = 0.001;
+				config._schemaSearchOptions._weights._lambdaMemory = 0.01;
+				config._schemaSearchOptions._weights._lambdaImbalance = 0.01;
+			}
+			else if (objective == "custom" || objective == "weighted" || objective == "weightedlatency")
+			{
+				config._schemaSearchOptions._scoreObjective = "custom";
+			}
+			else
+			{
+				throw std::invalid_argument("Unsupported score objective: " + objective);
+			}
+			config._schemaSearchOptions._scoreWeightsOverride = true;
+		}
 		else if (arg == "--score-build-weight" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._weights._lambdaBuild = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreObjective = "custom";
 			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-memory-weight" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._weights._lambdaMemory = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreObjective = "custom";
 			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-imbalance-weight" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._weights._lambdaImbalance = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreObjective = "custom";
 			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--output" && i + 1 < argc)
@@ -636,11 +684,13 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--score-visit-proxy")
 		{
 			config._schemaSearchOptions._weights._useVisitProxy = true;
+			config._schemaSearchOptions._scoreObjective = "custom";
 			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--score-visit-alpha" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._weights._visitProxyAlpha = std::stod(argv[++i]);
+			config._schemaSearchOptions._scoreObjective = "custom";
 			config._schemaSearchOptions._scoreWeightsOverride = true;
 		}
 		else if (arg == "--parallel" && i + 1 < argc)
@@ -680,6 +730,15 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		schemaPath = resolveExistingPath(schemaPath, executablePath);
 	for (std::string& workloadPath : config._schemaSearchOptions._workloadPaths)
 		workloadPath = resolveExistingPath(workloadPath, executablePath);
+
+	// Default optimizer for `--mode schema-search`: the genetic algorithm, unless the user explicitly selected another search strategy (--auto-conditions, --flat-search, --generated-only, --deep-nested-search).
+	if (config._mode == "schema-search" && !searchModeExplicit
+		&& !config._schemaSearchOptions._evolution._enabled
+		&& !config._schemaSearchOptions._autoConditions._enabled
+		&& !config._schemaSearchOptions._deepNestedSearch)
+	{
+		config._schemaSearchOptions._evolution._enabled = true;
+	}
 
 	return config;
 }
@@ -727,7 +786,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --condition-confirm-top <n> Confirmation candidates after short full run; default 4\n"
 		<< "  --condition-output-dir <dir> Directory for tuned schema JSON artifacts\n"
 		<< "  --condition-selector-output <path> Measured selector JSON path for tuned schemas\n"
-		<< "  --optimize-schemas          Run evolutionary mutation search after the initial candidate set\n"
+		<< "  --optimize-schemas          Run the evolutionary (genetic) optimizer. THIS IS THE DEFAULT for --mode schema-search.\n"
+		<< "  --flat-search               Force a one-pass flat scan of the candidate set instead of the default GA optimizer\n"
 		<< "  --optimizer-generations <n> Evolution generations, default 3\n"
 		<< "  --optimizer-population <n>  Mutated/random candidates per generation, default 64\n"
 		<< "  --optimizer-elites <n>      Best measured candidates kept as parents, default 6\n"
@@ -751,12 +811,14 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --refine-thresholds-sigma <v> Initial step size in normalised [0,1] threshold space, default 0.3\n"
 		<< "  --refine-thresholds-seed <s>  RNG seed for the refinement step, default 1337\n"
 		<< "  --optimizer-seed <seed>     Seed for optimizer parent choice and mutation\n"
+		<< "  --optimizer-output-dir <dir> Export the optimizer's best schema per (dataset, workload) as JSON for re-measurement\n"
 		<< "  --evaluator cpu|cuda        Benchmark backend for schema-search mode; default cuda with CPU fallback\n"
 		<< "  --cuda-device <id>          CUDA device id for --evaluator cuda; default 0\n"
 		<< "  --cuda-builder lbvh|kdtree|bih|octree|karras_octree|quadtree|regular_grid|hgrid|mixed CUDA builder; LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented\n"
 		<< "  --cuda-query-batch <n>      Query batch size for CUDA evaluator; 0 uses all queries\n"
 		<< "  --cuda-memory-budget-mb <n> Reject CUDA builds estimated above this memory budget\n"
 		<< "  --cuda-knn-backend <auto|gpu_tree_knn|gpu_bruteforce_knn> CUDA KNN backend; KDTree/BIH auto uses tree KNN for k<=16\n"
+		<< "  --score-objective latency|balanced|custom Scalar objective; balanced adds build/memory/imbalance penalties\n"
 		<< "  --score-build-weight <v>    Build-time score weight, default 0\n"
 		<< "  --score-memory-weight <v>   Memory score weight, default 0\n"
 		<< "  --score-imbalance-weight <v> Leaf-imbalance score weight, default 0\n"

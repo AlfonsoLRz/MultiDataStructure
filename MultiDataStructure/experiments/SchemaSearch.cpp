@@ -5982,6 +5982,47 @@ static void writeAutoConditionArtifacts(
 	}
 }
 
+// Exports the optimizer's best schema per (dataset, workload) as JSON (so the eval pipeline can re-measure GA winners), mirroring writeAutoConditionArtifacts. Skips when --optimizer-output-dir is unset.
+static void writeEvolutionaryArtifacts(
+	std::vector<Experiments::SchemaSearchRecord>& records,
+	const std::vector<EvaluatedCandidate>& archive,
+	const Experiments::SchemaSearchOptions& options)
+{
+	if (options._evolution._outputDirectory.empty() || records.empty() || archive.empty())
+		return;
+
+	std::unordered_map<std::string, const Experiments::SchemaCandidate*> candidatesByKey;
+	for (const EvaluatedCandidate& evaluation : archive)
+		candidatesByKey[candidateKey(evaluation._candidate._config._name, evaluation._candidate._path)] = &evaluation._candidate;
+
+	std::vector<Experiments::SchemaSearchRecord> bestRecords = Experiments::selectBestRecords(records);
+	for (Experiments::SchemaSearchRecord& best : bestRecords)
+	{
+		const std::string originalPath = best._schemaPath;
+		const auto found = candidatesByKey.find(candidateKey(best._schemaName, originalPath));
+		if (found == candidatesByKey.end())
+			continue;
+
+		const std::filesystem::path outputPath =
+			std::filesystem::path(options._evolution._outputDirectory) /
+			(safeFileStem(best._datasetName + "_" + best._workloadName) + "_best_schema.json");
+		writeSchemaCopy(*found->second, outputPath);
+
+		for (Experiments::SchemaSearchRecord& record : records)
+		{
+			if (record._datasetName == best._datasetName &&
+				record._workloadName == best._workloadName &&
+				record._schemaName == best._schemaName &&
+				record._schemaPath == originalPath)
+			{
+				record._schemaPath = outputPath.string();
+			}
+		}
+		best._schemaPath = outputPath.string();
+		std::cout << "  evolved schema: " << outputPath.string() << '\n';
+	}
+}
+
 static std::vector<Experiments::SchemaSearchRecord> runAutoConditionSearch(
 	const Experiments::SchemaSearchOptions& options,
 	const std::vector<SearchDataset>& datasets,
@@ -6726,6 +6767,7 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 		}
 	}
 
+	writeEvolutionaryArtifacts(records, archive, options);
 	return records;
 }
 

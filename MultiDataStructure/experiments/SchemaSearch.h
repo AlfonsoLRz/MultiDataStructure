@@ -155,6 +155,8 @@ namespace Experiments
 		bool	_repairMutations = false;
 		size_t	_repairTopK = 4;
 		size_t	_repairPerCandidate = 2;
+		// Directory for per-(dataset,workload) best-schema JSON exports; empty = skip. Set via --optimizer-output-dir. Mirrors AutoConditionOptions._outputDirectory.
+		std::string	_outputDirectory;
 	};
 
 	struct CudaEvaluationOptions
