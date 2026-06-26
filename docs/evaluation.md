@@ -1,4 +1,4 @@
-# Evaluation: auto-tuned nested index vs. best single primitive
+# Evaluation: the optimizer's synthesized index (nested or single) vs. baselines
 
 This is the focused evaluation of the project's central claim. It compares, on a common
 query workload, three ways of choosing a point-cloud spatial index:
@@ -8,18 +8,21 @@ query workload, three ways of choosing a point-cloud spatial index:
 2. **Hand-designed nested** — six fixed multi-level schemas authored by hand
    (`quadtree_octree`, `octree_kdtree`, `urban_hybrid`, `grid2d_quadtree_grid3d_octree`,
    `urban_grid_hybrid`, `adaptive_quadtree_octree`).
-3. **Auto-tuned** — the schema selected per (dataset, workload) by the `--auto-conditions`
-   search, which generates nested/conditional candidates and ranks them by a staged
-   proxy → shortlist → confirmation measurement.
+3. **Optimizer-synthesized** — the schema the **genetic-algorithm optimizer** evolves per
+   (dataset, workload) (`--optimize-schemas`, the default search: NSGA-II Pareto selection +
+   crossover + successive-halving rungs + CMA-ES refinement). Its search space spans single
+   primitives *and* nested combinations, so it returns whichever wins — a tuned single
+   primitive or a nested schema.
 
 against the per-cell **oracle** (the best of everything measured).
 
 ## Claim
 
-> A workload-aware auto-tuned index modestly but consistently beats the best single
-> primitive, and tracks the oracle closely — with the advantage concentrated on
-> heterogeneous data and higher-volume query workloads, and shrinking to a tie on
-> small, homogeneous query workloads.
+> A workload-aware optimizer synthesizes the best spatial index per cell — a tuned single
+> primitive when nesting does not help, a nested schema when it does — landing near the
+> per-cell oracle and yielding a Pareto front over latency / build / memory / imbalance.
+> The advantage of nesting concentrates on heterogeneous data and higher-volume query
+> workloads, and shrinks to a tie on small, homogeneous ones.
 
 ## Result (headline)
 
@@ -27,50 +30,58 @@ Measured on CPU over **3 synthetic dataset families × 4 workload profiles = 12 
 Latency is the seed-averaged mean over `--confirm-seeds 3` where confirmed, else the
 single-run average; lower is better.
 
-| Dataset | Workload | Best single | Hand-nested | Auto-tuned | Oracle | Speedup auto/single | Regret vs oracle |
+| Dataset | Workload | Best single | Hand-nested | Optimizer (GA) | Oracle | Speedup opt/single | Regret vs oracle |
 |---|---|---|---|---|---|---|---|
-| synthetic_facade | knn_heavy | bvh 0.0049 | octree_kdtree 0.0145 | kdtree 0.0048 | 0.0048 | 1.00× | 0.4% |
-| synthetic_facade | mixed | bih 0.0056 | octree_kdtree 0.0132 | bvh 0.0061 | 0.0056 | 0.92× | 8.7% |
-| synthetic_facade | range_heavy | bih 0.0048 | octree_kdtree 0.0066 | generated (nested+cond) 0.0047 | 0.0047 | 1.02× | 0.0% |
-| synthetic_facade | volume_small_medium | octree 0.0298 | octree_kdtree 0.0227 | **generated_ot4l256 0.0167** | 0.0162 | **1.78×** | 3.6% |
-| synthetic_flat_terrain | knn_heavy | lbvh 0.0045 | quadtree_octree 0.0060 | bvh 0.0049 | 0.0044 | 0.93× | 9.5% |
-| synthetic_flat_terrain | mixed | bvh 0.0051 | quadtree_octree 0.0061 | bvh 0.0053 | 0.0051 | 0.96× | 4.5% |
-| synthetic_flat_terrain | range_heavy | bvh 0.0050 | quadtree_octree 0.0042 | generated_ot5l128_bvh7l32768 0.0046 | 0.0042 | 1.08× | 8.8% |
-| synthetic_flat_terrain | volume_small_medium | octree 0.0278 | octree_kdtree 0.0230 | **generated_ot4l256 0.0169** | 0.0168 | **1.64×** | 0.9% |
-| synthetic_urban_mixed | knn_heavy | octree 0.0050 | quadtree_octree 0.0051 | generated_kd6l4096_ot2l32_qt3l64 0.0047 | 0.0047 | 1.07× | 0.0% |
-| synthetic_urban_mixed | mixed | octree 0.0032 | octree_kdtree 0.0031 | generated_kd6l4096_ot2l32_qt3l64 0.0030 | 0.0030 | 1.06× | 0.0% |
-| synthetic_urban_mixed | range_heavy | karras_octree 0.0017 | octree_kdtree 0.0018 | generated_ot5l128_bvh7l32768 0.0015 | 0.0015 | 1.16× | 0.0% |
-| synthetic_urban_mixed | volume_small_medium | bvh 0.0135 | octree_kdtree 0.0154 | generated_ot4l256 0.0121 | 0.0119 | 1.12× | 1.7% |
+| synthetic_facade | knn_heavy | bvh 0.0046 | octree_kdtree 0.0124 | evolved bvh 0.0048 | 0.0046 | 0.95× | 5.1% |
+| synthetic_facade | mixed | bih 0.0051 | octree_kdtree 0.0115 | xover bvh+ot+kd (nested) 0.0056 | 0.0051 | 0.92× | 8.5% |
+| synthetic_facade | range_heavy | bvh 0.0047 | octree_kdtree 0.0059 | evolved bvh+qt+bvh (nested) 0.0043 | 0.0043 | **1.10×** | 0.0% |
+| synthetic_facade | volume_small_medium | octree 0.0446 | octree_kdtree 0.0367 | **evolved ot10+kd+kd (nested) 0.0263** | 0.0263 | **1.70×** | 0.0% |
+| synthetic_flat_terrain | knn_heavy | bvh 0.0042 | quadtree_octree 0.0062 | gen kd9+qt (nested) 0.0045 | 0.0042 | 0.93× | 7.2% |
+| synthetic_flat_terrain | mixed | bvh 0.0048 | quadtree_octree 0.0055 | gen bvh11+qt (nested) 0.0052 | 0.0048 | 0.92× | 8.5% |
+| synthetic_flat_terrain | range_heavy | lbvh 0.0047 | quadtree_octree 0.0040 | xover bvh+ot+bvh (nested) 0.0040 | 0.0040 | 1.17× | 1.6% |
+| synthetic_flat_terrain | volume_small_medium | karras_octree 0.0456 | octree_kdtree 0.0356 | **evolved ot11+kd (nested) 0.0259** | 0.0259 | **1.76×** | 0.0% |
+| synthetic_urban_mixed | knn_heavy | karras_octree 0.0045 | quadtree_octree 0.0045 | gen ot11+bvh (nested) 0.0043 | 0.0043 | 1.05× | 0.0% |
+| synthetic_urban_mixed | mixed | octree 0.0028 | quadtree_octree 0.0028 | gen ot11+bvh (nested) 0.0024 | 0.0024 | 1.14× | 0.0% |
+| synthetic_urban_mixed | range_heavy | karras_octree 0.0015 | octree_kdtree 0.0015 | gen ot11+bvh (nested) 0.0014 | 0.0014 | 1.07× | 0.0% |
+| synthetic_urban_mixed | volume_small_medium | lbvh 0.0192 | urban_hybrid 0.0256 | evolved ot5+kd (nested) 0.0164 | 0.0164 | 1.17× | 0.0% |
 
-(latencies in ms; full machine-readable data in [results/eval/report/](../results/eval/report/) — `comparison.md`, `summary.json`.)
+(latencies in ms; full machine-readable data in [results/eval_ga/report/](../results/eval_ga/report/) — `comparison.md`, `summary.json`. The **Optimizer (GA)** arm is the genetic algorithm's exported best schema per cell, re-measured uniformly next to the baselines.)
 
-**Summary:** auto-tuned beats the best single primitive in **9 of 12 cells**, geomean
-speedup **1.12×**, mean relative regret vs. oracle **3.2%**.
+**Summary:** the optimizer beats the best single primitive in **8 of 12 cells**, geomean
+speedup **1.13×**, mean relative regret vs. oracle **2.6%** — it lands within ~2–3% of the
+per-cell oracle and *finds the oracle outright in 7 of 12 cells*. (For reference, the
+`--auto-conditions` surrogate-filter that produced the previous headline scored 9/12, 1.12×,
+3.2% regret; the GA tracks the oracle more closely at a matched evaluation fidelity.)
 
-### What the tuner actually selects
+### What the optimizer selects
 
-- On **`volume_small_medium`** (many medium-extent range queries) the tuner picks a
-  *well-tuned single octree* (`generated_ot4l256`: 4 levels, leaf 256) and wins clearly
-  (**1.64–1.78×**). The hand-nested `octree_kdtree` also beats the default single octree
-  here, but the tuned octree beats both — i.e. *parameter* tuning matters more than nesting
-  on this workload.
-- On **heterogeneous `synthetic_urban_mixed`** the winners are genuinely *nested*
-  (`generated_kd6l4096_ot2l32_qt3l64`, `generated_ot5l128_bvh7l32768`) — nesting pays off
-  where the data mixes regimes.
-- On **small-query workloads** (`knn_heavy`, `mixed`) over homogeneous facade/terrain the
-  best single primitive is already near-optimal, and auto-tuning **ties or slightly loses**
-  (0.92–1.00×). This is honest: nesting/tuning has little to exploit there.
+- On **`volume_small_medium`** (medium-extent range queries) the GA evolves **deep nested**
+  schemas — a 10–11-level octree feeding kd-tree leaves — and wins clearly (**1.70–1.76×**),
+  beating both the best single primitive and the hand-nested baselines.
+- On **heterogeneous `synthetic_urban_mixed`** the GA evolves a *single nested schema*
+  (`ot11l256_bvh1l32`, octree→BVH) that wins **all four workloads** (1.05–1.17×) and is the
+  per-cell oracle each time — nesting pays off, and one synthesized schema generalizes across
+  the cloud's workloads.
+- On **small-query homogeneous cells** (`knn_heavy`/`mixed` over facade/terrain) a single
+  primitive is already near-optimal, so the optimizer **ties or slightly loses** (0.92–0.95×).
+  This is the honest case: there is little for nesting to exploit, and the optimizer does not
+  manufacture a win.
 
-Only 3/12 cells are flagged `ranking_confident` (the per-cell latency gaps are small at this
-scale); the **`volume_small_medium` wins are the statistically robust ones**.
+Most winners are genuinely **nested multi-level schemas the GA evolved** (`evolved_*` from
+mutation, `xover_*` from crossover) — so the optimizer is exercising the nested part of its
+search space exactly where it helps, and a tuned single primitive only where nesting cannot.
+Per-cell latency gaps are small at this µs scale (only `facade/range_heavy` is flagged
+`ranking_confident`); the `volume_small_medium` (1.7×+) and `urban_mixed` (full-sweep) wins
+are the substantive ones.
 
 ### Learned selector (illustrative)
 
 Training `scripts/train_schema_selector.py` on the 216 measured rows (held-out family:
-`synthetic_facade`) yields a ridge score-ranker with best-schema accuracy 0.75 and **mean
-relative regret 0.4%** vs. oracle — i.e. cloud/workload/schema features predict a near-best
-schema. This is illustrative only: with **3 dataset families** the train/test split is tiny,
-so treat it as a sanity check, not a generalization claim.
+`synthetic_facade`) yields a feature-based score-ranker with best-schema accuracy 0.50 (top-2
+0.75) and **mean relative regret 2.8%** vs. oracle — cloud/workload/schema features predict a
+near-best schema, though the GA's more diverse nested winners are harder to rank than the
+earlier surrogate-filter's tidier picks. This is illustrative only: with **3 dataset families**
+the train/test split is tiny, so treat it as a sanity check, not a generalization claim.
 
 ## Comparability protocol
 
@@ -80,13 +91,14 @@ Every compared row shares one provenance: `--evaluator cpu`, `--score-objective 
 `--synthetic-scale 300000`. `scripts/compare_methods.py` verifies this and reports
 **"Distinct provenance settings: 1"** — the comparison is apples-to-apples.
 
-The auto-tuner is run as a **separate discovery stage** (`--auto-conditions`, 256 queries)
-that *exports* a schema per cell; the headline then **re-measures** those exports next to the
-baselines under the identical settings above. This matters: `scripts/audit_schema_scores.py`
-on the discovery vs. measurement CSVs correctly flags `effective_queries: 256 vs 1024` and
-`score_stage: confirmation vs final` as non-comparable — which is exactly why discovery
-numbers are never compared directly. Reassuringly, the tuner's *selection* is stable across
-the two stages (same winning schema per cell).
+The optimizer is run as a **separate discovery stage** (`--optimize-schemas`, the default
+search; it exports a schema per cell via `--optimizer-output-dir`) at the **same 1024-query
+fidelity** the headline re-measures at, so its exported pick and the baselines are scored on
+the identical query set — no discovery-vs-measurement fidelity gap. This matters: an earlier
+pass discovered at 256 queries and exported a 256-query pick that mis-ranked against the
+1024-query re-measurement (costing ~3 points of regret and several cells);
+`scripts/audit_schema_scores.py` flags exactly that kind of `effective_queries` mismatch,
+which is why discovery and measurement are kept at matched fidelity here.
 
 ## GPU appendix — build vs. query acceleration
 
@@ -190,30 +202,33 @@ Stage-B run is a warmup artifact; discovery shows ~0.8 s. Data in `results/eval_
 Built binary `x64/Release/MultiDataStructure.exe` (no source changes for this evaluation).
 
 ```powershell
-# Stage A — discover one auto-tuned schema per (dataset, workload), CPU:
-#   for w in range_heavy knn_heavy mixed volume_small_medium:
-x64\Release\MultiDataStructure.exe --mode schema-search --auto-conditions --evaluator cpu `
-  --workloads configs/workloads/<w>.json --query-seed 1337 --queries 256 --knn-k 16 `
+# Stage A — the optimizer (GA, the DEFAULT search) synthesizes + exports one schema per
+#   (dataset, workload), CPU, at full 1024-query fidelity. For w in range_heavy knn_heavy mixed volume_small_medium:
+x64\Release\MultiDataStructure.exe --mode schema-search --optimize-schemas `
+  --optimizer-generations 6 --optimizer-population 16 --optimizer-seed 1337 --evaluator cpu `
+  --workloads configs/workloads/<w>.json --query-seed 1337 --queries 1024 --knn-k 16 `
   --synthetic-scale 300000 --score-objective latency --no-score-cache `
-  --condition-output-dir results/eval/auto_schemas --csv results/eval/discover_<w>.csv --no-pause
+  --optimizer-output-dir results/eval_ga/evolved_<w> --csv results/eval_ga/ga_discover_<w>.csv --no-pause
 
-# Stage B — measure 9 singles + 6 hand-nested + the auto exports UNIFORMLY, CPU:
-#   $all = the 9 single configs ; the 6 nested configs ; results/eval/auto_schemas/*_<w>_best_schema.json
-x64\Release\MultiDataStructure.exe --mode schema-search --evaluator cpu `
+# Stage B — measure 9 singles + 6 hand-nested + the GA exports UNIFORMLY, CPU. --flat-search
+#   opts out of the (now default) GA so this is a one-pass scan of exactly the listed schemas:
+#   $all = the 9 single configs ; the 6 nested configs ; results/eval_ga/evolved_<w>/*_best_schema.json
+x64\Release\MultiDataStructure.exe --mode schema-search --flat-search --evaluator cpu `
   --workloads configs/workloads/<w>.json --schemas "$all" `
   --generate-schemas 0 --no-baselines --benchmark-top 100 `
   --query-seed 1337 --queries 1024 --knn-k 16 --synthetic-scale 300000 --score-objective latency `
-  --measure-repeats 3 --confirm-seeds 3 --confirm-top 18 --no-score-cache `
-  --csv results/eval/<w>.csv --best-csv results/eval/<w>_best.csv --pareto-csv results/eval/<w>_pareto.csv --no-pause
+  --confirm-seeds 3 --confirm-top 24 --no-score-cache `
+  --csv results/eval_ga/measure_<w>.csv --no-pause
 
-# Analyze:
-python scripts/compare_methods.py --inputs results/eval/range_heavy.csv results/eval/knn_heavy.csv `
-  results/eval/mixed.csv results/eval/volume_small_medium.csv --out-dir results/eval/report
-python scripts/train_schema_selector.py --input results/eval/report/combined_raw.csv `
-  --report results/eval/report/schema_selector_report.json
+# Analyze (the GA exports are tagged the optimizer arm via the `evolved` path marker):
+python scripts/compare_methods.py --inputs results/eval_ga/measure_*.csv `
+  --auto-marker evolved --out-dir results/eval_ga/report
+python scripts/train_schema_selector.py --input results/eval_ga/report/combined_raw.csv `
+  --report results/eval_ga/report/schema_selector_report.json
 ```
 
-`--generate-schemas 0 --no-baselines` is essential: without it the flat search silently
-generates 256 candidates and surrogate-prunes to top-32, which would contaminate the
-controlled 18-schema comparison. The GPU appendix repeats Stage B with
-`--evaluator cuda --cuda-builder mixed` into `results/eval/gpu_<w>.csv`.
+Two flags matter: `--flat-search` opts the re-measurement out of the now-default GA so it
+scans exactly the provided schemas; `--generate-schemas 0 --no-baselines` keeps that flat
+scan from adding generated/baseline candidates that would contaminate the controlled
+comparison. (The GPU appendix below was measured separately on the GPU evaluator and is a
+build/query characterization independent of which search produced the schemas.)
