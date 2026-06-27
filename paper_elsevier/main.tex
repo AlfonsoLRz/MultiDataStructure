@@ -1,0 +1,58 @@
+\documentclass[preprint,12pt]{elsarticle}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\figureplaceholder}[2]{%
+  \fbox{%
+    \begin{minipage}[c][#1][c]{0.92\linewidth}
+      \centering
+      \textbf{Figure placeholder}\\[0.6em]
+      \small #2
+    \end{minipage}%
+  }%
+}
+
+\journal{Computers \& Graphics}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{Workload-Aware Synthesis of Nested Spatial Indexes for Large Point Clouds}
+
+\author[inst1]{Author Name}
+\affiliation[inst1]{
+  organization={Institution Name},
+  addressline={Address},
+  city={City},
+  country={Country}
+}
+
+\begin{abstract}
+Large point clouds are rarely queried in only one way. Interactive inspection, geometric filtering, neighborhood search, and downstream analysis may stress different parts of the same spatial index, while the point distribution itself can vary from nearly planar terrain to highly anisotropic architectural scans. This manuscript introduces a workload-aware framework for synthesizing point-cloud spatial indexes from reusable primitives. Rather than selecting a fixed quadtree, octree, kd-tree, grid, or bounding-volume hierarchy in advance, the framework treats the index as a measured design variable. It generates single, nested, and conditionally activated schemas; builds them over the target cloud; evaluates them on a specified workload; and records the provenance needed for fair comparison and later selector training. This draft describes the motivation and methodology of the system. Final experimental claims are intentionally deferred until the evaluation section is completed.
+\end{abstract}
+
+\begin{keyword}
+point clouds \sep spatial indexes \sep workload-aware optimization \sep nested data structures \sep CUDA \sep schema search
+\end{keyword}
+
+\end{frontmatter}
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methodology}
+
+\section*{Acknowledgements}
+To be completed.
+
+\section*{Declaration of Competing Interest}
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\bibliographystyle{elsarticle-num-names}
+\bibliography{references}
+
+\end{document}

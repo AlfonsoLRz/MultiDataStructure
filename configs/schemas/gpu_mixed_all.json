@@ -36,14 +36,14 @@
       "numLevels": 1,
       "leafCapacity": 12,
       "minPointsToSplit": 4,
-      "axisPolicy": "median_longest_axis"
+      "axisPolicy": "center_longest_axis"
     },
     {
       "type": "KDTree",
       "numLevels": 1,
       "leafCapacity": 12,
       "minPointsToSplit": 4,
-      "axisPolicy": "median_longest_axis"
+      "axisPolicy": "center_longest_axis"
     },
     {
       "type": "LBVH",

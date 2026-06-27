@@ -60,6 +60,7 @@ namespace BaselineTests
 			bih._numLevels = 1;
 			bih._leafCapacity = 12;
 			bih._minPrimitivesToSplit = 4;
+			bih._axisPolicy = "center_longest_axis";
 			schema._levels.push_back(bih);
 
 			SchemaLevelConfig kd;

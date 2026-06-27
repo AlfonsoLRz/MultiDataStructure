@@ -16,7 +16,7 @@ namespace PointGpu
 		Knn = 3,
 	};
 
-	// Split-axis policy for KDTree/BIH; CPU build falls back to longest-extent, CUDA honors it.
+	// Split-axis policy for KDTree/BIH; CUDA supports center-longest and round-robin.
 	enum class KdAxisPolicy
 	{
 		LongestExtent = 0,

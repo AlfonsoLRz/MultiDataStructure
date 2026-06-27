@@ -169,6 +169,12 @@ Query plus memory and occupancy penalties, with build time ignored:
 .\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --rank-model models/schema_selector.json --benchmark-top 32 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-build-weight 0 --score-memory-weight 0.01 --score-imbalance-weight 0.01 --csv results/alhambra_query_memory.csv --best-csv results/alhambra_query_memory_best.csv --no-pause
 ```
 
+Named balanced objective, using latency plus build, memory, and imbalance penalties:
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode schema-search --input C:/Datasets/points/Alhambra_100M.las --no-synthetic --generated-only --generate-schemas 256 --rank-model models/schema_selector.json --benchmark-top 32 --workloads configs/workloads/volume_small_medium.json --queries 64 --score-objective balanced --csv results/alhambra_balanced.csv --best-csv results/alhambra_balanced_best.csv --no-pause
+```
+
 Small-to-medium 3D volume-query search. This uses AABB range queries only, with query boxes sampled from 1% to 25% of the dataset extent in each dimension:
 
 ```powershell
@@ -503,7 +509,7 @@ CUDA schema-search evaluator:
 
 `lbvh`, `kdtree`, `bih`, `octree`, `karras_octree`, `quadtree`, `regular_grid`, `hgrid`, and static `mixed` schemas are implemented now. `karras_octree` uses Morton sorting plus prefix child ranges, `bih` is a binary interval hierarchy with tight child bounds, `hgrid` builds multiple CUDA grid levels and chooses one per query, and `mixed` follows the schema's per-depth structure schedule and treats conditional levels as GPU split gates. Mixed schema levels can currently name `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BIH`, `BVH`, `LBVH`, `RegularGrid`, and `HGrid`.
 
-`QuadTree` schema levels default to `axisPolicy: "xy"` for point clouds. Other supported policies are `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, and `ignore_z`.
+`QuadTree` schema levels default to `axisPolicy: "xy"` for point clouds. Other supported policies are `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, and `ignore_z`. `KDTree`/`BIH` support `median_longest_axis`, `center_longest_axis`, and `round_robin` on CPU. CUDA KDTree/BIH can reproduce `center_longest_axis` and `round_robin`; CUDA MixedTree can reproduce `center_longest_axis`. Median-longest rows under CUDA schema search are tagged `gpu_support_status=unsupported_policy` and evaluated on CPU.
 
 Schema-search defaults to `--evaluator cuda --cuda-device 0 --cuda-builder mixed`; the resolver checks CUDA once and falls back to CPU with a warning when CUDA is unavailable. CUDA KNN has explicit backend provenance: CPU point mode remains `cpu_tree_knn`, generic GPU builders keep `gpu_bruteforce_knn`, and KDTree/BIH `auto` uses exact `gpu_tree_knn` for `k <= 16`.
 
@@ -518,7 +524,9 @@ score = avg_query_latency_ms
 
 Build time, memory, and imbalance are still logged, but they are not part of the default score.
 
-Raw/best/pareto CSVs append score provenance columns: `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. Workload JSON files may also define a `scoreWeights` object; explicit CLI score flags override those workload-local weights. To compare GA and non-GA runs:
+Use `--score-objective latency|balanced|custom` to name the scalar objective explicitly. `balanced` sets `lambda_build=0.001`, `lambda_memory=0.01`, and `lambda_imbalance=0.01`; explicit weight flags switch the row objective to `custom`.
+
+Raw/best/pareto CSVs append score provenance columns: `lambda_latency`, `lambda_build`, `lambda_memory`, `lambda_imbalance`, `score_objective`, `score_mode`, `score_stage`, `score_is_final_latency`, `effective_queries`, `score_uses_visit_proxy`, and `visit_proxy_alpha`. They also include `gpu_support_status`; use `full` rows for fair CPU/GPU structural comparisons. Workload JSON files may also define a `scoreWeights` object; explicit CLI score flags override those workload-local weights. To compare GA and non-GA runs:
 
 The same CSVs now also append tree-health and query-strata diagnostics, including leaf occupancy quantiles, average depth, fanout, empty-child ratio, single-child count, tight-bounds volume ratio, micro-indexed leaf counts, and `query_strata_summary`.
 
@@ -527,6 +535,14 @@ python scripts\audit_schema_scores.py results\non_ga.csv results\ga.csv --left-l
 ```
 
 ## Python Script Arguments
+
+Optional framework baseline replay:
+
+```powershell
+python scripts\compare_frameworks.py --input C:/Datasets/points/sample.ply --schema models/local_schema_selector.json --workload-profile configs/workloads/mixed.json --queries 64 --frameworks open3d pdal pcl --pcl-exe C:/tools/pcl_point_baseline.exe
+```
+
+The `--schema` argument may be either a schema JSON or a measured selector JSON. See `docs/framework_baselines.md` for supported query types and caveats.
 
 `scripts/export_model.py`:
 

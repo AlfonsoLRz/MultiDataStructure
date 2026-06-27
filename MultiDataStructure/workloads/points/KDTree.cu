@@ -49,13 +49,15 @@ namespace
 		return maxDepth;
 	}
 
-	// Reads the first level's axisPolicy; "round_robin" else LongestExtent (also for blank/unknown).
+	// Reads the first level's axisPolicy; CUDA can match CPU center-longest and round-robin policies.
 	PointGpu::KdAxisPolicy axisPolicyFromSchema(const SchemaConfig& schema)
 	{
 		for (const SchemaLevelConfig& level : schema._levels)
 		{
-			if (level._axisPolicy.empty())
+			if (level._type != MultiDataStructure::DataStructureLevel::KDTreeNode)
 				continue;
+			if (level._axisPolicy.empty())
+				throw std::runtime_error("CUDA KDTree/BIH requires axisPolicy center_longest_axis or round_robin; the CPU default median_longest_axis is not supported.");
 			std::string normalized = level._axisPolicy;
 			std::transform(normalized.begin(), normalized.end(), normalized.begin(),
 				[](unsigned char c) { return std::tolower(c); });
@@ -63,6 +65,10 @@ namespace
 			normalized.erase(std::remove(normalized.begin(), normalized.end(), '-'), normalized.end());
 			if (normalized == "roundrobin" || normalized == "rr")
 				return PointGpu::KdAxisPolicy::RoundRobin;
+			if (normalized == "centerlongestaxis")
+				return PointGpu::KdAxisPolicy::LongestExtent;
+			if (normalized == "medianlongestaxis")
+				throw std::runtime_error("CUDA KDTree/BIH does not support median_longest_axis; use center_longest_axis/round_robin or the CPU evaluator.");
 			break;
 		}
 		return PointGpu::KdAxisPolicy::LongestExtent;

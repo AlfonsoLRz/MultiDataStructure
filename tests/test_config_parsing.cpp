@@ -29,6 +29,28 @@ namespace BaselineTests
 			expect(stats._numLeaves >= 1, label + " creates at least one leaf");
 			expect(stats._numPoints == cloud.size(), label + " preserves point count without duplication");
 		}
+
+		SchemaConfig makeKDTreePolicySchema(const std::string& axisPolicy)
+		{
+			SchemaLevelConfig level;
+			level._type = MultiDataStructure::DataStructureLevel::KDTreeNode;
+			level._typeName = "KDTree";
+			level._numLevels = 2;
+			level._leafCapacity = 1;
+			level._minPrimitivesToSplit = 2;
+			level._axisPolicy = axisPolicy;
+
+			SchemaConfig schema;
+			schema._name = "kdtree_" + axisPolicy;
+			schema._levels.push_back(level);
+			schema._buildPolicy._maxDepth = 2;
+			schema._buildPolicy._leafCapacity = 1;
+			schema._buildPolicy._minPrimitivesToSplit = 2;
+			schema._buildPolicy._collapseSingleChild = false;
+			schema._buildPolicy._removeEmptyNodes = true;
+			schema._buildPolicy._allowOverlapDuplication = false;
+			return schema;
+		}
 	}
 
 	void runConfigParsingTests()
@@ -265,6 +287,36 @@ namespace BaselineTests
 		splitIndex.build(cloud, Config::parseSchemaConfig(splitJson, "split"));
 		expect(splitIndex.stats()._numNodes > 1, "small leaf capacity allows point subdivision");
 		expect(splitIndex.stats()._numPoints == cloud.size(), "policy-controlled split preserves point count");
+
+		PointCloud kdPolicyCloud;
+		kdPolicyCloud.addPoint({ glm::vec3(0.0f, 0.0f, 0.0f) });
+		kdPolicyCloud.addPoint({ glm::vec3(1.0f, 10.0f, 0.0f) });
+		kdPolicyCloud.addPoint({ glm::vec3(2.0f, 10.0f, 0.0f) });
+		kdPolicyCloud.addPoint({ glm::vec3(100.0f, 0.0f, 0.0f) });
+
+		PointSpatialIndex kdMedianIndex;
+		kdMedianIndex.build(kdPolicyCloud, makeKDTreePolicySchema("median_longest_axis"));
+		expect(kdMedianIndex.root() && kdMedianIndex.root()->_children.size() == 2,
+			"KDTree median-longest policy splits the root");
+		expect(nearlyEqual(kdMedianIndex.root()->_children[0]->_bounds.max().x, 2.0f),
+			"KDTree median-longest policy uses the point median as split plane");
+
+		PointSpatialIndex kdCenterIndex;
+		kdCenterIndex.build(kdPolicyCloud, makeKDTreePolicySchema("center_longest_axis"));
+		expect(kdCenterIndex.root() && kdCenterIndex.root()->_children.size() == 2,
+			"KDTree center-longest policy splits the root");
+		expect(nearlyEqual(kdCenterIndex.root()->_children[0]->_bounds.max().x, 50.0f),
+			"KDTree center-longest policy uses the bbox center as split plane");
+
+		PointSpatialIndex kdRoundRobinIndex;
+		kdRoundRobinIndex.build(kdPolicyCloud, makeKDTreePolicySchema("round_robin"));
+		const PointSpatialIndex::Node* roundLeft = kdRoundRobinIndex.root() && !kdRoundRobinIndex.root()->_children.empty()
+			? kdRoundRobinIndex.root()->_children[0].get()
+			: nullptr;
+		expect(roundLeft && roundLeft->_children.size() == 2,
+			"KDTree round-robin policy advances to the Y axis at depth 1");
+		expect(nearlyEqual(roundLeft->_children[0]->_bounds.max().y, 5.0f),
+			"KDTree round-robin policy uses the depth-selected axis center");
 
 		PointCloud adaptiveCloud;
 		for (int x = 0; x < 6; ++x)

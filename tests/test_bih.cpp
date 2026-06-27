@@ -16,6 +16,7 @@ namespace BaselineTests
 			level._numLevels = 8;
 			level._leafCapacity = 16;
 			level._minPrimitivesToSplit = 4;
+			level._axisPolicy = "center_longest_axis";
 
 			SchemaConfig schema;
 			schema._name = "bih_test";

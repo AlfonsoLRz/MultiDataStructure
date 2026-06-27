@@ -924,19 +924,28 @@ void PointSpatialIndex::childBounds(const Node& node, const SchemaLevelConfig& l
 
 	splitAxis = longestAxis(node._bounds);
 	splitValue = node._bounds.center()[splitAxis];
-	if (levelConfig._type == MultiDataStructure::DataStructureLevel::KDTreeNode && node._pointCount > 0)
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::KDTreeNode)
 	{
-		std::vector<float> coordinates;
-		coordinates.reserve(node._pointCount);
-		for (size_t i = 0; i < node._pointCount; ++i)
+		const std::string policy = normalizedAxisPolicy(levelConfig._axisPolicy.empty() ? std::string("median_longest_axis") : levelConfig._axisPolicy);
+		if (policy == "roundrobin")
 		{
-			const uint32_t pointIndex = _pointOrder[node._pointOffset + i];
-			coordinates.push_back(_cloud->points()[pointIndex].position[splitAxis]);
+			splitAxis = static_cast<glm::uint>(node._depth % 3);
+			splitValue = node._bounds.center()[splitAxis];
 		}
+		else if (policy == "medianlongestaxis" && node._pointCount > 0)
+		{
+			std::vector<float> coordinates;
+			coordinates.reserve(node._pointCount);
+			for (size_t i = 0; i < node._pointCount; ++i)
+			{
+				const uint32_t pointIndex = _pointOrder[node._pointOffset + i];
+				coordinates.push_back(_cloud->points()[pointIndex].position[splitAxis]);
+			}
 
-		const size_t median = coordinates.size() / 2;
-		std::nth_element(coordinates.begin(), coordinates.begin() + median, coordinates.end());
-		splitValue = coordinates[median];
+			const size_t median = coordinates.size() / 2;
+			std::nth_element(coordinates.begin(), coordinates.begin() + median, coordinates.end());
+			splitValue = coordinates[median];
+		}
 	}
 
 	bounds.resize(2);
@@ -979,6 +988,8 @@ size_t PointSpatialIndex::locateChild(const glm::vec3& point, const SchemaLevelC
 		return std::min(index, numChildren - 1);
 	}
 
+	if (levelConfig._type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+		return point[splitAxis] <= splitValue ? 0 : 1;
 	return point[splitAxis] < splitValue ? 0 : 1;
 }
 

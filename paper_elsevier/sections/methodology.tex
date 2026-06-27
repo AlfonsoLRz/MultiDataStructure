@@ -1,0 +1,113 @@
+\section{Methodology}
+\label{sec:methodology}
+
+\subsection{Problem setting}
+
+Let
+\begin{equation}
+P = \{p_i \in \mathbb{R}^3 \mid i = 1,\ldots,N\}
+\end{equation}
+be a point cloud, represented internally in a local floating-point coordinate frame. For LAS inputs, the loader stores the double-precision origin separately and converts point positions to local coordinates so that large geospatial offsets do not consume the precision needed for local queries. The maintained workload consists of four exact query families: axis-aligned range queries, count-range queries, radius queries, and k-nearest-neighbor queries.
+
+A workload profile is denoted as
+\begin{equation}
+W = (\omega_r,\omega_\rho,\omega_k,n_q,k,s_r,s_\rho,\sigma),
+\end{equation}
+where $\omega_r$, $\omega_\rho$, and $\omega_k$ are normalized weights for range, radius, and k-nearest-neighbor queries, $n_q$ is the requested query count, $k$ is the neighbor count, $s_r$ and $s_\rho$ are scale intervals for generated range and radius queries, and $\sigma$ is the deterministic query seed. A profile may also carry score weights that change whether the optimizer prioritizes only query latency or a balanced combination of latency, build time, memory, and tree imbalance.
+
+The goal is to choose an index schema $S$ that minimizes a measured objective on $(P,W)$. The schema is not limited to one primitive. It may describe a single octree, a fixed sequence such as quadtree-to-octree, or a conditional sequence in which later levels are activated only for nodes with suitable point count, density, extent, height ratio, anisotropy, or occupancy statistics.
+
+\subsection{Schema representation}
+
+A schema is an ordered list of levels,
+\begin{equation}
+S = (\ell_1,\ell_2,\ldots,\ell_m).
+\end{equation}
+Each level stores a primitive type, a level budget, a leaf-capacity target, a minimum point count required for further splitting, and optional primitive-specific policies. The implemented primitive set includes quadtree, octree, Karras-style octree~\cite{karras2012lbvh}, kd-tree, binary interval hierarchy, bounding-volume hierarchy, linear bounding-volume hierarchy, regular grid, hierarchical grid, and mixed CUDA schedules. A level may also carry a condition predicate. During construction, a node either enters the level when the predicate matches or skips to the next schema level when it does not.
+
+This representation has two useful consequences. First, a conventional index is a degenerate schema with one level. The search can therefore compare tuned single structures and nested structures in the same candidate pool. Second, the chosen design is portable. It is written as JSON and can be replayed later without rerunning the search. This matters for publication workflows because discovery measurements and final measurements must remain separated.
+
+\begin{figure}[t]
+  \centering
+  \figureplaceholder{0.24\textheight}{Schema schematic: a single-level baseline on the left; a nested schema in the center; and a conditional schema on the right where branches enter or skip later levels according to local node statistics. Include small JSON snippets or block labels for primitive type, level budget, leaf capacity, split policy, and condition predicate.}
+  \caption{Schema representation used by the optimizer. The final figure should make clear that single primitives, fixed nested chains, and conditional nested structures share one replayable JSON representation and can therefore be measured in the same candidate pool.}
+  \label{fig:schema-representation}
+\end{figure}
+
+\subsection{Point-cloud and workload features}
+
+Before ranking or training selectors, the system computes deterministic features for the point cloud and workload. The point-cloud feature vector includes the number of points, bounding-box extents, safe aspect ratios, bounding-box density, sampled height statistics, covariance eigenvalues, linearity, planarity, scattering, occupancy ratio in an $8\times8\times8$ grid, occupancy entropy, density coefficient of variation, verticality, and flatness. Large clouds use a fixed-seed sample for covariance and occupancy features while retaining full-cloud bounds.
+
+The workload feature vector records the query mix, $k$ for nearest-neighbor queries, the number of generated queries, range and radius scale intervals, a deterministic summary of generated query scales, and the score weights. These features are copied into each raw schema-search row. The immediate use is auditability; the later use is supervised learning, where a selector can rank schemas for a new cloud and workload before expensive measurement.
+
+\begin{figure}[t]
+  \centering
+  \figureplaceholder{0.23\textheight}{Feature sketch: show a point cloud bounding box with sampled points, covariance axes, an 8x8x8 occupancy grid, and workload query glyphs for range boxes, radius balls, and k-nearest-neighbor probes. A side panel should list the resulting cloud/workload features.}
+  \caption{Deterministic feature extraction for point clouds and workloads. The final figure should connect geometric descriptors, occupancy summaries, and query-profile descriptors to the schema-ranking and training rows.}
+  \label{fig:feature-extraction}
+\end{figure}
+
+\subsection{Index construction}
+
+The CPU builder constructs a tree according to the active schema level at each node. Points are assigned to a single child by position, so the maintained path does not duplicate points across overlapping children. After construction, the index stores subtree point counts, loose and tight bounds, depth information, and a structure label for each node. Optional leaf micro-indexes can be built for heavy leaves: a local grid for range, count-range, and radius queries, and a local kd-tree for nearest-neighbor queries. This option is disabled by default in the controlled comparisons so that macro-structure effects remain comparable.
+
+The CUDA path provides dedicated builders for several primitives and a mixed-tree evaluator that follows the schema's per-depth schedule when the requested primitive and policy can be reproduced on the GPU. Support is explicit rather than silent. Rows are tagged as full GPU support, CPU fallback, or unsupported policy. For example, occupancy-entropy conditions are CPU-native at present, while CUDA mixed trees support cheaper bounding-box predicates. The measurement table keeps these support tags so that CPU/GPU comparisons can be filtered to structurally comparable rows.
+
+\subsection{Query execution and counters}
+
+Range, count-range, radius, and nearest-neighbor queries are exact on the CPU path and are checked by unit tests against brute force on deterministic synthetic clouds. For each query batch, the framework records elapsed time and traversal counters: visited nodes, tested points, returned points, and fully contained nodes. CPU traces can also break visits and tested points down by depth and by active structure type. These counters are useful both for explaining why a schema won and for generating repair mutations when a candidate exhibits a clear bottleneck.
+
+The CUDA evaluators measure uploaded point buffers and GPU-built structures. Generic GPU k-nearest-neighbor evaluation is labeled separately when it uses a brute-force point-buffer scan rather than tree traversal. This label is part of the row provenance, because a nearest-neighbor latency produced by a scan is not evidence that the tree structure accelerated nearest-neighbor search.
+
+\subsection{Measured objective}
+
+For a candidate schema $S$, the default scalar score is query latency:
+\begin{equation}
+J(S;P,W) = \bar{t}_q(S;P,W),
+\end{equation}
+where $\bar{t}_q$ is the average measured query latency over the generated workload. The implementation also supports a weighted objective,
+\begin{equation}
+J(S;P,W) =
+\lambda_q \bar{t}_q +
+\lambda_b t_b +
+\lambda_m M +
+\lambda_i I,
+\end{equation}
+where $t_b$ is build time, $M$ is estimated memory in megabytes, and
+\begin{equation}
+I = \frac{\max(1, L_{\max})}{\max(1, L_{\mathrm{avg}})}
+\end{equation}
+is a leaf-occupancy imbalance penalty formed from maximum and average leaf occupancy. The default publication-oriented objective uses $\lambda_q=1$ and zero build, memory, and imbalance weights. The other terms are still logged so that Pareto views or balanced objectives can be computed without rerunning all experiments.
+
+Proxy stages may use a cheaper visit-based score,
+\begin{equation}
+J_{\mathrm{proxy}} = \overline{V} + \alpha \overline{T},
+\end{equation}
+where $\overline{V}$ is the average number of visited nodes, $\overline{T}$ is the average number of tested points, and $\alpha$ controls their relative weight. Proxy rows are marked as such and are not compared directly against final latency rows.
+
+\subsection{Candidate generation and staged search}
+
+The search begins with configured baseline schemas and, when enabled, generated schemas. Generation samples the number of blocks, primitive types, level budgets, leaf capacities, split policies, and optional conditions within bounded domains. The generator can be restricted to CPU-minimal primitives for clean discovery or expanded to CUDA-specific variants such as Karras octrees, linear bounding-volume hierarchies, regular grids, and hierarchical grids.
+
+For per-cloud conditional tuning, the system first estimates a shallow sketch of the target point cloud. Quantiles of point count, density, extent, height ratio, anisotropy, and occupancy entropy define threshold domains. Generated conditions are then materialized as concrete numeric predicates and written as replayable schema files. The search uses a staged schedule: many candidates are screened with a small proxy workload, a shortlist is measured on the full cloud, and the best few are confirmed with the requested query count and seeds. Canonical single-primitive controls are force-promoted through the stages so that nested schemas must beat meaningful baselines, not only other nested candidates.
+
+The evolutionary optimizer follows the same measurement contract. It keeps elites, applies mutations and crossover, introduces random candidates, and can add diagnostic repair children. Repair mutations are based on measured counters: high leaf occupancy suggests smaller leaves or deeper splits; high tested-points-per-visit suggests tighter or more selective subdivision; high visited-node counts suggest shallower or better aligned splits; and excessive single-child chains indicate poor subdivision for the local geometry. A candidate created by repair is still benchmarked normally before it can be selected.
+
+\begin{figure}[t]
+  \centering
+  \figureplaceholder{0.25\textheight}{Staged search diagram: a large generated candidate pool passes through proxy measurement, shortlist measurement, confirmation with full query count/seeds, and final replay next to baselines. Mark proxy rows and final latency rows with different colors; show canonical single-primitive controls being carried through the stages.}
+  \caption{Multi-stage schema search and measurement protocol. The final figure should emphasize that discovery measurements are used to choose candidates, while final claims come from replaying exported schemas under a uniform provenance against baseline controls.}
+  \label{fig:staged-search}
+\end{figure}
+
+\subsection{Measurement protocol}
+
+Every schema-search row represents one measured tuple $(P,W,S)$. The raw table stores dataset identity, point count, point-cloud features, workload features, schema identity, backend, GPU support status, build metrics, query metrics, score components, score stage, and score provenance. A second table stores the best schema per dataset and workload. Optional Pareto output records non-dominated candidates over latency, build time, memory, and imbalance.
+
+The protocol separates discovery from final comparison. Discovery may use proxy scores, fewer queries, surrogate pruning, or staged confirmation. Final comparison replays the exported winning schemas next to the configured baselines under one uniform provenance: the same evaluator, workload profile, query count, query seed, score objective, and measurement-repeat settings. This prevents a schema discovered under a cheap proxy workload from being reported as faster than a baseline measured under a full workload.
+
+\subsection{Reproducibility}
+
+The implementation is organized around replayable artifacts. Workload profiles are JSON files. Schemas are JSON files. Generated schemas and tuned conditional schemas are written to disk. Raw measurements are CSV rows with enough provenance to audit score compatibility across runs. The command-line interface exposes the query seed, query count, synthetic scale, evaluator, CUDA builder, generated-schema seed, score weights, and output paths. A companion audit script checks whether two CSV files differ in evaluator, score stage, query count, score weights, or other settings that would make their best rows incomparable.
+
+The current manuscript therefore treats the optimizer's output as a measured recommendation rather than as a one-time side effect of the code. A selected schema can be inspected, replayed, remeasured on larger workloads, or used as a label for training a global selector. This is the central methodological choice: the search is allowed to be empirical, but the empirical path must remain reproducible.

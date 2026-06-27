@@ -59,11 +59,13 @@ Default score is query latency (`avg_latency_ms`). Workload JSON files can carry
 |---|---|
 | `lambda_latency` | Weight applied to average latency in non-proxy score mode. |
 | `lambda_build`, `lambda_memory`, `lambda_imbalance` | Weights applied to build time, memory MB, and leaf-imbalance penalty. |
+| `score_objective` | Named scalar objective: `latency`, `balanced`, or `custom`. |
 | `score_mode` | `latency`, `weighted_latency`, or `visit_proxy`. |
 | `score_stage` | Pipeline stage or final rung name, such as `final`, `confirmation`, or `confirm`. |
 | `score_is_final_latency` | `1` when the row is safe to compare as a final latency measurement. |
 | `effective_queries` | Number of measured queries used by the row. |
 | `score_uses_visit_proxy` | `1` when score uses visited nodes plus tested-point proxy. |
+| `gpu_support_status` | `full` for CUDA-runnable schemas, `cpu_fallback` for CPU-only features, and `unsupported_policy` for CUDA-incomparable split policies. |
 | `visit_proxy_alpha` | Tested-point coefficient in the proxy score. |
 
 Use `scripts/audit_schema_scores.py` before interpreting GA versus non-GA score differences from separate CSV files.

@@ -189,10 +189,12 @@ static boost::json::object encodeRecord(const std::string& canonicalKey, const E
 	out["score"] = record._score;
 	out["scoreMemoryMb"] = record._scoreMemoryMb;
 	out["scoreImbalancePenalty"] = record._scoreImbalancePenalty;
+	out["scoreObjective"] = record._scoreObjective;
 	out["scoreMode"] = record._scoreMode;
 	out["scoreStage"] = record._scoreStage;
 	out["scoreIsFinalLatency"] = record._scoreIsFinalLatency;
 	out["backend"] = record._backend;
+	out["gpuSupportStatus"] = record._gpuSupportStatus;
 	out["knnBackend"] = record._knnBackend;
 	out["cudaDevice"] = record._cudaDevice;
 	out["cudaBuilder"] = record._cudaBuilder;
@@ -241,12 +243,14 @@ static void decodeRecord(const boost::json::object& source, Experiments::SchemaS
 	out._score = asDouble(source, "score");
 	out._scoreMemoryMb = asDouble(source, "scoreMemoryMb");
 	out._scoreImbalancePenalty = asDouble(source, "scoreImbalancePenalty");
+	out._scoreObjective = asString(source, "scoreObjective", out._scoreObjective);
 	out._scoreMode = asString(source, "scoreMode", out._scoreMode);
 	out._scoreStage = asString(source, "scoreStage", out._scoreStage);
 	const boost::json::value* finalLatency = find(source, "scoreIsFinalLatency");
 	if (finalLatency && finalLatency->is_bool())
 		out._scoreIsFinalLatency = finalLatency->as_bool();
 	out._backend = asString(source, "backend", "cpu");
+	out._gpuSupportStatus = asString(source, "gpuSupportStatus", out._gpuSupportStatus);
 	out._knnBackend = asString(source, "knnBackend", out._knnBackend);
 	const boost::json::value* device = find(source, "cudaDevice");
 	if (device && device->is_int64())
@@ -379,11 +383,13 @@ namespace Experiments
 		const std::string schemaPath = std::move(outRecord._schemaPath);
 		const bool isBaseline = outRecord._isBaseline;
 		const ScoreWeights weights = outRecord._weights;
+		const std::string scoreObjective = outRecord._scoreObjective;
 		const std::string scoreMode = outRecord._scoreMode;
 		const std::string scoreStage = outRecord._scoreStage;
 		const bool scoreIsFinalLatency = outRecord._scoreIsFinalLatency;
 		const PointCloudFeatures pointFeatures = outRecord._pointFeatures;
 		const WorkloadFeatures workloadFeatures = outRecord._workloadFeatures;
+		const std::string gpuSupportStatus = outRecord._gpuSupportStatus;
 
 		outRecord = cached;
 		outRecord._datasetName = datasetName;
@@ -400,11 +406,13 @@ namespace Experiments
 		outRecord._schemaPath = schemaPath;
 		outRecord._isBaseline = isBaseline;
 		outRecord._weights = weights;
+		outRecord._scoreObjective = scoreObjective;
 		outRecord._scoreMode = scoreMode;
 		outRecord._scoreStage = scoreStage;
 		outRecord._scoreIsFinalLatency = scoreIsFinalLatency;
 		outRecord._pointFeatures = pointFeatures;
 		outRecord._workloadFeatures = workloadFeatures;
+		outRecord._gpuSupportStatus = gpuSupportStatus;
 
 		_hits.fetch_add(1);
 		return true;

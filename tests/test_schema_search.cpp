@@ -504,11 +504,13 @@ namespace BaselineTests
 		const size_t tightVolumeColumn = columnIndex("mean_tight_bounds_volume_ratio");
 		const size_t nestedFractionColumn = columnIndex("nested_active_fraction");
 		const size_t baselineSchemaColumn = columnIndex("best_baseline_schema");
+		const size_t scoreObjectiveColumn = columnIndex("score_objective");
 		const size_t scoreModeColumn = columnIndex("score_mode");
 		const size_t scoreStageColumn = columnIndex("score_stage");
 		const size_t finalLatencyColumn = columnIndex("score_is_final_latency");
 		const size_t effectiveQueriesColumn = columnIndex("effective_queries");
 		const size_t visitProxyColumn = columnIndex("score_uses_visit_proxy");
+		const size_t gpuSupportColumn = columnIndex("gpu_support_status");
 		expect(totalQueriesColumn < values.size() && rangeQueriesColumn < values.size() &&
 			radiusQueriesColumn < values.size() && knnQueriesColumn < values.size(),
 			"schema search prepared-query CSV includes query count columns");
@@ -518,9 +520,9 @@ namespace BaselineTests
 			"schema search CSV includes tree health columns");
 		expect(nestedFractionColumn < values.size() && baselineSchemaColumn < values.size(),
 			"schema search CSV includes nested accounting and baseline-normalized columns");
-		expect(scoreModeColumn < values.size() && scoreStageColumn < values.size() &&
+		expect(scoreObjectiveColumn < values.size() && scoreModeColumn < values.size() && scoreStageColumn < values.size() &&
 			finalLatencyColumn < values.size() && effectiveQueriesColumn < values.size() &&
-			visitProxyColumn < values.size(),
+			visitProxyColumn < values.size() && gpuSupportColumn < values.size(),
 			"schema search CSV includes score provenance columns");
 		const size_t totalQueries = static_cast<size_t>(std::stoull(values[totalQueriesColumn]));
 		const size_t rangeQueries = static_cast<size_t>(std::stoull(values[rangeQueriesColumn]));
@@ -530,12 +532,56 @@ namespace BaselineTests
 		expect(rangeQueries + radiusQueries + knnQueries == totalQueries, "schema search prepared CPU query counts match total");
 		expect(!values[queryStrataColumn].empty(), "schema search records per-stratum query metrics");
 		expect(std::stod(values[leafP90Column]) >= 0.0, "schema search writes leaf occupancy health metric");
+		expect(values[scoreObjectiveColumn] == "latency", "schema search direct CSV marks latency score objective");
 		expect(values[scoreModeColumn] == "latency", "schema search direct CSV marks latency score mode");
 		expect(values[scoreStageColumn] == "final", "schema search direct CSV marks final score stage");
 		expect(values[finalLatencyColumn] == "1", "schema search direct CSV marks final latency score");
 		expect(static_cast<size_t>(std::stoull(values[effectiveQueriesColumn])) == totalQueries,
 			"schema search CSV effective query count matches measured total");
 		expect(values[visitProxyColumn] == "0", "schema search direct CSV marks visit-proxy disabled");
+		expect(values[gpuSupportColumn] == "full", "schema search direct CSV marks full GPU support status for CPU rows");
+
+		const std::filesystem::path balancedCsvPath = tempRoot / "balanced_objective.csv";
+		Experiments::SchemaSearchOptions balancedOptions = options;
+		balancedOptions._csvPath = balancedCsvPath.string();
+		balancedOptions._bestCsvPath.clear();
+		balancedOptions._paretoCsvPath.clear();
+		balancedOptions._explainReportPath.clear();
+		balancedOptions._scoreObjective = "balanced";
+		balancedOptions._queryCountOverride = 3;
+		expect(Experiments::runSchemaSearch(balancedOptions) == 0, "schema search balanced objective run succeeds");
+		std::ifstream balancedCsv(balancedCsvPath);
+		expect(balancedCsv.is_open(), "schema search writes balanced objective CSV");
+		std::string balancedHeader;
+		std::string balancedRow;
+		std::getline(balancedCsv, balancedHeader);
+		std::getline(balancedCsv, balancedRow);
+		const std::vector<std::string> balancedColumns = splitCsv(balancedHeader);
+		const std::vector<std::string> balancedValues = splitCsv(balancedRow);
+		auto balancedColumnIndex = [&balancedColumns](const std::string& name) {
+			const auto found = std::find(balancedColumns.begin(), balancedColumns.end(), name);
+			return found == balancedColumns.end()
+				? std::numeric_limits<size_t>::max()
+				: static_cast<size_t>(std::distance(balancedColumns.begin(), found));
+		};
+		const size_t balancedObjectiveColumn = balancedColumnIndex("score_objective");
+		const size_t balancedModeColumn = balancedColumnIndex("score_mode");
+		const size_t balancedFinalLatencyColumn = balancedColumnIndex("score_is_final_latency");
+		const size_t balancedBuildColumn = balancedColumnIndex("lambda_build");
+		const size_t balancedMemoryColumn = balancedColumnIndex("lambda_memory");
+		const size_t balancedImbalanceColumn = balancedColumnIndex("lambda_imbalance");
+		expect(balancedObjectiveColumn < balancedValues.size() && balancedValues[balancedObjectiveColumn] == "balanced",
+			"schema search balanced objective records objective name");
+		expect(balancedModeColumn < balancedValues.size() && balancedValues[balancedModeColumn] == "weighted_latency",
+			"schema search balanced objective records weighted score mode");
+		expect(balancedFinalLatencyColumn < balancedValues.size() && balancedValues[balancedFinalLatencyColumn] == "0",
+			"schema search balanced objective is not marked final-latency-only");
+		expect(balancedBuildColumn < balancedValues.size() && nearlyEqual(static_cast<float>(std::stod(balancedValues[balancedBuildColumn])), 0.001f),
+			"schema search balanced objective sets build weight");
+		expect(balancedMemoryColumn < balancedValues.size() && nearlyEqual(static_cast<float>(std::stod(balancedValues[balancedMemoryColumn])), 0.01f),
+			"schema search balanced objective sets memory weight");
+		expect(balancedImbalanceColumn < balancedValues.size() && nearlyEqual(static_cast<float>(std::stod(balancedValues[balancedImbalanceColumn])), 0.01f),
+			"schema search balanced objective sets imbalance weight");
 
 		const std::filesystem::path autoCsvPath = tempRoot / "auto_conditions.csv";
 		const std::filesystem::path autoBestCsvPath = tempRoot / "auto_conditions_best.csv";
@@ -610,6 +656,34 @@ namespace BaselineTests
 			cudaOptions._cuda._builder = "mixed";
 			cudaOptions._pauseAtEnd = false;
 			expect(Experiments::runSchemaSearch(cudaOptions) == 0, "schema search CUDA mixed smoke run succeeds");
+
+			const std::filesystem::path unsupportedPolicyCsvPath = tempRoot / "cuda_unsupported_policy.csv";
+			Experiments::SchemaSearchOptions unsupportedPolicyOptions = cudaOptions;
+			unsupportedPolicyOptions._schemaPaths = { "configs/schemas/kdtree.json" };
+			unsupportedPolicyOptions._csvPath = unsupportedPolicyCsvPath.string();
+			unsupportedPolicyOptions._queryCountOverride = 2;
+			expect(Experiments::runSchemaSearch(unsupportedPolicyOptions) == 0,
+				"schema search CUDA unsupported split policy falls back cleanly");
+			std::ifstream unsupportedPolicyCsv(unsupportedPolicyCsvPath);
+			expect(unsupportedPolicyCsv.is_open(), "schema search writes unsupported policy CSV");
+			std::string unsupportedPolicyHeader;
+			std::string unsupportedPolicyRow;
+			std::getline(unsupportedPolicyCsv, unsupportedPolicyHeader);
+			std::getline(unsupportedPolicyCsv, unsupportedPolicyRow);
+			const std::vector<std::string> unsupportedPolicyColumns = splitCsv(unsupportedPolicyHeader);
+			const std::vector<std::string> unsupportedPolicyValues = splitCsv(unsupportedPolicyRow);
+			auto unsupportedPolicyColumnIndex = [&unsupportedPolicyColumns](const std::string& name) {
+				const auto found = std::find(unsupportedPolicyColumns.begin(), unsupportedPolicyColumns.end(), name);
+				return found == unsupportedPolicyColumns.end()
+					? std::numeric_limits<size_t>::max()
+					: static_cast<size_t>(std::distance(unsupportedPolicyColumns.begin(), found));
+			};
+			const size_t unsupportedBackendColumn = unsupportedPolicyColumnIndex("backend");
+			const size_t unsupportedStatusColumn = unsupportedPolicyColumnIndex("gpu_support_status");
+			expect(unsupportedBackendColumn < unsupportedPolicyValues.size() && unsupportedPolicyValues[unsupportedBackendColumn] == "cpu",
+				"schema search CUDA unsupported split policy records CPU fallback backend");
+			expect(unsupportedStatusColumn < unsupportedPolicyValues.size() && unsupportedPolicyValues[unsupportedStatusColumn] == "unsupported_policy",
+				"schema search CUDA unsupported split policy records support status");
 
 			const char* entropyConditionJson = R"json(
 			{
@@ -717,7 +791,7 @@ namespace BaselineTests
 			      "minPointsToSplit": 2,
 			      "condition": { "minHeightRatio": 999.0 }
 			    },
-			    { "type": "KDTree", "numLevels": 2, "leafCapacity": 1, "minPointsToSplit": 2 }
+			    { "type": "KDTree", "numLevels": 2, "leafCapacity": 1, "minPointsToSplit": 2, "axisPolicy": "center_longest_axis" }
 			  ],
 			  "buildPolicy": {
 			    "maxDepth": 5,
