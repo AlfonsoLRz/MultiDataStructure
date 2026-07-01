@@ -612,6 +612,12 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._schemaSearchOptions._inputTracePath = argv[++i];
 		}
+		else if (arg == "--batch-manifest" && i + 1 < argc)
+		{
+			config._schemaSearchOptions._batchManifestPath = argv[++i];
+			if (!modeWasSpecified)
+				config._mode = "batch-search";
+		}
 		else if (arg == "--no-csv")
 		{
 			config._pointOptions._csvPath.clear();
@@ -837,6 +843,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --query-trace <path>        Write optional per-query CSV traces for point/schema runs\n"
 		<< "  --input-trace <path>        Replay a recorded query trace CSV as the schema-search workload\n"
 		<< "                              (replaces synthetic generation; workload JSON key \"trace\" does the same per profile)\n"
+		<< "  --batch-manifest <json>     Batch-distribution search (mode batch-search): tune ONE schema over many small\n"
+		<< "                              (cloud, trace) pairs with per-pair rebuilds; score = full-pass build+query wall cost\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
 		<< "  --pareto-csv <path>         Write Pareto front (non-dominated rows over latency/build/memory/imbalance)\n"
 		<< "  --explain-report <path>     Write Markdown schema explanations with active structures, query behavior, and diagnoses\n"

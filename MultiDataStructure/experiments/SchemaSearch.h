@@ -189,6 +189,9 @@ namespace Experiments
 		// Recorded query trace (CSV) replayed as the evaluation workload for every loaded
 		// workload profile; overrides each profile's own trace/synthetic settings.
 		std::string	_inputTracePath;
+		// Batch manifest JSON (mode batch-search): many small (cloud, trace) pairs
+		// evaluated per candidate with per-pair index rebuilds (DL dataloader regime).
+		std::string	_batchManifestPath;
 		// >= 2 re-measures the top-K per dataset/workload with N seeds and records mean + 95% CI.
 		size_t					_confirmSeeds = 0;
 		size_t					_confirmTopK = 4;

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "AppConfig.h"
+#include "experiments/BatchSearch.h"
 #include "experiments/SchemaSearch.h"
 #include "ui/OptimizerGui.h"
 #include "workloads/points/PointBenchmark.h"
@@ -26,13 +27,16 @@ int main(int argc, char* argv[])
 		if (config._mode == "schema-search")
 			return Experiments::runSchemaSearch(config._schemaSearchOptions);
 
+		if (config._mode == "batch-search")
+			return Experiments::runBatchSearch(config._schemaSearchOptions);
+
 		if (config._mode == "evaluate-one")
 			return Experiments::runEvaluateOne(config._schemaSearchOptions);
 
 		if (config._mode == "gui")
 			return OptimizerGui::run();
 
-		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode evaluate-one, or --run-tests");
+		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode batch-search, --mode evaluate-one, or --run-tests");
 	}
 	catch (const std::exception& exception)
 	{

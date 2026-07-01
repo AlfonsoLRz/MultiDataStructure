@@ -129,6 +129,7 @@
     <ClInclude Include="core\BuildPolicy.h" />
     <ClInclude Include="core\Config.h" />
     <ClInclude Include="experiments\EvaluationCache.h" />
+    <ClInclude Include="experiments\BatchSearch.h" />
     <ClInclude Include="experiments\QueryTrace.h" />
     <ClInclude Include="experiments\FeatureExtraction.h" />
     <ClInclude Include="experiments\Metrics.h" />
@@ -186,6 +187,7 @@
     <ClCompile Include="core\BuildPolicy.cpp" />
     <ClCompile Include="core\Config.cpp" />
     <ClCompile Include="experiments\EvaluationCache.cpp" />
+    <ClCompile Include="experiments\BatchSearch.cpp" />
     <ClCompile Include="experiments\QueryTrace.cpp" />
     <ClCompile Include="experiments\FeatureExtraction.cpp" />
     <ClCompile Include="experiments\Metrics.cpp" />
