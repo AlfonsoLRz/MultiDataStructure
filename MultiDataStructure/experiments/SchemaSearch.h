@@ -83,6 +83,10 @@ namespace Experiments
 	struct WorkloadProfile
 	{
 		std::string		_name = "mixed";
+		// Optional recorded query trace (CSV, the --query-trace format). When set, the
+		// evaluator replays these queries instead of generating synthetic ones; the
+		// synthetic weight/scale fields below are ignored.
+		std::string		_tracePath;
 		double			_rangeWeight = 0.4;
 		double			_radiusWeight = 0.3;
 		double			_knnWeight = 0.3;
@@ -182,6 +186,9 @@ namespace Experiments
 		std::string	_explainReportPath;
 		// Per-query CSV trace; empty = disabled (bypasses the score cache so the trace is real).
 		std::string	_queryTracePath;
+		// Recorded query trace (CSV) replayed as the evaluation workload for every loaded
+		// workload profile; overrides each profile's own trace/synthetic settings.
+		std::string	_inputTracePath;
 		// >= 2 re-measures the top-K per dataset/workload with N seeds and records mean + 95% CI.
 		size_t					_confirmSeeds = 0;
 		size_t					_confirmTopK = 4;

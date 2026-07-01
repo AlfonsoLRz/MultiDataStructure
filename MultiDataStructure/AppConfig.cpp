@@ -608,6 +608,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 			config._pointOptions._queryTracePath = argv[++i];
 			config._schemaSearchOptions._queryTracePath = config._pointOptions._queryTracePath;
 		}
+		else if (arg == "--input-trace" && i + 1 < argc)
+		{
+			config._schemaSearchOptions._inputTracePath = argv[++i];
+		}
 		else if (arg == "--no-csv")
 		{
 			config._pointOptions._csvPath.clear();
@@ -831,6 +835,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --output <path>             Write benchmark results as JSON\n"
 		<< "  --csv <path>                Write benchmark/search summary rows as CSV\n"
 		<< "  --query-trace <path>        Write optional per-query CSV traces for point/schema runs\n"
+		<< "  --input-trace <path>        Replay a recorded query trace CSV as the schema-search workload\n"
+		<< "                              (replaces synthetic generation; workload JSON key \"trace\" does the same per profile)\n"
 		<< "  --best-csv <path>           Write best schema rows for schema-search mode\n"
 		<< "  --pareto-csv <path>         Write Pareto front (non-dominated rows over latency/build/memory/imbalance)\n"
 		<< "  --explain-report <path>     Write Markdown schema explanations with active structures, query behavior, and diagnoses\n"

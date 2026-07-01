@@ -11,6 +11,7 @@ namespace BaselineTests
 	}
 
 	void runLevelScheduleTests();
+	void runQueryTraceTests();
 	void runPointCloudTests();
 	void runPointQueryTests();
 	void runMetricsTests();
@@ -120,6 +121,7 @@ int runBaselineTests()
 	try
 	{
 		BaselineTests::runLevelScheduleTests();
+		BaselineTests::runQueryTraceTests();
 		BaselineTests::runTreeCleanupTests();
 		BaselineTests::runAABBTests();
 		BaselineTests::runPointCloudTests();

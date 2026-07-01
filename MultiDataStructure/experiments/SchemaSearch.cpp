@@ -14,6 +14,7 @@
 #include "../workloads/points/RegularGrid.h"
 #include "../workloads/points/SyntheticPointClouds.h"
 #include "EvaluationCache.h"
+#include "QueryTrace.h"
 #include "SurrogateAcquisition.h"
 #include "ThresholdRefiner.h"
 
@@ -84,6 +85,7 @@ struct PreparedCpuQuery
 	AABB				_bounds;
 	glm::vec3 center = glm::vec3(0.0f);
 	float		_radius = 0.0f;
+	size_t		_k = 0;			// per-query kNN k (trace replay); 0 = use the workload-level k
 	std::string	_stratum;
 };
 
@@ -2626,6 +2628,16 @@ static std::vector<Experiments::WorkloadProfile> loadWorkloads(const Experiments
 			profile._knnK = options._knnKOverride;
 		if (options._querySeedOverride)
 			profile._querySeed = options._querySeed;
+		if (!options._inputTracePath.empty())
+			profile._tracePath = options._inputTracePath;
+		if (!profile._tracePath.empty())
+		{
+			// The workload-level k must match the recorded application for schemas whose
+			// kNN path uses it (the per-query k still wins where supported).
+			const size_t traceK = Experiments::dominantKnnK(Experiments::loadQueryTrace(profile._tracePath));
+			if (traceK > 0 && options._knnKOverride == 0)
+				profile._knnK = traceK;
+		}
 		workloads.push_back(std::move(profile));
 	}
 
@@ -2719,11 +2731,103 @@ static glm::vec3 centerForStratum(std::mt19937& rng, const PointCloud& cloud, Qu
 	}
 }
 
+// Replays a recorded application trace as the evaluation workload. Queries keep their
+// recorded order and exact geometry; when the trace is larger than profile._numQueries
+// a deterministic even stride is taken so subsets preserve the stage mixture (this is
+// what the rung schedule's query-count overrides subsample).
+static PreparedWorkload prepareWorkloadFromTrace(
+	const Experiments::WorkloadProfile& profile,
+	bool cudaEvaluator)
+{
+	const std::vector<Experiments::TraceQuery> trace = Experiments::loadQueryTrace(profile._tracePath);
+
+	const size_t total = trace.size();
+	const size_t target = (profile._numQueries > 0 && profile._numQueries < total) ? profile._numQueries : total;
+
+	PreparedWorkload prepared;
+	prepared._cpuQueries.reserve(target);
+	if (cudaEvaluator)
+	{
+		prepared._cudaQueries.reserve(target);
+		prepared._cudaStrata.reserve(target);
+	}
+
+	for (size_t i = 0; i < target; ++i)
+	{
+		const size_t sourceIndex = (target == total) ? i : (i * total) / target;
+		const Experiments::TraceQuery& source = trace[sourceIndex];
+
+		PreparedCpuQuery cpuQuery;
+		std::string stratum;
+		if (source._kind == Experiments::TraceQuery::Kind::Radius)
+		{
+			cpuQuery._kind = PreparedQueryKind::Radius;
+			cpuQuery.center = source._center;
+			cpuQuery._radius = source._radius;
+			stratum = "radius";
+			++prepared._radiusQueries;
+		}
+		else if (source._kind == Experiments::TraceQuery::Kind::Knn)
+		{
+			cpuQuery._kind = PreparedQueryKind::Knn;
+			cpuQuery.center = source._center;
+			cpuQuery._k = source._k;
+			stratum = "knn";
+			++prepared._knnQueries;
+		}
+		else
+		{
+			// CountRange folds to Range on the CPU (no count-only kind there), matching
+			// the synthetic-path mirroring behavior.
+			cpuQuery._kind = PreparedQueryKind::Range;
+			cpuQuery._bounds = AABB(source._minBound, source._maxBound);
+			stratum = source._kind == Experiments::TraceQuery::Kind::CountRange ? "count_range" : "range";
+			if (source._kind == Experiments::TraceQuery::Kind::CountRange)
+				++prepared._countRangeQueries;
+			else
+				++prepared._rangeQueries;
+		}
+		cpuQuery._stratum = stratum;
+		prepared._cpuQueries.push_back(cpuQuery);
+
+		if (cudaEvaluator)
+		{
+			PointGpu::Query query;
+			if (source._kind == Experiments::TraceQuery::Kind::Radius)
+			{
+				query._type = PointGpu::QueryType::Radius;
+				query.center = source._center;
+				query._radius = source._radius;
+			}
+			else if (source._kind == Experiments::TraceQuery::Kind::Knn)
+			{
+				query._type = PointGpu::QueryType::Knn;
+				query.center = source._center;
+				query._k = source._k > 0 ? source._k : profile._knnK;
+			}
+			else
+			{
+				query._type = source._kind == Experiments::TraceQuery::Kind::CountRange
+					? PointGpu::QueryType::CountRange
+					: PointGpu::QueryType::Range;
+				query._bounds = AABB(source._minBound, source._maxBound);
+			}
+			prepared._cudaQueries.push_back(query);
+			prepared._cudaStrata.push_back(stratum);
+		}
+	}
+
+	return prepared;
+}
+
 static PreparedWorkload prepareWorkloadProfile(
 	const Experiments::WorkloadProfile& profile,
 	const PointCloud& cloud,
 	bool cudaEvaluator)
 {
+	if (!profile._tracePath.empty())
+		return prepareWorkloadFromTrace(profile, cudaEvaluator);
+
 	PreparedWorkload prepared;
 	if (profile._numQueries == 0)
 		return prepared;
@@ -3225,7 +3329,7 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 			continue;
 		}
 
-		PointSpatialIndex::QueryStats stats = index.knnQuery(query.center, knnK)._stats;
+		PointSpatialIndex::QueryStats stats = index.knnQuery(query.center, query._k > 0 ? query._k : knnK)._stats;
 		stratumSamples[query._stratum].push_back(stats);
 		knnSamples.push_back(stats);
 		samples.push_back(std::move(stats));
@@ -7228,6 +7332,7 @@ Experiments::WorkloadProfile Experiments::parseWorkloadProfile(const std::string
 
 	WorkloadProfile profile;
 	profile._name = asString(root, "name", profile._name);
+	profile._tracePath = asString(root, "trace", profile._tracePath);
 	profile._numQueries = asSize(root, "numQueries", profile._numQueries);
 	profile._knnK = asSize(root, "knnK", profile._knnK);
 	profile._querySeed = static_cast<uint32_t>(asSize(root, "querySeed", profile._querySeed));
@@ -7288,7 +7393,22 @@ Experiments::WorkloadProfile Experiments::loadWorkloadProfile(const std::string&
 
 	std::stringstream buffer;
 	buffer << file.rdbuf();
-	return parseWorkloadProfile(buffer.str(), resolvedPath.string());
+	WorkloadProfile profile = parseWorkloadProfile(buffer.str(), resolvedPath.string());
+
+	// A relative trace path resolves against the workload JSON's own directory first,
+	// so workload+trace pairs stay portable as a unit.
+	if (!profile._tracePath.empty())
+	{
+		const std::filesystem::path tracePath(profile._tracePath);
+		if (!tracePath.is_absolute())
+		{
+			std::error_code error;
+			const std::filesystem::path sibling = resolvedPath.parent_path() / tracePath;
+			if (std::filesystem::exists(sibling, error))
+				profile._tracePath = sibling.string();
+		}
+	}
+	return profile;
 }
 
 static boost::json::object serializeBuildMetricsForOutput(const Experiments::BuildMetrics& metrics)

@@ -412,9 +412,12 @@ Query profile:
 --knn-k <count>
 --query-seed <seed>
 --query-trace <path>
+--input-trace <path>
 ```
 
 `--query-trace` writes per-query CSV rows. CPU point-index rows include `query_stratum` plus traversal breakdowns by depth and structure; CUDA rows keep those breakdown columns empty for now.
+
+`--input-trace` replays a recorded query trace CSV (the `--query-trace` column format: `query_type`, `bounds_min_*`/`bounds_max_*`, `center_*`, `radius`, `k`) as the schema-search evaluation workload, replacing synthetic generation for every loaded workload profile. Individual workload JSONs can do the same with a `"trace": "path.csv"` key (relative paths resolve against the JSON's directory). When `--queries`/rung overrides request fewer queries than the trace holds, a deterministic even stride is taken so subsets preserve the recorded stage mixture; the workload's kNN `k` defaults to the trace's dominant `k`. This is how real application workloads (pipeline stages, DL neighborhood queries) are fed to the optimizer.
 
 CPU leaf micro-index options:
 

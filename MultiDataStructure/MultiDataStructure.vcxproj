@@ -129,6 +129,7 @@
     <ClInclude Include="core\BuildPolicy.h" />
     <ClInclude Include="core\Config.h" />
     <ClInclude Include="experiments\EvaluationCache.h" />
+    <ClInclude Include="experiments\QueryTrace.h" />
     <ClInclude Include="experiments\FeatureExtraction.h" />
     <ClInclude Include="experiments\Metrics.h" />
     <ClInclude Include="experiments\SchemaSearch.h" />
@@ -179,11 +180,13 @@
     <ClCompile Include="..\tests\test_schema_search.cpp" />
     <ClCompile Include="..\tests\test_schema_selector.cpp" />
     <ClCompile Include="..\tests\test_tree_cleanup.cpp" />
+    <ClCompile Include="..\tests\test_query_trace.cpp" />
     <ClCompile Include="AABB.cpp" />
     <ClCompile Include="AppConfig.cpp" />
     <ClCompile Include="core\BuildPolicy.cpp" />
     <ClCompile Include="core\Config.cpp" />
     <ClCompile Include="experiments\EvaluationCache.cpp" />
+    <ClCompile Include="experiments\QueryTrace.cpp" />
     <ClCompile Include="experiments\FeatureExtraction.cpp" />
     <ClCompile Include="experiments\Metrics.cpp" />
     <ClCompile Include="experiments\SchemaSearch.cpp" />
