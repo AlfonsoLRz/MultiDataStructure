@@ -1,0 +1,6 @@
+{
+  "name": "pipeline_replay",
+  "numQueries": 3000,
+  "knnK": 16,
+  "queries": { "aabb_range": 0.0, "radius": 0.6, "knn": 0.4 }
+}

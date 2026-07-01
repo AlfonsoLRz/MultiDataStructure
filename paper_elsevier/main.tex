@@ -33,7 +33,7 @@
 }
 
 \begin{abstract}
-Large point clouds are rarely queried in only one way. Interactive inspection, geometric filtering, neighborhood search, and downstream analysis may stress different parts of the same spatial index, while the point distribution itself can vary from nearly planar terrain to highly anisotropic architectural scans. This manuscript introduces a workload-aware framework for synthesizing point-cloud spatial indexes from reusable primitives. Rather than selecting a fixed quadtree, octree, kd-tree, grid, or bounding-volume hierarchy in advance, the framework treats the index as a measured design variable. It generates single, nested, and conditionally activated schemas; builds them over the target cloud; evaluates them on a specified workload; and records the provenance needed for fair comparison and later selector training. This draft describes the motivation and methodology of the system. Final experimental claims are intentionally deferred until the evaluation section is completed.
+The spatial queries that dominate point-cloud practice are dense and machine generated: geometry-processing pipelines issue one neighborhood query per point per stage, and hierarchical point networks issue sampling and grouping queries at every layer of every batch, so the index is an inner loop of the application rather than a service for sparse interactive requests. This manuscript introduces a workload-aware framework that synthesizes the point-cloud spatial index for exactly these regimes. Rather than selecting a fixed quadtree, octree, kd-tree, grid, or bounding-volume hierarchy in advance, the framework treats the index as a measured design variable: it captures the query trace a real application issues, generates single, nested, and conditionally activated schemas, builds them over the target data, and selects by replaying the recorded workload, recording the provenance needed for fair comparison. Two application regimes anchor the evaluation --- LiDAR processing pipelines over heritage- and survey-scale scans, where one static index is amortized across per-point stages, and PointNet++-style dataloaders, where the index is rebuilt per block and construction cost is first-class --- together with a boundary study on ray tracing showing that, against a hyper-engineered incumbent structure, the measured search correctly converges to the incumbent. The one-off search cost is amortized over the millions to billions of queries the host application issues.
 \end{abstract}
 
 \begin{keyword}
@@ -45,6 +45,7 @@ point clouds \sep spatial indexes \sep workload-aware optimization \sep nested d
 \input{sections/introduction}
 \input{sections/related_work}
 \input{sections/methodology}
+\input{sections/applications}
 
 \section*{Acknowledgements}
 To be completed.
