@@ -1,0 +1,121 @@
+\section{Evaluation}
+\label{sec:evaluation}
+
+% NOTE: values marked \todonum{} are filled from the corrected experiment battery
+% (results/eval_traces, post coordinate-frame fix). DL-batch and boundary-study
+% numbers are final. Reproduction commands: docs/application_workloads.md.
+\newcommand{\todonum}[1]{\textbf{[#1]}}
+
+All experiments run on a single workstation (AMD-class multicore CPU, NVIDIA RTX 4080 SUPER, Windows 11); CPU evaluation is used wherever results are compared against CPU libraries. Workloads are replayed traces (Section~\ref{sec:trace-replay}); every candidate schema and every baseline answers the identical query sequence. Latency confidence intervals use five repeat measurements of the full query batch.
+
+\subsection{Pipeline replay}
+\label{sec:eval-pipeline}
+
+Table~\ref{tab:pipeline} reports the searched winner against the best and worst canonical single-primitive baselines for the LiDAR pipeline traces. The headline is not any single speedup but the instability of the default choice: the winning family changes across datasets \emph{and} across scales of the same dataset family, and each dataset's best canonical structure is severely suboptimal on another dataset.
+
+\begin{table}[t]
+  \centering
+  \caption{Pipeline-replay results. Latency is mean per-query time over the replayed application trace; the searched schema and all baselines answer identical queries. ``Worst canonical'' shows the penalty of a wrongly chosen default.}
+  \label{tab:pipeline}
+  \small
+  \begin{tabular}{lllll}
+    \toprule
+    dataset & searched winner & vs.\ best canonical & best canonical & worst canonical \\
+    \midrule
+    SanAndreas 5M (terrain)        & \todonum{schema} & \todonum{delta} & \todonum{name} & \todonum{penalty} \\
+    SanAndreas 50M (terrain)       & \todonum{schema} & \todonum{delta} & \todonum{name} & \todonum{penalty} \\
+    Alhambra 100M (architecture)   & \todonum{schema} & \todonum{delta} & \todonum{name} & \todonum{penalty} \\
+    SolarPanels 700M (industrial)  & \todonum{schema} & \todonum{delta} & \todonum{name} & \todonum{penalty} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Batch distribution (deep-learning dataloaders)}
+\label{sec:eval-batch}
+
+Table~\ref{tab:batch} reports the batch-distribution regime: 32 PointNet++-style blocks per dataset (96 point-set/trace pairs, $\sim$168k queries), scored by the wall cost of a full pass with per-pair index rebuilds. The searched schemas beat every baseline, including the hand-designed nested ones, and the two datasets prefer structurally different answers (a three-family nest vs.\ a shallow kd-tree), confirming that the regime's build-query trade-off is itself instance-dependent.
+
+\begin{table}[t]
+  \centering
+  \caption{Batch-distribution results (full-pass build + query wall cost; lower is better).}
+  \label{tab:batch}
+  \small
+  \begin{tabular}{lllll}
+    \toprule
+    dataset & searched winner & pass (ms) & best baseline & saving \\
+    \midrule
+    SanAndreas blocks & bvh$_1$+octree$_5$+kd$_4$ nest & 226.8 & bvh (274.9) & \textbf{17.5\%} \\
+    Alhambra blocks   & kd$_3$ (round-robin axes)      & 237.8 & octree+kd (274.7) & \textbf{13.4\%} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{External library baselines}
+\label{sec:eval-frameworks}
+
+Table~\ref{tab:frameworks} compares the tuned schema against the indexes practitioners actually use, on identical replayed queries: Open3D's \texttt{KDTreeFlann} and PCL's kd-tree/octree search (via a replay helper). PDAL is omitted because its harness support is limited to box-crop queries, which the application traces do not contain.
+
+\begin{table}[t]
+  \centering
+  \caption{External baselines on identical replayed pipeline queries (mean ms/query).}
+  \label{tab:frameworks}
+  \small
+  \begin{tabular}{lllll}
+    \toprule
+    dataset & tuned schema & Open3D & PCL & speedup vs.\ Open3D \\
+    \midrule
+    SanAndreas 5M  & \todonum{ms} & \todonum{ms} & \todonum{ms} & \todonum{x} \\
+    Alhambra 100M  & \todonum{ms} & \todonum{ms} & --           & \todonum{x} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Search cost}
+\label{sec:eval-search-cost}
+
+Table~\ref{tab:searchcost} quantifies the mitigations of Section~\ref{sec:app-search-cost} on the Alhambra search: low-fidelity search on a subsample plus top-$K$ full-scale confirmation, and parallel candidate dispatch. Rank transfer is reported as Spearman correlation between subsample and full-scale scores of the identical candidate set, and as the regret of confirming only the low-fidelity top-$K$.
+
+\begin{table}[t]
+  \centering
+  \caption{Search-cost mitigations (Alhambra 100M anchor unless noted).}
+  \label{tab:searchcost}
+  \small
+  \begin{tabular}{llll}
+    \toprule
+    configuration & wall time & regret vs.\ full search & notes \\
+    \midrule
+    full-scale GA (serial)              & \todonum{min} & --- & anchor \\
+    5M GA, \texttt{--parallel 8}        & \todonum{min} & \todonum{\%} & 5M dataset \\
+    subsample search + top-10 confirm   & \todonum{min} & \todonum{\%} & $\rho=$ \todonum{rho} \\
+    GPU-evaluated GA                    & \todonum{min} & n/a & mixed-backend ranking$^{\dagger}$ \\
+    \bottomrule
+  \end{tabular}
+
+  \smallskip
+  \raggedright\footnotesize $^{\dagger}$Schemas whose split policies lack CUDA support fall back to the CPU evaluator; the provenance columns (\texttt{gpu\_support\_status}) mark such rows, and mixed-backend rankings are not directly comparable to CPU-only ones.
+\end{table}
+
+\subsection{Boundary study: ray tracing}
+\label{sec:eval-boundary}
+
+Table~\ref{tab:boundary} summarizes the triangle-mesh study of Section~\ref{sec:app-boundary}: top-level structures (uniform grid, octree, kd-tree, and nested stacks) wrapped around per-cell state-of-the-art compressed wide BVHs, evaluated by GPU path-tracing throughput with exactness validated against the single global BVH (identical hits and ray paths). On a synthetic axis-aligned scene a searched grid nearly doubles coherent-ray throughput; on a real scanned model the single global SAH BVH dominates every wrapper and every nested schema, and the optimizer converges to it. Where a hyper-engineered incumbent exists, the honest output of a measured search is the incumbent.
+
+\begin{table}[t]
+  \centering
+  \caption{Boundary study: GPU ray throughput (Mrays/s, higher is better) of searched top-level structures over per-cell compressed wide BVH leaves, vs.\ a single global BVH.}
+  \label{tab:boundary}
+  \small
+  \begin{tabular}{lllll}
+    \toprule
+    scene & single global & best grid & best octree/kd & best nested \\
+    \midrule
+    synthetic box (coherent rays) & 13\,876 & \textbf{25\,610} (+85\%) & 12\,019 / 10\,748 & 13\,269 \\
+    scanned dragon (coherent rays) & \textbf{3\,132} & 2\,946 ($-6\%$) & 2\,544 / 1\,359 & 1\,564 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Threats to validity}
+\label{sec:eval-threats}
+
+Single-machine measurements; derived (not library-instrumented) pipeline traces, exact for self-query stages by construction; one seed per genetic search with repeat-measured winners; the batch regime models the dataloader's neighborhood queries but not the surrounding training loop. A coordinate-frame audit is part of the protocol: replayed traces are checked for non-degenerate result counts (a frame mismatch between capture and index manifests as universally empty radius queries), and the replay path performs an automatic world-to-local transform with a bounds-coverage guard.
