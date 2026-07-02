@@ -2731,18 +2731,25 @@ static glm::vec3 centerForStratum(std::mt19937& rng, const PointCloud& cloud, Qu
 	}
 }
 
-// Replays a recorded application trace as the evaluation workload. Queries keep their
-// recorded order and exact geometry; when the trace is larger than profile._numQueries
-// a deterministic even stride is taken so subsets preserve the stage mixture (this is
-// what the rung schedule's query-count overrides subsample).
+// Replays a recorded application trace as the evaluation workload. Traces are in
+// WORLD coordinates (the frame external tools capture and replay in); query geometry
+// is transformed into the cloud's local index frame here (identity for XYZ/PLY/CSV
+// clouds, origin translation for LAS). Queries keep their recorded order; when the
+// trace is larger than profile._numQueries a deterministic even stride is taken so
+// subsets preserve the stage mixture (this is what rung overrides subsample).
 static PreparedWorkload prepareWorkloadFromTrace(
 	const Experiments::WorkloadProfile& profile,
+	const PointCloud& cloud,
 	bool cudaEvaluator)
 {
 	const std::vector<Experiments::TraceQuery> trace = Experiments::loadQueryTrace(profile._tracePath);
 
 	const size_t total = trace.size();
 	const size_t target = (profile._numQueries > 0 && profile._numQueries < total) ? profile._numQueries : total;
+
+	const auto toLocal = [&](const glm::vec3& world) {
+		return cloud.toLocalPosition(glm::dvec3(world));
+	};
 
 	PreparedWorkload prepared;
 	prepared._cpuQueries.reserve(target);
@@ -2752,17 +2759,29 @@ static PreparedWorkload prepareWorkloadFromTrace(
 		prepared._cudaStrata.reserve(target);
 	}
 
+	// Frame-mismatch guard: recorded query centers should overwhelmingly fall inside
+	// the cloud's bounds once transformed. A miss rate this high means the trace and
+	// cloud are in different coordinate frames (results would be degenerate).
+	size_t centeredQueries = 0, insideBounds = 0;
+	const AABB cloudBounds = cloud.bounds();
+	const glm::vec3 margin = glm::max(cloudBounds.size() * 0.05f, glm::vec3(1.0f));
+	const AABB expandedBounds(cloudBounds.min() - margin, cloudBounds.max() + margin);
+
 	for (size_t i = 0; i < target; ++i)
 	{
 		const size_t sourceIndex = (target == total) ? i : (i * total) / target;
 		const Experiments::TraceQuery& source = trace[sourceIndex];
+
+		const glm::vec3 localCenter = toLocal(source._center);
+		const glm::vec3 localMin = toLocal(source._minBound);
+		const glm::vec3 localMax = toLocal(source._maxBound);
 
 		PreparedCpuQuery cpuQuery;
 		std::string stratum;
 		if (source._kind == Experiments::TraceQuery::Kind::Radius)
 		{
 			cpuQuery._kind = PreparedQueryKind::Radius;
-			cpuQuery.center = source._center;
+			cpuQuery.center = localCenter;
 			cpuQuery._radius = source._radius;
 			stratum = "radius";
 			++prepared._radiusQueries;
@@ -2770,7 +2789,7 @@ static PreparedWorkload prepareWorkloadFromTrace(
 		else if (source._kind == Experiments::TraceQuery::Kind::Knn)
 		{
 			cpuQuery._kind = PreparedQueryKind::Knn;
-			cpuQuery.center = source._center;
+			cpuQuery.center = localCenter;
 			cpuQuery._k = source._k;
 			stratum = "knn";
 			++prepared._knnQueries;
@@ -2780,7 +2799,7 @@ static PreparedWorkload prepareWorkloadFromTrace(
 			// CountRange folds to Range on the CPU (no count-only kind there), matching
 			// the synthetic-path mirroring behavior.
 			cpuQuery._kind = PreparedQueryKind::Range;
-			cpuQuery._bounds = AABB(source._minBound, source._maxBound);
+			cpuQuery._bounds = AABB(localMin, localMax);
 			stratum = source._kind == Experiments::TraceQuery::Kind::CountRange ? "count_range" : "range";
 			if (source._kind == Experiments::TraceQuery::Kind::CountRange)
 				++prepared._countRangeQueries;
@@ -2790,19 +2809,26 @@ static PreparedWorkload prepareWorkloadFromTrace(
 		cpuQuery._stratum = stratum;
 		prepared._cpuQueries.push_back(cpuQuery);
 
+		if (cpuQuery._kind == PreparedQueryKind::Radius || cpuQuery._kind == PreparedQueryKind::Knn)
+		{
+			++centeredQueries;
+			if (expandedBounds.collides(localCenter, localCenter))
+				++insideBounds;
+		}
+
 		if (cudaEvaluator)
 		{
 			PointGpu::Query query;
 			if (source._kind == Experiments::TraceQuery::Kind::Radius)
 			{
 				query._type = PointGpu::QueryType::Radius;
-				query.center = source._center;
+				query.center = localCenter;
 				query._radius = source._radius;
 			}
 			else if (source._kind == Experiments::TraceQuery::Kind::Knn)
 			{
 				query._type = PointGpu::QueryType::Knn;
-				query.center = source._center;
+				query.center = localCenter;
 				query._k = source._k > 0 ? source._k : profile._knnK;
 			}
 			else
@@ -2810,11 +2836,18 @@ static PreparedWorkload prepareWorkloadFromTrace(
 				query._type = source._kind == Experiments::TraceQuery::Kind::CountRange
 					? PointGpu::QueryType::CountRange
 					: PointGpu::QueryType::Range;
-				query._bounds = AABB(source._minBound, source._maxBound);
+				query._bounds = AABB(localMin, localMax);
 			}
 			prepared._cudaQueries.push_back(query);
 			prepared._cudaStrata.push_back(stratum);
 		}
+	}
+
+	if (centeredQueries > 0 && insideBounds * 2 < centeredQueries)
+	{
+		std::cerr << "WARNING: only " << insideBounds << "/" << centeredQueries
+			<< " trace query centers fall inside the cloud bounds after the world->local transform. "
+			<< "The trace and cloud are likely in different coordinate frames; results would be degenerate.\n";
 	}
 
 	return prepared;
@@ -2826,7 +2859,7 @@ static PreparedWorkload prepareWorkloadProfile(
 	bool cudaEvaluator)
 {
 	if (!profile._tracePath.empty())
-		return prepareWorkloadFromTrace(profile, cudaEvaluator);
+		return prepareWorkloadFromTrace(profile, cloud, cudaEvaluator);
 
 	PreparedWorkload prepared;
 	if (profile._numQueries == 0)
@@ -3151,15 +3184,21 @@ static void appendQueryTraceRow(
 		<< csvEscape(queryType) << ',';
 	output << csvEscape(queryStratum) << ',';
 
+	// Trace rows are written in WORLD coordinates so external tools (Open3D, PCL,
+	// PDAL) can replay them against the raw cloud file; the replay path transforms
+	// back into the index's local frame. Identity for XYZ/PLY/CSV clouds.
+	const PointCloud& frameCloud = dataset._cloud;
 	if (bounds)
 	{
+		const glm::dvec3 worldMin = frameCloud.toWorldPosition(bounds->min());
+		const glm::dvec3 worldMax = frameCloud.toWorldPosition(bounds->max());
 		output
-			<< bounds->min().x << ','
-			<< bounds->min().y << ','
-			<< bounds->min().z << ','
-			<< bounds->max().x << ','
-			<< bounds->max().y << ','
-			<< bounds->max().z << ',';
+			<< worldMin.x << ','
+			<< worldMin.y << ','
+			<< worldMin.z << ','
+			<< worldMax.x << ','
+			<< worldMax.y << ','
+			<< worldMax.z << ',';
 	}
 	else
 	{
@@ -3168,10 +3207,11 @@ static void appendQueryTraceRow(
 
 	if (center)
 	{
+		const glm::dvec3 worldCenter = frameCloud.toWorldPosition(*center);
 		output
-			<< center->x << ','
-			<< center->y << ','
-			<< center->z << ',';
+			<< worldCenter.x << ','
+			<< worldCenter.y << ','
+			<< worldCenter.z << ',';
 	}
 	else
 	{

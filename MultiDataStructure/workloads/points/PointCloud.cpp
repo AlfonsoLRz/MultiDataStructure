@@ -578,9 +578,41 @@ PointCloud PointCloud::loadCSV(const std::string& filename)
 	return cloud;
 }
 
+namespace
+{
+	// Byte size of a scalar PLY property type; 0 for unknown types.
+	size_t plyTypeSize(const std::string& type)
+	{
+		if (type == "char" || type == "int8" || type == "uchar" || type == "uint8")
+			return 1;
+		if (type == "short" || type == "int16" || type == "ushort" || type == "uint16")
+			return 2;
+		if (type == "int" || type == "int32" || type == "uint" || type == "uint32" || type == "float" || type == "float32")
+			return 4;
+		if (type == "double" || type == "float64")
+			return 8;
+		return 0;
+	}
+
+	// Reads one little-endian scalar property from a binary vertex record as float.
+	float plyReadScalar(const unsigned char* data, const std::string& type)
+	{
+		const auto as = [&](auto value) { std::memcpy(&value, data, sizeof(value)); return static_cast<float>(value); };
+		if (type == "float" || type == "float32") return as(float{});
+		if (type == "double" || type == "float64") return as(double{});
+		if (type == "char" || type == "int8") return as(int8_t{});
+		if (type == "uchar" || type == "uint8") return as(uint8_t{});
+		if (type == "short" || type == "int16") return as(int16_t{});
+		if (type == "ushort" || type == "uint16") return as(uint16_t{});
+		if (type == "int" || type == "int32") return as(int32_t{});
+		if (type == "uint" || type == "uint32") return as(uint32_t{});
+		return 0.0f;
+	}
+}
+
 PointCloud PointCloud::loadPLY(const std::string& filename)
 {
-	std::ifstream file(filename);
+	std::ifstream file(filename, std::ios::binary);
 	if (!file.is_open())
 		throw std::runtime_error("Unable to open PLY point cloud: " + filename);
 
@@ -588,11 +620,13 @@ PointCloud PointCloud::loadPLY(const std::string& filename)
 	if (!std::getline(file, line) || trim(line) != "ply")
 		throw std::runtime_error("Invalid PLY header: missing ply magic");
 
-	bool asciiFormat = false;
+	std::string format;
 	bool foundEndHeader = false;
 	bool readingVertexElement = false;
+	bool sawElementBeforeVertex = false;
 	size_t vertexCount = 0;
 	std::vector<std::string> vertexProperties;
+	std::vector<std::string> vertexPropertyTypes;
 
 	while (std::getline(file, line))
 	{
@@ -606,17 +640,21 @@ PointCloud PointCloud::loadPLY(const std::string& filename)
 
 		if (keyword == "format")
 		{
-			std::string format;
 			stream >> format;
-			if (format != "ascii")
-				throw std::runtime_error("Only ASCII PLY point clouds are supported by the built-in reader");
-			asciiFormat = true;
+			if (format != "ascii" && format != "binary_little_endian")
+				throw std::runtime_error("Unsupported PLY format '" + format + "' (ascii and binary_little_endian are supported)");
 		}
 		else if (keyword == "element")
 		{
 			std::string elementName;
 			std::string countToken;
 			stream >> elementName >> countToken;
+			if (elementName != "vertex" && vertexCount == 0)
+			{
+				size_t precedingCount = 0;
+				if (tryParseSize(countToken, precedingCount) && precedingCount > 0)
+					sawElementBeforeVertex = true;
+			}
 			readingVertexElement = elementName == "vertex";
 			if (readingVertexElement && !tryParseSize(countToken, vertexCount))
 				throw std::runtime_error("Invalid PLY vertex count");
@@ -626,12 +664,19 @@ PointCloud PointCloud::loadPLY(const std::string& filename)
 			std::string propertyType;
 			stream >> propertyType;
 			if (propertyType == "list")
+			{
+				if (format != "ascii")
+					throw std::runtime_error("PLY list properties in the vertex element are not supported for binary files");
 				continue;
+			}
 
 			std::string propertyName;
 			stream >> propertyName;
 			if (!propertyName.empty())
+			{
 				vertexProperties.push_back(propertyName);
+				vertexPropertyTypes.push_back(propertyType);
+			}
 		}
 		else if (keyword == "end_header")
 		{
@@ -640,10 +685,13 @@ PointCloud PointCloud::loadPLY(const std::string& filename)
 		}
 	}
 
-	if (!asciiFormat)
-		throw std::runtime_error("PLY file does not declare format ascii");
+	if (format.empty())
+		throw std::runtime_error("PLY file does not declare a format");
 	if (!foundEndHeader)
 		throw std::runtime_error("Invalid PLY header: missing end_header");
+	if (format != "ascii" && sawElementBeforeVertex)
+		throw std::runtime_error("Binary PLY with elements preceding the vertex element is not supported");
+	const bool asciiFormat = format == "ascii";
 
 	const int xIndex = findPropertyIndex(vertexProperties, { "x" });
 	const int yIndex = findPropertyIndex(vertexProperties, { "y" });
@@ -656,6 +704,50 @@ PointCloud PointCloud::loadPLY(const std::string& filename)
 
 	PointCloud cloud;
 	cloud.reserve(vertexCount);
+
+	if (!asciiFormat)
+	{
+		// Binary little-endian: fixed record stride, x/y/z (and optional attributes)
+		// extracted at their computed byte offsets, streamed in chunks.
+		std::vector<size_t> offsets(vertexProperties.size(), 0);
+		size_t stride = 0;
+		for (size_t i = 0; i < vertexPropertyTypes.size(); ++i)
+		{
+			const size_t size = plyTypeSize(vertexPropertyTypes[i]);
+			if (size == 0)
+				throw std::runtime_error("Unsupported PLY property type: " + vertexPropertyTypes[i]);
+			offsets[i] = stride;
+			stride += size;
+		}
+
+		constexpr size_t ChunkRecords = 262144;
+		std::vector<unsigned char> buffer(stride * ChunkRecords);
+		size_t remaining = vertexCount;
+		while (remaining > 0)
+		{
+			const size_t batch = std::min(remaining, ChunkRecords);
+			file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(stride * batch));
+			if (static_cast<size_t>(file.gcount()) != stride * batch)
+				throw std::runtime_error("PLY ended before all binary vertices were read");
+
+			for (size_t record = 0; record < batch; ++record)
+			{
+				const unsigned char* base = buffer.data() + record * stride;
+				const float x = plyReadScalar(base + offsets[xIndex], vertexPropertyTypes[xIndex]);
+				const float y = plyReadScalar(base + offsets[yIndex], vertexPropertyTypes[yIndex]);
+				const float z = plyReadScalar(base + offsets[zIndex], vertexPropertyTypes[zIndex]);
+				const float intensity = intensityIndex >= 0 ? plyReadScalar(base + offsets[intensityIndex], vertexPropertyTypes[intensityIndex]) : 0.0f;
+				const uint32_t classification = classificationIndex >= 0
+					? static_cast<uint32_t>(plyReadScalar(base + offsets[classificationIndex], vertexPropertyTypes[classificationIndex]))
+					: 0u;
+				cloud.addPoint(makePoint(x, y, z, intensity, classification, static_cast<uint64_t>(cloud.size())));
+			}
+			remaining -= batch;
+		}
+
+		return cloud;
+	}
+
 	for (size_t vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex)
 	{
 		if (!std::getline(file, line))

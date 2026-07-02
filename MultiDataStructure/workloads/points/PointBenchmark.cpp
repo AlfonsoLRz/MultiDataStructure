@@ -675,7 +675,8 @@ static void appendPointQueryTrace(
 	const PointBenchmark::Options& options,
 	const std::string& schemaPath,
 	const SchemaConfig& schema,
-	const QueryProfileSummary& queryProfile)
+	const QueryProfileSummary& queryProfile,
+	const PointCloud& cloud)
 {
 	if (tracePath.empty() || queryProfile._traces.empty())
 		return;
@@ -704,15 +705,19 @@ static void appendPointQueryTrace(
 			<< trace._queryId << ','
 			<< csvEscape(trace._queryType) << ',';
 
+		// World coordinates, so external tools can replay against the raw cloud file
+		// (identity transform for XYZ/PLY/CSV clouds; origin translation for LAS).
 		if (trace._hasBounds)
 		{
+			const glm::dvec3 worldMin = cloud.toWorldPosition(trace._bounds.min());
+			const glm::dvec3 worldMax = cloud.toWorldPosition(trace._bounds.max());
 			output
-				<< trace._bounds.min().x << ','
-				<< trace._bounds.min().y << ','
-				<< trace._bounds.min().z << ','
-				<< trace._bounds.max().x << ','
-				<< trace._bounds.max().y << ','
-				<< trace._bounds.max().z << ',';
+				<< worldMin.x << ','
+				<< worldMin.y << ','
+				<< worldMin.z << ','
+				<< worldMax.x << ','
+				<< worldMax.y << ','
+				<< worldMax.z << ',';
 		}
 		else
 		{
@@ -721,10 +726,11 @@ static void appendPointQueryTrace(
 
 		if (trace._hasCenter)
 		{
+			const glm::dvec3 worldCenter = cloud.toWorldPosition(trace.center);
 			output
-				<< trace.center.x << ','
-				<< trace.center.y << ','
-				<< trace.center.z << ',';
+				<< worldCenter.x << ','
+				<< worldCenter.y << ','
+				<< worldCenter.z << ',';
 		}
 		else
 		{
@@ -902,7 +908,8 @@ int PointBenchmark::run(const Options& options)
 			options,
 			loadedSchema._path,
 			schema,
-			queryProfile);
+			queryProfile,
+			cloud);
 	}
 
 	if (options._pauseAtEnd)

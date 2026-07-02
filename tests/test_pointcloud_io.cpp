@@ -172,6 +172,32 @@ namespace BaselineTests
 		expect(nearlyEqual(plyCloud.points()[0].position.y, 2.0f), "PLY loader stores y coordinate");
 		expect(nearlyEqual(plyCloud.points()[1].position.z, 7.0f), "PLY loader stores z coordinate");
 
+		const std::filesystem::path binaryPlyPath = tempFile("multids_pointcloud_test_binary.ply");
+		removePointCloudCache(binaryPlyPath);
+		{
+			std::ofstream file(binaryPlyPath, std::ios::binary);
+			file << "ply\n";
+			file << "format binary_little_endian 1.0\n";
+			file << "element vertex 2\n";
+			file << "property float x\n";
+			file << "property float y\n";
+			file << "property double z\n";
+			file << "property uchar classification\n";
+			file << "end_header\n";
+			const auto writeFloat = [&](float v) { file.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
+			const auto writeDouble = [&](double v) { file.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
+			const auto writeByte = [&](uint8_t v) { file.write(reinterpret_cast<const char*>(&v), sizeof(v)); };
+			writeFloat(1.5f); writeFloat(2.5f); writeDouble(3.25); writeByte(4);
+			writeFloat(-5.0f); writeFloat(6.0f); writeDouble(-7.5); writeByte(9);
+		}
+
+		const PointCloud binaryPlyCloud = PointCloud::load(binaryPlyPath.string());
+		expect(binaryPlyCloud.size() == 2, "binary PLY loader reads two vertices");
+		expect(nearlyEqual(binaryPlyCloud.points()[0].position.x, 1.5f), "binary PLY loader stores x (float)");
+		expect(nearlyEqual(binaryPlyCloud.points()[0].position.z, 3.25f), "binary PLY loader stores z (double)");
+		expect(nearlyEqual(binaryPlyCloud.points()[1].position.x, -5.0f), "binary PLY loader keeps signed floats");
+		expect(nearlyEqual(binaryPlyCloud.points()[1].position.z, -7.5f), "binary PLY loader stores second z (double)");
+
 		const std::filesystem::path lasPath = tempFile("multids_pointcloud_test.las");
 		removePointCloudCache(lasPath);
 		{

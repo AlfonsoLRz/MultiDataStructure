@@ -95,15 +95,18 @@ namespace
 
 			for (const Experiments::TraceQuery& query : pair._trace)
 			{
+				// Traces are in world coordinates; transform into the pair cloud's local
+				// frame (identity for the XYZ block files the DL capture emits).
+				const glm::vec3 center = pair._cloud.toLocalPosition(glm::dvec3(query._center));
 				PointSpatialIndex::QueryStats stats;
 				if (query._kind == Experiments::TraceQuery::Kind::Radius)
-					stats = index.radiusQuery(query._center, query._radius)._stats;
+					stats = index.radiusQuery(center, query._radius)._stats;
 				else if (query._kind == Experiments::TraceQuery::Kind::Knn)
-					stats = index.knnQuery(query._center, query._k > 0 ? query._k : fallbackKnnK)._stats;
+					stats = index.knnQuery(center, query._k > 0 ? query._k : fallbackKnnK)._stats;
 				else if (query._kind == Experiments::TraceQuery::Kind::CountRange)
-					stats = index.countRange(AABB(query._minBound, query._maxBound))._stats;
+					stats = index.countRange(AABB(pair._cloud.toLocalPosition(glm::dvec3(query._minBound)), pair._cloud.toLocalPosition(glm::dvec3(query._maxBound))))._stats;
 				else
-					stats = index.rangeQuery(AABB(query._minBound, query._maxBound))._stats;
+					stats = index.rangeQuery(AABB(pair._cloud.toLocalPosition(glm::dvec3(query._minBound)), pair._cloud.toLocalPosition(glm::dvec3(query._maxBound))))._stats;
 				eval._totalQueryMs += stats._elapsedMs;
 				samples.push_back(std::move(stats));
 			}
