@@ -147,6 +147,10 @@ def run_mds_trace(args: argparse.Namespace, schema_path: Path, out_dir: Path, ro
         "--no-score-cache",
         "--no-pause",
     ]
+    if args.input_trace:
+        # Replay a recorded application trace as the workload; the emitted
+        # query_trace.csv then carries those exact queries to every framework.
+        command.extend(["--input-trace", args.input_trace])
     if args.no_cache:
         command.append("--no-cache")
 
@@ -644,6 +648,8 @@ def main() -> int:
     parser.add_argument("--schema", required=True, help="Schema JSON or measured selector JSON.")
     parser.add_argument("--workload-profile", default="configs/workloads/volume_small_medium.json")
     parser.add_argument("--queries", type=int, default=64, help="Workload queries passed to schema-search.")
+    parser.add_argument("--input-trace", help="Recorded application query trace CSV replayed as the workload "
+                        "(passed through to the executable's --input-trace).")
     parser.add_argument("--knn-k", type=int, default=16)
     parser.add_argument("--query-seed", type=int, default=1337)
     parser.add_argument("--frameworks", nargs="*", default=["open3d", "pdal", "pcl"],

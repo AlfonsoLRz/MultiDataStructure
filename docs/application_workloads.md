@@ -63,6 +63,20 @@ synthetic mixes, in the two regimes described in the paper's Applications sectio
   DL regime the tuned schema saves ~17% of every epoch's neighborhood-structuring
   time, which profiling literature places at the majority of end-to-end runtime.
 
+### External framework baselines (identical replayed queries)
+
+`scripts/compare_frameworks.py --input-trace ...` (new passthrough) replays the same
+application trace through external libraries. Run from `.venv-mds` (Python 3.12 +
+Open3D 0.19; the main `.venv` is Python 3.14, for which Open3D has no wheel):
+
+| dataset | GA-tuned schema (CPU) | Open3D KDTreeFlann | speedup |
+|---|---|---|---|
+| SanAndreas 5M, 3000 pipeline queries | 0.00421 ms/query | 0.02271 ms/query | **5.4x** |
+| Alhambra 100M, 3000 pipeline queries | 0.00476 ms/query | 0.01752 ms/query | **3.7x** |
+
+PDAL/PCL columns pending (PDAL CLI and the PCL helper binary are not installed on
+this machine); the harness already supports both.
+
 ## Caveats / next steps
 
 - Single seed, single machine, CPU evaluator; rerun the winners with
