@@ -77,6 +77,31 @@ Open3D 0.19; the main `.venv` is Python 3.14, for which Open3D has no wheel):
 PDAL/PCL columns pending (PDAL CLI and the PCL helper binary are not installed on
 this machine); the harness already supports both.
 
+## Search cost and multi-fidelity (the "isn't the search slow?" defense)
+
+Measured on Alhambra_100M, whose full-scale GA took 50.4 min (~95% of it = ~43 full
+100M-point index builds; queries are negligible):
+
+- **Rank transfer**: re-evaluating the same 43 candidates on subsampled clouds gives
+  Spearman rho = 0.70 (2M) / 0.81 (5M) vs full scale. The top of the full ranking is
+  nearly flat (2.7% spread), so exact top-3 order does not survive subsampling — but
+  **confirming the low-fidelity top-10 at full scale recovers the true winner exactly
+  (0% regret) at both fidelities**; top-5 confirmation lands within 18.9%.
+  Low-fidelity evaluation of all 43 candidates costs 0.8 min (2M) / 2.0 min (5M).
+- **Recipe**: search at 2-5M fidelity, confirm top-10 at full scale (~10 builds):
+  **~13-15 min instead of 50, zero regret** — and the confirms parallelize too.
+- **Parallel dispatch**: the same 5M GA with `--parallel 8` ran in **1.4 min vs 9 min**
+  (6.4x); the parallel run's best schema was within ~10% of the serial run's (GA paths
+  diverge under reordering; same budget).
+- **Repeat-measurement CIs** (5 repeats, winners on full clouds): latency CV 3.4-6.4%.
+  The DL-regime (-13 to -17%) and 50M (-10.3%) wins comfortably exceed measurement
+  noise; the Alhambra pipeline win over the best canonical octree (-2.7%) is within
+  ~1 CV and should be reported as parity-or-better, with the 35x wrong-default and
+  3.7x-vs-Open3D results carrying that dataset's argument.
+- **Framing**: this is a one-time offline cost per (dataset-class, workload) — the
+  regimes that motivate the paper reuse the tuned schema across hundreds of pipeline
+  passes or training epochs.
+
 ## Caveats / next steps
 
 - Single seed, single machine, CPU evaluator; rerun the winners with
