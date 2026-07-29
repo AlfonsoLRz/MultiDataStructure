@@ -1,0 +1,20 @@
+{
+  "name": "tuned_kd8l32aprr",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 8,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

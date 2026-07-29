@@ -1,0 +1,20 @@
+{
+  "name": "tuned_lbvh8l2048",
+  "levels": [
+    {
+      "type": "LBVH",
+      "numLevels": 8,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

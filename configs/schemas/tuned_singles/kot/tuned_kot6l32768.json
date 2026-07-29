@@ -1,0 +1,19 @@
+{
+  "name": "tuned_kot6l32768",
+  "levels": [
+    {
+      "type": "KarrasOctree",
+      "numLevels": 6,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 6,
+    "leafCapacity": 32768,
+    "minPointsToSplit": 8192,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

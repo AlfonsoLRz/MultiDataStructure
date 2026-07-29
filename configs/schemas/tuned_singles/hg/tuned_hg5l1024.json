@@ -1,0 +1,19 @@
+{
+  "name": "tuned_hg5l1024",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 5,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 5,
+    "leafCapacity": 1024,
+    "minPointsToSplit": 256,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

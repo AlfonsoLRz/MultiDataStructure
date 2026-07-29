@@ -1,0 +1,20 @@
+{
+  "name": "tuned_lbvh6l256",
+  "levels": [
+    {
+      "type": "LBVH",
+      "numLevels": 6,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 6,
+    "leafCapacity": 256,
+    "minPointsToSplit": 64,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

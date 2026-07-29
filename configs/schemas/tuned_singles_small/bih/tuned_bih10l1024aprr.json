@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih10l1024aprr",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 10,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 1024,
+    "minPointsToSplit": 256,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

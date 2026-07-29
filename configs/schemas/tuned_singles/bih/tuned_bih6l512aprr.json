@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih6l512aprr",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 6,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 6,
+    "leafCapacity": 512,
+    "minPointsToSplit": 128,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

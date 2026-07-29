@@ -1,0 +1,19 @@
+{
+  "name": "tuned_hg6l64",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 6,
+      "leafCapacity": 64,
+      "minPointsToSplit": 16
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 6,
+    "leafCapacity": 64,
+    "minPointsToSplit": 16,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

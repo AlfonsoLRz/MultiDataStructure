@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih6l128",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 6,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 6,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

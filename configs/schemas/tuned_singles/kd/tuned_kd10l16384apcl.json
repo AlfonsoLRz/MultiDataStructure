@@ -1,0 +1,20 @@
+{
+  "name": "tuned_kd10l16384apcl",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 10,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}
