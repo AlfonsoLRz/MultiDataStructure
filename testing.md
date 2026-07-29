@@ -46,7 +46,16 @@ Cross-cutting:
 - **Cross-cloud (SanAndreas-50M winner → SanSimeon 25M test half)**: transfers *safely* (+9% vs that cloud's best-known = quadtree; wrong singles 1.4–6.8×), not optimally. `results/eval_traces/v2/crosscloud_sansimeon.csv`.
 - **Frameworks (frame-fixed, counts verified ≤1-pt boundary deltas)**: MDS vs Open3D KDTreeFlann **3.7×** at both 5M (0.00363 vs 0.0133) and Alhambra 100M (0.0129 vs 0.0479): `results/framework_compare/v2_*_fixed/`.
 - **PCL columns (native FLANN, exact parity 0 mismatches)**: at 5M **pcl_kdtree BEATS MDS** (0.00285 vs 0.00337, 1.18×) — small clouds are FLANN territory (and parity cells anyway). At Alhambra 100M **MDS nested is 2.76× faster than pcl_kdtree** (0.01293 vs 0.03565) and 4.6× vs pcl_octree. Build: FLANN 12.4s vs MDS 67.5s → break-even ≈ 2.4M queries; one normal-estimation pass at 100M = 100M queries → amortizes ~40× within a single stage. `results/framework_compare/v2_{sanandreas_5m,alhambra_100m}_pcl/`. Helper needs vcpkg DLLs beside it (`tools/bin/*.dll`, copied); reads PLY not LAS (binary PLY converters in scratchpad, world frame).
-- GA winner selection among near-ties is measurement-noise-driven (5M GA rerun picked a different near-tied winner) → report winner *families* in parity cells.
+- **Indexicon sanity check (2026-07-29, `tools/indexicon_point_baseline.cpp`, clone at
+  `external/Indexicon`, MIT)**: identical 2000-query mixed trace on 5M, world frame,
+  **0 count mismatches in all four structure/op combinations** (independent correctness
+  cross-validation). Per-type ms — range: our octree 0.00242 ≈ theirs 0.00231, our kd
+  0.00387 vs theirs 0.02482 (10×); kNN: our octree 0.01207 vs theirs 0.01994 (1.65×),
+  our kd 0.01371 vs theirs 0.07186 (5.2×). **Our in-house primitives are not weak — the
+  nested wins cannot be attributed to baseline implementation quality.** Their builds are
+  5-7× faster (819/900 ms vs 4.9-6.3 s; lean nodes, no telemetry) — worth citing as their
+  strength alongside portability/dynamism. Radius unsupported in Indexicon (586 rows
+  skipped); comparison is range+kNN only. Raw: `results/eval_traces/v2/indexicon_cmp/`.
 - **Matrix heatmap DONE (2026-07-29 afternoon, `scripts/run_matrix_heatmap.ps1`)** — 16 cells,
   GA + tuned-singles arms on `_opt`, held-out `_test` re-measures; summary table:
   `results/eval_traces/matrix/heatmap_summary.csv` (speedup of searched winner vs best
