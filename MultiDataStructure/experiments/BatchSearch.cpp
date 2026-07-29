@@ -181,7 +181,8 @@ int Experiments::runBatchSearch(const SchemaSearchOptions& options)
 	if (generation._count == 0)
 		generation._count = 64;
 	generation._primitiveProfile = resolvePrimitiveProfile(generation._primitiveProfile, false);
-	generation._outputDirectory.clear();				// no JSON spam for the search pool
+	// Pool candidates persist only when --generated-schema-dir is given; without it the
+	// winner exists solely as a CSV name and can never be replayed on a held-out manifest.
 	{
 		std::vector<SchemaCandidate> generated = generateSchemaCandidates(generation);
 		pool.insert(pool.end(), std::make_move_iterator(generated.begin()), std::make_move_iterator(generated.end()));
@@ -230,7 +231,7 @@ int Experiments::runBatchSearch(const SchemaSearchOptions& options)
 			record._score = parent->_score;
 			std::vector<SchemaCandidate> repairs = generateSchemaRepairCandidates(
 				parent->_candidate, { record }, generation, nullptr, repairPerCandidate,
-				static_cast<uint32_t>(generation._seed + 101 * round + e), std::string());
+				static_cast<uint32_t>(generation._seed + 101 * round + e), generation._outputDirectory);
 			for (SchemaCandidate& repair : repairs)
 			{
 				if (archive.find(repair._name) == archive.end())

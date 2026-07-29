@@ -332,13 +332,12 @@ def load_points_numpy(input_path: Path):
         except ImportError as exc:
             raise RuntimeError("laspy is required for Python/Open3D LAS baselines") from exc
         las = laspy.read(str(input_path))
-        origin = tuple(float(v) for v in las.header.mins)
-        points = np.column_stack((
-            las.x - origin[0],
-            las.y - origin[1],
-            las.z - origin[2],
-        )).astype(np.float64, copy=False)
-        return points, origin
+        # Trace CSVs (and the MDS query_trace export) are ALWAYS world coordinates
+        # (frame convention since 076b226), so the baseline cloud must stay in world
+        # frame too. The old origin-subtracted load made every Open3D radius count
+        # wrong while kNN silently returned k plausible-looking neighbors.
+        points = np.column_stack((las.x, las.y, las.z)).astype(np.float64, copy=False)
+        return points, (0.0, 0.0, 0.0)
 
     raise RuntimeError(f"Python point loader does not support {input_path.suffix}")
 
@@ -444,11 +443,8 @@ def read_las_origin(input_path: Path) -> Tuple[float, float, float]:
 
 
 def source_origin_for_pdal(input_path: Path, numpy_origin: Tuple[float, float, float]) -> Tuple[float, float, float]:
-    if input_path.suffix.lower() == ".las":
-        try:
-            return read_las_origin(input_path)
-        except Exception:
-            return numpy_origin
+    # Queries are world coordinates (see load_points_numpy) and PDAL reads the source
+    # file in world coordinates itself, so no origin shift is ever needed anymore.
     return (0.0, 0.0, 0.0)
 
 

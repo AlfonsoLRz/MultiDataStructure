@@ -335,8 +335,8 @@ namespace
 			int returned = 0;
 			if (query.kind == "range")
 			{
-				const Point minPoint(query.minBound.x, query.minBound.y, query.minBound.z);
-				const Point maxPoint(query.maxBound.x, query.maxBound.y, query.maxBound.z);
+				const Eigen::Vector3f minPoint(query.minBound.x, query.minBound.y, query.minBound.z);
+				const Eigen::Vector3f maxPoint(query.maxBound.x, query.maxBound.y, query.maxBound.z);
 				returned = static_cast<int>(octree.boxSearch(minPoint, maxPoint, indices));
 			}
 			else if (query.kind == "radius")
