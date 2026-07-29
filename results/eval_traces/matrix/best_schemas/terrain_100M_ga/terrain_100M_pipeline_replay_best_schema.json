@@ -1,0 +1,22 @@
+{
+  "name": "evolved_g1_i7_qt9l32",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 9,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 9,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

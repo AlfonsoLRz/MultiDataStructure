@@ -1,0 +1,28 @@
+{
+  "name": "generated_qt9l8192_bvh2l8192",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 9,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "BVH",
+      "numLevels": 2,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 256,
+    "minPointsToSplit": 64,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

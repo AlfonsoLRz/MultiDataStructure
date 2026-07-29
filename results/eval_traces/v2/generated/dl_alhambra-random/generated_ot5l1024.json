@@ -1,0 +1,21 @@
+{
+  "name": "generated_ot5l1024",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 5,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 5,
+    "leafCapacity": 512,
+    "minPointsToSplit": 128,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "input": "C:\\Github\\MultiDataStructure\\results\\traces\\sanandreas_5m\\5M_binary.ply",
+  "workload_profile": "configs/workloads/pipeline_replay.json",
+  "schema": {
+    "input_kind": "schema",
+    "selected_schema_path": "C:\\Github\\MultiDataStructure\\configs\\schemas\\quadtree.json",
+    "selected_schema_name": "quadtree_default"
+  },
+  "query_trace": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_sanandreas_5m_pcl\\query_trace.csv",
+  "mds_raw": {
+    "method": "multidatastructure_cpu",
+    "status": "ok",
+    "schema_name": "quadtree_default",
+    "schema_path": "C:\\Github\\MultiDataStructure\\configs\\schemas\\quadtree.json",
+    "build_ms": 6444.9327,
+    "avg_latency_ms": 0.003369,
+    "p95_latency_ms": 0.0054,
+    "range_queries": 0,
+    "radius_queries": 2000,
+    "knn_queries": 1000,
+    "wall_ms": 6748.737100017024,
+    "raw_csv": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_sanandreas_5m_pcl\\mds_raw.csv",
+    "query_trace": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_sanandreas_5m_pcl\\query_trace.csv"
+  },
+  "results": [
+    {
+      "method": "multidatastructure_cpu",
+      "status": "ok",
+      "queries": 6000,
+      "build_ms": 6444.9327,
+      "avg_latency_ms": 0.003369,
+      "p95_latency_ms": 0.0054,
+      "by_type": {
+        "radius": {
+          "queries": 4000,
+          "avg_latency_ms": 0.002577,
+          "p95_latency_ms": 0.0038
+        },
+        "knn": {
+          "queries": 2000,
+          "avg_latency_ms": 0.0051326,
+          "p95_latency_ms": 0.006200000000000001
+        }
+      },
+      "count_mismatches": 0,
+      "max_count_delta": 0,
+      "note": "Project CPU evaluator using the resolved schema."
+    },
+    {
+      "method": "pcl_kdtree",
+      "status": "ok",
+      "build_ms": 1818.58,
+      "queries": 6000,
+      "avg_latency_ms": 0.00284802,
+      "p95_latency_ms": 0.0049,
+      "count_mismatches": 0,
+      "max_count_delta": 0,
+      "by_type": {
+        "knn": {
+          "queries": 2000,
+          "avg_latency_ms": 0.00230535,
+          "p95_latency_ms": 0.0033
+        },
+        "radius": {
+          "queries": 4000,
+          "avg_latency_ms": 0.00311935,
+          "p95_latency_ms": 0.0053
+        }
+      },
+      "note": "KdTreeFLANN radius/KNN only."
+    },
+    {
+      "method": "pcl_octree",
+      "status": "ok",
+      "build_ms": 154.473,
+      "queries": 6000,
+      "avg_latency_ms": 0.0146984,
+      "p95_latency_ms": 0.0294,
+      "count_mismatches": 0,
+      "max_count_delta": 0,
+      "by_type": {
+        "knn": {
+          "queries": 2000,
+          "avg_latency_ms": 0.0224151,
+          "p95_latency_ms": 0.0341
+        },
+        "radius": {
+          "queries": 4000,
+          "avg_latency_ms": 0.0108401,
+          "p95_latency_ms": 0.022605
+        }
+      },
+      "note": "OctreePointCloudSearch range/radius/KNN."
+    }
+  ]
+}

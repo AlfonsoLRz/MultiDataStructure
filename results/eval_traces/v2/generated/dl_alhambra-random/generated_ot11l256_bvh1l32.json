@@ -1,0 +1,27 @@
+{
+  "name": "generated_ot11l256_bvh1l32",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 11,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64
+    },
+    {
+      "type": "BVH",
+      "numLevels": 1,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

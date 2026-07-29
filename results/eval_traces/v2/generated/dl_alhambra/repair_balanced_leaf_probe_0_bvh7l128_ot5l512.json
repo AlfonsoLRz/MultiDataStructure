@@ -1,0 +1,27 @@
+{
+  "name": "repair_balanced_leaf_probe_0_bvh7l128_ot5l512",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 7,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32
+    },
+    {
+      "type": "Octree",
+      "numLevels": 5,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

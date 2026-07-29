@@ -1,0 +1,22 @@
+{
+  "name": "generated_qt11l4096",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 11,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 1024,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 4096,
+    "minPointsToSplit": 1024,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

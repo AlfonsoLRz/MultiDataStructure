@@ -1,0 +1,34 @@
+{
+  "name": "repair_balanced_leaf_probe_0_bvh8l128_qt3l8192_ot1l128",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 8,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 3,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "Octree",
+      "numLevels": 1,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

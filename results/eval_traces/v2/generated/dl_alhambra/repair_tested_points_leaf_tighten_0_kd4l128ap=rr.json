@@ -1,0 +1,22 @@
+{
+  "name": "repair_tested_points_leaf_tighten_0_kd4l128ap=rr",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 4,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 4,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

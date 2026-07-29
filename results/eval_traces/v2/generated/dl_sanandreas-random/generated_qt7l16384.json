@@ -1,0 +1,22 @@
+{
+  "name": "generated_qt7l16384",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 7,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 7,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

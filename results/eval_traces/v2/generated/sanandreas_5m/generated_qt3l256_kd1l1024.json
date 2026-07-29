@@ -1,0 +1,29 @@
+{
+  "name": "generated_qt3l256_kd1l1024",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 3,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 4,
+    "leafCapacity": 256,
+    "minPointsToSplit": 64,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

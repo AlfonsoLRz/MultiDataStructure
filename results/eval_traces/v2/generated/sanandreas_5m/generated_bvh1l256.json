@@ -1,0 +1,21 @@
+{
+  "name": "generated_bvh1l256",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 1,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 1,
+    "leafCapacity": 4096,
+    "minPointsToSplit": 1024,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

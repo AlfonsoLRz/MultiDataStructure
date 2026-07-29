@@ -1,0 +1,73 @@
+{
+  "input": "D:\\Datasets\\Point Clouds\\Alhambra\\Alhambra_100M.las",
+  "workload_profile": "configs/workloads/pipeline_replay.json",
+  "schema": {
+    "input_kind": "schema",
+    "selected_schema_path": "C:\\Github\\MultiDataStructure\\results\\eval_traces\\v2\\best_schemas\\alhambra_100m_ga\\Alhambra_100M_pipeline_replay_best_schema.json",
+    "selected_schema_name": "generated_bvh7l128_ot5l1024"
+  },
+  "query_trace": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_alhambra_100m_fixed\\query_trace.csv",
+  "mds_raw": {
+    "method": "multidatastructure_cpu",
+    "status": "ok",
+    "schema_name": "generated_bvh7l128_ot5l1024",
+    "schema_path": "C:\\Github\\MultiDataStructure\\results\\eval_traces\\v2\\best_schemas\\alhambra_100m_ga\\Alhambra_100M_pipeline_replay_best_schema.json",
+    "build_ms": 68132.5998,
+    "avg_latency_ms": 0.012922,
+    "p95_latency_ms": 0.0239,
+    "range_queries": 0,
+    "radius_queries": 2000,
+    "knn_queries": 1000,
+    "wall_ms": 69892.20760000171,
+    "raw_csv": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_alhambra_100m_fixed\\mds_raw.csv",
+    "query_trace": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_alhambra_100m_fixed\\query_trace.csv"
+  },
+  "results": [
+    {
+      "method": "multidatastructure_cpu",
+      "status": "ok",
+      "queries": 3000,
+      "build_ms": 68132.5998,
+      "avg_latency_ms": 0.012922,
+      "p95_latency_ms": 0.0239,
+      "by_type": {
+        "radius": {
+          "queries": 2000,
+          "avg_latency_ms": 0.0151445,
+          "p95_latency_ms": 0.025804999999999995
+        },
+        "knn": {
+          "queries": 1000,
+          "avg_latency_ms": 0.008476800000000001,
+          "p95_latency_ms": 0.0119
+        }
+      },
+      "count_mismatches": 0,
+      "max_count_delta": 0,
+      "note": "Project CPU evaluator using the resolved schema."
+    },
+    {
+      "method": "open3d",
+      "status": "ok",
+      "build_ms": 32527.089499984868,
+      "queries": 3000,
+      "avg_latency_ms": 0.04792740003904328,
+      "p95_latency_ms": 0.1116600047680546,
+      "by_type": {
+        "knn": {
+          "queries": 1000,
+          "avg_latency_ms": 0.006799200113164261,
+          "p95_latency_ms": 0.009200011845678091
+        },
+        "radius": {
+          "queries": 2000,
+          "avg_latency_ms": 0.06849150000198279,
+          "p95_latency_ms": 0.13169998419471085
+        }
+      },
+      "count_mismatches": 10,
+      "max_count_delta": 1,
+      "note": "KDTreeFlann for radius/KNN; AxisAlignedBoundingBox crop for range."
+    }
+  ]
+}

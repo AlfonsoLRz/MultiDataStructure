@@ -1,0 +1,35 @@
+{
+  "name": "generated_kd4l4096ap=rr_qt6l256_ot1l512",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 4,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 1024,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 6,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "Octree",
+      "numLevels": 1,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 32768,
+    "minPointsToSplit": 8192,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

@@ -1,0 +1,330 @@
+﻿
+########## sanandreas_5m GA rerun (opt)  [21:11:20] ##########
+  condition domain from '5M': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 43
+  generated schemas: 32 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: not used inside evolutionary loop; measured scores drive selection
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  optimizer: evolutionary mutation search
+    generations: 3
+    population per generation: 24
+    elites: 6
+    mutation rate: 0.650
+    random immigration: 0.200
+      initial [1/39] quadtree_default
+        aggregate score 0.003 [6.724 s]
+      initial [2/39] octree_default
+        aggregate score 0.005 [3.424 s]
+      initial [3/39] kdtree_default
+        aggregate score 0.006 [5.124 s]
+      initial [4/39] bvh_default
+        aggregate score 0.013 [4.593 s]
+      initial [5/39] quadtree_octree
+        aggregate score 0.004 [4.844 s]
+      initial [6/39] octree_kdtree
+        aggregate score 0.004 [4.091 s]
+      initial [7/39] urban_hybrid_quadtree_octree_kdtree
+        aggregate score 0.004 [5.247 s]
+      initial [8/39] generated_qt3l256
+        aggregate score 0.138 [2.572 s]
+      initial [9/39] generated_qt4l128_kd5l128
+        aggregate score 0.006 [4.941 s]
+      initial [10/39] generated_ot2l8192
+        aggregate score 0.262 [1.517 s]
+      initial [11/39] generated_kd4l64_qt4l16384
+        aggregate score 0.012 [4.298 s]
+      initial [12/39] generated_bvh1l256_ot5l512_kd4l8192ap=rr
+        aggregate score 0.007 [2.509 s]
+      initial [13/39] generated_bvh8l512_ot2l64
+        aggregate score 0.007 [3.919 s]
+      initial [14/39] generated_bvh3l16384
+        aggregate score 0.742 [3.107 s]
+      initial [15/39] generated_bvh7l128_ot5l1024
+        aggregate score 0.004 [4.528 s]
+      initial [16/39] generated_kd1l16384_bvh7l64_ot1l512
+        aggregate score 0.014 [4.113 s]
+      initial [17/39] generated_kd9l32ap=rr_bvh1l8192
+        aggregate score 0.049 [4.228 s]
+      initial [18/39] generated_ot1l4096_kd5l4096_bvh4l2048
+        aggregate score 0.010 [4.391 s]
+      initial [19/39] generated_bvh12l8192
+        aggregate score 0.013 [4.926 s]
+      initial [20/39] generated_qt4l32
+        aggregate score 0.042 [3.107 s]
+      initial [21/39] generated_ot11l16384_kd1l64
+        aggregate score 0.014 [2.299 s]
+      initial [22/39] generated_kd6l128_ot5l4096_qt1l32768
+        aggregate score 0.005 [4.331 s]
+      initial [23/39] generated_bvh8l16384_ot1l1024_bvh1l4096
+        aggregate score 0.013 [3.988 s]
+      initial [24/39] generated_ot8l512_bvh4l1024
+        aggregate score 0.004 [3.079 s]
+      initial [25/39] generated_kd1l8192ap=rr_qt11l512
+        aggregate score 0.005 [6.315 s]
+      initial [26/39] generated_bvh5l512_qt3l4096_bvh4l2048
+        aggregate score 0.006 [5.575 s]
+      initial [27/39] generated_qt3l128_bvh5l2048
+        aggregate score 0.014 [4.656 s]
+      initial [28/39] generated_kd3l256ap=rr
+        aggregate score 1.065 [4.221 s]
+      initial [29/39] generated_kd9l64_qt2l128
+        aggregate score 0.005 [5.599 s]
+      initial [30/39] generated_kd10l256ap=rr_ot1l16384_qt1l2048
+        aggregate score 0.009 [5.721 s]
+      initial [31/39] generated_ot10l4096
+        aggregate score 0.007 [2.569 s]
+      initial [32/39] generated_qt1l512
+        aggregate score 1.407 [4.973 s]
+      initial [33/39] generated_ot3l32_bvh8l4096
+        aggregate score 0.007 [3.765 s]
+      initial [34/39] generated_qt2l32768_kd3l256ap=rr
+        aggregate score 0.125 [3.018 s]
+      initial [35/39] generated_kd11l1024
+        aggregate score 0.008 [4.828 s]
+      initial [36/39] generated_qt3l16384_bvh4l32
+        aggregate score 0.022 [4.377 s]
+      initial [37/39] generated_qt4l2048_ot6l256
+        aggregate score 0.004 [4.956 s]
+      initial [38/39] generated_qt9l8192_bvh2l8192
+        aggregate score 0.007 [5.100 s]
+      initial [39/39] generated_ot8l2048_qt1l256_bvh3l128
+        aggregate score 0.005 [2.796 s]
+      best so far: quadtree_default score 0.003
+      generation 1 champion: quadtree_default (score 0.003)
+      generation 1 children: 8 crossover + 11 mutation
+      generation 1 [1/24] generated_kd8l8192_ot4l64
+        aggregate score 0.004 [5.209 s]
+      generation 1 [2/24] generated_qt6l16384
+        aggregate score 0.015 [4.173 s]
+      generation 1 [3/24] generated_kd1l32_qt3l8192_kd4l16384ap=rr
+        aggregate score 0.016 [4.415 s]
+      generation 1 [4/24] generated_ot5l1024
+        aggregate score 0.010 [2.490 s]
+      generation 1 [5/24] generated_bvh10l4096_qt1l32768
+        aggregate score 0.023 [4.191 s]
+      generation 1 [6/24] xover_g1_i5_qt2l128
+        aggregate score 0.458 [2.817 s]
+      generation 1 [7/24] xover_g1_i6_qt8l32_kd3l64_qt1l128
+        aggregate score 0.005 [7.728 s]
+      generation 1 [8/24] xover_g1_i7_qt8l32_ot3l64_kd1l32
+        aggregate score 0.004 [7.273 s]
+      generation 1 [9/24] evolved_g1_i8_kd9l64_qt1l128
+        aggregate score 0.008 [4.903 s]
+      generation 1 [10/24] evolved_g1_i9_ot4l8192
+        aggregate score 0.026 [1.903 s]
+      generation 1 [11/24] xover_g1_i10_qt8l32_qt1l512
+        aggregate score 0.004 [6.873 s]
+      generation 1 [12/24] evolved_g1_i11_qt3l128_ot3l64_kd4l32
+        aggregate score 0.005 [5.515 s]
+      generation 1 [13/24] evolved_g1_i12_kd12l1024ap=rr
+        aggregate score 0.026 [5.113 s]
+      generation 1 [14/24] xover_g1_i13_qt8l32_ot2l8192
+        aggregate score 0.004 [6.813 s]
+      generation 1 [15/24] evolved_g1_i14_qt1l512_ot1l2048
+        aggregate score 0.382 [2.246 s]
+      generation 1 [16/24] evolved_g1_i15_ot2l4096
+        aggregate score 0.272 [1.569 s]
+      generation 1 [17/24] xover_g1_i16_qt8l32_kd4l1024
+        aggregate score 0.004 [6.834 s]
+      generation 1 [18/24] evolved_g1_i17_ot1l8192
+        aggregate score 1.080 [3.638 s]
+      generation 1 [19/24] evolved_g1_i18_qt2l128_kd9l64
+        aggregate score 0.006 [5.512 s]
+      generation 1 [20/24] xover_g1_i19_ot1l2048
+        aggregate score 1.072 [3.609 s]
+      generation 1 [21/24] evolved_g1_i20_qt7l32_ot1l512_kd1l8192
+        aggregate score 0.004 [6.382 s]
+      generation 1 [22/24] xover_g1_i21_ot3l64_kd4l32
+        aggregate score 0.010 [3.062 s]
+      generation 1 [23/24] evolved_g1_i22_qt3l128_ot3l64_kd3l32
+        aggregate score 0.004 [5.139 s]
+      generation 1 [24/24] evolved_g1_i23_qt1l512_bvh1l2048
+        aggregate score 0.746 [3.250 s]
+      best so far: quadtree_default score 0.003
+      generation 2 champion: quadtree_default (score 0.003)
+      generation 2 children: 5 crossover + 15 mutation
+      generation 2 [1/24] generated_ot9l128
+        aggregate score 0.005 [3.638 s]
+      generation 2 [2/24] generated_bvh6l32
+        aggregate score 0.138 [2.332 s]
+      generation 2 [3/24] generated_ot5l32
+        aggregate score 0.010 [2.435 s]
+      generation 2 [4/24] generated_ot12l512
+        aggregate score 0.005 [3.201 s]
+      generation 2 [5/24] evolved_g2_i4_kd11l512ap=rr
+        aggregate score 0.031 [4.730 s]
+      generation 2 [6/24] evolved_g2_i5_qt8l64
+        aggregate score 0.004 [6.864 s]
+      generation 2 [7/24] evolved_g2_i6_kd11l1024_qt1l512
+        aggregate score 0.005 [5.615 s]
+      generation 2 [8/24] evolved_g2_i7_qt8l32_kd3l128_qt1l128
+        aggregate score 0.004 [7.231 s]
+      generation 2 [9/24] evolved_g2_i8_qt8l32_bvh1l16384
+        aggregate score 0.003 [6.777 s]
+      generation 2 [10/24] evolved_g2_i9_qt8l32_kd3l64_qt1l64
+        aggregate score 0.005 [7.683 s]
+      generation 2 [11/24] xover_g2_i10_qt8l32_qt1l128
+        aggregate score 0.004 [7.618 s]
+      generation 2 [12/24] evolved_g2_i11_ot2l4096_kd1l256ap=rr
+        aggregate score 0.195 [1.777 s]
+      generation 2 [13/24] evolved_g2_i12_ot1l4096
+        aggregate score 1.054 [3.551 s]
+      generation 2 [14/24] evolved_g2_i13_qt8l32_kd3l64
+        aggregate score 0.005 [7.751 s]
+      generation 2 [15/24] evolved_g2_i14_kd11l1024_bvh1l4096
+        aggregate score 0.007 [4.883 s]
+      generation 2 [16/24] evolved_g2_i15_ot4l64_kd8l8192
+        aggregate score 0.011 [2.510 s]
+      generation 2 [17/24] xover_g2_i16_qt8l32_ot1l2048
+        aggregate score 0.003 [6.793 s]
+      generation 2 [18/24] evolved_g2_i17_ot8l32_bvh1l2048
+        aggregate score 0.005 [3.544 s]
+      generation 2 [19/24] xover_g2_i18_qt8l32_kd3l8192_ot1l64
+        aggregate score 0.004 [6.691 s]
+      generation 2 [20/24] xover_g2_i19_kd3l64_qt1l128
+        aggregate score 0.227 [2.510 s]
+      generation 2 [21/24] xover_g2_i20_qt8l32_qt3l32_kd1l64
+        aggregate score 0.005 [8.292 s]
+      generation 2 [22/24] evolved_g2_i21_kd8l8192ap=rr_qt4l32
+        aggregate score 0.004 [6.598 s]
+      generation 2 [23/24] evolved_g2_i22_kd8l8192_ot3l64_qt1l8192
+        aggregate score 0.004 [4.709 s]
+      generation 2 [24/24] evolved_g2_i23_qt8l32_ot1l512_kd1l32768ap=rr
+        aggregate score 0.004 [6.680 s]
+      best so far: quadtree_default score 0.003
+      generation 3 champion: quadtree_default (score 0.003)
+      generation 3 children: 2 crossover + 17 mutation
+      generation 3 [1/24] generated_qt9l512_ot2l2048
+        aggregate score 0.004 [6.665 s]
+      generation 3 [2/24] generated_bvh8l128_kd2l256ap=rr
+        aggregate score 0.022 [4.088 s]
+      generation 3 [3/24] generated_kd7l256_ot3l16384_bvh1l2048
+        aggregate score 0.013 [3.675 s]
+      generation 3 [4/24] generated_qt10l1024_ot1l512_kd1l64ap=rr
+        aggregate score 0.004 [5.916 s]
+      generation 3 [5/24] generated_kd7l8192_ot5l512
+        aggregate score 0.004 [4.758 s]
+      generation 3 [6/24] evolved_g3_i5_kd11l1024ap=rr_ot1l4096
+        aggregate score 0.011 [4.951 s]
+      generation 3 [7/24] evolved_g3_i6_kd7l8192_ot4l64
+        aggregate score 0.004 [4.737 s]
+      generation 3 [8/24] evolved_g3_i7_ot4l128_qt8l8192
+        aggregate score 0.009 [2.961 s]
+      generation 3 [9/24] xover_g3_i8_qt8l32_ot1l4096
+        aggregate score 0.004 [6.693 s]
+      generation 3 [10/24] evolved_g3_i9_qt1l2048
+        aggregate score 1.380 [4.873 s]
+      generation 3 [11/24] evolved_g3_i10_qt1l1024
+        aggregate score 1.383 [4.893 s]
+      generation 3 [12/24] evolved_g3_i11_qt1l64_kd3l64_qt8l32
+        aggregate score 0.005 [8.231 s]
+      generation 3 [13/24] evolved_g3_i12_qt8l32_kd2l64_qt1l64
+        aggregate score 0.005 [7.602 s]
+      generation 3 [14/24] evolved_g3_i13_kd8l8192ap=rr
+        aggregate score 0.103 [3.327 s]
+      generation 3 [15/24] evolved_g3_i14_qt9l32
+        aggregate score 0.004 [7.511 s]
+      generation 3 [16/24] evolved_g3_i15_kd11l1024_qt1l128
+        aggregate score 0.005 [5.528 s]
+      generation 3 [17/24] evolved_g3_i16_ot1l4096_kd1l512ap=rr
+        aggregate score 0.566 [2.418 s]
+      generation 3 [18/24] evolved_g3_i17_kd3l4096_qt1l32
+        aggregate score 0.232 [2.545 s]
+      generation 3 [19/24] xover_g3_i18_qt8l32_qt1l64
+        aggregate score 0.004 [7.490 s]
+      generation 3 [20/24] evolved_g3_i19_ot8l32_kd3l64_qt1l64
+        aggregate score 0.006 [3.818 s]
+      generation 3 [21/24] evolved_g3_i20_kd2l2048_qt1l128
+        aggregate score 0.445 [2.791 s]
+      generation 3 [22/24] evolved_g3_i21_ot11l1024
+        aggregate score 0.005 [2.914 s]
+      generation 3 [23/24] evolved_g3_i22_ot4l64
+        aggregate score 0.026 [1.876 s]
+      generation 3 [24/24] evolved_g3_i23_qt1l512_kd1l512
+        aggregate score 0.695 [3.189 s]
+      best so far: quadtree_default score 0.003
+  optimizer best aggregate: quadtree_default score 0.003
+  diversity audit: 31 distinct topology shapes across 111 evaluated candidates (ratio 0.279)
+    top topologies by evaluation count:
+      14x  ot
+      10x  kd:qt
+      10x  qt
+      7x  qt:ot
+      7x  qt:ot:kd
+      6x  kd
+      6x  ot:kd
+      6x  qt:kd
+    Pareto-front-0 distinct topologies: 28
+  evolved schema: results/eval_traces/v2/best_schemas/sanandreas_5m_ga\5M_pipeline_replay_best_schema.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [5M / pipeline_replay] rho=0.942 over 111 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [5M / pipeline_replay] rho=0.486 over 111 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [5M / pipeline_replay] front size 76
+      fastest: quadtree_default  latency=0.0034ms build=6687.2370ms mem=81.89MB imbalance=2.35
+      knee:    evolved_g2_i11_ot2l4096_kd1l256ap=rr  latency=0.1953ms build=1172.6892ms mem=76.31MB imbalance=4.79
+  metric winners:
+  [5M / pipeline_replay]
+    best latency: quadtree_default (0.003 ms, score 0.003, objective latency)
+    best build: evolved_g2_i12_ot1l4096 (369.811 ms, score 1.054, objective latency)
+    best memory: generated_qt1l512 (76.295 MB, score 1.407, objective latency)
+  wrote rows: 111
+  csv: results/eval_traces/v2/sanandreas_5m_ga.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (76 non-dominated rows)
+########## sanandreas_5m GA rerun (opt) done in 8.6 min (exit 0) ##########
+
+########## sanandreas_5m TEST re-measure (headline source)  [21:19:54] ##########
+  condition domain from '5M': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 15
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: 5M (5000000 points)
+    workload: pipeline_replay (3000 queries)
+      quadtree_default: score 0.004, avg 0.004 ms, build 6617.282 ms
+      repair_g1_i0_balanced_leaf_probe_kd1l8192ap=rr_qt11l256: score 0.004, avg 0.004 ms, build 6930.918 ms
+      generated_qt11l128: score 0.004, avg 0.004 ms, build 7370.804 ms
+      tuned_qt8l32: score 0.003, avg 0.003 ms, build 6680.728 ms
+      quadtree_default: score 0.003, avg 0.003 ms, build 6697.678 ms
+      octree_default: score 0.005, avg 0.005 ms, build 3502.171 ms
+      kdtree_default: score 0.005, avg 0.005 ms, build 5166.366 ms
+      bvh_default: score 0.014, avg 0.014 ms, build 4790.315 ms
+      bih_default: score 0.006, avg 0.006 ms, build 3744.852 ms
+      hgrid_default: score 0.006, avg 0.006 ms, build 3503.639 ms
+      lbvh_default: score 0.014, avg 0.014 ms, build 5266.758 ms
+      regular_grid_default: score 0.471, avg 0.471 ms, build 1160.871 ms
+      karras_octree_default: score 0.005, avg 0.005 ms, build 5185.337 ms
+      octree_kdtree: score 0.004, avg 0.004 ms, build 4027.600 ms
+      quadtree_octree: score 0.004, avg 0.004 ms, build 4736.708 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [5M / pipeline_replay] rho=0.897 over 15 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [5M / pipeline_replay] rho=0.621 over 15 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [5M / pipeline_replay] front size 12
+      fastest: quadtree_default  latency=0.0034ms build=6697.6781ms mem=81.89MB imbalance=2.35
+      knee:    bih_default  latency=0.0055ms build=3744.8518ms mem=77.42MB imbalance=1.01
+  metric winners:
+  [5M / pipeline_replay]
+    best latency: quadtree_default (0.003 ms, score 0.003, objective latency)
+    best build: regular_grid_default (1160.871 ms, score 0.471, objective latency)
+    best memory: regular_grid_default (76.296 MB, score 0.471, objective latency)
+  wrote rows: 15
+  csv: results/eval_traces/v2/sanandreas_5m_test.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (12 non-dominated rows)
+########## sanandreas_5m TEST re-measure (headline source) done in 1.4 min (exit 0) ##########
+
+########## rerun complete ##########

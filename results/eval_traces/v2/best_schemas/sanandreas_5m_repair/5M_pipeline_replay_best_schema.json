@@ -1,0 +1,29 @@
+{
+  "name": "repair_g1_i0_balanced_leaf_probe_kd1l8192ap=rr_qt11l256",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 11,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 8192,
+    "minPointsToSplit": 2048,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

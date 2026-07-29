@@ -1,0 +1,34 @@
+{
+  "name": "generated_ot8l32768_kd3l512ap=rr_ot1l512",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 8,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 3,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "Octree",
+      "numLevels": 1,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "generated_qt12l1024",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 12,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 512,
+    "minPointsToSplit": 128,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "xover_g1_i3_bvh7l128_ot4l1024_qt1l32",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 7,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32
+    },
+    {
+      "type": "Octree",
+      "numLevels": 4,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 1,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

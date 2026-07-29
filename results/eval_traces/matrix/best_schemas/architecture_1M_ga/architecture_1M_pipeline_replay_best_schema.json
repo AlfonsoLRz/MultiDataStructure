@@ -1,0 +1,36 @@
+{
+  "name": "xover_g1_i5_kd9l64_qt2l128_kd1l32",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 9,
+      "leafCapacity": 64,
+      "minPointsToSplit": 16,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 2,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 64,
+    "minPointsToSplit": 16,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

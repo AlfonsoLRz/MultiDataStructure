@@ -1,0 +1,22 @@
+{
+  "name": "generated_kd5l256",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 5,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 5,
+    "leafCapacity": 8192,
+    "minPointsToSplit": 2048,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

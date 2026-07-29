@@ -1,0 +1,35 @@
+{
+  "name": "generated_bvh2l1024_qt1l1024_kd2l128ap=rr",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 2,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 1,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 2,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 5,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

@@ -1,0 +1,1762 @@
+﻿
+########## sanandreas_50m GA (opt)  [21:47:21] ##########
+  condition domain from '50M_converted': 17 point, 10 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 35
+  generated schemas: 24 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: not used inside evolutionary loop; measured scores drive selection
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  optimizer: evolutionary mutation search
+    generations: 2
+    population per generation: 12
+    elites: 6
+    mutation rate: 0.650
+    random immigration: 0.200
+    parallel candidate dispatch: 8 CPU workers
+      initial [1/31] quadtree_default  aggregate score 0.011
+      initial [2/31] octree_default  aggregate score 0.013
+      initial [3/31] kdtree_default  aggregate score 0.035
+      initial [4/31] bvh_default  aggregate score 0.140
+      initial [5/31] quadtree_octree  aggregate score 0.013
+      initial [6/31] octree_kdtree  aggregate score 0.017
+      initial [7/31] urban_hybrid_quadtree_octree_kdtree  aggregate score 0.015
+      initial [8/31] generated_qt3l256  aggregate score 1.488
+      initial [9/31] generated_qt4l128_kd5l128  aggregate score 0.033
+      initial [10/31] generated_ot2l8192  aggregate score 2.835
+      initial [11/31] generated_kd4l64_qt4l16384  aggregate score 0.045
+      initial [12/31] generated_bvh1l256_ot5l512_kd4l8192ap=rr  aggregate score 0.026
+      initial [13/31] generated_bvh8l512_ot2l64  aggregate score 0.043
+      initial [14/31] generated_bvh3l16384  aggregate score 8.193
+      initial [15/31] generated_bvh7l128_ot5l1024  aggregate score 0.012
+      initial [16/31] generated_kd1l16384_bvh7l64_ot1l512  aggregate score 0.125
+      initial [17/31] generated_kd9l32ap=rr_bvh1l8192  aggregate score 0.482
+      initial [18/31] generated_ot1l4096_kd5l4096_bvh4l2048  aggregate score 0.079
+      initial [19/31] generated_bvh12l8192  aggregate score 0.139
+      initial [20/31] generated_qt4l32  aggregate score 0.444
+      initial [21/31] generated_ot11l16384_kd1l64  aggregate score 0.024
+      initial [22/31] generated_kd6l128_ot5l4096_qt1l32768  aggregate score 0.014
+      initial [23/31] generated_bvh8l16384_ot1l1024_bvh1l4096  aggregate score 0.128
+      initial [24/31] generated_ot8l512_bvh4l1024  aggregate score 0.012
+      initial [25/31] generated_kd1l8192ap=rr_qt11l512  aggregate score 0.009
+      initial [26/31] generated_bvh5l512_qt3l4096_bvh4l2048  aggregate score 0.043
+      initial [27/31] generated_qt3l128_bvh5l2048  aggregate score 0.126
+      initial [28/31] generated_kd3l256ap=rr  aggregate score 11.343
+      initial [29/31] generated_kd9l64_qt2l128  aggregate score 0.025
+      initial [30/31] generated_kd10l256ap=rr_ot1l16384_qt1l2048  aggregate score 0.056
+      initial [31/31] generated_ot10l4096  aggregate score 0.014
+      best so far: generated_kd1l8192ap=rr_qt11l512 score 0.009
+      generation 1 champion: generated_kd1l8192ap=rr_qt11l512 (score 0.009)
+      generation 1 children: 5 crossover + 5 mutation
+      generation 1 [1/12] generated_kd8l8192_ot4l64  aggregate score 0.012
+      generation 1 [2/12] generated_qt6l16384  aggregate score 0.046
+      generation 1 [3/12] xover_g1_i2_ot1l2048  aggregate score 11.842
+      generation 1 [4/12] xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32  aggregate score 0.009
+      generation 1 [5/12] xover_g1_i4_kd1l8192ap=rr_qt10l512_qt1l128  aggregate score 0.009
+      generation 1 [6/12] evolved_g1_i5_kd11l32  aggregate score 0.051
+      generation 1 [7/12] evolved_g1_i6_bvh5l16384  aggregate score 2.899
+      generation 1 [8/12] xover_g1_i7_kd1l8192ap=rr  aggregate score 23.704
+      generation 1 [9/12] evolved_g1_i8_ot3l8192  aggregate score 0.894
+      generation 1 [10/12] xover_g1_i9_kd1l8192ap=rr_qt10l512_bvh1l16384  aggregate score 0.009
+      generation 1 [11/12] evolved_g1_i10_ot8l32_kd1l16384  aggregate score 0.012
+      generation 1 [12/12] evolved_g1_i11_kd1l8192_qt11l512  aggregate score 0.009
+      best so far: xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32 score 0.009
+      generation 2 champion: xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32 (score 0.009)
+      generation 2 children: 2 crossover + 8 mutation
+      generation 2 [1/12] generated_ot3l32_bvh6l2048_kd2l512ap=rr  aggregate score 0.019
+      generation 2 [2/12] generated_qt8l256_ot2l16384_qt2l32  aggregate score 0.012
+      generation 2 [3/12] evolved_g2_i2_ot4l64_kd8l8192  aggregate score 0.018
+      generation 2 [4/12] evolved_g2_i3_ot4l64  aggregate score 0.287
+      generation 2 [5/12] evolved_g2_i4_kd1l8192ap=rr_kd1l32  aggregate score 13.198
+      generation 2 [6/12] xover_g2_i5_kd1l8192ap=rr_kd1l8192ap=rr  aggregate score 16.402
+      generation 2 [7/12] evolved_g2_i6_kd1l8192ap=rr_kd1l64  aggregate score 13.317
+      generation 2 [8/12] xover_g2_i7_kd1l8192ap=rr_ot4l64  aggregate score 0.152
+      generation 2 [9/12] evolved_g2_i8_kd1l4096_qt2l128  aggregate score 2.684
+      generation 2 [10/12] evolved_g2_i9_qt12l256  aggregate score 0.009
+      generation 2 [11/12] evolved_g2_i10_bvh1l2048_kd9l64_qt2l128  aggregate score 0.018
+      generation 2 [12/12] evolved_g2_i11_kd1l8192ap=rr_bvh1l8192  aggregate score 14.684
+      best so far: xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32 score 0.009
+  optimizer best aggregate: xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32 score 0.009
+  diversity audit: 27 distinct topology shapes across 55 evaluated candidates (ratio 0.491)
+    top topologies by evaluation count:
+      6x  ot
+      5x  kd:qt
+      5x  qt
+      4x  bvh
+      4x  kd
+      4x  ot:kd
+      3x  kd:kd
+      2x  bvh:ot
+    Pareto-front-0 distinct topologies: 23
+  evolved schema: results/eval_traces/v2/best_schemas/sanandreas_50m_ga\50M_converted_pipeline_replay_best_schema.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [50M_converted / pipeline_replay] rho=0.993 over 55 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [50M_converted / pipeline_replay] rho=0.618 over 55 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [50M_converted / pipeline_replay] front size 41
+      fastest: xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32  latency=0.0086ms build=104332.9593ms mem=807.01MB imbalance=2.46
+      knee:    evolved_g1_i8_ot3l8192  latency=0.8942ms build=13529.3806ms mem=762.96MB imbalance=3.58
+  metric winners:
+  [50M_converted / pipeline_replay]
+    best latency: xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32 (0.009 ms, score 0.009, objective latency)
+    best build: xover_g1_i7_kd1l8192ap=rr (3879.268 ms, score 23.704, objective latency)
+    best memory: xover_g1_i7_kd1l8192ap=rr (762.940 MB, score 23.704, objective latency)
+  wrote rows: 55
+  csv: results/eval_traces/v2/sanandreas_50m_ga.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (41 non-dominated rows)
+########## sanandreas_50m GA (opt) done in 9.1 min (exit 0) ##########
+
+########## sanandreas_50m GA+repair (opt)  [21:56:28] ##########
+  condition domain from '50M_converted': 17 point, 10 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 35
+  generated schemas: 24 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: not used inside evolutionary loop; measured scores drive selection
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  optimizer: evolutionary mutation search
+    generations: 2
+    population per generation: 12
+    elites: 6
+    mutation rate: 0.650
+    random immigration: 0.200
+    repair mutations: top-4, 2 candidate(s)/parent
+    parallel candidate dispatch: 8 CPU workers
+      initial [1/31] quadtree_default  aggregate score 0.011
+      initial [2/31] octree_default  aggregate score 0.013
+      initial [3/31] kdtree_default  aggregate score 0.044
+      initial [4/31] bvh_default  aggregate score 0.129
+      initial [5/31] quadtree_octree  aggregate score 0.012
+      initial [6/31] octree_kdtree  aggregate score 0.023
+      initial [7/31] urban_hybrid_quadtree_octree_kdtree  aggregate score 0.014
+      initial [8/31] generated_qt3l256  aggregate score 1.549
+      initial [9/31] generated_qt4l128_kd5l128  aggregate score 0.036
+      initial [10/31] generated_ot2l8192  aggregate score 3.000
+      initial [11/31] generated_kd4l64_qt4l16384  aggregate score 0.046
+      initial [12/31] generated_bvh1l256_ot5l512_kd4l8192ap=rr  aggregate score 0.019
+      initial [13/31] generated_bvh8l512_ot2l64  aggregate score 0.070
+      initial [14/31] generated_bvh3l16384  aggregate score 8.551
+      initial [15/31] generated_bvh7l128_ot5l1024  aggregate score 0.013
+      initial [16/31] generated_kd1l16384_bvh7l64_ot1l512  aggregate score 0.131
+      initial [17/31] generated_kd9l32ap=rr_bvh1l8192  aggregate score 0.549
+      initial [18/31] generated_ot1l4096_kd5l4096_bvh4l2048  aggregate score 0.099
+      initial [19/31] generated_bvh12l8192  aggregate score 0.155
+      initial [20/31] generated_qt4l32  aggregate score 0.593
+      initial [21/31] generated_ot11l16384_kd1l64  aggregate score 0.024
+      initial [22/31] generated_kd6l128_ot5l4096_qt1l32768  aggregate score 0.013
+      initial [23/31] generated_bvh8l16384_ot1l1024_bvh1l4096  aggregate score 0.151
+      initial [24/31] generated_ot8l512_bvh4l1024  aggregate score 0.013
+      initial [25/31] generated_kd1l8192ap=rr_qt11l512  aggregate score 0.009
+      initial [26/31] generated_bvh5l512_qt3l4096_bvh4l2048  aggregate score 0.039
+      initial [27/31] generated_qt3l128_bvh5l2048  aggregate score 0.137
+      initial [28/31] generated_kd3l256ap=rr  aggregate score 13.972
+      initial [29/31] generated_kd9l64_qt2l128  aggregate score 0.024
+      initial [30/31] generated_kd10l256ap=rr_ot1l16384_qt1l2048  aggregate score 0.057
+      initial [31/31] generated_ot10l4096  aggregate score 0.014
+      best so far: generated_kd1l8192ap=rr_qt11l512 score 0.009
+      generation 1 repairs accepted: 5
+      generation 1 champion: generated_kd1l8192ap=rr_qt11l512 (score 0.009)
+      generation 1 children: 2 crossover + 3 mutation
+      generation 1 [1/12] repair_g1_i0_balanced_leaf_probe_kd1l8192ap=rr_qt11l256  aggregate score 0.009
+      generation 1 [2/12] repair_g1_i1_high_leaf_occupancy_kd9l64_qt3l64  aggregate score 0.015
+      generation 1 [3/12] repair_g1_i2_tested_points_micro_index_kd9l64_qt2l128_bvh1l64cp128  aggregate score 0.025
+      generation 1 [4/12] repair_g1_i3_high_leaf_occupancy_ot3l4096  aggregate score 0.961
+      generation 1 [5/12] repair_g1_i4_tested_points_micro_index_ot2l8192_bvh3l4096cp8192  aggregate score 0.727
+      generation 1 [6/12] generated_kd3l512_qt2l16384_bvh6l16384  aggregate score 0.072
+      generation 1 [7/12] generated_bvh9l512_ot2l1024  aggregate score 0.044
+      generation 1 [8/12] xover_g1_i7_kd1l8192ap=rr_ot2l8192  aggregate score 2.108
+      generation 1 [9/12] evolved_g1_i8_ot3l8192  aggregate score 1.092
+      generation 1 [10/12] evolved_g1_i9_qt11l512  aggregate score 0.009
+      generation 1 [11/12] evolved_g1_i10_kd8l64ap=rr  aggregate score 1.229
+      generation 1 [12/12] xover_g1_i11_kd1l8192ap=rr  aggregate score 25.741
+      best so far: generated_kd1l8192ap=rr_qt11l512 score 0.009
+      generation 2 repairs accepted: 3
+      generation 2 champion: generated_kd1l8192ap=rr_qt11l512 (score 0.009)
+      generation 2 children: 3 crossover + 4 mutation
+      generation 2 [1/12] repair_g2_i0_high_leaf_occupancy_kd9l64_qt3l32  aggregate score 0.015
+      generation 2 [2/12] repair_g2_i1_high_leaf_occupancy_kd2l4096ap=rr  aggregate score 18.778
+      generation 2 [3/12] repair_g2_i2_tested_points_micro_index_kd1l8192ap=rr_bvh3l4096cp8192  aggregate score 6.030
+      generation 2 [4/12] generated_qt5l2048_bvh3l4096  aggregate score 0.082
+      generation 2 [5/12] generated_bvh2l32768_qt2l32768  aggregate score 1.644
+      generation 2 [6/12] evolved_g2_i5_kd9l64ap=rr_qt3l64  aggregate score 0.040
+      generation 2 [7/12] xover_g2_i6_kd1l8192ap=rr_qt10l512_kd1l8192ap=rr  aggregate score 0.010
+      generation 2 [8/12] xover_g2_i7_kd1l8192ap=rr_qt10l512_qt1l64  aggregate score 0.010
+      generation 2 [9/12] evolved_g2_i8_kd9l32_qt2l128_ot1l1024  aggregate score 0.014
+      generation 2 [10/12] evolved_g2_i9_kd1l8192ap=rr_qt1l4096  aggregate score 10.736
+      generation 2 [11/12] evolved_g2_i10_kd9l64ap=rr  aggregate score 1.048
+      generation 2 [12/12] xover_g2_i11_kd1l8192ap=rr_kd11l32  aggregate score 0.033
+      best so far: generated_kd1l8192ap=rr_qt11l512 score 0.009
+  optimizer best aggregate: generated_kd1l8192ap=rr_qt11l512 score 0.009
+  diversity audit: 26 distinct topology shapes across 55 evaluated candidates (ratio 0.473)
+    top topologies by evaluation count:
+      8x  kd:qt
+      6x  kd
+      5x  ot
+      4x  qt
+      3x  bvh
+      3x  bvh:ot
+      2x  kd:bvh
+      2x  kd:ot:qt
+    Pareto-front-0 distinct topologies: 22
+  evolved schema: results/eval_traces/v2/best_schemas/sanandreas_50m_repair\50M_converted_pipeline_replay_best_schema.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [50M_converted / pipeline_replay] rho=0.994 over 55 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [50M_converted / pipeline_replay] rho=0.579 over 55 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [50M_converted / pipeline_replay] front size 44
+      fastest: generated_kd1l8192ap=rr_qt11l512  latency=0.0091ms build=107954.0792ms mem=806.94MB imbalance=2.46
+      knee:    evolved_g1_i8_ot3l8192  latency=1.0922ms build=13560.5577ms mem=762.96MB imbalance=3.58
+  metric winners:
+  [50M_converted / pipeline_replay]
+    best latency: generated_kd1l8192ap=rr_qt11l512 (0.009 ms, score 0.009, objective latency)
+    best build: xover_g1_i11_kd1l8192ap=rr (4096.758 ms, score 25.741, objective latency)
+    best memory: xover_g1_i11_kd1l8192ap=rr (762.940 MB, score 25.741, objective latency)
+  wrote rows: 55
+  csv: results/eval_traces/v2/sanandreas_50m_repair.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (44 non-dominated rows)
+########## sanandreas_50m GA+repair (opt) done in 9.3 min (exit 0) ##########
+
+########## sanandreas_50m random (opt, budget-matched)  [22:05:43] ##########
+  random budget = 55 (from sanandreas_50m_ga.csv)
+  condition domain from '50M_converted': 17 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 55
+  generated schemas: 55 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: models\schema_selector.json
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: 50M_converted (50000000 points)
+    workload: pipeline_replay (1500 queries)
+      generated_kd8l1024: score 0.231, avg 0.231 ms, build 45391.056 ms
+      generated_ot4l32768_bvh3l16384: score 0.058, avg 0.058 ms, build 48013.912 ms
+      generated_qt3l512_ot2l2048_kd5l2048: score 0.015, avg 0.015 ms, build 65993.981 ms
+      generated_ot1l128_kd9l128ap=rr_bvh2l64: score 0.087, avg 0.087 ms, build 79877.912 ms
+      generated_qt8l256_ot2l128_bvh2l4096: score 0.009, avg 0.009 ms, build 93058.181 ms
+      generated_bvh1l256: score 21.935, avg 21.935 ms, build 2942.183 ms
+      generated_kd12l1024ap=rr: score 0.241, avg 0.241 ms, build 67427.229 ms
+      generated_ot8l32768_kd3l512ap=rr_ot1l512: score 0.040, avg 0.040 ms, build 36505.898 ms
+      generated_ot11l2048_kd1l256ap=rr: score 0.013, avg 0.013 ms, build 48432.942 ms
+      generated_bvh4l32_qt4l16384_bvh3l512: score 0.043, avg 0.043 ms, build 73987.198 ms
+      generated_kd1l64ap=rr_qt10l64_kd1l64: score 0.009, avg 0.009 ms, build 103855.964 ms
+      generated_ot6l512_qt3l8192: score 0.017, avg 0.017 ms, build 45664.411 ms
+      generated_ot2l16384_qt6l16384_bvh2l256: score 0.018, avg 0.018 ms, build 64023.007 ms
+      generated_bvh5l512: score 2.493, avg 2.493 ms, build 14303.379 ms
+      generated_ot7l1024_bvh4l2048_kd1l4096: score 0.012, avg 0.012 ms, build 47690.070 ms
+      generated_kd1l64ap=rr: score 22.119, avg 22.119 ms, build 3578.468 ms
+      generated_kd10l32768_ot2l128: score 0.018, avg 0.018 ms, build 75696.429 ms
+      generated_kd4l64_ot3l2048: score 0.097, avg 0.097 ms, build 36027.845 ms
+      generated_ot9l256_qt2l2048: score 0.011, avg 0.011 ms, build 50527.968 ms
+      generated_qt3l8192_ot4l128: score 0.016, avg 0.016 ms, build 54320.096 ms
+      generated_bvh4l64: score 4.531, avg 4.531 ms, build 11080.560 ms
+      generated_bvh7l2048: score 0.719, avg 0.719 ms, build 24862.259 ms
+      generated_ot9l512_qt2l2048_kd1l512: score 0.013, avg 0.013 ms, build 49865.438 ms
+      generated_ot2l4096_qt2l4096_kd3l2048: score 0.058, avg 0.058 ms, build 50318.761 ms
+      generated_ot10l8192_bvh1l16384: score 0.019, avg 0.019 ms, build 41644.001 ms
+      generated_bvh3l32: score 7.692, avg 7.692 ms, build 8250.890 ms
+      generated_kd7l1024ap=rr_qt4l32_kd1l256: score 0.020, avg 0.020 ms, build 78308.291 ms
+      generated_qt7l32768_kd1l2048ap=rr: score 0.035, avg 0.035 ms, build 60459.408 ms
+      generated_kd11l8192ap=rr: score 0.276, avg 0.276 ms, build 54141.036 ms
+      generated_ot8l8192_bvh3l4096_kd1l4096ap=rr: score 0.017, avg 0.017 ms, build 41856.636 ms
+      generated_qt2l64_bvh4l8192: score 0.419, avg 0.419 ms, build 36188.429 ms
+      generated_bvh1l64: score 21.893, avg 21.893 ms, build 2934.931 ms
+      generated_ot7l512_qt1l128: score 0.011, avg 0.011 ms, build 52376.815 ms
+      generated_bvh8l32768_ot3l256: score 0.017, avg 0.017 ms, build 60410.095 ms
+      generated_ot2l8192_kd7l2048ap=rr: score 0.179, avg 0.179 ms, build 57037.027 ms
+      generated_qt1l256_kd6l32ap=rr_bvh3l4096: score 0.190, avg 0.190 ms, build 58757.438 ms
+      generated_qt2l1024_ot5l64: score 0.016, avg 0.016 ms, build 50729.937 ms
+      generated_bvh7l256_qt2l32768_ot2l32: score 0.013, avg 0.013 ms, build 66124.784 ms
+      generated_bvh10l2048_kd2l256ap=rr: score 0.110, avg 0.110 ms, build 70661.815 ms
+      generated_qt11l8192_ot1l128: score 0.015, avg 0.015 ms, build 71811.180 ms
+      generated_kd6l1024ap=rr: score 2.663, avg 2.663 ms, build 20995.498 ms
+      generated_qt2l256_bvh4l64: score 0.403, avg 0.403 ms, build 35585.208 ms
+      generated_kd9l32ap=rr: score 0.797, avg 0.797 ms, build 37879.031 ms
+      generated_qt3l32: score 1.396, avg 1.396 ms, build 21412.950 ms
+      generated_bvh1l512: score 22.120, avg 22.120 ms, build 2951.003 ms
+      generated_kd2l512: score 10.852, avg 10.852 ms, build 7537.545 ms
+      generated_ot8l512_bvh1l512_ot3l16384: score 0.013, avg 0.013 ms, build 47398.741 ms
+      generated_kd4l32: score 2.774, avg 2.774 ms, build 15432.521 ms
+      generated_kd1l16384: score 21.348, avg 21.348 ms, build 3951.959 ms
+      generated_kd1l256ap=rr_qt7l64: score 0.014, avg 0.014 ms, build 73550.835 ms
+      generated_ot10l8192_kd1l32ap=rr_bvh1l4096: score 0.017, avg 0.017 ms, build 39373.898 ms
+      generated_ot3l1024: score 0.794, avg 0.794 ms, build 11755.538 ms
+      generated_bvh8l16384: score 0.412, avg 0.412 ms, build 32350.735 ms
+      generated_kd4l256_ot8l32: score 0.012, avg 0.012 ms, build 60937.462 ms
+      generated_kd10l128ap=rr: score 0.474, avg 0.474 ms, build 44785.583 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [50M_converted / pipeline_replay] rho=0.997 over 55 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [50M_converted / pipeline_replay] rho=0.538 over 55 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [50M_converted / pipeline_replay] front size 41
+      fastest: generated_qt8l256_ot2l128_bvh2l4096  latency=0.0085ms build=93058.1812ms mem=852.34MB imbalance=4.53
+      knee:    generated_kd4l32  latency=2.7735ms build=15432.5213ms mem=762.94MB imbalance=1.00
+  metric winners:
+  [50M_converted / pipeline_replay]
+    best latency: generated_qt8l256_ot2l128_bvh2l4096 (0.009 ms, score 0.009, objective latency)
+    best build: generated_bvh1l64 (2934.931 ms, score 21.893, objective latency)
+    best memory: generated_bvh1l256 (762.940 MB, score 21.935, objective latency)
+  wrote rows: 55
+  csv: results/eval_traces/v2/sanandreas_50m_random.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (41 non-dominated rows)
+########## sanandreas_50m random (opt, budget-matched) done in 44.8 min (exit 0) ##########
+
+########## sanandreas_50m tuned singles (opt)  [22:50:31] ##########
+  condition domain from '50M_converted': 17 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 107
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: 50M_converted (50000000 points)
+    workload: pipeline_replay (1500 queries)
+      benchmarking 32 / 107 schemas after surrogate pruning
+      tuned_bvh12l32: score 0.114, avg 0.114 ms, build 68449.191 ms
+      tuned_lbvh12l32: score 0.113, avg 0.113 ms, build 73179.409 ms
+      tuned_kot12l32: score 0.017, avg 0.017 ms, build 79215.580 ms
+      tuned_bih12l32: score 0.031, avg 0.031 ms, build 46432.871 ms
+      tuned_kd12l32: score 0.032, avg 0.032 ms, build 68501.576 ms
+      tuned_ot10l32: score 0.015, avg 0.015 ms, build 53154.711 ms
+      tuned_bvh12l256: score 0.113, avg 0.113 ms, build 68763.038 ms
+      tuned_ot10l64: score 0.013, avg 0.013 ms, build 52323.806 ms
+      tuned_qt8l32: score 0.011, avg 0.011 ms, build 78934.494 ms
+      tuned_ot12l256: score 0.011, avg 0.011 ms, build 48976.635 ms
+      tuned_kd10l32apcl: score 0.206, avg 0.206 ms, build 51927.963 ms
+      tuned_kd10l32aprr: score 0.484, avg 0.484 ms, build 45122.626 ms
+      tuned_bvh8l32: score 0.407, avg 0.407 ms, build 32145.510 ms
+      tuned_lbvh8l32: score 0.401, avg 0.401 ms, build 35672.794 ms
+      tuned_bih10l64apcl: score 0.213, avg 0.213 ms, build 33965.206 ms
+      tuned_kot8l32: score 0.012, avg 0.012 ms, build 63808.899 ms
+      tuned_ot8l32: score 0.012, avg 0.012 ms, build 45808.008 ms
+      tuned_qt6l32apyz: score 0.091, avg 0.091 ms, build 53305.092 ms
+      tuned_qt8l256apis: score 0.024, avg 0.024 ms, build 116658.517 ms
+      tuned_lbvh12l512: score 0.112, avg 0.112 ms, build 73287.804 ms
+      tuned_ot8l128: score 0.012, avg 0.012 ms, build 45395.600 ms
+      tuned_kd8l32aprr: score 1.079, avg 1.079 ms, build 31414.493 ms
+      tuned_kd8l64: score 0.237, avg 0.237 ms, build 44262.132 ms
+      tuned_lbvh8l256: score 0.400, avg 0.400 ms, build 35768.362 ms
+      tuned_hg6l64: score 0.018, avg 0.018 ms, build 52216.306 ms
+      tuned_kot6l64: score 0.029, avg 0.029 ms, build 50301.423 ms
+      tuned_qt4l32apyz: score 0.634, avg 0.634 ms, build 29549.421 ms
+      tuned_bvh10l512: score 0.207, avg 0.207 ms, build 51390.364 ms
+      tuned_hg6l128: score 0.015, avg 0.015 ms, build 49642.780 ms
+      tuned_kd6l64aprr: score 2.748, avg 2.748 ms, build 21470.220 ms
+      tuned_hg4l32: score 0.014, avg 0.014 ms, build 41923.551 ms
+      tuned_bih6l128: score 0.738, avg 0.738 ms, build 19736.126 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [50M_converted / pipeline_replay] rho=0.959 over 32 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [50M_converted / pipeline_replay] rho=0.918 over 32 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [50M_converted / pipeline_replay] front size 21
+      fastest: tuned_qt8l32  latency=0.0107ms build=78934.4940ms mem=768.55MB imbalance=2.41
+      knee:    tuned_bih10l64apcl  latency=0.2125ms build=33965.2058ms mem=763.03MB imbalance=1.90
+  metric winners:
+  [50M_converted / pipeline_replay]
+    best latency: tuned_qt8l32 (0.011 ms, score 0.011, objective latency)
+    best build: tuned_bih6l128 (19736.126 ms, score 0.738, objective latency)
+    best memory: tuned_kd6l64aprr (762.948 MB, score 2.748, objective latency)
+  wrote rows: 32
+  csv: results/eval_traces/v2/sanandreas_50m_singles.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (21 non-dominated rows)
+########## sanandreas_50m tuned singles (opt) done in 28.1 min (exit 0) ##########
+
+########## sanandreas_50m TEST re-measure (headline source)  [23:18:34] ##########
+  condition domain from '50M_converted': 17 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 15
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: 50M_converted (50000000 points)
+    workload: pipeline_replay (1500 queries)
+      xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32: score 0.010, avg 0.010 ms, build 93197.639 ms
+      generated_kd1l8192ap=rr_qt11l512: score 0.009, avg 0.009 ms, build 94581.207 ms
+      generated_qt8l256_ot2l128_bvh2l4096: score 0.009, avg 0.009 ms, build 89205.709 ms
+      tuned_qt8l32: score 0.011, avg 0.011 ms, build 80508.368 ms
+      quadtree_default: score 0.011, avg 0.011 ms, build 81935.570 ms
+      octree_default: score 0.012, avg 0.012 ms, build 50188.905 ms
+      kdtree_default: score 0.032, avg 0.032 ms, build 74989.610 ms
+      bvh_default: score 0.110, avg 0.110 ms, build 71598.716 ms
+      bih_default: score 0.032, avg 0.032 ms, build 47840.041 ms
+      hgrid_default: score 0.013, avg 0.013 ms, build 39509.084 ms
+      lbvh_default: score 0.112, avg 0.112 ms, build 68877.543 ms
+      regular_grid_default: score 4.618, avg 4.618 ms, build 11232.535 ms
+      karras_octree_default: score 0.011, avg 0.011 ms, build 63284.604 ms
+      octree_kdtree: score 0.014, avg 0.014 ms, build 50360.829 ms
+      quadtree_octree: score 0.011, avg 0.011 ms, build 58303.094 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [50M_converted / pipeline_replay] rho=0.943 over 15 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [50M_converted / pipeline_replay] rho=0.524 over 15 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [50M_converted / pipeline_replay] front size 12
+      fastest: generated_qt8l256_ot2l128_bvh2l4096  latency=0.0087ms build=89205.7088ms mem=852.34MB imbalance=4.53
+      knee:    bih_default  latency=0.0318ms build=47840.0405ms mem=764.06MB imbalance=1.01
+  metric winners:
+  [50M_converted / pipeline_replay]
+    best latency: generated_qt8l256_ot2l128_bvh2l4096 (0.009 ms, score 0.009, objective latency)
+    best build: regular_grid_default (11232.535 ms, score 4.618, objective latency)
+    best memory: regular_grid_default (762.942 MB, score 4.618, objective latency)
+  wrote rows: 15
+  csv: results/eval_traces/v2/sanandreas_50m_test.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (12 non-dominated rows)
+########## sanandreas_50m TEST re-measure (headline source) done in 16.9 min (exit 0) ##########
+
+########## alhambra_100m GA (opt)  [23:35:30] ##########
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 27
+  generated schemas: 16 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: not used inside evolutionary loop; measured scores drive selection
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  optimizer: evolutionary mutation search
+    generations: 2
+    population per generation: 10
+    elites: 6
+    mutation rate: 0.650
+    random immigration: 0.200
+      initial [1/23] quadtree_default
+        aggregate score 0.054 [103.855 s]
+        WARNING: candidate 'quadtree_default' took 103.855 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [2/23] octree_default
+        aggregate score 0.015 [53.994 s]
+        WARNING: candidate 'octree_default' took 53.994 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [3/23] kdtree_default
+        aggregate score 0.058 [81.200 s]
+        WARNING: candidate 'kdtree_default' took 81.200 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [4/23] bvh_default
+        aggregate score 0.170 [62.496 s]
+        WARNING: candidate 'bvh_default' took 62.496 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [5/23] quadtree_octree
+        aggregate score 0.024 [78.636 s]
+        WARNING: candidate 'quadtree_octree' took 78.636 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [6/23] octree_kdtree
+        aggregate score 0.020 [67.205 s]
+        WARNING: candidate 'octree_kdtree' took 67.205 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [7/23] urban_hybrid_quadtree_octree_kdtree
+        aggregate score 0.020 [85.612 s]
+        WARNING: candidate 'urban_hybrid_quadtree_octree_kdtree' took 85.612 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [8/23] generated_qt3l256
+        aggregate score 4.462 [43.465 s]
+        WARNING: candidate 'generated_qt3l256' took 43.465 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [9/23] generated_qt4l128_kd5l128
+        aggregate score 0.066 [85.484 s]
+        WARNING: candidate 'generated_qt4l128_kd5l128' took 85.484 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [10/23] generated_ot2l8192
+        aggregate score 4.828 [18.967 s]
+      initial [11/23] generated_kd4l64_qt4l16384
+        aggregate score 0.138 [78.621 s]
+        WARNING: candidate 'generated_kd4l64_qt4l16384' took 78.621 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [12/23] generated_bvh1l256_ot5l512_kd4l8192ap=rr
+        aggregate score 0.024 [51.476 s]
+        WARNING: candidate 'generated_bvh1l256_ot5l512_kd4l8192ap=rr' took 51.476 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [13/23] generated_bvh8l512_ot2l64
+        aggregate score 0.078 [55.436 s]
+        WARNING: candidate 'generated_bvh8l512_ot2l64' took 55.436 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [14/23] generated_bvh3l16384
+        aggregate score 15.773 [31.752 s]
+        WARNING: candidate 'generated_bvh3l16384' took 31.752 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [15/23] generated_bvh7l128_ot5l1024
+        aggregate score 0.013 [69.493 s]
+        WARNING: candidate 'generated_bvh7l128_ot5l1024' took 69.493 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [16/23] generated_kd1l16384_bvh7l64_ot1l512
+        aggregate score 0.291 [49.650 s]
+        WARNING: candidate 'generated_kd1l16384_bvh7l64_ot1l512' took 49.650 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [17/23] generated_kd9l32ap=rr_bvh1l8192
+        aggregate score 0.623 [63.900 s]
+        WARNING: candidate 'generated_kd9l32ap=rr_bvh1l8192' took 63.900 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [18/23] generated_ot1l4096_kd5l4096_bvh4l2048
+        aggregate score 0.132 [60.706 s]
+        WARNING: candidate 'generated_ot1l4096_kd5l4096_bvh4l2048' took 60.706 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [19/23] generated_bvh12l8192
+        aggregate score 0.166 [61.496 s]
+        WARNING: candidate 'generated_bvh12l8192' took 61.496 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [20/23] generated_qt4l32
+        aggregate score 1.352 [52.595 s]
+        WARNING: candidate 'generated_qt4l32' took 52.595 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [21/23] generated_ot11l16384_kd1l64
+        aggregate score 0.028 [38.747 s]
+        WARNING: candidate 'generated_ot11l16384_kd1l64' took 38.747 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [22/23] generated_kd6l128_ot5l4096_qt1l32768
+        aggregate score 0.017 [71.011 s]
+        WARNING: candidate 'generated_kd6l128_ot5l4096_qt1l32768' took 71.011 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [23/23] generated_bvh8l16384_ot1l1024_bvh1l4096
+        aggregate score 0.175 [54.088 s]
+        WARNING: candidate 'generated_bvh8l16384_ot1l1024_bvh1l4096' took 54.088 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      best so far: generated_bvh7l128_ot5l1024 score 0.013
+      generation 1 champion: generated_bvh7l128_ot5l1024 (score 0.013)
+      generation 1 children: 5 crossover + 3 mutation
+      generation 1 [1/10] generated_kd8l8192_ot4l64
+        aggregate score 0.015 [79.347 s]
+        WARNING: candidate 'generated_kd8l8192_ot4l64' took 79.347 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [2/10] generated_qt6l16384
+        aggregate score 0.197 [77.394 s]
+        WARNING: candidate 'generated_qt6l16384' took 77.394 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [3/10] xover_g1_i2_ot1l2048
+        aggregate score 17.322 [24.566 s]
+      generation 1 [4/10] xover_g1_i3_bvh7l128_ot4l1024_kd1l32
+        aggregate score 0.017 [71.123 s]
+        WARNING: candidate 'xover_g1_i3_bvh7l128_ot4l1024_kd1l32' took 71.123 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [5/10] xover_g1_i4_bvh7l128_ot4l1024_ot1l32
+        aggregate score 0.014 [71.224 s]
+        WARNING: candidate 'xover_g1_i4_bvh7l128_ot4l1024_ot1l32' took 71.224 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [6/10] evolved_g1_i5_kd11l32
+        aggregate score 0.086 [74.950 s]
+        WARNING: candidate 'evolved_g1_i5_kd11l32' took 74.950 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [7/10] evolved_g1_i6_bvh5l16384
+        aggregate score 4.550 [30.831 s]
+        WARNING: candidate 'evolved_g1_i6_bvh5l16384' took 30.831 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [8/10] xover_g1_i7_bvh7l128
+        aggregate score 1.336 [37.814 s]
+        WARNING: candidate 'xover_g1_i7_bvh7l128' took 37.814 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [9/10] evolved_g1_i8_ot3l8192
+        aggregate score 1.116 [21.760 s]
+      generation 1 [10/10] xover_g1_i9_bvh7l128_ot4l1024_bvh1l16384
+        aggregate score 0.019 [62.703 s]
+        WARNING: candidate 'xover_g1_i9_bvh7l128_ot4l1024_bvh1l16384' took 62.703 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      best so far: generated_bvh7l128_ot5l1024 score 0.013
+      generation 2 champion: generated_bvh7l128_ot5l1024 (score 0.013)
+      generation 2 children: 4 crossover + 4 mutation
+      generation 2 [1/10] generated_kd7l512ap=rr_bvh2l2048_ot2l32
+        aggregate score 0.062 [69.052 s]
+        WARNING: candidate 'generated_kd7l512ap=rr_bvh2l2048_ot2l32' took 69.052 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [2/10] generated_kd6l32768ap=rr_bvh1l2048
+        aggregate score 2.749 [46.798 s]
+        WARNING: candidate 'generated_kd6l32768ap=rr_bvh1l2048' took 46.798 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [3/10] xover_g2_i2_bvh7l128_ot4l1024_ot1l2048
+        aggregate score 0.014 [68.230 s]
+        WARNING: candidate 'xover_g2_i2_bvh7l128_ot4l1024_ot1l2048' took 68.230 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [4/10] evolved_g2_i3_kd10l32
+        aggregate score 0.147 [67.789 s]
+        WARNING: candidate 'evolved_g2_i3_kd10l32' took 67.789 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [5/10] xover_g2_i4_bvh7l128_ot4l1024_ot1l64
+        aggregate score 0.013 [69.684 s]
+        WARNING: candidate 'xover_g2_i4_bvh7l128_ot4l1024_ot1l64' took 69.684 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [6/10] evolved_g2_i5_ot1l2048_kd1l32ap=rr
+        aggregate score 14.242 [27.906 s]
+      generation 2 [7/10] xover_g2_i6_bvh7l128_kd5l32
+        aggregate score 0.088 [70.238 s]
+        WARNING: candidate 'xover_g2_i6_bvh7l128_kd5l32' took 70.238 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [8/10] evolved_g2_i7_kd11l64
+        aggregate score 0.096 [74.664 s]
+        WARNING: candidate 'evolved_g2_i7_kd11l64' took 74.664 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [9/10] xover_g2_i8_bvh7l128_ot5l32
+        aggregate score 0.014 [69.365 s]
+        WARNING: candidate 'xover_g2_i8_bvh7l128_ot5l32' took 69.365 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [10/10] evolved_g2_i9_ot5l1024
+        aggregate score 0.069 [33.175 s]
+        WARNING: candidate 'evolved_g2_i9_ot5l1024' took 33.175 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      best so far: generated_bvh7l128_ot5l1024 score 0.013
+  optimizer best aggregate: generated_bvh7l128_ot5l1024 score 0.013
+  diversity audit: 19 distinct topology shapes across 43 evaluated candidates (ratio 0.442)
+    top topologies by evaluation count:
+      5x  bvh
+      5x  ot
+      4x  kd
+      4x  qt
+      3x  bvh:ot
+      3x  bvh:ot:ot
+      3x  ot:kd
+      2x  bvh:ot:bvh
+    Pareto-front-0 distinct topologies: 15
+  evolved schema: results/eval_traces/v2/best_schemas/alhambra_100m_ga\Alhambra_100M_pipeline_replay_best_schema.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] rho=0.994 over 43 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] rho=0.508 over 43 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 32
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0129ms build=69342.3242ms mem=1558.01MB imbalance=8.98
+      knee:    evolved_g1_i8_ot3l8192  latency=1.1155ms build=20600.3929ms mem=1525.91MB imbalance=4.66
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.013 ms, score 0.013, objective latency)
+    best build: xover_g1_i2_ot1l2048 (7193.385 ms, score 17.322, objective latency)
+    best memory: xover_g1_i2_ot1l2048 (1525.877 MB, score 17.322, objective latency)
+  wrote rows: 43
+  csv: results/eval_traces/v2/alhambra_100m_ga.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (32 non-dominated rows)
+########## alhambra_100m GA (opt) done in 42.9 min (exit 0) ##########
+
+########## alhambra_100m GA+repair (opt)  [00:18:26] ##########
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 27
+  generated schemas: 16 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: not used inside evolutionary loop; measured scores drive selection
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  optimizer: evolutionary mutation search
+    generations: 2
+    population per generation: 10
+    elites: 6
+    mutation rate: 0.650
+    random immigration: 0.200
+    repair mutations: top-4, 2 candidate(s)/parent
+      initial [1/23] quadtree_default
+        aggregate score 0.057 [101.618 s]
+        WARNING: candidate 'quadtree_default' took 101.618 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [2/23] octree_default
+        aggregate score 0.015 [53.288 s]
+        WARNING: candidate 'octree_default' took 53.288 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [3/23] kdtree_default
+        aggregate score 0.055 [79.984 s]
+        WARNING: candidate 'kdtree_default' took 79.984 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [4/23] bvh_default
+        aggregate score 0.172 [61.106 s]
+        WARNING: candidate 'bvh_default' took 61.106 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [5/23] quadtree_octree
+        aggregate score 0.022 [76.911 s]
+        WARNING: candidate 'quadtree_octree' took 76.911 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [6/23] octree_kdtree
+        aggregate score 0.020 [66.474 s]
+        WARNING: candidate 'octree_kdtree' took 66.474 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [7/23] urban_hybrid_quadtree_octree_kdtree
+        aggregate score 0.020 [84.709 s]
+        WARNING: candidate 'urban_hybrid_quadtree_octree_kdtree' took 84.709 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [8/23] generated_qt3l256
+        aggregate score 4.393 [42.532 s]
+        WARNING: candidate 'generated_qt3l256' took 42.532 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [9/23] generated_qt4l128_kd5l128
+        aggregate score 0.065 [83.926 s]
+        WARNING: candidate 'generated_qt4l128_kd5l128' took 83.926 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [10/23] generated_ot2l8192
+        aggregate score 4.805 [18.489 s]
+      initial [11/23] generated_kd4l64_qt4l16384
+        aggregate score 0.138 [76.914 s]
+        WARNING: candidate 'generated_kd4l64_qt4l16384' took 76.914 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [12/23] generated_bvh1l256_ot5l512_kd4l8192ap=rr
+        aggregate score 0.025 [50.085 s]
+        WARNING: candidate 'generated_bvh1l256_ot5l512_kd4l8192ap=rr' took 50.085 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [13/23] generated_bvh8l512_ot2l64
+        aggregate score 0.080 [54.161 s]
+        WARNING: candidate 'generated_bvh8l512_ot2l64' took 54.161 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [14/23] generated_bvh3l16384
+        aggregate score 15.828 [31.677 s]
+        WARNING: candidate 'generated_bvh3l16384' took 31.677 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [15/23] generated_bvh7l128_ot5l1024
+        aggregate score 0.013 [68.506 s]
+        WARNING: candidate 'generated_bvh7l128_ot5l1024' took 68.506 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [16/23] generated_kd1l16384_bvh7l64_ot1l512
+        aggregate score 0.290 [49.234 s]
+        WARNING: candidate 'generated_kd1l16384_bvh7l64_ot1l512' took 49.234 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [17/23] generated_kd9l32ap=rr_bvh1l8192
+        aggregate score 0.610 [62.748 s]
+        WARNING: candidate 'generated_kd9l32ap=rr_bvh1l8192' took 62.748 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [18/23] generated_ot1l4096_kd5l4096_bvh4l2048
+        aggregate score 0.127 [60.042 s]
+        WARNING: candidate 'generated_ot1l4096_kd5l4096_bvh4l2048' took 60.042 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [19/23] generated_bvh12l8192
+        aggregate score 0.168 [61.267 s]
+        WARNING: candidate 'generated_bvh12l8192' took 61.267 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [20/23] generated_qt4l32
+        aggregate score 1.380 [52.106 s]
+        WARNING: candidate 'generated_qt4l32' took 52.106 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [21/23] generated_ot11l16384_kd1l64
+        aggregate score 0.030 [38.952 s]
+        WARNING: candidate 'generated_ot11l16384_kd1l64' took 38.952 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [22/23] generated_kd6l128_ot5l4096_qt1l32768
+        aggregate score 0.017 [69.211 s]
+        WARNING: candidate 'generated_kd6l128_ot5l4096_qt1l32768' took 69.211 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      initial [23/23] generated_bvh8l16384_ot1l1024_bvh1l4096
+        aggregate score 0.169 [52.593 s]
+        WARNING: candidate 'generated_bvh8l16384_ot1l1024_bvh1l4096' took 52.593 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      best so far: generated_bvh7l128_ot5l1024 score 0.013
+      generation 1 repairs accepted: 3
+      generation 1 champion: generated_bvh7l128_ot5l1024 (score 0.013)
+      generation 1 children: 1 crossover + 4 mutation
+      generation 1 [1/10] repair_g1_i0_high_leaf_occupancy_bvh7l128_ot5l512
+        aggregate score 0.013 [68.696 s]
+        WARNING: candidate 'repair_g1_i0_high_leaf_occupancy_bvh7l128_ot5l512' took 68.696 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [2/10] repair_g1_i1_high_leaf_occupancy_ot9l32
+        aggregate score 0.018 [60.791 s]
+        WARNING: candidate 'repair_g1_i1_high_leaf_occupancy_ot9l32' took 60.791 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [3/10] repair_g1_i2_high_leaf_occupancy_qt3l128_ot3l64_kd5l32
+        aggregate score 0.017 [91.793 s]
+        WARNING: candidate 'repair_g1_i2_high_leaf_occupancy_qt3l128_ot3l64_kd5l32' took 91.793 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [4/10] generated_kd3l512_qt2l16384_bvh6l16384
+        aggregate score 0.117 [75.859 s]
+        WARNING: candidate 'generated_kd3l512_qt2l16384_bvh6l16384' took 75.859 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [5/10] generated_bvh9l512_ot2l1024
+        aggregate score 0.051 [59.114 s]
+        WARNING: candidate 'generated_bvh9l512_ot2l1024' took 59.114 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [6/10] evolved_g1_i5_kd7l128ap=rr_ot5l512
+        aggregate score 0.015 [77.450 s]
+        WARNING: candidate 'evolved_g1_i5_kd7l128ap=rr_ot5l512' took 77.450 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [7/10] xover_g1_i6_bvh7l128_kd5l32
+        aggregate score 0.084 [69.370 s]
+        WARNING: candidate 'xover_g1_i6_bvh7l128_kd5l32' took 69.370 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [8/10] evolved_g1_i7_kd11l32ap=rr
+        aggregate score 0.403 [70.315 s]
+        WARNING: candidate 'evolved_g1_i7_kd11l32ap=rr' took 70.315 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [9/10] evolved_g1_i8_ot5l1024
+        aggregate score 0.066 [33.415 s]
+        WARNING: candidate 'evolved_g1_i8_ot5l1024' took 33.415 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 1 [10/10] evolved_g1_i9_kd3l32768ap=rr
+        aggregate score 17.205 [36.866 s]
+        WARNING: candidate 'evolved_g1_i9_kd3l32768ap=rr' took 36.866 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      best so far: generated_bvh7l128_ot5l1024 score 0.013
+      generation 2 repairs accepted: 1
+      generation 2 champion: generated_bvh7l128_ot5l1024 (score 0.013)
+      generation 2 children: 5 crossover + 2 mutation
+      generation 2 [1/10] repair_g2_i0_high_leaf_occupancy_qt3l128_ot3l64_kd6l32
+        aggregate score 0.017 [98.607 s]
+        WARNING: candidate 'repair_g2_i0_high_leaf_occupancy_qt3l128_ot3l64_kd6l32' took 98.607 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [2/10] generated_bvh10l32_ot1l128_qt1l512
+        aggregate score 0.052 [69.492 s]
+        WARNING: candidate 'generated_bvh10l32_ot1l128_qt1l512' took 69.492 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [3/10] generated_bvh7l2048
+        aggregate score 1.324 [36.971 s]
+        WARNING: candidate 'generated_bvh7l2048' took 36.971 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [4/10] xover_g2_i3_bvh7l128_ot4l1024_ot1l8192
+        aggregate score 0.017 [61.660 s]
+        WARNING: candidate 'xover_g2_i3_bvh7l128_ot4l1024_ot1l8192' took 61.660 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [5/10] xover_g2_i4_bvh7l128_ot4l1024_kd1l32
+        aggregate score 0.016 [68.309 s]
+        WARNING: candidate 'xover_g2_i4_bvh7l128_ot4l1024_kd1l32' took 68.309 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [6/10] xover_g2_i5_bvh7l128_ot4l1024_ot1l32
+        aggregate score 0.013 [68.058 s]
+        WARNING: candidate 'xover_g2_i5_bvh7l128_ot4l1024_ot1l32' took 68.058 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [7/10] evolved_g2_i6_bvh3l8192_ot1l1024_qt1l8192
+        aggregate score 1.520 [36.091 s]
+        WARNING: candidate 'evolved_g2_i6_bvh3l8192_ot1l1024_qt1l8192' took 36.091 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [8/10] xover_g2_i7_bvh7l128_ot3l64_kd2l32
+        aggregate score 0.024 [68.267 s]
+        WARNING: candidate 'xover_g2_i7_bvh7l128_ot3l64_kd2l32' took 68.267 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [9/10] xover_g2_i8_bvh7l128_ot2l8192
+        aggregate score 0.099 [48.511 s]
+        WARNING: candidate 'xover_g2_i8_bvh7l128_ot2l8192' took 48.511 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      generation 2 [10/10] evolved_g2_i9_ot5l2048
+        aggregate score 0.063 [33.010 s]
+        WARNING: candidate 'evolved_g2_i9_ot5l2048' took 33.010 s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.
+      best so far: generated_bvh7l128_ot5l1024 score 0.013
+  optimizer best aggregate: generated_bvh7l128_ot5l1024 score 0.013
+  diversity audit: 21 distinct topology shapes across 43 evaluated candidates (ratio 0.488)
+    top topologies by evaluation count:
+      5x  bvh:ot
+      5x  ot
+      4x  bvh
+      3x  bvh:ot:kd
+      3x  kd
+      3x  qt
+      3x  qt:ot:kd
+      2x  bvh:ot:ot
+    Pareto-front-0 distinct topologies: 15
+  evolved schema: results/eval_traces/v2/best_schemas/alhambra_100m_repair\Alhambra_100M_pipeline_replay_best_schema.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] rho=0.986 over 43 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] rho=0.350 over 43 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 24
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0132ms build=68370.2546ms mem=1558.01MB imbalance=8.98
+      knee:    generated_ot2l8192  latency=4.8051ms build=13637.9883ms mem=1525.88MB imbalance=4.02
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.013 ms, score 0.013, objective latency)
+    best build: generated_ot2l8192 (13637.988 ms, score 4.805, objective latency)
+    best memory: generated_bvh3l16384 (1525.877 MB, score 15.828, objective latency)
+  wrote rows: 43
+  csv: results/eval_traces/v2/alhambra_100m_repair.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (24 non-dominated rows)
+########## alhambra_100m GA+repair (opt) done in 43.8 min (exit 0) ##########
+
+########## alhambra_100m random (opt, budget-matched)  [01:02:19] ##########
+  random budget = 43 (from alhambra_100m_ga.csv)
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 43
+  generated schemas: 43 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: models\schema_selector.json
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: Alhambra_100M (99999776 points)
+    workload: pipeline_replay (1000 queries)
+      generated_kd8l1024: score 0.451, avg 0.451 ms, build 53226.287 ms
+      generated_ot4l32768_bvh3l16384: score 0.056, avg 0.056 ms, build 40598.720 ms
+      generated_qt3l512_ot2l2048_kd5l2048: score 0.021, avg 0.021 ms, build 83190.567 ms
+      generated_ot1l128_kd9l128ap=rr_bvh2l64: score 0.090, avg 0.090 ms, build 73137.392 ms
+      generated_qt8l256_ot2l128_bvh2l4096: score 0.034, avg 0.034 ms, build 114154.410 ms
+      generated_bvh1l256: score 43.115, avg 43.115 ms, build 5601.661 ms
+      generated_kd12l1024ap=rr: score 0.242, avg 0.242 ms, build 76711.875 ms
+      generated_ot8l32768_kd3l512ap=rr_ot1l512: score 0.040, avg 0.040 ms, build 38198.514 ms
+      generated_ot11l2048_kd1l256ap=rr: score 0.015, avg 0.015 ms, build 47935.009 ms
+      generated_bvh4l32_qt4l16384_bvh3l512: score 0.060, avg 0.060 ms, build 85636.760 ms
+      generated_kd1l64ap=rr_qt10l64_kd1l64: score 0.047, avg 0.047 ms, build 140509.485 ms
+      generated_ot6l512_qt3l8192: score 0.023, avg 0.023 ms, build 43711.310 ms
+      generated_ot2l16384_qt6l16384_bvh2l256: score 0.041, avg 0.041 ms, build 78928.557 ms
+      generated_bvh5l512: score 4.429, avg 4.429 ms, build 25301.739 ms
+      generated_ot7l1024_bvh4l2048_kd1l4096: score 0.015, avg 0.015 ms, build 47173.116 ms
+      generated_kd1l64ap=rr: score 43.219, avg 43.219 ms, build 6888.939 ms
+      generated_kd10l32768_ot2l128: score 0.024, avg 0.024 ms, build 79131.778 ms
+      generated_kd4l64_ot3l2048: score 0.118, avg 0.118 ms, build 46179.607 ms
+      generated_ot9l256_qt2l2048: score 0.016, avg 0.016 ms, build 55324.562 ms
+      generated_qt3l8192_ot4l128: score 0.031, avg 0.031 ms, build 63978.950 ms
+      generated_bvh4l64: score 8.293, avg 8.293 ms, build 20392.694 ms
+      generated_bvh7l2048: score 1.361, avg 1.361 ms, build 35259.045 ms
+      generated_ot9l512_qt2l2048_kd1l512: score 0.014, avg 0.014 ms, build 52812.765 ms
+      generated_ot2l4096_qt2l4096_kd3l2048: score 0.095, avg 0.095 ms, build 58139.280 ms
+      generated_ot10l8192_bvh1l16384: score 0.020, avg 0.020 ms, build 41180.646 ms
+      generated_bvh3l32: score 15.671, avg 15.671 ms, build 15530.620 ms
+      generated_kd7l1024ap=rr_qt4l32_kd1l256: score 0.036, avg 0.036 ms, build 101186.715 ms
+      generated_qt7l32768_kd1l2048ap=rr: score 0.083, avg 0.083 ms, build 91123.606 ms
+      generated_kd11l8192ap=rr: score 0.394, avg 0.394 ms, build 69518.833 ms
+      generated_ot8l8192_bvh3l4096_kd1l4096ap=rr: score 0.022, avg 0.022 ms, build 41217.224 ms
+      generated_qt2l64_bvh4l8192: score 1.446, avg 1.446 ms, build 45384.161 ms
+      generated_bvh1l64: score 43.185, avg 43.185 ms, build 5576.501 ms
+      generated_ot7l512_qt1l128: score 0.015, avg 0.015 ms, build 58889.009 ms
+      generated_bvh8l32768_ot3l256: score 0.028, avg 0.028 ms, build 59393.402 ms
+      generated_ot2l8192_kd7l2048ap=rr: score 0.140, avg 0.140 ms, build 57261.482 ms
+      generated_qt1l256_kd6l32ap=rr_bvh3l4096: score 0.341, avg 0.341 ms, build 65490.023 ms
+      generated_qt2l1024_ot5l64: score 0.023, avg 0.023 ms, build 57993.466 ms
+      generated_bvh7l256_qt2l32768_ot2l32: score 0.028, avg 0.028 ms, build 72999.872 ms
+      generated_bvh10l2048_kd2l256ap=rr: score 0.173, avg 0.173 ms, build 62435.781 ms
+      generated_qt11l8192_ot1l128: score 0.047, avg 0.047 ms, build 102276.811 ms
+      generated_kd6l1024ap=rr: score 4.867, avg 4.867 ms, build 38131.624 ms
+      generated_qt2l256_bvh4l64: score 1.491, avg 1.491 ms, build 45472.011 ms
+      generated_kd9l32ap=rr: score 1.080, avg 1.080 ms, build 57105.066 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] rho=0.988 over 43 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] rho=0.361 over 43 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 28
+      fastest: generated_ot9l512_qt2l2048_kd1l512  latency=0.0141ms build=52812.7648ms mem=1630.37MB imbalance=6.94
+      knee:    generated_bvh5l512  latency=4.4287ms build=25301.7394ms mem=1525.88MB imbalance=2.02
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: generated_ot9l512_qt2l2048_kd1l512 (0.014 ms, score 0.014, objective latency)
+    best build: generated_bvh1l64 (5576.501 ms, score 43.185, objective latency)
+    best memory: generated_bvh1l256 (1525.876 MB, score 43.115, objective latency)
+  wrote rows: 43
+  csv: results/eval_traces/v2/alhambra_100m_random.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (28 non-dominated rows)
+########## alhambra_100m random (opt, budget-matched) done in 43.9 min (exit 0) ##########
+
+########## alhambra_100m tuned singles (opt)  [01:46:16] ##########
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 36
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: Alhambra_100M (99999776 points)
+    workload: pipeline_replay (1000 queries)
+      benchmarking 32 / 36 schemas after surrogate pruning
+      tuned_bvh12l32: score 0.178, avg 0.178 ms, build 60509.119 ms
+      tuned_lbvh12l32: score 0.170, avg 0.170 ms, build 71629.968 ms
+      tuned_kot12l32: score 0.026, avg 0.026 ms, build 112410.851 ms
+      tuned_bih12l32: score 0.059, avg 0.059 ms, build 53086.998 ms
+      tuned_kd12l32: score 0.055, avg 0.055 ms, build 79586.584 ms
+      tuned_kd12l64aprr: score 0.236, avg 0.236 ms, build 75736.039 ms
+      tuned_qt8l32: score 0.053, avg 0.053 ms, build 100675.657 ms
+      tuned_bvh10l128: score 0.339, avg 0.339 ms, build 50772.871 ms
+      tuned_kot8l32: score 0.015, avg 0.015 ms, build 89587.148 ms
+      tuned_ot8l32: score 0.014, avg 0.014 ms, build 52502.421 ms
+      tuned_qt6l32apyz: score 0.198, avg 0.198 ms, build 72951.242 ms
+      tuned_bih6l64aprr: score 4.809, avg 4.809 ms, build 24838.076 ms
+      tuned_hg4l32: score 0.018, avg 0.018 ms, build 56742.745 ms
+      tuned_ot4l32: score 0.241, avg 0.241 ms, build 26478.439 ms
+      tuned_lbvh6l256: score 2.402, avg 2.402 ms, build 36133.378 ms
+      tuned_ot4l256: score 0.233, avg 0.233 ms, build 26494.210 ms
+      tuned_rg1l32: score 9.418, avg 9.418 ms, build 22209.511 ms
+      tuned_bih10l1024aprr: score 0.643, avg 0.643 ms, build 40801.356 ms
+      tuned_ot8l1024: score 0.014, avg 0.014 ms, build 49417.564 ms
+      tuned_lbvh6l1024: score 2.340, avg 2.340 ms, build 36327.170 ms
+      tuned_kot6l1024: score 0.027, avg 0.027 ms, build 67109.436 ms
+      tuned_lbvh8l2048: score 1.024, avg 1.024 ms, build 47987.902 ms
+      tuned_rg1l2048: score 9.083, avg 9.083 ms, build 22206.740 ms
+      tuned_qt10l4096apis: score 0.016, avg 0.016 ms, build 205716.213 ms
+      tuned_bvh12l8192: score 0.171, avg 0.171 ms, build 60550.359 ms
+      tuned_kot4l8192: score 0.242, avg 0.242 ms, build 44924.908 ms
+      tuned_hg2l8192: score 0.234, avg 0.234 ms, build 28641.743 ms
+      tuned_rg1l8192: score 8.984, avg 8.984 ms, build 22151.647 ms
+      tuned_qt8l16384apyz: score 0.077, avg 0.077 ms, build 90833.919 ms
+      tuned_kd8l16384: score 0.441, avg 0.441 ms, build 53123.639 ms
+      tuned_hg6l16384: score 0.027, avg 0.027 ms, build 43042.378 ms
+      tuned_hg4l16384: score 0.028, avg 0.028 ms, build 43152.114 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] rho=0.988 over 32 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] rho=0.895 over 32 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 22
+      fastest: tuned_ot8l1024  latency=0.0143ms build=49417.5640ms mem=1574.63MB imbalance=9.40
+      knee:    tuned_kd8l16384  latency=0.4410ms build=53123.6394ms mem=1525.95MB imbalance=1.01
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: tuned_ot8l1024 (0.014 ms, score 0.014, objective latency)
+    best build: tuned_rg1l8192 (22151.647 ms, score 8.984, objective latency)
+    best memory: tuned_rg1l32 (1525.879 MB, score 9.418, objective latency)
+  wrote rows: 32
+  csv: results/eval_traces/v2/alhambra_100m_singles.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (22 non-dominated rows)
+########## alhambra_100m tuned singles (opt) done in 32 min (exit 0) ##########
+
+########## alhambra_100m TEST re-measure (headline source)  [02:18:13] ##########
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 15
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: Alhambra_100M (99999776 points)
+    workload: pipeline_replay (1000 queries)
+      generated_bvh7l128_ot5l1024: score 0.014, avg 0.014 ms, build 67515.497 ms
+      generated_bvh7l128_ot5l1024: score 0.013, avg 0.013 ms, build 67538.633 ms
+      generated_ot9l512_qt2l2048_kd1l512: score 0.014, avg 0.014 ms, build 52965.356 ms
+      tuned_ot8l1024: score 0.014, avg 0.014 ms, build 49620.164 ms
+      quadtree_default: score 0.054, avg 0.054 ms, build 101453.293 ms
+      octree_default: score 0.015, avg 0.015 ms, build 52474.180 ms
+      kdtree_default: score 0.057, avg 0.057 ms, build 79461.055 ms
+      bvh_default: score 0.166, avg 0.166 ms, build 60009.036 ms
+      bih_default: score 0.053, avg 0.053 ms, build 52741.263 ms
+      hgrid_default: score 0.016, avg 0.016 ms, build 56808.647 ms
+      lbvh_default: score 0.175, avg 0.175 ms, build 71721.857 ms
+      regular_grid_default: score 9.495, avg 9.495 ms, build 22199.575 ms
+      karras_octree_default: score 0.015, avg 0.015 ms, build 89436.962 ms
+      octree_kdtree: score 0.018, avg 0.018 ms, build 66024.251 ms
+      quadtree_octree: score 0.024, avg 0.024 ms, build 76555.466 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] rho=0.894 over 15 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] rho=0.590 over 15 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 8
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0134ms build=67538.6331ms mem=1558.01MB imbalance=8.98
+      knee:    bih_default  latency=0.0528ms build=52741.2629ms mem=1527.00MB imbalance=1.55
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.013 ms, score 0.013, objective latency)
+    best build: regular_grid_default (22199.575 ms, score 9.495, objective latency)
+    best memory: regular_grid_default (1525.879 MB, score 9.495, objective latency)
+  wrote rows: 15
+  csv: results/eval_traces/v2/alhambra_100m_test.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (8 non-dominated rows)
+########## alhambra_100m TEST re-measure (headline source) done in 17 min (exit 0) ##########
+
+########## dl_sanandreas batch repair-search (opt)  [02:35:13] ##########
+Loading batch manifest: results/traces/dl_sanandreas/batch_manifest_opt.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 7 baselines + 64 generated
+  round 0: best generated_bvh1l256_ot5l512_kd4l8192ap=rr pass=111.5 ms (build 10.5 + query 101.0)
+  round 1: best generated_bvh1l256_ot5l512_kd4l8192ap=rr pass=111.5 ms (build 10.5 + query 101.0)
+  round 2: best generated_bvh1l256_ot5l512_kd4l8192ap=rr pass=111.5 ms (build 10.5 + query 101.0)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    generated_bvh1l256_ot5l512_kd4l8192ap=rr         111.5        10.5       101.0  searched
+2    repair_high_leaf_occupancy_0_bvh1l256_ot5l512_kd5l4096ap=rr       111.6        10.3       101.2  searched
+3    repair_high_leaf_occupancy_0_bvh1l256_ot5l512_kd6l2048ap=rr       111.9        10.4       101.5  searched
+4    generated_bvh8l128_qt3l8192_ot1l256              112.1        21.8        90.4  searched
+5    repair_tested_points_micro_index_1_kd2l32ap=rr_ot1l32768_bvh3l16384cp32768       112.8        10.3       102.5  searched
+6    repair_tested_points_leaf_tighten_0_kd2l32ap=rr_ot1l32768_bvh4l8192cp32768       112.9        10.2       102.7  searched
+7    repair_tested_points_micro_index_1_kd2l32ap=rr_ot2l16384_bvh3l8192cp16384       113.0        10.1       102.9  searched
+8    repair_tested_points_leaf_tighten_0_kd2l32ap=rr_ot2l16384       113.1        10.2       103.0  searched
+9    generated_ot4l128                                113.2        13.1       100.1  searched
+10   generated_bvh7l128_ot5l1024                      113.7        21.9        91.8  searched
+11   generated_kd2l32ap=rr_ot1l32768                  113.8        10.1       103.7  searched
+12   repair_balanced_leaf_probe_0_bvh7l128_ot5l512       113.8        22.1        91.7  searched
+13   repair_tested_points_leaf_tighten_0_kd2l32ap=rr_ot3l8192       114.1        10.1       104.0  searched
+14   generated_kd3l256ap=rr                           114.3        13.5       100.8  searched
+15   repair_high_leaf_occupancy_0_kd4l128ap=rr        115.4        18.2        97.2  searched
+
+=== Verdict ===
+best baseline           : octree_kdtree @ 128.1 ms/pass
+best schema overall     : generated_bvh1l256_ot5l512_kd4l8192ap=rr @ 111.5 ms/pass  [searched]
+>> The searched schema cuts a full dataloader pass by 13.0% vs the best single-primitive baseline.
+########## dl_sanandreas batch repair-search (opt) done in 0.4 min (exit 0) ##########
+
+########## dl_sanandreas batch random (opt, budget-matched)  [02:35:38] ##########
+  random budget = 83 (from dl_sanandreas_search.csv)
+Loading batch manifest: results/traces/dl_sanandreas/batch_manifest_opt.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 7 baselines + 83 generated
+  round 0: best generated_kd1l256ap=rr_ot3l1024 pass=111.0 ms (build 9.5 + query 101.5)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    generated_kd1l256ap=rr_ot3l1024                  111.0         9.5       101.5  searched
+2    generated_ot11l256_kd1l32768                     111.5        11.0       100.5  searched
+3    generated_ot11l256_bvh1l32                       111.9        11.0       100.9  searched
+4    generated_kd2l32ap=rr_ot1l32768                  112.2        10.1       102.1  searched
+5    generated_kd3l128_ot8l32768_kd1l16384            112.3        15.9        96.4  searched
+6    generated_bvh1l256_ot5l512_kd4l8192ap=rr         112.4        10.6       101.8  searched
+7    generated_bvh8l128_qt3l8192_ot1l256              113.1        21.7        91.4  searched
+8    generated_ot1l256_kd9l2048ap=rr_qt1l32768        114.3         5.4       109.0  searched
+9    generated_ot4l128                                114.4        13.3       101.2  searched
+10   generated_bvh7l128_ot5l1024                      114.6        22.1        92.5  searched
+11   generated_bvh10l256                              114.8        18.1        96.7  searched
+12   generated_kd5l256                                115.4        21.1        94.3  searched
+13   generated_bvh7l128_kd3l64_bvh1l1024              116.3        23.5        92.8  searched
+14   generated_kd4l64_qt4l16384                       117.6        21.8        95.8  searched
+15   generated_kd3l256ap=rr                           118.9        15.1       103.8  searched
+
+=== Verdict ===
+best baseline           : octree_kdtree @ 128.1 ms/pass
+best schema overall     : generated_kd1l256ap=rr_ot3l1024 @ 111.0 ms/pass  [searched]
+>> The searched schema cuts a full dataloader pass by 13.3% vs the best single-primitive baseline.
+########## dl_sanandreas batch random (opt, budget-matched) done in 0.5 min (exit 0) ##########
+
+########## dl_sanandreas batch tuned singles (opt)  [02:36:05] ##########
+Loading batch manifest: results/traces/dl_sanandreas/batch_manifest_opt.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 36 baselines + 1 generated
+  round 0: best tuned_ot4l256 pass=112.4 ms (build 10.9 + query 101.5)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    tuned_ot4l256                                    112.4        10.9       101.5  baseline
+2    tuned_bvh10l128                                  114.3        22.0        92.2  baseline
+3    tuned_lbvh6l256                                  115.9        21.9        94.0  baseline
+4    tuned_bih6l64aprr                                116.0        18.1        97.9  baseline
+5    generated_qt3l256                                120.1        27.1        93.0  searched
+6    tuned_ot8l1024                                   120.6         6.1       114.4  baseline
+7    tuned_bih12l32                                   121.0        27.6        93.4  baseline
+8    tuned_bih10l1024aprr                             122.8         8.0       114.9  baseline
+9    tuned_kot6l1024                                  123.5         9.3       114.2  baseline
+10   tuned_lbvh6l1024                                 124.6        10.8       113.8  baseline
+11   tuned_lbvh8l2048                                 126.1         6.6       119.5  baseline
+12   tuned_rg1l2048                                   127.0        14.8       112.2  baseline
+13   tuned_hg4l16384                                  130.5         0.5       129.9  baseline
+14   tuned_bvh12l32                                   130.9        32.7        98.1  baseline
+15   tuned_rg1l16384                                  131.3         0.5       130.8  baseline
+
+=== Verdict ===
+best baseline           : tuned_ot4l256 @ 112.4 ms/pass
+best schema overall     : tuned_ot4l256 @ 112.4 ms/pass  [baseline]
+########## dl_sanandreas batch tuned singles (opt) done in 0.2 min (exit 0) ##########
+
+########## dl_sanandreas batch TEST eval (headline source)  [02:36:17] ##########
+Loading batch manifest: results/traces/dl_sanandreas/batch_manifest_test.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 14 baselines + 1 generated
+  round 0: best tuned_ot4l256 pass=116.3 ms (build 11.1 + query 105.2)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    tuned_ot4l256                                    116.3        11.1       105.2  baseline
+2    generated_qt3l256                                118.7        27.6        91.1  searched
+3    generated_kd1l256ap=rr_ot3l1024                  119.5         9.6       109.9  baseline
+4    generated_bvh1l256_ot5l512_kd4l8192ap=rr         119.5        10.2       109.4  baseline
+5    bih_default                                      122.2        27.6        94.6  baseline
+6    octree_kdtree                                    125.4        16.0       109.4  baseline
+7    bvh_default                                      132.4        32.6        99.7  baseline
+8    kdtree_default                                   134.7        39.0        95.7  baseline
+9    quadtree_octree                                  134.7        38.3        96.4  baseline
+10   lbvh_default                                     135.3        38.4        96.9  baseline
+11   octree_default                                   137.5        19.2       118.3  baseline
+12   quadtree_default                                 146.5        40.8       105.7  baseline
+13   regular_grid_default                             149.0        17.9       131.1  baseline
+14   karras_octree_default                            154.6        31.7       122.9  baseline
+15   hgrid_default                                    223.4        22.5       200.9  baseline
+
+=== Verdict ===
+best baseline           : tuned_ot4l256 @ 116.3 ms/pass
+best schema overall     : tuned_ot4l256 @ 116.3 ms/pass  [baseline]
+########## dl_sanandreas batch TEST eval (headline source) done in 0.1 min (exit 0) ##########
+
+########## dl_alhambra batch repair-search (opt)  [02:36:22] ##########
+Loading batch manifest: results/traces/dl_alhambra/batch_manifest_opt.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 7 baselines + 64 generated
+  round 0: best generated_kd3l256ap=rr pass=113.5 ms (build 14.0 + query 99.5)
+  round 1: best repair_tested_points_leaf_tighten_0_bvh1l256_ot5l512_kd5l4096ap=rr pass=112.3 ms (build 10.0 + query 102.2)
+  round 2: best repair_tested_points_leaf_tighten_0_bvh1l256_ot5l512_kd5l4096ap=rr pass=112.3 ms (build 10.0 + query 102.2)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    repair_tested_points_leaf_tighten_0_bvh1l256_ot5l512_kd5l4096ap=rr       112.3        10.0       102.2  searched
+2    repair_tested_points_leaf_tighten_0_bvh1l256_ot5l512_kd6l2048ap=rr       113.2         9.6       103.6  searched
+3    generated_kd3l256ap=rr                           113.5        14.0        99.5  searched
+4    generated_bvh1l256_ot5l512_kd4l8192ap=rr         113.8         9.7       104.1  searched
+5    repair_tested_points_leaf_tighten_0_kd4l128ap=rr       115.2        18.2        97.0  searched
+6    generated_ot4l128                                115.6        12.3       103.2  searched
+7    repair_balanced_leaf_probe_0_bvh7l128_ot5l512       115.7        22.2        93.6  searched
+8    generated_bvh8l128_qt3l8192_ot1l256              116.0        22.5        93.4  searched
+9    repair_balanced_leaf_probe_0_bvh8l128_qt3l8192_ot1l128       116.1        22.6        93.6  searched
+10   repair_balanced_leaf_probe_0_bvh7l128_ot5l256       116.5        23.0        93.5  searched
+11   repair_tested_points_leaf_tighten_0_kd2l32ap=rr_ot2l16384       116.6        10.4       106.2  searched
+12   repair_tested_points_micro_index_1_kd3l256ap=rr_bvh3l128cp256       116.7        20.1        96.6  searched
+13   repair_tested_points_micro_index_1_kd2l32ap=rr_ot1l32768_bvh3l16384cp32768       117.1        10.1       107.0  searched
+14   generated_bvh7l128_ot5l1024                      117.2        22.4        94.7  searched
+15   generated_kd2l32ap=rr_ot1l32768                  117.4        10.3       107.1  searched
+
+=== Verdict ===
+best baseline           : octree_kdtree @ 129.0 ms/pass
+best schema overall     : repair_tested_points_leaf_tighten_0_bvh1l256_ot5l512_kd5l4096ap=rr @ 112.3 ms/pass  [searched]
+>> The searched schema cuts a full dataloader pass by 13.0% vs the best single-primitive baseline.
+########## dl_alhambra batch repair-search (opt) done in 0.4 min (exit 0) ##########
+
+########## dl_alhambra batch random (opt, budget-matched)  [02:36:47] ##########
+  random budget = 82 (from dl_alhambra_search.csv)
+Loading batch manifest: results/traces/dl_alhambra/batch_manifest_opt.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 7 baselines + 82 generated
+  round 0: best generated_ot11l256_kd1l32768 pass=112.3 ms (build 9.7 + query 102.6)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    generated_ot11l256_kd1l32768                     112.3         9.7       102.6  searched
+2    generated_ot11l256_bvh1l32                       112.9         9.7       103.2  searched
+3    generated_bvh1l256_ot5l512_kd4l8192ap=rr         113.4        10.0       103.4  searched
+4    generated_kd1l256ap=rr_ot3l1024                  113.8         9.4       104.3  searched
+5    generated_bvh10l256                              114.2        17.9        96.3  searched
+6    generated_kd3l256ap=rr                           115.2        13.8       101.3  searched
+7    generated_ot4l128                                115.3        12.3       103.0  searched
+8    generated_bvh8l128_qt3l8192_ot1l256              117.2        22.8        94.3  searched
+9    generated_kd2l32ap=rr_ot1l32768                  117.6        10.1       107.4  searched
+10   generated_ot5l1024                               118.3         5.4       112.9  searched
+11   generated_ot8l512_bvh4l1024                      118.8         8.0       110.8  searched
+12   generated_ot8l2048_qt1l256_bvh3l128              118.9         4.8       114.1  searched
+13   generated_ot3l1024_kd1l256ap=rr_bvh3l128         119.4         5.4       114.0  searched
+14   generated_ot7l1024_kd3l16384_bvh2l2048           119.4         5.3       114.1  searched
+15   generated_kd10l256ap=rr_ot1l16384_qt1l2048       119.5        22.3        97.2  searched
+
+=== Verdict ===
+best baseline           : octree_kdtree @ 131.4 ms/pass
+best schema overall     : generated_ot11l256_kd1l32768 @ 112.3 ms/pass  [searched]
+>> The searched schema cuts a full dataloader pass by 14.6% vs the best single-primitive baseline.
+########## dl_alhambra batch random (opt, budget-matched) done in 0.4 min (exit 0) ##########
+
+########## dl_alhambra batch tuned singles (opt)  [02:37:14] ##########
+Loading batch manifest: results/traces/dl_alhambra/batch_manifest_opt.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 36 baselines + 1 generated
+  round 0: best tuned_ot4l256 pass=111.6 ms (build 9.9 + query 101.7)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    tuned_ot4l256                                    111.6         9.9       101.7  baseline
+2    tuned_bvh10l128                                  115.8        22.7        93.1  baseline
+3    tuned_lbvh6l256                                  117.1        21.2        95.9  baseline
+4    tuned_bih6l64aprr                                117.3        17.9        99.4  baseline
+5    tuned_ot8l1024                                   119.2         5.4       113.8  baseline
+6    tuned_bih10l1024aprr                             120.9         8.1       112.8  baseline
+7    tuned_kot6l1024                                  121.0         8.7       112.3  baseline
+8    tuned_lbvh6l1024                                 124.4        11.1       113.4  baseline
+9    tuned_rg1l2048                                   124.9        14.7       110.2  baseline
+10   tuned_lbvh8l2048                                 125.3         6.9       118.4  baseline
+11   tuned_bih12l32                                   126.7        28.3        98.4  baseline
+12   tuned_bih12l32768aprr                            128.0         0.6       127.4  baseline
+13   tuned_rg1l8192                                   128.3         0.5       127.9  baseline
+14   tuned_hg4l16384                                  128.4         0.5       127.8  baseline
+15   tuned_hg6l16384                                  128.5         0.5       128.0  baseline
+
+=== Verdict ===
+best baseline           : tuned_ot4l256 @ 111.6 ms/pass
+best schema overall     : tuned_ot4l256 @ 111.6 ms/pass  [baseline]
+########## dl_alhambra batch tuned singles (opt) done in 0.2 min (exit 0) ##########
+
+########## dl_alhambra batch TEST eval (headline source)  [02:37:26] ##########
+Loading batch manifest: results/traces/dl_alhambra/batch_manifest_test.json
+  48 (cloud, trace) pairs, 75776 points, 83968 queries, dominant kNN k = 3
+  pool: 14 baselines + 1 generated
+  round 0: best tuned_ot4l256 pass=115.0 ms (build 9.9 + query 105.1)
+
+=== Top schemas by full-pass wall cost (build + query over all pairs; lower is better) ===
+rank schema                                         pass ms    build ms    query ms  tag
+1    tuned_ot4l256                                    115.0         9.9       105.1  baseline
+2    generated_ot11l256_kd1l32768                     116.5        10.1       106.4  baseline
+3    repair_tested_points_leaf_tighten_0_bvh1l256_ot5l512_kd5l4096ap=rr       118.8         9.5       109.3  baseline
+4    generated_qt3l256                                125.3        26.5        98.8  searched
+5    octree_kdtree                                    127.1        14.4       112.7  baseline
+6    bih_default                                      127.6        28.3        99.2  baseline
+7    bvh_default                                      134.9        33.7       101.2  baseline
+8    octree_default                                   139.4        17.9       121.5  baseline
+9    kdtree_default                                   140.8        39.4       101.4  baseline
+10   lbvh_default                                     141.9        40.1       101.8  baseline
+11   karras_octree_default                            151.7        28.9       122.8  baseline
+12   quadtree_octree                                  154.5        39.9       114.6  baseline
+13   regular_grid_default                             167.6        18.2       149.4  baseline
+14   quadtree_default                                 167.6        46.1       121.5  baseline
+15   hgrid_default                                    241.2        21.9       219.4  baseline
+
+=== Verdict ===
+best baseline           : tuned_ot4l256 @ 115.0 ms/pass
+best schema overall     : tuned_ot4l256 @ 115.0 ms/pass  [baseline]
+########## dl_alhambra batch TEST eval (headline source) done in 0.1 min (exit 0) ##########
+
+########## 700M GA on subsample (opt)  [02:37:31] ##########
+  condition domain from 'solar_sub5m': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 43
+  generated schemas: 32 requested
+  primitive profile: query_minimal_cpu
+  surrogate rank model: not used inside evolutionary loop; measured scores drive selection
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  optimizer: evolutionary mutation search
+    generations: 3
+    population per generation: 24
+    elites: 6
+    mutation rate: 0.650
+    random immigration: 0.200
+    parallel candidate dispatch: 8 CPU workers
+      initial [1/39] quadtree_default  aggregate score 0.004
+      initial [2/39] octree_default  aggregate score 0.008
+      initial [3/39] kdtree_default  aggregate score 0.008
+      initial [4/39] bvh_default  aggregate score 0.013
+      initial [5/39] quadtree_octree  aggregate score 0.004
+      initial [6/39] octree_kdtree  aggregate score 0.005
+      initial [7/39] urban_hybrid_quadtree_octree_kdtree  aggregate score 0.005
+      initial [8/39] generated_qt3l256  aggregate score 0.131
+      initial [9/39] generated_qt4l128_kd5l128  aggregate score 0.007
+      initial [10/39] generated_ot2l8192  aggregate score 0.283
+      initial [11/39] generated_kd4l64_qt4l16384  aggregate score 0.016
+      initial [12/39] generated_bvh1l256_ot5l512_kd4l8192ap=rr  aggregate score 0.013
+      initial [13/39] generated_bvh8l512_ot2l64  aggregate score 0.010
+      initial [14/39] generated_bvh3l16384  aggregate score 0.754
+      initial [15/39] generated_bvh7l128_ot5l1024  aggregate score 0.008
+      initial [16/39] generated_kd1l16384_bvh7l64_ot1l512  aggregate score 0.016
+      initial [17/39] generated_kd9l32ap=rr_bvh1l8192  aggregate score 0.064
+      initial [18/39] generated_ot1l4096_kd5l4096_bvh4l2048  aggregate score 0.010
+      initial [19/39] generated_bvh12l8192  aggregate score 0.015
+      initial [20/39] generated_qt4l32  aggregate score 0.042
+      initial [21/39] generated_ot11l16384_kd1l64  aggregate score 0.019
+      initial [22/39] generated_kd6l128_ot5l4096_qt1l32768  aggregate score 0.008
+      initial [23/39] generated_bvh8l16384_ot1l1024_bvh1l4096  aggregate score 0.014
+      initial [24/39] generated_ot8l512_bvh4l1024  aggregate score 0.005
+      initial [25/39] generated_kd1l8192ap=rr_qt11l512  aggregate score 0.004
+      initial [26/39] generated_bvh5l512_qt3l4096_bvh4l2048  aggregate score 0.007
+      initial [27/39] generated_qt3l128_bvh5l2048  aggregate score 0.015
+      initial [28/39] generated_kd3l256ap=rr  aggregate score 1.060
+      initial [29/39] generated_kd9l64_qt2l128  aggregate score 0.006
+      initial [30/39] generated_kd10l256ap=rr_ot1l16384_qt1l2048  aggregate score 0.011
+      initial [31/39] generated_ot10l4096  aggregate score 0.009
+      initial [32/39] generated_qt1l512  aggregate score 1.274
+      initial [33/39] generated_ot3l32_bvh8l4096  aggregate score 0.011
+      initial [34/39] generated_qt2l32768_kd3l256ap=rr  aggregate score 0.120
+      initial [35/39] generated_kd11l1024  aggregate score 0.010
+      initial [36/39] generated_qt3l16384_bvh4l32  aggregate score 0.029
+      initial [37/39] generated_qt4l2048_ot6l256  aggregate score 0.004
+      initial [38/39] generated_qt9l8192_bvh2l8192  aggregate score 0.012
+      initial [39/39] generated_ot8l2048_qt1l256_bvh3l128  aggregate score 0.007
+      best so far: generated_kd1l8192ap=rr_qt11l512 score 0.004
+      generation 1 champion: generated_kd1l8192ap=rr_qt11l512 (score 0.004)
+      generation 1 children: 10 crossover + 9 mutation
+      generation 1 [1/24] generated_kd8l8192_ot4l64  aggregate score 0.008
+      generation 1 [2/24] generated_qt6l16384  aggregate score 0.017
+      generation 1 [3/24] generated_kd1l32_qt3l8192_kd4l16384ap=rr  aggregate score 0.029
+      generation 1 [4/24] generated_ot5l1024  aggregate score 0.011
+      generation 1 [5/24] generated_bvh10l4096_qt1l32768  aggregate score 0.029
+      generation 1 [6/24] xover_g1_i5_qt2l128  aggregate score 0.402
+      generation 1 [7/24] xover_g1_i6_kd1l8192ap=rr_qt10l512_kd1l64  aggregate score 0.004
+      generation 1 [8/24] xover_g1_i7_kd1l8192ap=rr_qt10l512_ot1l64  aggregate score 0.005
+      generation 1 [9/24] evolved_g1_i8_kd9l64_qt1l128  aggregate score 0.011
+      generation 1 [10/24] evolved_g1_i9_qt3l512  aggregate score 0.142
+      generation 1 [11/24] xover_g1_i10_kd1l8192ap=rr  aggregate score 2.320
+      generation 1 [12/24] evolved_g1_i11_qt3l128_ot3l64_kd4l32  aggregate score 0.005
+      generation 1 [13/24] evolved_g1_i12_kd12l1024ap=rr  aggregate score 0.028
+      generation 1 [14/24] xover_g1_i13_kd1l8192ap=rr_qt10l512_qt1l512  aggregate score 0.004
+      generation 1 [15/24] evolved_g1_i14_bvh3l16384_ot1l2048  aggregate score 0.236
+      generation 1 [16/24] evolved_g1_i15_qt1l256  aggregate score 1.218
+      generation 1 [17/24] xover_g1_i16_kd1l8192ap=rr_qt10l512_bvh1l16384  aggregate score 0.004
+      generation 1 [18/24] xover_g1_i17_kd1l8192ap=rr_qt10l512_kd1l1024  aggregate score 0.004
+      generation 1 [19/24] evolved_g1_i18_qt2l128_kd9l64  aggregate score 0.007
+      generation 1 [20/24] xover_g1_i19_ot1l2048  aggregate score 1.044
+      generation 1 [21/24] evolved_g1_i20_kd1l8192  aggregate score 2.350
+      generation 1 [22/24] xover_g1_i21_kd1l8192ap=rr_qt1l512  aggregate score 0.687
+      generation 1 [23/24] evolved_g1_i22_qt11l1024  aggregate score 0.004
+      generation 1 [24/24] xover_g1_i23_kd1l8192ap=rr_qt2l128  aggregate score 0.211
+      best so far: generated_kd1l8192ap=rr_qt11l512 score 0.004
+      generation 2 champion: generated_kd1l8192ap=rr_qt11l512 (score 0.004)
+      generation 2 children: 6 crossover + 13 mutation
+      generation 2 [1/24] generated_kd4l16384_qt5l32  aggregate score 0.004
+      generation 2 [2/24] generated_kd4l32768_ot8l16384  aggregate score 0.018
+      generation 2 [3/24] generated_ot2l32768_kd2l128_bvh8l32768  aggregate score 0.038
+      generation 2 [4/24] generated_ot7l32_kd1l4096ap=rr_ot2l32768  aggregate score 0.006
+      generation 2 [5/24] generated_qt11l2048_bvh1l32  aggregate score 0.006
+      generation 2 [6/24] xover_g2_i5_kd1l8192ap=rr_qt10l512_ot1l256  aggregate score 0.004
+      generation 2 [7/24] evolved_g2_i6_qt11l512  aggregate score 0.004
+      generation 2 [8/24] xover_g2_i7_kd1l8192ap=rr_qt3l128_ot3l64  aggregate score 0.005
+      generation 2 [9/24] evolved_g2_i8_ot4l2048_qt6l256  aggregate score 0.005
+      generation 2 [10/24] evolved_g2_i9_bvh5l512_kd1l16384  aggregate score 0.125
+      generation 2 [11/24] evolved_g2_i10_kd4l2048ap=rr_ot6l256  aggregate score 0.005
+      generation 2 [12/24] xover_g2_i11_kd1l8192ap=rr_kd1l8192  aggregate score 1.168
+      generation 2 [13/24] evolved_g2_i12_kd1l8192_ot1l2048_ot1l32768  aggregate score 0.180
+      generation 2 [14/24] evolved_g2_i13_ot5l1024_qt1l512  aggregate score 0.007
+      generation 2 [15/24] xover_g2_i14_kd1l8192ap=rr_qt4l2048_ot6l256  aggregate score 0.004
+      generation 2 [16/24] evolved_g2_i15_ot5l2048  aggregate score 0.011
+      generation 2 [17/24] evolved_g2_i16_qt11l512_kd1l8192ap=rr  aggregate score 0.004
+      generation 2 [18/24] evolved_g2_i17_ot5l1024_qt1l64  aggregate score 0.007
+      generation 2 [19/24] xover_g2_i18_kd1l8192ap=rr_qt10l512_ot1l1024  aggregate score 0.004
+      generation 2 [20/24] evolved_g2_i19_kd2l16384_ot1l2048  aggregate score 0.369
+      generation 2 [21/24] evolved_g2_i20_kd1l16384  aggregate score 2.332
+      generation 2 [22/24] evolved_g2_i21_kd1l4096ap=rr_ot5l1024  aggregate score 0.008
+      generation 2 [23/24] xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192  aggregate score 0.004
+      generation 2 [24/24] evolved_g2_i23_kd1l16384ap=rr_ot11l512  aggregate score 0.005
+      best so far: xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192 score 0.004
+      generation 3 champion: xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192 (score 0.004)
+      generation 3 children: 5 crossover + 14 mutation
+      generation 3 [1/24] generated_qt9l2048_ot1l16384  aggregate score 0.006
+      generation 3 [2/24] generated_bvh8l128  aggregate score 0.043
+      generation 3 [3/24] generated_ot5l32_bvh1l512  aggregate score 0.009
+      generation 3 [4/24] generated_ot10l64  aggregate score 0.006
+      generation 3 [5/24] generated_ot4l256_qt2l8192_kd5l256ap=rr  aggregate score 0.013
+      generation 3 [6/24] xover_g3_i5_kd1l8192ap=rr_qt10l512  aggregate score 0.004
+      generation 3 [7/24] xover_g3_i6_kd1l8192ap=rr_ot3l64_kd4l32  aggregate score 0.008
+      generation 3 [8/24] evolved_g3_i7_ot4l2048_qt6l128  aggregate score 0.005
+      generation 3 [9/24] evolved_g3_i8_ot4l2048_qt5l256_kd1l128  aggregate score 0.004
+      generation 3 [10/24] xover_g3_i9_kd1l8192ap=rr_qt10l512_ot1l32  aggregate score 0.004
+      generation 3 [11/24] evolved_g3_i10_ot3l2048_bvh1l32_qt6l256  aggregate score 0.005
+      generation 3 [12/24] xover_g3_i11_kd1l8192ap=rr_qt10l512_ot1l32768  aggregate score 0.004
+      generation 3 [13/24] evolved_g3_i12_ot3l64_kd4l32  aggregate score 0.013
+      generation 3 [14/24] evolved_g3_i13_ot3l128_ot3l64_kd4l32  aggregate score 0.006
+      generation 3 [15/24] evolved_g3_i14_kd1l8192_kd1l8192_qt10l1024  aggregate score 0.005
+      generation 3 [16/24] evolved_g3_i15_ot7l64_kd1l4096ap=rr_ot2l32768  aggregate score 0.006
+      generation 3 [17/24] evolved_g3_i16_ot7l32_ot2l32768_kd1l8192  aggregate score 0.006
+      generation 3 [18/24] xover_g3_i17_kd1l8192ap=rr_qt10l512_kd1l16384  aggregate score 0.004
+      generation 3 [19/24] evolved_g3_i18_qt1l16384  aggregate score 1.223
+      generation 3 [20/24] evolved_g3_i19_kd1l16384_ot1l4096  aggregate score 0.650
+      generation 3 [21/24] evolved_g3_i20_ot4l2048_qt7l256  aggregate score 0.005
+      generation 3 [22/24] evolved_g3_i21_qt7l32  aggregate score 0.004
+      generation 3 [23/24] evolved_g3_i22_kd1l4096  aggregate score 2.361
+      generation 3 [24/24] evolved_g3_i23_ot3l64_qt3l128  aggregate score 0.007
+      best so far: xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192 score 0.004
+  optimizer best aggregate: xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192 score 0.004
+  diversity audit: 36 distinct topology shapes across 111 evaluated candidates (ratio 0.324)
+    top topologies by evaluation count:
+      12x  qt
+      8x  kd:qt
+      8x  kd
+      7x  ot
+      7x  kd:qt:ot
+      7x  kd:ot
+      6x  ot:qt
+      5x  kd:qt:kd
+    Pareto-front-0 distinct topologies: 29
+  evolved schema: results/eval_traces/v2/best_schemas_700m\solar_sub5m_pipeline_replay_best_schema.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [solar_sub5m / pipeline_replay] rho=0.949 over 111 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [solar_sub5m / pipeline_replay] rho=0.541 over 111 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [solar_sub5m / pipeline_replay] front size 68
+      fastest: xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192  latency=0.0037ms build=4865.0171ms mem=80.60MB imbalance=2.16
+      knee:    generated_ot2l8192  latency=0.2831ms build=758.4922ms mem=76.71MB imbalance=3.52
+  metric winners:
+  [solar_sub5m / pipeline_replay]
+    best latency: xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192 (0.004 ms, score 0.004, objective latency)
+    best build: xover_g1_i10_kd1l8192ap=rr (353.659 ms, score 2.320, objective latency)
+    best memory: xover_g1_i10_kd1l8192ap=rr (76.704 MB, score 2.320, objective latency)
+  wrote rows: 111
+  csv: results/eval_traces/v2/solar_sub5m.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (68 non-dominated rows)
+########## 700M GA on subsample (opt) done in 0.9 min (exit 0) ##########
+
+########## 700M tuned singles on subsample (opt)  [02:38:25] ##########
+  condition domain from 'solar_sub5m': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 36
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: solar_sub5m (5026817 points)
+    workload: pipeline_replay (1500 queries)
+      benchmarking 32 / 36 schemas after surrogate pruning
+      tuned_bvh12l32: score 0.013, avg 0.013 ms, build 3041.567 ms
+      tuned_lbvh12l32: score 0.013, avg 0.013 ms, build 3646.473 ms
+      tuned_kot12l32: score 0.007, avg 0.007 ms, build 4854.113 ms
+      tuned_bih12l32: score 0.007, avg 0.007 ms, build 2754.358 ms
+      tuned_kd12l32: score 0.008, avg 0.008 ms, build 4069.593 ms
+      tuned_kd12l64aprr: score 0.027, avg 0.027 ms, build 3798.936 ms
+      tuned_qt8l32: score 0.003, avg 0.003 ms, build 5238.912 ms
+      tuned_bvh10l128: score 0.028, avg 0.028 ms, build 2507.635 ms
+      tuned_kot8l32: score 0.006, avg 0.006 ms, build 4447.724 ms
+      tuned_ot8l32: score 0.006, avg 0.006 ms, build 2624.888 ms
+      tuned_qt6l32apyz: score 0.062, avg 0.062 ms, build 3807.648 ms
+      tuned_bih6l64aprr: score 0.261, avg 0.261 ms, build 1237.885 ms
+      tuned_hg4l32: score 0.009, avg 0.009 ms, build 2871.995 ms
+      tuned_ot4l32: score 0.027, avg 0.027 ms, build 1336.104 ms
+      tuned_lbvh6l256: score 0.129, avg 0.129 ms, build 1821.265 ms
+      tuned_ot4l256: score 0.027, avg 0.027 ms, build 1339.711 ms
+      tuned_rg1l32: score 0.488, avg 0.488 ms, build 1122.332 ms
+      tuned_bih10l1024aprr: score 0.045, avg 0.045 ms, build 2035.867 ms
+      tuned_ot8l1024: score 0.005, avg 0.005 ms, build 2028.531 ms
+      tuned_lbvh6l1024: score 0.129, avg 0.129 ms, build 1835.063 ms
+      tuned_kot6l1024: score 0.007, avg 0.007 ms, build 3256.074 ms
+      tuned_lbvh8l2048: score 0.043, avg 0.043 ms, build 2424.634 ms
+      tuned_rg1l2048: score 0.492, avg 0.492 ms, build 1126.272 ms
+      tuned_qt10l4096apis: score 0.008, avg 0.008 ms, build 7154.363 ms
+      tuned_bvh12l8192: score 0.015, avg 0.015 ms, build 2749.560 ms
+      tuned_kot4l8192: score 0.027, avg 0.027 ms, build 2242.447 ms
+      tuned_hg2l8192: score 0.028, avg 0.028 ms, build 1444.306 ms
+      tuned_rg1l8192: score 0.493, avg 0.493 ms, build 1120.578 ms
+      tuned_qt8l16384apyz: score 0.048, avg 0.048 ms, build 3673.101 ms
+      tuned_kd8l16384: score 0.033, avg 0.033 ms, build 2713.849 ms
+      tuned_hg6l16384: score 0.016, avg 0.016 ms, build 1693.964 ms
+      tuned_hg4l16384: score 0.016, avg 0.016 ms, build 1692.849 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [solar_sub5m / pipeline_replay] rho=0.981 over 32 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [solar_sub5m / pipeline_replay] rho=0.863 over 32 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [solar_sub5m / pipeline_replay] front size 20
+      fastest: tuned_qt8l32  latency=0.0034ms build=5238.9121ms mem=86.13MB imbalance=2.97
+      knee:    tuned_lbvh8l2048  latency=0.0425ms build=2424.6337ms mem=76.76MB imbalance=1.71
+  metric winners:
+  [solar_sub5m / pipeline_replay]
+    best latency: tuned_qt8l32 (0.003 ms, score 0.003, objective latency)
+    best build: tuned_rg1l8192 (1120.578 ms, score 0.493, objective latency)
+    best memory: tuned_rg1l32 (76.706 MB, score 0.488, objective latency)
+  wrote rows: 32
+  csv: results/eval_traces/v2/solar_sub5m_singles.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (20 non-dominated rows)
+########## 700M tuned singles on subsample (opt) done in 1.5 min (exit 0) ##########
+
+########## 700M confirm top-10 at full scale (opt)  [02:39:58] ##########
+confirming 11 schemas at 700M
+  condition domain from 'SolarPanels700M': 20 point, 10 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 15
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: SolarPanels700M (728841014 points)
+    workload: pipeline_replay (1000 queries)
+      xover_g2_i22_kd1l8192ap=rr_qt10l512_kd1l8192: score 0.043, avg 0.043 ms, build 1013824.476 ms
+      xover_g2_i18_kd1l8192ap=rr_qt10l512_ot1l1024: score 0.044, avg 0.044 ms, build 1016973.287 ms
+      xover_g3_i5_kd1l8192ap=rr_qt10l512: score 0.046, avg 0.046 ms, build 1015919.206 ms
+      generated_kd1l8192ap=rr_qt11l512: score 0.043, avg 0.043 ms, build 1071841.551 ms
+      generated_qt4l2048_ot6l256: score 0.040, avg 0.040 ms, build 688241.579 ms
+      quadtree_default: score 0.102, avg 0.102 ms, build 781620.022 ms
+      xover_g3_i9_kd1l8192ap=rr_qt10l512_ot1l32: score 0.048, avg 0.048 ms, build 1065997.765 ms
+      xover_g3_i17_kd1l8192ap=rr_qt10l512_kd1l16384: score 0.048, avg 0.048 ms, build 1015859.443 ms
+      evolved_g3_i8_ot4l2048_qt5l256_kd1l128: score 0.052, avg 0.052 ms, build 757086.236 ms
+      evolved_g2_i16_qt11l512_kd1l8192ap=rr: score 0.046, avg 0.046 ms, build 1074447.005 ms
+      tuned_qt8l32: score 0.108, avg 0.108 ms, build 778778.736 ms
+      quadtree_default: score 0.099, avg 0.099 ms, build 778341.083 ms
+      octree_default: score 0.083, avg 0.083 ms, build 417845.257 ms
+      kdtree_default: score 0.484, avg 0.484 ms, build 632753.359 ms
+      bvh_default: score 0.952, avg 0.952 ms, build 460697.180 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [SolarPanels700M / pipeline_replay] rho=0.845 over 15 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [SolarPanels700M / pipeline_replay] rho=0.347 over 15 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [SolarPanels700M / pipeline_replay] front size 8
+      fastest: generated_qt4l2048_ot6l256  latency=0.0402ms build=688241.5795ms mem=11412.14MB imbalance=4.10
+      knee:    kdtree_default  latency=0.4843ms build=632753.3594ms mem=11122.36MB imbalance=1.00
+  metric winners:
+  [SolarPanels700M / pipeline_replay]
+    best latency: generated_qt4l2048_ot6l256 (0.040 ms, score 0.040, objective latency)
+    best build: octree_default (417845.257 ms, score 0.083, objective latency)
+    best memory: bvh_default (11121.693 MB, score 0.952, objective latency)
+  wrote rows: 15
+  csv: results/eval_traces/v2/solar_700m_confirm.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (8 non-dominated rows)
+########## 700M confirm top-10 at full scale (opt) done in 212.2 min (exit 0) ##########
+
+########## 700M TEST re-measure (headline source)  [06:12:10] ##########
+  condition domain from 'SolarPanels700M': 20 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 12
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: SolarPanels700M (728841014 points)
+    workload: pipeline_replay (1000 queries)
+      generated_qt4l2048_ot6l256: score 0.037, avg 0.037 ms, build 684785.742 ms
+      quadtree_default: score 0.105, avg 0.105 ms, build 776453.687 ms
+      octree_default: score 0.081, avg 0.081 ms, build 412213.427 ms
+      kdtree_default: score 0.473, avg 0.473 ms, build 628647.981 ms
+      bvh_default: score 1.039, avg 1.039 ms, build 459858.819 ms
+      bih_default: score 0.492, avg 0.492 ms, build 436770.538 ms
+      hgrid_default: score 0.085, avg 0.085 ms, build 432872.654 ms
+      lbvh_default: score 1.030, avg 1.030 ms, build 535514.198 ms
+      regular_grid_default: score 62.486, avg 62.486 ms, build 162996.995 ms
+      karras_octree_default: score 0.079, avg 0.079 ms, build 684126.382 ms
+      octree_kdtree: score 0.145, avg 0.145 ms, build 536953.813 ms
+      quadtree_octree: score 0.089, avg 0.089 ms, build 585903.325 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [SolarPanels700M / pipeline_replay] rho=0.995 over 12 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [SolarPanels700M / pipeline_replay] rho=0.825 over 12 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [SolarPanels700M / pipeline_replay] front size 12
+      fastest: generated_qt4l2048_ot6l256  latency=0.0370ms build=684785.7423ms mem=11412.14MB imbalance=4.10
+      knee:    bih_default  latency=0.4921ms build=436770.5382ms mem=11122.36MB imbalance=1.00
+  metric winners:
+  [SolarPanels700M / pipeline_replay]
+    best latency: generated_qt4l2048_ot6l256 (0.037 ms, score 0.037, objective latency)
+    best build: regular_grid_default (162996.995 ms, score 62.486, objective latency)
+    best memory: regular_grid_default (11121.235 MB, score 62.486, objective latency)
+  wrote rows: 12
+  csv: results/eval_traces/v2/solar_700m_test.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (12 non-dominated rows)
+########## 700M TEST re-measure (headline source) done in 112.3 min (exit 0) ##########
+
+########## rank transfer sub2m + sub5m (opt)  [08:04:27] ##########
+  condition domain from 'alhambra_sub2m': 15 point, 9 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 43
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: alhambra_sub2m (2040812 points)
+    workload: pipeline_replay (1000 queries)
+      benchmarking 32 / 43 schemas after surrogate pruning
+      bvh_default: score 0.007, avg 0.007 ms, build 1243.649 ms
+      kdtree_default: score 0.004, avg 0.004 ms, build 1635.070 ms
+      xover_g2_i8_bvh7l128_ot5l32: score 0.005, avg 0.005 ms, build 1420.184 ms
+      evolved_g1_i5_kd11l32: score 0.006, avg 0.006 ms, build 1502.630 ms
+      quadtree_default: score 0.005, avg 0.005 ms, build 2111.231 ms
+      evolved_g2_i7_kd11l64: score 0.006, avg 0.006 ms, build 1494.802 ms
+      xover_g2_i6_bvh7l128_kd5l32: score 0.005, avg 0.005 ms, build 1415.867 ms
+      evolved_g2_i3_kd10l32: score 0.006, avg 0.006 ms, build 1375.773 ms
+      quadtree_octree: score 0.005, avg 0.005 ms, build 1587.306 ms
+      urban_hybrid_quadtree_octree_kdtree: score 0.005, avg 0.005 ms, build 1747.775 ms
+      octree_default: score 0.005, avg 0.005 ms, build 1024.420 ms
+      octree_kdtree: score 0.005, avg 0.005 ms, build 1390.267 ms
+      generated_qt4l128_kd5l128: score 0.004, avg 0.004 ms, build 1730.286 ms
+      xover_g1_i7_bvh7l128: score 0.030, avg 0.030 ms, build 739.205 ms
+      generated_qt4l32: score 0.034, avg 0.034 ms, build 1051.991 ms
+      generated_bvh8l512_ot2l64: score 0.005, avg 0.005 ms, build 1099.006 ms
+      generated_qt3l256: score 0.092, avg 0.092 ms, build 784.709 ms
+      generated_bvh7l128_ot5l1024: score 0.004, avg 0.004 ms, build 1096.345 ms
+      xover_g1_i4_bvh7l128_ot4l1024_ot1l32: score 0.004, avg 0.004 ms, build 1106.724 ms
+      xover_g2_i4_bvh7l128_ot4l1024_ot1l64: score 0.004, avg 0.004 ms, build 1101.787 ms
+      xover_g1_i3_bvh7l128_ot4l1024_kd1l32: score 0.004, avg 0.004 ms, build 1100.936 ms
+      evolved_g2_i9_ot5l1024: score 0.005, avg 0.005 ms, build 668.382 ms
+      xover_g2_i2_bvh7l128_ot4l1024_ot1l2048: score 0.004, avg 0.004 ms, build 1098.672 ms
+      generated_kd7l512ap=rr_bvh2l2048_ot2l32: score 0.004, avg 0.004 ms, build 1382.578 ms
+      xover_g1_i2_ot1l2048: score 0.352, avg 0.352 ms, build 147.532 ms
+      evolved_g2_i5_ot1l2048_kd1l32ap=rr: score 0.285, avg 0.285 ms, build 277.540 ms
+      generated_ot1l4096_kd5l4096_bvh4l2048: score 0.006, avg 0.006 ms, build 1178.563 ms
+      generated_bvh12l8192: score 0.010, avg 0.010 ms, build 1039.029 ms
+      generated_kd8l8192_ot4l64: score 0.004, avg 0.004 ms, build 1615.320 ms
+      generated_kd9l32ap=rr_bvh1l8192: score 0.016, avg 0.016 ms, build 1255.110 ms
+      generated_bvh1l256_ot5l512_kd4l8192ap=rr: score 0.004, avg 0.004 ms, build 776.237 ms
+      evolved_g1_i8_ot3l8192: score 0.026, avg 0.026 ms, build 408.186 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [alhambra_sub2m / pipeline_replay] rho=0.797 over 32 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [alhambra_sub2m / pipeline_replay] rho=0.586 over 32 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [alhambra_sub2m / pipeline_replay] front size 18
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0035ms build=1096.3451ms mem=32.26MB imbalance=3.36
+      knee:    xover_g1_i7_bvh7l128  latency=0.0303ms build=739.2048ms mem=31.16MB imbalance=2.43
+  metric winners:
+  [alhambra_sub2m / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.004 ms, score 0.004, objective latency)
+    best build: xover_g1_i2_ot1l2048 (147.532 ms, score 0.352, objective latency)
+    best memory: xover_g1_i2_ot1l2048 (31.142 MB, score 0.352, objective latency)
+  wrote rows: 32
+  csv: results/eval_traces/v2/alhambra_sub2m.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (18 non-dominated rows)
+  condition domain from 'alhambra_sub5m': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 43
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: alhambra_sub5m (5263147 points)
+    workload: pipeline_replay (1000 queries)
+      benchmarking 32 / 43 schemas after surrogate pruning
+      bvh_default: score 0.013, avg 0.013 ms, build 3214.841 ms
+      kdtree_default: score 0.006, avg 0.006 ms, build 4204.760 ms
+      xover_g2_i8_bvh7l128_ot5l32: score 0.005, avg 0.005 ms, build 3650.623 ms
+      evolved_g1_i5_kd11l32: score 0.009, avg 0.009 ms, build 3838.128 ms
+      quadtree_default: score 0.008, avg 0.008 ms, build 5429.040 ms
+      evolved_g2_i7_kd11l64: score 0.009, avg 0.009 ms, build 3820.163 ms
+      xover_g2_i6_bvh7l128_kd5l32: score 0.008, avg 0.008 ms, build 3619.064 ms
+      evolved_g2_i3_kd10l32: score 0.012, avg 0.012 ms, build 3477.242 ms
+      quadtree_octree: score 0.006, avg 0.006 ms, build 4057.728 ms
+      urban_hybrid_quadtree_octree_kdtree: score 0.006, avg 0.006 ms, build 4485.672 ms
+      octree_default: score 0.007, avg 0.007 ms, build 2773.613 ms
+      octree_kdtree: score 0.005, avg 0.005 ms, build 3519.467 ms
+      generated_qt4l128_kd5l128: score 0.006, avg 0.006 ms, build 4393.126 ms
+      xover_g1_i7_bvh7l128: score 0.077, avg 0.077 ms, build 1878.491 ms
+      generated_qt4l32: score 0.085, avg 0.085 ms, build 2671.269 ms
+      generated_bvh8l512_ot2l64: score 0.007, avg 0.007 ms, build 2828.592 ms
+      generated_qt3l256: score 0.231, avg 0.231 ms, build 2005.394 ms
+      generated_bvh7l128_ot5l1024: score 0.004, avg 0.004 ms, build 3000.174 ms
+      xover_g1_i4_bvh7l128_ot4l1024_ot1l32: score 0.005, avg 0.005 ms, build 3112.349 ms
+      xover_g2_i4_bvh7l128_ot4l1024_ot1l64: score 0.005, avg 0.005 ms, build 3125.907 ms
+      xover_g1_i3_bvh7l128_ot4l1024_kd1l32: score 0.004, avg 0.004 ms, build 3149.678 ms
+      evolved_g2_i9_ot5l1024: score 0.007, avg 0.007 ms, build 1732.592 ms
+      xover_g2_i2_bvh7l128_ot4l1024_ot1l2048: score 0.005, avg 0.005 ms, build 3002.989 ms
+      generated_kd7l512ap=rr_bvh2l2048_ot2l32: score 0.006, avg 0.006 ms, build 3547.285 ms
+      xover_g1_i2_ot1l2048: score 0.909, avg 0.909 ms, build 372.688 ms
+      evolved_g2_i5_ot1l2048_kd1l32ap=rr: score 0.735, avg 0.735 ms, build 702.026 ms
+      generated_ot1l4096_kd5l4096_bvh4l2048: score 0.011, avg 0.011 ms, build 3103.213 ms
+      generated_bvh12l8192: score 0.013, avg 0.013 ms, build 3072.031 ms
+      generated_kd8l8192_ot4l64: score 0.004, avg 0.004 ms, build 4162.028 ms
+      generated_kd9l32ap=rr_bvh1l8192: score 0.037, avg 0.037 ms, build 3232.994 ms
+      generated_bvh1l256_ot5l512_kd4l8192ap=rr: score 0.006, avg 0.006 ms, build 1990.931 ms
+      evolved_g1_i8_ot3l8192: score 0.062, avg 0.062 ms, build 1057.446 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [alhambra_sub5m / pipeline_replay] rho=0.928 over 32 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [alhambra_sub5m / pipeline_replay] rho=0.650 over 32 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [alhambra_sub5m / pipeline_replay] front size 19
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0042ms build=3000.1739ms mem=83.06MB imbalance=3.24
+      knee:    xover_g1_i7_bvh7l128  latency=0.0771ms build=1878.4912ms mem=80.33MB imbalance=2.43
+  metric winners:
+  [alhambra_sub5m / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.004 ms, score 0.004, objective latency)
+    best build: xover_g1_i2_ot1l2048 (372.688 ms, score 0.909, objective latency)
+    best memory: xover_g1_i2_ot1l2048 (80.310 MB, score 0.909, objective latency)
+  wrote rows: 32
+  csv: results/eval_traces/v2/alhambra_sub5m.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (19 non-dominated rows)
+full scale: alhambra_100m_ga.csv (43 candidates); winner = generated_bvh7l128_ot5l1024
+
+alhambra_sub2m.csv: 32 shared candidates
+  Spearman rho = 0.884 (p = 1.97e-11)
+  low-fidelity winner = generated_bvh7l128_ot5l1024
+  full winner in low top-3: True | top-3 set overlap: 1/3
+  full winner in low top-5: True | top-5 set overlap: 4/5
+  full winner in low top-10: True | top-10 set overlap: 6/10
+
+alhambra_sub5m.csv: 32 shared candidates
+  Spearman rho = 0.954 (p = 3.24e-17)
+  low-fidelity winner = generated_bvh7l128_ot5l1024
+  full winner in low top-3: True | top-3 set overlap: 1/3
+  full winner in low top-5: True | top-5 set overlap: 2/5
+  full winner in low top-10: True | top-10 set overlap: 7/10
+########## rank transfer sub2m + sub5m (opt) done in 2.4 min (exit 0) ##########
+
+########## framework compare 5M + Alhambra (test)  [08:06:49] ##########
+  condition domain from '5M': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 1
+  surrogate rank model: models\schema_selector.json
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: 5M (5000000 points)
+    workload: pipeline_replay (3000 queries)
+      quadtree_default: score 0.003, avg 0.003 ms, build 6305.560 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [5M / pipeline_replay] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [5M / pipeline_replay] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [5M / pipeline_replay] front size 1
+      fastest: quadtree_default  latency=0.0032ms build=6305.5601ms mem=81.89MB imbalance=2.35
+      knee:    (same as fastest)
+  metric winners:
+  [5M / pipeline_replay]
+    best latency: quadtree_default (0.003 ms, score 0.003, objective latency)
+    best build: quadtree_default (6305.560 ms, score 0.003, objective latency)
+    best memory: quadtree_default (81.893 MB, score 0.003, objective latency)
+  wrote rows: 1
+  csv: C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m\mds_raw.csv
+  best csv: C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m\mds_best.csv
+  pareto csv: C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m\mds_pareto.csv (1 non-dominated rows)
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m\framework_comparison.json
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m\framework_comparison.md
+multidatastructure_cpu: avg=0.003245 ms, queries=3000
+open3d: avg=0.022873 ms, queries=3000
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 1
+  surrogate rank model: models\schema_selector.json
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: Alhambra_100M (99999776 points)
+    workload: pipeline_replay (3000 queries)
+      generated_bvh7l128_ot5l1024: score 0.013, avg 0.013 ms, build 67979.030 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 1
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0130ms build=67979.0305ms mem=1558.01MB imbalance=8.98
+      knee:    (same as fastest)
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.013 ms, score 0.013, objective latency)
+    best build: generated_bvh7l128_ot5l1024 (67979.030 ms, score 0.013, objective latency)
+    best memory: generated_bvh7l128_ot5l1024 (1558.006 MB, score 0.013, objective latency)
+  wrote rows: 1
+  csv: C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m\mds_raw.csv
+  best csv: C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m\mds_best.csv
+  pareto csv: C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m\mds_pareto.csv (1 non-dominated rows)
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m\framework_comparison.json
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m\framework_comparison.md
+multidatastructure_cpu: avg=0.013036 ms, queries=3000
+open3d: avg=0.016035 ms, queries=3000
+########## framework compare 5M + Alhambra (test) done in 2.4 min (exit 0) ##########
+
+########## battery v2 complete [08:09:14] ##########
+Headline sources: results/eval_traces/v2/*_test.csv and *_testeval.csv ONLY.

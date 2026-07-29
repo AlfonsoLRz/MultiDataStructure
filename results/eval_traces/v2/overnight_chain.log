@@ -1,0 +1,677 @@
+﻿waiting for battery v2 to complete...
+battery complete - chain starting [08:09:33]
+
+########## in-exe test suite (rebuilt exe)  [08:09:33] ##########
+  condition domain from 'synthetic_flat_terrain': 8 point, 8 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 3
+  schemas: 1
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: synthetic_flat_terrain (64 points)
+    workload: mixed (9 queries)
+      quadtree_default: score 0.001, avg 0.001 ms, build 0.014 ms
+  dataset: synthetic_facade (64 points)
+    workload: mixed (9 queries)
+      quadtree_default: score 0.001, avg 0.001 ms, build 0.011 ms
+  dataset: synthetic_urban_mixed (128 points)
+    workload: mixed (9 queries)
+      quadtree_default: score 0.001, avg 0.001 ms, build 0.032 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / mixed] n/a (1 candidate(s))
+    [synthetic_flat_terrain / mixed] n/a (1 candidate(s))
+    [synthetic_urban_mixed / mixed] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / mixed] n/a (1 candidate(s))
+    [synthetic_flat_terrain / mixed] n/a (1 candidate(s))
+    [synthetic_urban_mixed / mixed] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / mixed] front size 1
+      fastest: quadtree_default  latency=0.0008ms build=0.0110ms mem=0.00MB imbalance=1.06
+      knee:    (same as fastest)
+    [synthetic_flat_terrain / mixed] front size 1
+      fastest: quadtree_default  latency=0.0010ms build=0.0140ms mem=0.00MB imbalance=1.31
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / mixed] front size 1
+      fastest: quadtree_default  latency=0.0008ms build=0.0321ms mem=0.00MB imbalance=2.19
+      knee:    (same as fastest)
+  metric winners:
+  [synthetic_facade / mixed]
+    best latency: quadtree_default (0.001 ms, score 0.001, objective latency)
+    best build: quadtree_default (0.011 ms, score 0.001, objective latency)
+    best memory: quadtree_default (0.002 MB, score 0.001, objective latency)
+  [synthetic_flat_terrain / mixed]
+    best latency: quadtree_default (0.001 ms, score 0.001, objective latency)
+    best build: quadtree_default (0.014 ms, score 0.001, objective latency)
+    best memory: quadtree_default (0.002 MB, score 0.001, objective latency)
+  [synthetic_urban_mixed / mixed]
+    best latency: quadtree_default (0.001 ms, score 0.001, objective latency)
+    best build: quadtree_default (0.032 ms, score 0.001, objective latency)
+    best memory: quadtree_default (0.004 MB, score 0.001, objective latency)
+  wrote rows: 3
+  csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\prepared_queries.csv
+  best csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\prepared_queries_best.csv
+  explain report: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\prepared_queries_explain.md
+  condition domain from 'synthetic_flat_terrain': 8 point, 8 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 3
+  schemas: 1
+  default score objective: balanced (lambda latency/build/memory/imbalance 1.000/0.001/0.010/0.010)
+  workloads: 1
+  dataset: synthetic_flat_terrain (64 points)
+    workload: mixed (3 queries)
+      quadtree_default: score 0.014, avg 0.001 ms, build 0.013 ms
+  dataset: synthetic_facade (64 points)
+    workload: mixed (3 queries)
+      quadtree_default: score 0.011, avg 0.000 ms, build 0.011 ms
+  dataset: synthetic_urban_mixed (128 points)
+    workload: mixed (3 queries)
+      quadtree_default: score 0.022, avg 0.000 ms, build 0.032 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / mixed] n/a (1 candidate(s))
+    [synthetic_flat_terrain / mixed] n/a (1 candidate(s))
+    [synthetic_urban_mixed / mixed] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / mixed] n/a (1 candidate(s))
+    [synthetic_flat_terrain / mixed] n/a (1 candidate(s))
+    [synthetic_urban_mixed / mixed] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / mixed] front size 1
+      fastest: quadtree_default  latency=0.0003ms build=0.0107ms mem=0.00MB imbalance=1.06
+      knee:    (same as fastest)
+    [synthetic_flat_terrain / mixed] front size 1
+      fastest: quadtree_default  latency=0.0007ms build=0.0129ms mem=0.00MB imbalance=1.31
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / mixed] front size 1
+      fastest: quadtree_default  latency=0.0003ms build=0.0324ms mem=0.00MB imbalance=2.19
+      knee:    (same as fastest)
+  metric winners:
+  [synthetic_facade / mixed]
+    best latency: quadtree_default (0.000 ms, score 0.011, objective balanced)
+    best build: quadtree_default (0.011 ms, score 0.011, objective balanced)
+    best memory: quadtree_default (0.002 MB, score 0.011, objective balanced)
+  [synthetic_flat_terrain / mixed]
+    best latency: quadtree_default (0.001 ms, score 0.014, objective balanced)
+    best build: quadtree_default (0.013 ms, score 0.014, objective balanced)
+    best memory: quadtree_default (0.002 MB, score 0.014, objective balanced)
+  [synthetic_urban_mixed / mixed]
+    best latency: quadtree_default (0.000 ms, score 0.022, objective balanced)
+    best build: quadtree_default (0.032 ms, score 0.022, objective balanced)
+    best memory: quadtree_default (0.004 MB, score 0.022, objective balanced)
+  wrote rows: 3
+  csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\balanced_objective.csv
+Schema search
+  evaluator: cpu
+  datasets: 3
+  schemas: 1
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  auto-conditions: enabled
+    proxy candidates: 5
+    proxy point cap: 64
+    proxy queries: 2
+    final top-k: 3
+    confirmation top-k: 2
+  auto-conditions: domain from 64 sampled points, 47 sketch nodes
+    point thresholds: 8, density thresholds: 8, height thresholds: 8
+  auto-conditions: proxy stage uses visit-count surrogate (alpha=0.100, lambdaBuild=1.000)
+  auto-conditions proxy: 5 candidates, 2 queries
+    proxy [1/5] quadtree_default
+      aggregate score 6.631
+    proxy [2/5] generated_qt3l256
+      aggregate score 7.401
+    proxy [3/5] generated_qt4l128_kd5l128cp4e150
+      aggregate score 7.401
+    proxy [4/5] generated_qt5l16384_bvh5l8192cp8A998e900_kd1l1024ap=rrcp64
+      aggregate score 7.404
+    proxy [5/5] generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998
+      aggregate score 7.401
+    proxy best: quadtree_default score 6.631
+  auto-conditions shortlist: 3 candidates, 16 queries
+    shortlist [1/3] quadtree_default
+      aggregate score 0.000
+    shortlist [2/3] generated_qt3l256
+      aggregate score 0.001
+    shortlist [3/3] generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998
+      aggregate score 0.000
+    shortlist best: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 score 0.000
+  auto-conditions confirmation: 2 candidates, 6 queries
+    confirmation [1/2] generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998
+      aggregate score 0.000
+    confirmation [2/2] quadtree_default
+      aggregate score 0.000
+    confirmation best: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 score 0.000
+  auto-condition schema: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\auto_condition_schemas\synthetic_flat_terrain_volume_small_medium_best_schema.json
+  auto-condition schema: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\auto_condition_schemas\synthetic_facade_volume_small_medium_best_schema.json
+  auto-condition schema: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\auto_condition_schemas\synthetic_urban_mixed_volume_small_medium_best_schema.json
+  auto-condition selector: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\auto_condition_selector.json
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / volume_small_medium] n/a (2 candidate(s))
+    [synthetic_flat_terrain / volume_small_medium] n/a (2 candidate(s))
+    [synthetic_urban_mixed / volume_small_medium] n/a (2 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / volume_small_medium] n/a (2 candidate(s))
+    [synthetic_flat_terrain / volume_small_medium] n/a (2 candidate(s))
+    [synthetic_urban_mixed / volume_small_medium] n/a (2 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / volume_small_medium] front size 1
+      fastest: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998  latency=0.0004ms build=0.0008ms mem=0.00MB imbalance=1.00
+      knee:    (same as fastest)
+    [synthetic_flat_terrain / volume_small_medium] front size 1
+      fastest: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998  latency=0.0004ms build=0.0008ms mem=0.00MB imbalance=1.00
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / volume_small_medium] front size 2
+      fastest: quadtree_default  latency=0.0005ms build=0.0321ms mem=0.00MB imbalance=2.19
+      knee:    generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998  latency=0.0005ms build=0.0014ms mem=0.00MB imbalance=1.00
+  metric winners:
+  [synthetic_facade / volume_small_medium]
+    best latency: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.000 ms, score 0.000, objective latency)
+    best build: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.001 ms, score 0.000, objective latency)
+    best memory: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.001 MB, score 0.000, objective latency)
+  [synthetic_flat_terrain / volume_small_medium]
+    best latency: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.000 ms, score 0.000, objective latency)
+    best build: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.001 ms, score 0.000, objective latency)
+    best memory: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.001 MB, score 0.000, objective latency)
+  [synthetic_urban_mixed / volume_small_medium]
+    best latency: quadtree_default (0.000 ms, score 0.000, objective latency)
+    best build: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.001 ms, score 0.000, objective latency)
+    best memory: generated_qt10l32768_bvh1l8192cp16A998_qt1l64cp32H500a998 (0.002 MB, score 0.000, objective latency)
+  wrote rows: 6
+  csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\auto_conditions.csv
+  best csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\auto_conditions_best.csv
+  condition domain from 'synthetic_flat_terrain': 8 point, 8 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cuda
+  cuda builder: Mixed
+  cuda device: 0 (NVIDIA GeForce RTX 4080 SUPER, cc 8.9, 16375 MB total, 15061 MB free)
+  cuda warmup: 0.127 ms
+  cuda memory budget: 12281 MB (auto, 75% of total VRAM)
+  datasets: 3
+  schemas: 1
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: synthetic_flat_terrain (64 points)
+    workload: volume_small_medium (4 queries)
+      gpu_mixed_all: score 0.003, avg 0.003 ms, build 9.667 ms, gpu build 9.667 ms, upload 0.556 ms, gpu query 0.074 ms
+  dataset: synthetic_facade (64 points)
+    workload: volume_small_medium (4 queries)
+      gpu_mixed_all: score 0.003, avg 0.003 ms, build 0.149 ms, gpu build 0.149 ms, upload 0.013 ms, gpu query 0.030 ms
+  dataset: synthetic_urban_mixed (128 points)
+    workload: volume_small_medium (4 queries)
+      gpu_mixed_all: score 0.008, avg 0.008 ms, build 0.235 ms, gpu build 0.235 ms, upload 0.011 ms, gpu query 0.038 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_flat_terrain / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_urban_mixed / volume_small_medium] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_flat_terrain / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_urban_mixed / volume_small_medium] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / volume_small_medium] front size 1
+      fastest: gpu_mixed_all  latency=0.0032ms build=0.1495ms mem=0.06MB imbalance=1.06
+      knee:    (same as fastest)
+    [synthetic_flat_terrain / volume_small_medium] front size 1
+      fastest: gpu_mixed_all  latency=0.0031ms build=9.6673ms mem=0.06MB imbalance=1.31
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / volume_small_medium] front size 1
+      fastest: gpu_mixed_all  latency=0.0076ms build=0.2351ms mem=0.09MB imbalance=7.01
+      knee:    (same as fastest)
+  metric winners:
+  [synthetic_facade / volume_small_medium]
+    best latency: gpu_mixed_all (0.003 ms, score 0.003, objective latency)
+    best build: gpu_mixed_all (0.149 ms, score 0.003, objective latency)
+    best memory: gpu_mixed_all (0.063 MB, score 0.003, objective latency)
+  [synthetic_flat_terrain / volume_small_medium]
+    best latency: gpu_mixed_all (0.003 ms, score 0.003, objective latency)
+    best build: gpu_mixed_all (9.667 ms, score 0.003, objective latency)
+    best memory: gpu_mixed_all (0.063 MB, score 0.003, objective latency)
+  [synthetic_urban_mixed / volume_small_medium]
+    best latency: gpu_mixed_all (0.008 ms, score 0.008, objective latency)
+    best build: gpu_mixed_all (0.235 ms, score 0.008, objective latency)
+    best memory: gpu_mixed_all (0.093 MB, score 0.008, objective latency)
+  wrote rows: 3
+  condition domain from 'synthetic_flat_terrain': 8 point, 8 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cuda
+  cuda builder: Mixed
+  cuda device: 0 (NVIDIA GeForce RTX 4080 SUPER, cc 8.9, 16375 MB total, 15059 MB free)
+  cuda warmup: 0.001 ms
+  cuda memory budget: 12281 MB (auto, 75% of total VRAM)
+  datasets: 3
+  schemas: 1
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: synthetic_flat_terrain (64 points)
+    workload: volume_small_medium (2 queries)
+      kdtree_default: score 0.001, avg 0.001 ms, build 0.012 ms, cpu fallback (unsupported CUDA split policy)
+  dataset: synthetic_facade (64 points)
+    workload: volume_small_medium (2 queries)
+      kdtree_default: score 0.000, avg 0.000 ms, build 0.010 ms, cpu fallback (unsupported CUDA split policy)
+  dataset: synthetic_urban_mixed (128 points)
+    workload: volume_small_medium (2 queries)
+      kdtree_default: score 0.001, avg 0.001 ms, build 0.034 ms, cpu fallback (unsupported CUDA split policy)
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_flat_terrain / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_urban_mixed / volume_small_medium] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_flat_terrain / volume_small_medium] n/a (1 candidate(s))
+    [synthetic_urban_mixed / volume_small_medium] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / volume_small_medium] front size 1
+      fastest: kdtree_default  latency=0.0004ms build=0.0102ms mem=0.00MB imbalance=1.45
+      knee:    (same as fastest)
+    [synthetic_flat_terrain / volume_small_medium] front size 1
+      fastest: kdtree_default  latency=0.0006ms build=0.0123ms mem=0.00MB imbalance=1.45
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / volume_small_medium] front size 1
+      fastest: kdtree_default  latency=0.0005ms build=0.0335ms mem=0.00MB imbalance=1.25
+      knee:    (same as fastest)
+  metric winners:
+  [synthetic_facade / volume_small_medium]
+    best latency: kdtree_default (0.000 ms, score 0.000, objective latency)
+    best build: kdtree_default (0.010 ms, score 0.000, objective latency)
+    best memory: kdtree_default (0.002 MB, score 0.000, objective latency)
+  [synthetic_flat_terrain / volume_small_medium]
+    best latency: kdtree_default (0.001 ms, score 0.001, objective latency)
+    best build: kdtree_default (0.012 ms, score 0.001, objective latency)
+    best memory: kdtree_default (0.002 MB, score 0.001, objective latency)
+  [synthetic_urban_mixed / volume_small_medium]
+    best latency: kdtree_default (0.001 ms, score 0.001, objective latency)
+    best build: kdtree_default (0.034 ms, score 0.001, objective latency)
+    best memory: kdtree_default (0.003 MB, score 0.001, objective latency)
+  wrote rows: 3
+  csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\cuda_unsupported_policy.csv
+  condition domain from 'synthetic_flat_terrain': 8 point, 8 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cuda
+  cuda builder: Mixed
+  cuda device: 0 (NVIDIA GeForce RTX 4080 SUPER, cc 8.9, 16375 MB total, 15057 MB free)
+  cuda warmup: 0.001 ms
+  cuda memory budget: 12281 MB (auto, 75% of total VRAM)
+  datasets: 3
+  schemas: 1
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: synthetic_flat_terrain (64 points)
+    workload: cuda_knn_only (5 queries)
+      gpu_mixed_all: score 0.001, avg 0.001 ms, build 0.286 ms, gpu build 0.286 ms, upload 0.094 ms, gpu query 0.080 ms
+  dataset: synthetic_facade (64 points)
+    workload: cuda_knn_only (5 queries)
+      gpu_mixed_all: score 0.001, avg 0.001 ms, build 0.167 ms, gpu build 0.167 ms, upload 0.012 ms, gpu query 0.034 ms
+  dataset: synthetic_urban_mixed (128 points)
+    workload: cuda_knn_only (5 queries)
+      gpu_mixed_all: score 0.001, avg 0.001 ms, build 0.215 ms, gpu build 0.215 ms, upload 0.011 ms, gpu query 0.034 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / cuda_knn_only] n/a (1 candidate(s))
+    [synthetic_flat_terrain / cuda_knn_only] n/a (1 candidate(s))
+    [synthetic_urban_mixed / cuda_knn_only] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / cuda_knn_only] n/a (1 candidate(s))
+    [synthetic_flat_terrain / cuda_knn_only] n/a (1 candidate(s))
+    [synthetic_urban_mixed / cuda_knn_only] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / cuda_knn_only] front size 1
+      fastest: gpu_mixed_all  latency=0.0008ms build=0.1671ms mem=0.06MB imbalance=1.06
+      knee:    (same as fastest)
+    [synthetic_flat_terrain / cuda_knn_only] front size 1
+      fastest: gpu_mixed_all  latency=0.0009ms build=0.2864ms mem=0.06MB imbalance=1.31
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / cuda_knn_only] front size 1
+      fastest: gpu_mixed_all  latency=0.0008ms build=0.2147ms mem=0.09MB imbalance=7.01
+      knee:    (same as fastest)
+  metric winners:
+  [synthetic_facade / cuda_knn_only]
+    best latency: gpu_mixed_all (0.001 ms, score 0.001, objective latency)
+    best build: gpu_mixed_all (0.167 ms, score 0.001, objective latency)
+    best memory: gpu_mixed_all (0.063 MB, score 0.001, objective latency)
+  [synthetic_flat_terrain / cuda_knn_only]
+    best latency: gpu_mixed_all (0.001 ms, score 0.001, objective latency)
+    best build: gpu_mixed_all (0.286 ms, score 0.001, objective latency)
+    best memory: gpu_mixed_all (0.063 MB, score 0.001, objective latency)
+  [synthetic_urban_mixed / cuda_knn_only]
+    best latency: gpu_mixed_all (0.001 ms, score 0.001, objective latency)
+    best build: gpu_mixed_all (0.215 ms, score 0.001, objective latency)
+    best memory: gpu_mixed_all (0.093 MB, score 0.001, objective latency)
+  wrote rows: 3
+  csv: C:\Users\PC\AppData\Local\Temp\mdspc_schema_search_tests\cuda_knn_queries.csv
+  condition domain from 'synthetic_flat_terrain': 8 point, 8 density, 8 height, 1 anisotropy thresholds
+  baselines: injected 4 single-block schema(s) as controls
+Schema search
+  evaluator: cpu
+  datasets: 3
+  schemas: 8
+  generated schemas: 4 requested
+  primitive profile: query_minimal_cpu
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: synthetic_flat_terrain (64 points)
+    workload: volume_small_medium (4 queries)
+      quadtree_default: score 0.001, avg 0.001 ms, build 0.017 ms
+      octree_default: score 0.000, avg 0.000 ms, build 0.008 ms
+      kdtree_default: score 0.000, avg 0.000 ms, build 0.010 ms
+      bvh_default: score 0.000, avg 0.000 ms, build 0.007 ms
+      generated_qt3l256: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_qt4l128_kd5l128: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_ot2l8192: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_kd4l64_qt4l16384: score 0.000, avg 0.000 ms, build 0.001 ms
+  dataset: synthetic_facade (64 points)
+    workload: volume_small_medium (4 queries)
+      quadtree_default: score 0.000, avg 0.000 ms, build 0.010 ms
+      octree_default: score 0.000, avg 0.000 ms, build 0.006 ms
+      kdtree_default: score 0.001, avg 0.001 ms, build 0.010 ms
+      bvh_default: score 0.000, avg 0.000 ms, build 0.007 ms
+      generated_qt3l256: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_qt4l128_kd5l128: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_ot2l8192: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_kd4l64_qt4l16384: score 0.000, avg 0.000 ms, build 0.001 ms
+  dataset: synthetic_urban_mixed (128 points)
+    workload: volume_small_medium (4 queries)
+      quadtree_default: score 0.000, avg 0.000 ms, build 0.032 ms
+      octree_default: score 0.000, avg 0.000 ms, build 0.013 ms
+      kdtree_default: score 0.000, avg 0.000 ms, build 0.024 ms
+      bvh_default: score 0.000, avg 0.000 ms, build 0.019 ms
+      generated_qt3l256: score 0.001, avg 0.001 ms, build 0.001 ms
+      generated_qt4l128_kd5l128: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_ot2l8192: score 0.000, avg 0.000 ms, build 0.001 ms
+      generated_kd4l64_qt4l16384: score 0.000, avg 0.000 ms, build 0.016 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [synthetic_facade / volume_small_medium] rho=0.089 over 8 candidates
+    [synthetic_flat_terrain / volume_small_medium] rho=-0.006 over 8 candidates
+    [synthetic_urban_mixed / volume_small_medium] rho=-0.209 over 8 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [synthetic_facade / volume_small_medium] rho=-0.385 over 8 candidates
+    [synthetic_flat_terrain / volume_small_medium] rho=-0.668 over 8 candidates
+    [synthetic_urban_mixed / volume_small_medium] rho=-0.122 over 8 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [synthetic_facade / volume_small_medium] front size 3
+      fastest: generated_kd4l64_qt4l16384  latency=0.0003ms build=0.0011ms mem=0.00MB imbalance=1.00
+      knee:    generated_qt4l128_kd5l128  latency=0.0003ms build=0.0010ms mem=0.00MB imbalance=1.00
+    [synthetic_flat_terrain / volume_small_medium] front size 1
+      fastest: generated_ot2l8192  latency=0.0003ms build=0.0010ms mem=0.00MB imbalance=1.00
+      knee:    (same as fastest)
+    [synthetic_urban_mixed / volume_small_medium] front size 1
+      fastest: generated_ot2l8192  latency=0.0003ms build=0.0010ms mem=0.00MB imbalance=1.00
+      knee:    (same as fastest)
+  metric winners:
+  [synthetic_facade / volume_small_medium]
+    best latency: generated_kd4l64_qt4l16384 (0.000 ms, score 0.000, objective latency)
+    best build: generated_qt3l256 (0.001 ms, score 0.000, objective latency)
+    best memory: generated_qt3l256 (0.001 MB, score 0.000, objective latency)
+  [synthetic_flat_terrain / volume_small_medium]
+    best latency: generated_ot2l8192 (0.000 ms, score 0.000, objective latency)
+    best build: generated_ot2l8192 (0.001 ms, score 0.000, objective latency)
+    best memory: generated_qt3l256 (0.001 MB, score 0.000, objective latency)
+  [synthetic_urban_mixed / volume_small_medium]
+    best latency: generated_ot2l8192 (0.000 ms, score 0.000, objective latency)
+    best build: generated_qt3l256 (0.001 ms, score 0.001, objective latency)
+    best memory: generated_qt3l256 (0.002 MB, score 0.001, objective latency)
+  wrote rows: 24
+  csv: C:\Users\PC\AppData\Local\Temp\mdspc_baseline_test\baseline_search.csv
+      refining 50-eval budget, 2 active dim(s), lambda 5, sigma0 0.400
+Baseline tests passed
+########## in-exe test suite (rebuilt exe) done in 0 min (exit 0) ##########
+
+########## vcpkg install pcl[core]  [08:09:34] ##########
+Computing installation plan...
+The following packages will be built and installed:
+  * nanoflann:x64-windows@1.10.1
+    pcl:x64-windows@1.15.1#1
+  * qhull:x64-windows@8.0.2#6
+Additional packages (*) will be modified to complete this operation.
+Detecting compiler hash for triplet x64-windows...
+Compiler found: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe
+Restored 0 package(s) from C:\Users\PC\AppData\Local\vcpkg\archives in 825 us. Use --debug to see more details.
+Installing 1/3 nanoflann:x64-windows@1.10.1...
+nanoflann:x64-windows@1.10.1 package ABI: 39cec19cacd1d14abefdca5dd7e608b953ac79e622119625519cd901dbdd01f3
+Building nanoflann:x64-windows@1.10.1...
+Downloading https://github.com/jlblancoc/nanoflann/archive/1.10.1.tar.gz -> jlblancoc-nanoflann-1.10.1.tar.gz
+Successfully downloaded jlblancoc-nanoflann-1.10.1.tar.gz
+-- Extracting source C:/vcpkg/downloads/jlblancoc-nanoflann-1.10.1.tar.gz
+-- Using source at C:/vcpkg/buildtrees/nanoflann/src/1.10.1-b48cf979a0.clean
+-- Configuring x64-windows
+-- Building x64-windows-dbg
+-- Building x64-windows-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/nanoflann_x64-windows/lib/pkgconfig/nanoflann.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Fixing pkgconfig file: C:/vcpkg/packages/nanoflann_x64-windows/debug/lib/pkgconfig/nanoflann.pc
+-- Installing: C:/vcpkg/packages/nanoflann_x64-windows/share/nanoflann/copyright
+-- Performing post-build validation
+Starting submission of nanoflann:x64-windows@1.10.1 to 1 binary cache(s) in the background
+Elapsed time to handle nanoflann:x64-windows: 5.2 s
+Installing 2/3 qhull:x64-windows@8.0.2#6...
+qhull:x64-windows@8.0.2#6 package ABI: e64767722b3cadbb7398550d62fa3a9e3d44fc4f8ca3ad835d9f883845e64b3f
+Building qhull:x64-windows@8.0.2#6...
+Downloading https://github.com/qhull/qhull/archive/613debeaea72ee66626dace9ba1a2eff11b5d37d.tar.gz -> qhull-qhull-613debeaea72ee66626dace9ba1a2eff11b5d37d.tar.gz
+Successfully downloaded qhull-qhull-613debeaea72ee66626dace9ba1a2eff11b5d37d.tar.gz
+-- Extracting source C:/vcpkg/downloads/qhull-qhull-613debeaea72ee66626dace9ba1a2eff11b5d37d.tar.gz
+-- Applying patch include-qhullcpp-shared.patch
+-- Applying patch fix-missing-symbols.patch
+-- Applying patch noapp.patch
+-- Applying patch fix-qhullcpp-cpp20-support.patch
+-- Using source at C:/vcpkg/buildtrees/qhull/src/ff11b5d37d-ed14f7f27b.clean
+-- Configuring x64-windows
+-- Building x64-windows-dbg
+-- Building x64-windows-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/qhull_x64-windows/lib/pkgconfig/qhull_r.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/qhull_x64-windows/lib/pkgconfig/qhullcpp.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Fixing pkgconfig file: C:/vcpkg/packages/qhull_x64-windows/debug/lib/pkgconfig/qhull_r.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/qhull_x64-windows/debug/lib/pkgconfig/qhullcpp.pc
+-- Installing: C:/vcpkg/packages/qhull_x64-windows/share/qhull/usage
+-- Installing: C:/vcpkg/packages/qhull_x64-windows/share/qhull/copyright
+-- Performing post-build validation
+Starting submission of qhull:x64-windows@8.0.2#6 to 1 binary cache(s) in the background
+Elapsed time to handle qhull:x64-windows: 9.4 s
+Completed submission of nanoflann:x64-windows@1.10.1 to 1 binary cache(s) in 71.9 ms
+Installing 3/3 pcl:x64-windows@1.15.1#1...
+pcl:x64-windows@1.15.1#1 package ABI: cb6c2a38dae8b9c7ab1aba6c2ef3d4f8727ae6df2dab70ffcaea3b2012126b5b
+Building pcl:x64-windows@1.15.1#1...
+Downloading https://github.com/PointCloudLibrary/pcl/commit/99333442ac63971297b4cdd05fab9d2bd2ff57a4.patch?full_index=1 -> PointCloudLibrary-pcl-boost-1-89-0-compat.patch
+Successfully downloaded PointCloudLibrary-pcl-boost-1-89-0-compat.patch
+Downloading https://github.com/PointCloudLibrary/pcl/commit/2d6929bdcd98beaa28fa8ee3a105beb566f16347.patch?full_index=1 -> PointCloudLibrary-pcl-eigen3-5-0-0-compat.patch
+Successfully downloaded PointCloudLibrary-pcl-eigen3-5-0-0-compat.patch
+Downloading https://github.com/PointCloudLibrary/pcl/archive/pcl-1.15.1.tar.gz -> PointCloudLibrary-pcl-pcl-1.15.1.tar.gz
+Successfully downloaded PointCloudLibrary-pcl-pcl-1.15.1.tar.gz
+-- Extracting source C:/vcpkg/downloads/PointCloudLibrary-pcl-pcl-1.15.1.tar.gz
+-- Applying patch fix-check-sse.patch
+-- Applying patch fix-numeric-literals-flag.patch
+-- Applying patch install-layout.patch
+-- Applying patch install-examples.patch
+-- Applying patch fix-clang-cl.patch
+-- Applying patch C:/vcpkg/downloads/PointCloudLibrary-pcl-boost-1-89-0-compat.patch
+-- Applying patch C:/vcpkg/downloads/PointCloudLibrary-pcl-eigen3-5-0-0-compat.patch
+-- Using source at C:/vcpkg/buildtrees/pcl/src/pcl-1.15.1-12bbb559b9.clean
+-- Configuring x64-windows
+-- Building x64-windows-dbg
+-- Building x64-windows-rel
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_2d.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_common.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_features.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_filters.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_geometry.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_io.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_io_ply.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_kdtree.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_keypoints.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_ml.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_octree.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_outofcore.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_recognition.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_registration.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_sample_consensus.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_search.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_segmentation.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_stereo.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_surface.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/lib/pkgconfig/pcl_tracking.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.5.1-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.5-1-x86_64.pkg.tar.zst
+-- Using msys root at C:/vcpkg/downloads/tools/msys2/3e71d1f8e22ab23f
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_2d.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_common.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_features.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_filters.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_geometry.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_io.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_io_ply.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_kdtree.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_keypoints.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_ml.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_octree.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_outofcore.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_recognition.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_registration.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_sample_consensus.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_search.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_segmentation.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_stereo.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_surface.pc
+-- Fixing pkgconfig file: C:/vcpkg/packages/pcl_x64-windows/debug/lib/pkgconfig/pcl_tracking.pc
+-- Installing: C:/vcpkg/packages/pcl_x64-windows/share/pcl/usage
+-- Installing: C:/vcpkg/packages/pcl_x64-windows/share/pcl/copyright
+-- Performing post-build validation
+Starting submission of pcl:x64-windows@1.15.1#1 to 1 binary cache(s) in the background
+Elapsed time to handle pcl:x64-windows: 4 min
+Total install time: 4.2 min
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Some packages did not declare an SPDX license. Check the `copyright` file for each package for more information about their licensing.
+Packages installed in this vcpkg installation declare the following licenses:
+BSD-3-Clause
+The package pcl provides CMake targets:
+
+    find_package(PCL CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE ${PCL_LIBRARIES})
+
+Completed submission of qhull:x64-windows@8.0.2#6 to 1 binary cache(s) in 771 ms
+Waiting for 1 remaining binary cache submissions...
+Completed submission of pcl:x64-windows@1.15.1#1 to 1 binary cache(s) in 11 s (1/1)
+All requested installations completed successfully in: 4.2 min
+########## vcpkg install pcl[core] done in 4.5 min (exit 0) ##########
+
+########## build pcl_point_baseline.exe  [08:14:04] ##########
+**********************************************************************
+** Visual Studio 2026 Developer PowerShell v18.0
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+pcl_point_baseline.cpp
+c:\Github\MultiDataStructure\tools\pcl_point_baseline.cpp(340): error C2664: 'pcl::uindex_t pcl::octree::OctreePointCloudSearch<`anonymous-namespace'::Point,pcl::octree::OctreeContainerPointIndices,pcl::octree::OctreeContainerEmpty>::boxSearch(const Eigen::Vector3f &,const Eigen::Vector3f &,pcl::Indices &) const': el argumento 1 no puede convertirse de 'const `anonymous-namespace'::Point' a 'const Eigen::Vector3f &'
+c:\Github\MultiDataStructure\tools\pcl_point_baseline.cpp(340): note: Razón: no se puede realizar la conversión de 'const `anonymous-namespace'::Point' a 'const Eigen::Vector3f'
+c:\Github\MultiDataStructure\tools\pcl_point_baseline.cpp(340): note: No hay disponible ningún operador de conversión definido por el usuario que pueda realizar esta conversión, o bien no se puede llamar al operador
+C:\vcpkg\installed\x64-windows\include\pcl/octree/octree_search.h(283): note: vea la declaración de 'pcl::octree::OctreePointCloudSearch<`anonymous-namespace'::Point,pcl::octree::OctreeContainerPointIndices,pcl::octree::OctreeContainerEmpty>::boxSearch'
+c:\Github\MultiDataStructure\tools\pcl_point_baseline.cpp(340): note: al hacer coincidir la lista de argumentos '(const `anonymous-namespace'::Point, const `anonymous-namespace'::Point, std::vector<pcl::index_t,std::allocator<int>>)'
+########## build pcl_point_baseline.exe done in 0.1 min (exit 2) ##########
+
+########## PCL + Open3D column on 5M test half  [08:14:08] ##########
+pcl helper missing - skipping
+########## PCL + Open3D column on 5M test half done in 0 min (exit 2) ##########
+
+########## Waikato merge (urban, ~120M)  [08:14:08] ##########
+scanning 1240 tile headers ...
+survey total: 6,015,584,388 points
+picked 27 contiguous tiles = 123,366,474 points (target 120,000,000)
+  [1/27] CL2_BD33_2023_1000_2940.laz: 5,767,701 pts
+  [2/27] CL2_BD33_2023_1000_2939.laz: 3,637,781 pts
+  [3/27] CL2_BD33_2023_1000_2938.laz: 5,913,590 pts
+  [4/27] CL2_BD33_2023_1000_2839.laz: 3,725,710 pts
+  [5/27] CL2_BD33_2023_1000_2838.laz: 4,564,877 pts
+  [6/27] CL2_BD33_2023_1000_2840.laz: 6,296,955 pts
+  [7/27] CL2_BD33_2023_1000_2837.laz: 5,008,641 pts
+  [8/27] CL2_BD33_2023_1000_2937.laz: 3,500,698 pts
+  [9/27] CL2_BD33_2023_1000_2738.laz: 3,309,678 pts
+  [10/27] CL2_BD33_2023_1000_2739.laz: 5,455,603 pts
+  [11/27] CL2_BD33_2023_1000_2737.laz: 5,691,554 pts
+  [12/27] CL2_BD33_2023_1000_2740.laz: 4,729,740 pts
+  [13/27] CL2_BD33_2023_1000_2836.laz: 3,255,081 pts
+  [14/27] CL2_BD33_2023_1000_2841.laz: 3,225,681 pts
+  [15/27] CL2_BD33_2023_1000_2736.laz: 3,397,789 pts
+  [16/27] CL2_BD33_2023_1000_2936.laz: 4,750,864 pts
+  [17/27] CL2_BD33_2023_1000_2638.laz: 3,851,220 pts
+  [18/27] CL2_BD33_2023_1000_2639.laz: 6,467,297 pts
+  [19/27] CL2_BD33_2023_1000_2637.laz: 4,705,066 pts
+  [20/27] CL2_BD33_2023_1000_2741.laz: 3,556,296 pts
+  [21/27] CL2_BD33_2023_1000_2640.laz: 3,366,903 pts
+  [22/27] CL2_BD33_2023_1000_2636.laz: 4,874,301 pts
+  [23/27] CL2_BD33_2023_1000_2735.laz: 4,593,799 pts
+  [24/27] CL2_BD33_2023_1000_2835.laz: 5,846,529 pts
+  [25/27] CL2_BD33_2023_1000_2538.laz: 5,277,267 pts
+  [26/27] CL2_BD33_2023_1000_2635.laz: 3,283,676 pts
+  [27/27] CL2_BD33_2023_1000_2537.laz: 3,672,032 pts
+dropped 1,640,145 noise-classified points (7/18)
+wrote 121,726,329 points -> D:\Datasets\Point Clouds\Waikato_Hamilton\hamilton_120M.las
+bounds x[1796320.0, 1799680.0] y[5817120.0, 5820720.0] z[11.1, 74.2]
+########## Waikato merge (urban, ~120M) done in 0.8 min (exit 0) ##########
+
+########## SanSimeon merge (cross-cloud terrain, ~25M)  [08:14:55] ##########
+scanning 2336 tile headers ...
+survey total: 17,716,478,347 points
+picked 4 contiguous tiles = 32,088,937 points (target 25,000,000)
+  [1/4] ot_35120E8318A_1.laz: 6,537,893 pts
+  [2/4] ot_35120E8318B_1.laz: 8,408,409 pts
+  [3/4] ot_35120E8313D_1.laz: 9,091,878 pts
+  [4/4] ot_35120E8313C_1.laz: 8,050,757 pts
+wrote 32,088,937 points -> D:\Datasets\Point Clouds\SanSimeon\sansimeon_25M.las
+bounds x[683596.1, 684758.1] y[3932458.1, 3933868.0] z[70.2, 246.8]
+########## SanSimeon merge (cross-cloud terrain, ~25M) done in 0.7 min (exit 0) ##########
+
+########## dataset matrix build  [08:15:37] ##########
+########## dataset matrix build done in 0 min (exit 2) ##########
+
+########## matrix trace capture + split (cells <= 25M)  [08:15:37] ##########
+########## matrix trace capture + split (cells <= 25M) done in 0 min (exit 1) ##########
+
+########## sansimeon trace capture + split  [08:15:37] ##########
+loaded 32,088,937 points from D:\Datasets\Point Clouds\SanSimeon\sansimeon_25M.las in 1.1s
+mean point spacing (sampled): 0.786638
+stage normal_estimation: 20,006 queries emitted (full stage = 32,088,937) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,006 queries emitted (full stage = 32,088,937) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,006 queries emitted (full stage = 32,088,937) -> euclidean_clustering_trace.csv
+combined trace: results\traces\sansimeon_25m\pipeline_trace.csv | sidecar: results\traces\sansimeon_25m\pipeline_workload.json
+results\traces\sansimeon_25m\pipeline_trace.csv: 60018 queries -> opt 30009 / test 30009  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+########## sansimeon trace capture + split done in 0 min (exit 0) ##########
+
+########## cross-cloud replay: 50M winner on sansimeon test half  [08:15:40] ##########
+  condition domain from 'sansimeon_25M': 17 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 5
+  surrogate rank model: models\schema_selector.json
+  benchmark top-k: 32
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: sansimeon_25M (32088937 points)
+    workload: pipeline_replay (1500 queries)
+      xover_g1_i3_kd1l8192ap=rr_qt10l512_kd1l32: score 0.007, avg 0.007 ms, build 35152.364 ms
+      quadtree_default: score 0.006, avg 0.006 ms, build 32692.842 ms
+      octree_default: score 0.008, avg 0.008 ms, build 16957.237 ms
+      kdtree_default: score 0.021, avg 0.021 ms, build 25522.464 ms
+      bvh_default: score 0.041, avg 0.041 ms, build 19575.014 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [sansimeon_25M / pipeline_replay] rho=0.700 over 5 candidates
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [sansimeon_25M / pipeline_replay] rho=0.447 over 5 candidates
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [sansimeon_25M / pipeline_replay] front size 5
+      fastest: quadtree_default  latency=0.0061ms build=32692.8425ms mem=501.27MB imbalance=5.03
+      knee:    kdtree_default  latency=0.0206ms build=25522.4640ms mem=490.76MB imbalance=1.01
+  metric winners:
+  [sansimeon_25M / pipeline_replay]
+    best latency: quadtree_default (0.006 ms, score 0.006, objective latency)
+    best build: octree_default (16957.237 ms, score 0.008, objective latency)
+    best memory: bvh_default (490.036 MB, score 0.041, objective latency)
+  wrote rows: 5
+  csv: results/eval_traces/v2/crosscloud_sansimeon.csv
+  best csv: results/schema_search_best.csv
+  pareto csv: results/schema_search_pareto.csv (5 non-dominated rows)
+########## cross-cloud replay: 50M winner on sansimeon test half done in 2.2 min (exit 0) ##########
+
+########## overnight chain complete [08:17:54] ##########

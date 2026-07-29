@@ -1,0 +1,216 @@
+﻿
+########## PCL + Open3D column on 5M test half (fixed frame + fixed helper)  [08:18:40] ##########
+########## PCL + Open3D column on 5M test half (fixed frame + fixed helper) done in 0 min (exit 1) ##########
+
+########## Alhambra Open3D re-run (fixed frame)  [08:18:40] ##########
+  condition domain from 'Alhambra_100M': 18 point, 9 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 1
+  surrogate rank model: models\schema_selector.json
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: Alhambra_100M (99999776 points)
+    workload: pipeline_replay (3000 queries)
+      generated_bvh7l128_ot5l1024: score 0.013, avg 0.013 ms, build 68132.600 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [Alhambra_100M / pipeline_replay] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [Alhambra_100M / pipeline_replay] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [Alhambra_100M / pipeline_replay] front size 1
+      fastest: generated_bvh7l128_ot5l1024  latency=0.0129ms build=68132.5998ms mem=1558.01MB imbalance=8.98
+      knee:    (same as fastest)
+  metric winners:
+  [Alhambra_100M / pipeline_replay]
+    best latency: generated_bvh7l128_ot5l1024 (0.013 ms, score 0.013, objective latency)
+    best build: generated_bvh7l128_ot5l1024 (68132.600 ms, score 0.013, objective latency)
+    best memory: generated_bvh7l128_ot5l1024 (1558.006 MB, score 0.013, objective latency)
+  wrote rows: 1
+  csv: C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m_fixed\mds_raw.csv
+  best csv: C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m_fixed\mds_best.csv
+  pareto csv: C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m_fixed\mds_pareto.csv (1 non-dominated rows)
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m_fixed\framework_comparison.json
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_alhambra_100m_fixed\framework_comparison.md
+multidatastructure_cpu: avg=0.012922 ms, queries=3000
+open3d: avg=0.047927 ms, queries=3000
+########## Alhambra Open3D re-run (fixed frame) done in 1.8 min (exit 0) ##########
+
+########## 5M Open3D re-run (fixed frame)  [08:20:27] ##########
+  condition domain from '5M': 16 point, 10 density, 8 height, 1 anisotropy thresholds
+Schema search
+  evaluator: cpu
+  datasets: 1
+  schemas: 1
+  surrogate rank model: models\schema_selector.json
+  default score objective: latency (lambda latency/build/memory/imbalance 1.000/0.000/0.000/0.000)
+  workloads: 1
+  dataset: 5M (5000000 points)
+    workload: pipeline_replay (3000 queries)
+      quadtree_default: score 0.004, avg 0.004 ms, build 6538.106 ms
+  proxy/latency rank correlation (Spearman; 1.0 = proxy perfectly predicts latency order):
+    [5M / pipeline_replay] n/a (1 candidate(s))
+  zero-build cost estimate vs latency rank correlation (Spearman):
+    [5M / pipeline_replay] n/a (1 candidate(s))
+  Pareto recommendation (knee = balanced compromise across latency/build/memory/imbalance):
+    [5M / pipeline_replay] front size 1
+      fastest: quadtree_default  latency=0.0036ms build=6538.1059ms mem=81.89MB imbalance=2.35
+      knee:    (same as fastest)
+  metric winners:
+  [5M / pipeline_replay]
+    best latency: quadtree_default (0.004 ms, score 0.004, objective latency)
+    best build: quadtree_default (6538.106 ms, score 0.004, objective latency)
+    best memory: quadtree_default (81.893 MB, score 0.004, objective latency)
+  wrote rows: 1
+  csv: C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m_fixed\mds_raw.csv
+  best csv: C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m_fixed\mds_best.csv
+  pareto csv: C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m_fixed\mds_pareto.csv (1 non-dominated rows)
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m_fixed\framework_comparison.json
+Wrote C:\Github\MultiDataStructure\results\framework_compare\v2_sanandreas_5m_fixed\framework_comparison.md
+multidatastructure_cpu: avg=0.003632 ms, queries=3000
+open3d: avg=0.013298 ms, queries=3000
+########## 5M Open3D re-run (fixed frame) done in 0.2 min (exit 0) ##########
+
+########## dataset matrix build (fixed arg order; industrial last)  [08:20:38] ##########
+[terrain] loading D:\Datasets\Point Clouds\SanAndreas\200M.las ...
+[terrain] 200,000,000 points
+[terrain] wrote terrain_1M.las (1,000,000 points)
+[terrain] wrote terrain_5M.las (5,000,000 points)
+[terrain] wrote terrain_25M.las (25,000,000 points)
+[terrain] wrote terrain_100M.las (100,000,000 points)
+[architecture] loading D:\Datasets\Point Clouds\Alhambra\Alhambra_100M.las ...
+[architecture] 99,999,776 points
+[architecture] wrote architecture_1M.las (1,000,000 points)
+[architecture] wrote architecture_5M.las (5,000,000 points)
+[architecture] wrote architecture_25M.las (25,000,000 points)
+[architecture] skip 100M (source has only 99,999,776)
+[urban] loading D:\Datasets\Point Clouds\Waikato_Hamilton\hamilton_120M.las ...
+[urban] 121,726,329 points
+[urban] wrote urban_1M.las (1,000,000 points)
+[urban] wrote urban_5M.las (5,000,000 points)
+[urban] wrote urban_25M.las (25,000,000 points)
+[urban] wrote urban_100M.las (100,000,000 points)
+[indoor] loading D:\Datasets\Point Clouds\Sketchfab\hintze.las ...
+[indoor] 2,449,789 points
+[indoor] wrote indoor_1M.las (1,000,000 points)
+[indoor] skip 5M (source has only 2,449,789)
+[indoor] skip 25M (source has only 2,449,789)
+[indoor] skip 100M (source has only 2,449,789)
+[industrial] loading D:\Datasets\Point Clouds\SolarPanels\SolarPanels700M.las ...
+[industrial] 728,841,014 points
+[industrial] wrote industrial_1M.las (1,000,000 points)
+[industrial] wrote industrial_5M.las (5,000,000 points)
+[industrial] wrote industrial_25M.las (25,000,000 points)
+[industrial] wrote industrial_100M.las (100,000,000 points)
+manifest: D:\Datasets\Point Clouds\matrix\matrix_manifest.json (16 cells)
+########## dataset matrix build (fixed arg order; industrial last) done in 4.2 min (exit 0) ##########
+
+########## matrix trace capture + split (cells <= 25M)  [08:24:52] ##########
+capturing architecture_1M.las -> results/traces/matrix/architecture_1M
+loaded 1,000,000 points from D:\Datasets\Point Clouds\matrix\architecture_1M.las in 0.2s
+mean point spacing (sampled): 0.018703
+stage normal_estimation: 20,000 queries emitted (full stage = 1,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 1,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 1,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\architecture_1M\pipeline_trace.csv | sidecar: results\traces\matrix\architecture_1M\pipeline_workload.json
+capturing architecture_25M.las -> results/traces/matrix/architecture_25M
+loaded 25,000,000 points from D:\Datasets\Point Clouds\matrix\architecture_25M.las in 3.7s
+mean point spacing (sampled): 0.016018
+stage normal_estimation: 20,000 queries emitted (full stage = 25,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 25,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 25,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\architecture_25M\pipeline_trace.csv | sidecar: results\traces\matrix\architecture_25M\pipeline_workload.json
+capturing architecture_5M.las -> results/traces/matrix/architecture_5M
+loaded 5,000,000 points from D:\Datasets\Point Clouds\matrix\architecture_5M.las in 0.8s
+mean point spacing (sampled): 0.016180
+stage normal_estimation: 20,000 queries emitted (full stage = 5,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 5,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 5,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\architecture_5M\pipeline_trace.csv | sidecar: results\traces\matrix\architecture_5M\pipeline_workload.json
+capturing indoor_1M.las -> results/traces/matrix/indoor_1M
+loaded 1,000,000 points from D:\Datasets\Point Clouds\matrix\indoor_1M.las in 0.2s
+mean point spacing (sampled): 0.038827
+stage normal_estimation: 20,000 queries emitted (full stage = 1,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 1,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 1,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\indoor_1M\pipeline_trace.csv | sidecar: results\traces\matrix\indoor_1M\pipeline_workload.json
+capturing industrial_1M.las -> results/traces/matrix/industrial_1M
+loaded 1,000,000 points from D:\Datasets\Point Clouds\matrix\industrial_1M.las in 0.1s
+mean point spacing (sampled): 0.123101
+stage normal_estimation: 20,000 queries emitted (full stage = 1,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 1,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 1,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\industrial_1M\pipeline_trace.csv | sidecar: results\traces\matrix\industrial_1M\pipeline_workload.json
+capturing industrial_25M.las -> results/traces/matrix/industrial_25M
+loaded 25,000,000 points from D:\Datasets\Point Clouds\matrix\industrial_25M.las in 0.9s
+mean point spacing (sampled): 0.126479
+stage normal_estimation: 20,000 queries emitted (full stage = 25,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 25,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 25,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\industrial_25M\pipeline_trace.csv | sidecar: results\traces\matrix\industrial_25M\pipeline_workload.json
+capturing industrial_5M.las -> results/traces/matrix/industrial_5M
+loaded 5,000,000 points from D:\Datasets\Point Clouds\matrix\industrial_5M.las in 0.2s
+mean point spacing (sampled): 0.113219
+stage normal_estimation: 20,000 queries emitted (full stage = 5,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 5,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 5,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\industrial_5M\pipeline_trace.csv | sidecar: results\traces\matrix\industrial_5M\pipeline_workload.json
+capturing terrain_1M.las -> results/traces/matrix/terrain_1M
+loaded 1,000,000 points from D:\Datasets\Point Clouds\matrix\terrain_1M.las in 0.2s
+mean point spacing (sampled): 0.874731
+stage normal_estimation: 20,000 queries emitted (full stage = 1,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 1,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 1,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\terrain_1M\pipeline_trace.csv | sidecar: results\traces\matrix\terrain_1M\pipeline_workload.json
+capturing terrain_25M.las -> results/traces/matrix/terrain_25M
+loaded 25,000,000 points from D:\Datasets\Point Clouds\matrix\terrain_25M.las in 3.6s
+mean point spacing (sampled): 0.902556
+stage normal_estimation: 20,000 queries emitted (full stage = 25,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 25,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 25,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\terrain_25M\pipeline_trace.csv | sidecar: results\traces\matrix\terrain_25M\pipeline_workload.json
+capturing terrain_5M.las -> results/traces/matrix/terrain_5M
+loaded 5,000,000 points from D:\Datasets\Point Clouds\matrix\terrain_5M.las in 0.8s
+mean point spacing (sampled): 0.802253
+stage normal_estimation: 20,000 queries emitted (full stage = 5,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 5,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 5,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\terrain_5M\pipeline_trace.csv | sidecar: results\traces\matrix\terrain_5M\pipeline_workload.json
+capturing urban_1M.las -> results/traces/matrix/urban_1M
+loaded 1,000,000 points from D:\Datasets\Point Clouds\matrix\urban_1M.las in 0.2s
+mean point spacing (sampled): 1.766556
+stage normal_estimation: 20,000 queries emitted (full stage = 1,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 1,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 1,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\urban_1M\pipeline_trace.csv | sidecar: results\traces\matrix\urban_1M\pipeline_workload.json
+capturing urban_25M.las -> results/traces/matrix/urban_25M
+loaded 25,000,000 points from D:\Datasets\Point Clouds\matrix\urban_25M.las in 3.7s
+mean point spacing (sampled): 1.659511
+stage normal_estimation: 20,000 queries emitted (full stage = 25,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 25,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 25,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\urban_25M\pipeline_trace.csv | sidecar: results\traces\matrix\urban_25M\pipeline_workload.json
+capturing urban_5M.las -> results/traces/matrix/urban_5M
+loaded 5,000,000 points from D:\Datasets\Point Clouds\matrix\urban_5M.las in 0.8s
+mean point spacing (sampled): 1.623093
+stage normal_estimation: 20,000 queries emitted (full stage = 5,000,000) -> normal_estimation_trace.csv
+stage radius_outlier_removal: 20,000 queries emitted (full stage = 5,000,000) -> radius_outlier_removal_trace.csv
+stage euclidean_clustering: 20,000 queries emitted (full stage = 5,000,000) -> euclidean_clustering_trace.csv
+combined trace: results\traces\matrix\urban_5M\pipeline_trace.csv | sidecar: results\traces\matrix\urban_5M\pipeline_workload.json
+results\traces\matrix\architecture_1M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\architecture_25M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\architecture_5M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\indoor_1M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\industrial_1M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\industrial_25M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\industrial_5M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\terrain_1M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\terrain_25M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\terrain_5M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\urban_1M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\urban_25M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+results\traces\matrix\urban_5M\pipeline_trace.csv: 60000 queries -> opt 30000 / test 30000  (pipeline_trace_opt.csv, pipeline_trace_test.csv)
+########## matrix trace capture + split (cells <= 25M) done in 0.6 min (exit 0) ##########
+
+########## morning fixups complete [08:25:26] ##########

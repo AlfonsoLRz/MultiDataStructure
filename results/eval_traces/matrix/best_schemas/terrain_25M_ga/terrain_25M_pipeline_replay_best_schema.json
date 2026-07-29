@@ -1,0 +1,29 @@
+{
+  "name": "evolved_g1_i10_kd1l8192_qt11l512",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 11,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 8192,
+    "minPointsToSplit": 2048,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "input": "C:\\Github\\MultiDataStructure\\results\\traces\\sanandreas_5m\\5M_binary.ply",
+  "query_trace": "C:\\Github\\MultiDataStructure\\results\\framework_compare\\v2_sanandreas_5m_pcl\\query_trace.csv",
+  "octree_resolution": 19.6461,
+  "results": [
+    {
+      "method": "pcl_kdtree",
+      "status": "ok",
+      "build_ms": 1818.58,
+      "queries": 6000,
+      "avg_latency_ms": 0.00284802,
+      "p95_latency_ms": 0.0049,
+      "count_mismatches": 0,
+      "max_count_delta": 0,
+      "by_type": {
+        "knn": {"queries": 2000, "avg_latency_ms": 0.00230535, "p95_latency_ms": 0.0033},
+        "radius": {"queries": 4000, "avg_latency_ms": 0.00311935, "p95_latency_ms": 0.0053}
+      },
+      "note": "KdTreeFLANN radius/KNN only."
+    },
+    {
+      "method": "pcl_octree",
+      "status": "ok",
+      "build_ms": 154.473,
+      "queries": 6000,
+      "avg_latency_ms": 0.0146984,
+      "p95_latency_ms": 0.0294,
+      "count_mismatches": 0,
+      "max_count_delta": 0,
+      "by_type": {
+        "knn": {"queries": 2000, "avg_latency_ms": 0.0224151, "p95_latency_ms": 0.0341},
+        "radius": {"queries": 4000, "avg_latency_ms": 0.0108401, "p95_latency_ms": 0.022605}
+      },
+      "note": "OctreePointCloudSearch range/radius/KNN."
+    }
+  ]
+}

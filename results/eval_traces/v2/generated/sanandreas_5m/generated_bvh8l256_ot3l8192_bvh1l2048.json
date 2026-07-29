@@ -1,0 +1,33 @@
+{
+  "name": "generated_bvh8l256_ot3l8192_bvh1l2048",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 8,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64
+    },
+    {
+      "type": "Octree",
+      "numLevels": 3,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048
+    },
+    {
+      "type": "BVH",
+      "numLevels": 1,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 4096,
+    "minPointsToSplit": 1024,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

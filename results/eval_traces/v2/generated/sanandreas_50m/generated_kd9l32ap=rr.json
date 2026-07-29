@@ -1,0 +1,22 @@
+{
+  "name": "generated_kd9l32ap=rr",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 9,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 9,
+    "leafCapacity": 256,
+    "minPointsToSplit": 64,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

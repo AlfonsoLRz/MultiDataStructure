@@ -1,0 +1,37 @@
+{
+  "name": "repair_tested_points_leaf_tighten_0_kd2l32ap=rr_ot1l32768_bvh4l8192cp32768",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 2,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "Octree",
+      "numLevels": 1,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192
+    },
+    {
+      "type": "BVH",
+      "numLevels": 4,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "condition": {
+        "minPoints": 32768
+      }
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 7,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

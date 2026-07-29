@@ -1,0 +1,37 @@
+{
+  "name": "repair_tested_points_micro_index_1_kd2l32ap=rr_ot2l16384_bvh3l8192cp16384",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 2,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "Octree",
+      "numLevels": 2,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096
+    },
+    {
+      "type": "BVH",
+      "numLevels": 3,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "condition": {
+        "minPoints": 16384
+      }
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 7,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}
