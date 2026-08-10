@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih13l8192aprr",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 13,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 13,
+    "leafCapacity": 8192,
+    "minPointsToSplit": 2048,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

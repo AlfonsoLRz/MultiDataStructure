@@ -1,0 +1,19 @@
+{
+  "name": "tuned_hg2l16384",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 2,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 2,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

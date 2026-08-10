@@ -193,7 +193,7 @@ namespace BaselineTests
 			range._stats._breakdown.visitedByDepth.end(),
 			size_t(0));
 		expect(rangeVisitedByDepth == range._stats._visitedNodes, "range query breakdown accounts for visited nodes by depth");
-		expect(range._stats._breakdown._visitedByStructure.at("Octree") == range._stats._visitedNodes,
+		expect(range._stats._breakdown.countFor(range._stats._breakdown._visitedByStructure, "Octree") == range._stats._visitedNodes,
 			"range query breakdown accounts for visited nodes by structure");
 
 		const PointSpatialIndex::CountResult count = index.countRange(rangeBounds);
@@ -217,7 +217,7 @@ namespace BaselineTests
 		expectSameSet(radiusResult._pointIndices, bruteRadius, "radius query matches brute force");
 		expect(radiusResult._stats._visitedNodes > 0, "radius query records visited nodes");
 		expect(radiusResult._stats._testedPoints > 0, "radius query records tested points");
-		expect(radiusResult._stats._breakdown._testedPointsByStructure.at("Octree") == radiusResult._stats._testedPoints,
+		expect(radiusResult._stats._breakdown.countFor(radiusResult._stats._breakdown._testedPointsByStructure, "Octree") == radiusResult._stats._testedPoints,
 			"radius query breakdown accounts for tested points by structure");
 
 		const size_t k = 7;

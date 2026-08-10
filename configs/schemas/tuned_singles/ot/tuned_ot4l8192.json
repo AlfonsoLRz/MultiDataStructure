@@ -1,0 +1,19 @@
+{
+  "name": "tuned_ot4l8192",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 4,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 4,
+    "leafCapacity": 8192,
+    "minPointsToSplit": 2048,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

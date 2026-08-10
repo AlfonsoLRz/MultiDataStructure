@@ -1,0 +1,20 @@
+{
+  "name": "tuned_kd11l16384aprr",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 11,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

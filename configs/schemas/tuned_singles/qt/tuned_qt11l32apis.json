@@ -1,0 +1,20 @@
+{
+  "name": "tuned_qt11l32apis",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 11,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "ignore_shortest"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

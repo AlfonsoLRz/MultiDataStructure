@@ -1,0 +1,19 @@
+{
+  "name": "tuned_ot5l32768",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 5,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 5,
+    "leafCapacity": 32768,
+    "minPointsToSplit": 8192,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

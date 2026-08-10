@@ -1,0 +1,19 @@
+{
+  "name": "tuned_rg3l4096",
+  "levels": [
+    {
+      "type": "RegularGrid",
+      "numLevels": 3,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 1024
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 3,
+    "leafCapacity": 4096,
+    "minPointsToSplit": 1024,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

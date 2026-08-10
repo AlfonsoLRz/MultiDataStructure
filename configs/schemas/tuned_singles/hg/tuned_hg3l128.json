@@ -1,0 +1,19 @@
+{
+  "name": "tuned_hg3l128",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 3,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 3,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

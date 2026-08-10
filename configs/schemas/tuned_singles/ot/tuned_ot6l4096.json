@@ -1,0 +1,19 @@
+{
+  "name": "tuned_ot6l4096",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 6,
+      "leafCapacity": 4096,
+      "minPointsToSplit": 1024
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 6,
+    "leafCapacity": 4096,
+    "minPointsToSplit": 1024,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

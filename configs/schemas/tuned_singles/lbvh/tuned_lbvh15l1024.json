@@ -1,0 +1,20 @@
+{
+  "name": "tuned_lbvh15l1024",
+  "levels": [
+    {
+      "type": "LBVH",
+      "numLevels": 15,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 15,
+    "leafCapacity": 1024,
+    "minPointsToSplit": 256,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

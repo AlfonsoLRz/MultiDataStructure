@@ -1,0 +1,20 @@
+{
+  "name": "tuned_kd20l32",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 20,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 20,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

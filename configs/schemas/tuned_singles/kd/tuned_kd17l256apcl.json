@@ -1,0 +1,20 @@
+{
+  "name": "tuned_kd17l256apcl",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 17,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 17,
+    "leafCapacity": 256,
+    "minPointsToSplit": 64,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bvh10l32768",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 10,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 32768,
+    "minPointsToSplit": 8192,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

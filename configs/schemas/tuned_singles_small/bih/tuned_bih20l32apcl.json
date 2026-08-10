@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih20l32apcl",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 20,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 20,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

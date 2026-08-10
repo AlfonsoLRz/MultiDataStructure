@@ -199,12 +199,103 @@ same-morphology schema as a default, re-tune to recover the last ~10%.
 
 ### 3.7 Primitive-quality control (Indexicon)
 
-Against the independent Indexicon library (arXiv:2606.04676, MIT) on identical range/kNN
-queries: **zero count mismatches on every query** (independent correctness
-cross-validation), and our primitives match or beat theirs on every comparable operation
-(range: octree tie, kd-tree 10×; kNN: 1.65× / 5.2×). This closes the "your nested wins
-just reflect weak in-house baselines" objection with external evidence. Their builds are
-5–7× faster, which is their genuine strength (lean, portable, dynamic).
+*Rewritten 2026-08-06 after the full §F.3 baseline landed. The earlier version of this
+section claimed our primitives "match or beat theirs on every comparable operation"; that
+claim was measured on range+kNN only, on one synthetic trace, and it does not survive the
+radius-inclusive pipeline traces. It is withdrawn — see below.*
+
+Against the independent Indexicon library (arXiv:2606.04676, MIT), now covering all three
+of its structures (octree, kd-tree, **packed R-tree**) and all query types:
+
+**What holds — exactness.** **Zero count mismatches across 351,000 measured samples**
+(13 matrix cells × 3 structures × 3000 held-out queries × 3 repeats, radius + kNN). The
+single disagreement anywhere is on the older 5M synthetic trace: one point lying 3×10⁻⁸
+relative distance from a query radius, where our `float` distance test and the driver's
+`double` one round to opposite sides. Since Indexicon has no radius primitive,
+radius is implemented in our driver over each of their structures using the same
+min-distance-to-node pruning their own kNN uses, and every traversal is validated against
+brute force before it is allowed to report (`--verify-bruteforce`). This is an exactness
+cross-validation against independently written code, and it is the claim to lean on: the
+composition results cannot be an artifact of broken primitives.
+
+**What does not hold — the old latency claim.** On the radius-inclusive pipeline traces
+their octree and kd-tree answer queries *faster* than ours in all 13 matrix cells measured
+(`results/framework_compare/indexicon/indexicon_summary.csv`, both sides measured in the
+same session on the same held-out trace). One cause dominates — per-node instrumentation —
+and a separate, cheaper configuration bug in the kd grid changes how it shows up.
+
+**(a) A large per-visited-node cost, ~10% of it instrumentation.** Solving
+latency = a·visited + b·tested per cell yields **a ≈ 51–131 ns per visited node** against
+**b ≈ 1.1–2.8 ns per point tested**, stable across all 13 cells (independent 6-schema fit on
+terrain_5M: 106 ns/node vs 1.17 ns/point). Node counts barely move with scale (59→89) while
+tested points grow ~10×, so the fixed cost dilutes and the octree gap closes —
+0.48 → 0.57 → 0.94 (architecture), 0.40 → 0.76 → 1.01 (industrial), 0.52 → 0.76 → 0.94
+(terrain). **At 25M our octree is already at parity.**
+
+Part of that per-node cost was telemetry: `recordNodeVisit` built a `std::string` by value
+and probed an `unordered_map` on every visited node, inside the timed region. Those counters
+were rewritten to arrays indexed by a build-time `Node::_structureIndex` (2026-08-06). A/B
+on terrain_5M with **identical node and point counters** — so the traversal is provably
+unchanged — the rewrite is worth **1.21× on the octree** (66.7 nodes/query) and **1.03× on
+the kd-tree** (28.7 nodes/query): about **6–14 ns/node** of the ~106 ns/node total. The
+remaining ~90 ns/node is genuine traversal work, dominated by cache misses over node structs
+(a 524k-node kd-tree spans ~50 MB).
+
+*Two earlier readings are withdrawn.* The first blamed the whole 106 ns/node on telemetry.
+The second concluded telemetry was negligible because removing it "changed nothing" — that
+measurement ran a **stale binary** which did not contain the change (see §10: MSBuild links
+to `x64\Release`, every script pointed at a legacy `MultiDataStructure\x64\Release` copy
+frozen at 2026-07-28). The numbers above come from an explicit old-vs-new binary comparison
+made after that was found. **Consequence for the Indexicon column:** MDS was paying ~10%
+more per node than it needs to, so the octree ratios above are pessimistic by roughly 1.2×
+and our octree likely *beats* Indexicon's at 25M once re-measured.
+
+**(b) A configuration bug in the kd grid — real, and now fixed.**
+Our kd-tree visits only ~30 nodes at every scale but tests **8–19× more points than our own
+octree** (15,008 per query at industrial_25M vs the octree's 1,110). The cause is arithmetic:
+a kd-tree is binary, so `numLevels: 12` caps it at 2¹² = 4096 leaves, and the builder stops
+on depth before it ever consults capacity (`PointSpatialIndex.cpp:888` precedes `:894`).
+`kdtree_default` therefore builds 8191 nodes with **avg leaf occupancy 1220.7 against a
+requested `leafCapacity` of 32** — a 38× miss, uniform across leaves. Reaching capacity 32
+at 25M needs depth ≈ 20; the grid's ceiling is 12, so *every* kd schema in
+`configs/schemas/tuned_singles*/kd/` is depth-capped at ≥1M points and `leafCapacity` is
+inert in 9 of 12. In `tuned_singles_small` — the grid the whole heatmap battery used — all
+4 kd schemas are depth-capped and `tuned_kd12l32` builds a **byte-identical tree to
+`kdtree_default`**, so the kd tuning arm was largely inert.
+
+**Fixed 2026-08-06.** `make_single_grids.py` now *derives* depth from capacity and cloud size
+via each primitive's branching factor (`--points`, default 25M; ceiling raised 12 → 24), and
+clears stale schemas from its output directory. Both grids were regenerated at their original
+sizes (108 / 36 schemas): **zero inert schemas remain**, and the kd arm now spans depths
+13–20 rather than sitting entirely at 12.
+
+**Effect on the baseline: the tuned-singles kd arm gets 1.22× stronger** (terrain_5M,
+held-out, 3 repeats): the best fixed-grid kd is `tuned_kd16l1024` at 0.00487 ms
+(16,383 nodes, occupancy 610) versus `kdtree_default` at 0.00592 ms (8,191 nodes, occupancy
+1221). That strengthens the baseline our searched schemas are measured against, i.e. it
+*reduces* our reported margins in any cell where a kd-tree was the best single. Note the
+grid now also spans over-splitting: `tuned_kd20l32` reaches occupancy 19.1 exactly as asked
+and is the second slowest of the arm, so depth is a genuine trade-off rather than a cap.
+**All matrix/battery numbers involving a kd-tree baseline predate this fix and must be
+re-measured.**
+
+**What this implies elsewhere.** Schema-vs-schema comparisons penalise node-heavy designs
+relative to point-heavy ones, since the per-node cost is ~90× the per-point cost. That is a
+property of the traversal, not of the measurement, so it is a legitimate part of what the
+search optimises — but it is worth stating, because it means our results favour shallow,
+wide structures and would shift on an implementation with better node locality.
+
+**The R-tree question is answered, and cleanly.** Comparing Indexicon's three structures
+*against each other* is immune to both problems above, since all three are their code. On
+these workloads their packed R-tree is **the slowest of the three in 8 of 13 cells and the
+fastest in none**. That is external evidence for the decision not to admit an R-tree into
+the grammar (overlapping MBRs don't fit per-level disjoint splits; packed R-trees over
+static in-memory points are that family's weakest regime) — rather than our own omission
+standing in for the result. Per `plans/research_direction_v2.md` §F.3 the gate was "revisit
+if that baseline ever wins a cell": it never does.
+
+Their builds remain 5–7× faster than ours, which is their genuine strength (lean,
+portable, dynamic).
 
 ---
 
@@ -297,6 +388,9 @@ In priority order. Lead with 1–3.
   from before the frame fix), or anything from `docs/evaluation.md`'s 12-cell synthetic
   study. All superseded.
 - Don't claim GPU advantages (§4).
+- Don't claim our primitives are faster than Indexicon's (§3.7). The exactness agreement is
+  the claim. Their octree/kd-tree are faster on these traces; our octree reaches parity by
+  25M, and the remaining gap is traversal cost (node locality), not instrumentation.
 - Don't claim generalization across clouds beyond §3.6's "safe but not optimal."
 - Don't call it a database or claim DBMS integration. The future path is per-patch/tile
   synthesis (pgPointcloud, COPC) — a follow-up systems paper, sketched in
@@ -317,8 +411,11 @@ are the weaker practice, not that tuning is irrelevant.
 amortizes after 2.4M queries, i.e. 2.4% of one pipeline stage. Scale decides.
 
 **"Your baselines were probably untuned."** Three defenses: budget-matched tuned grids per
-primitive (not defaults); external libraries (Open3D, PCL/FLANN); and an independent
-library (Indexicon) where our primitives match or beat theirs with exact count agreement.
+primitive (not defaults); external libraries (Open3D, PCL/FLANN), which we beat at 100M
+*while* paying instrumentation they don't; and an independent library (Indexicon) whose
+results agree with ours exactly on every query type, which is what rules out broken or
+weak primitives. Note we do *not* claim to be faster than Indexicon — see §3.7 for why
+that particular comparison is not currently measurable.
 
 **"Did you overfit to the queries you tuned on?"** Every reported number is on a disjoint
 held-out trace half (whole held-out blocks in the DL regime), five repeats, bootstrap CIs.
@@ -356,6 +453,14 @@ infrequently-changing clouds queried densely. Indexicon is the reference for dyn
 - The scale-conditional claim, not a universal one.
 
 **Ask yourself before submitting** (the honest gaps):
+- A visited node costs ~90× a tested point in our CPU traversal (§3.7). ~10% of that was
+  per-node telemetry and is now removed (1.21× on node-heavy schemas); the rest is real work,
+  chiefly node-struct cache misses. Node locality is the highest-value *optimization* target
+  outstanding; until it changes, our numbers favour shallow, wide structures.
+- **Every C++-side number measured before 2026-08-06 came from a binary at
+  `MultiDataStructure\x64\Release`, which MSBuild stopped writing to.** It was frozen at
+  2026-07-28. Re-measure anything C++-dependent; `scripts/resolve_exe.ps1` now refuses a
+  binary older than the sources so this cannot recur silently.
 - No end-to-end application wall time yet (see PCL adapter above).
 - One sampling seed per search arm; winner *families* are stable, exact schemas are not.
 - Matrix cells subsample their sources, so N and density co-vary (mitigated by the
@@ -381,8 +486,25 @@ infrequently-changing clouds queried densely. Indexicon is the reference for dyn
 | Reproduce the heatmap | `scripts/run_matrix_heatmap.ps1` |
 | Rigor tooling | `scripts/split_trace.py`, `scripts/make_single_grids.py` |
 | External baselines | `tools/pcl_point_baseline.cpp`, `tools/indexicon_point_baseline.cpp` |
+| Indexicon build (pins the clone) | `tools/build_indexicon_baseline.ps1` |
+| Indexicon baseline runs | `scripts/run_external_baselines.ps1` → `results/framework_compare/indexicon/` |
+| External-baseline caveats | `docs/framework_baselines.md` |
+| **Executable resolution (and the stale-binary guard)** | `scripts/resolve_exe.ps1` |
 
-**Known code debts**: warm `--measure-repeats` loop uses the workload's dominant kNN *k*
+**Build output path — read this before measuring anything.** MSBuild links the solution to
+`<repo>\x64\Release\MultiDataStructure.exe`. The path every runner script used until
+2026-08-06, `<repo>\MultiDataStructure\x64\Release\MultiDataStructure.exe`, is a legacy
+location from building the project standalone; nothing writes there any more, and the copy
+sitting there was from **2026-07-28**. Scripts therefore measured a stale binary, and C++
+changes appeared to have no effect. All scripts now go through `Resolve-MdsExe`, which uses
+the correct path and throws if the binary predates the newest source file.
+
+**Known code debts**: a visited node costs ~90× a tested point, dominated by node-struct
+cache misses, so the CPU traversal favours shallow wide structures (§3.7; the per-node
+telemetry component was removed 2026-08-06, worth 1.21× on node-heavy schemas);
+`avg_latency_ms` is the *first* (cold) pass while the repeat CI covers the warm ones
+(`SchemaSearch.cpp:3380` vs `:3410`), a few percent apart on the cells checked but worth
+knowing before quoting either; warm `--measure-repeats` loop uses the workload's dominant kNN *k*
 instead of per-query *k* (`SchemaSearch.cpp:3406`) — harmless for uniform-k traces, fix
 before using repeats on mixed-k traces; `make_dataset_matrix.py` needs a size tolerance so
 99.99M counts as the 100M rung; positional shape args must precede `--sizes`.

@@ -1,0 +1,20 @@
+{
+  "name": "tuned_qt8l2048apis",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 8,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512,
+      "axisPolicy": "ignore_shortest"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

@@ -476,6 +476,23 @@ namespace Experiments
 			<< "|kk=" << workload._knnK
 			<< "|seed=" << workload._querySeed
 			<< "|strata=" << (workload._stratifyQueries ? "1" : "0");
+		// A replayed trace IS the workload, so two runs over different traces must not share a
+		// key. Without this the fingerprint collapsed to the workload JSON's name and weights,
+		// and replaying trace B after trace A silently returned trace A's cached scores for
+		// every candidate. Size and write time are included so editing a trace in place (e.g.
+		// re-running split_trace.py) also invalidates.
+		if (!workload._tracePath.empty())
+		{
+			workloadText << "|trace=" << workload._tracePath;
+			std::error_code ec;
+			const std::filesystem::path tracePath(workload._tracePath);
+			const auto size = std::filesystem::file_size(tracePath, ec);
+			if (!ec)
+				workloadText << "@" << size;
+			const auto written = std::filesystem::last_write_time(tracePath, ec);
+			if (!ec)
+				workloadText << "#" << written.time_since_epoch().count();
+		}
 		key._workloadFingerprint = hex64(fnv1aString(workloadText.str()));
 
 		std::ostringstream evaluatorText;

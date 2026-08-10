@@ -208,6 +208,7 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 
 	_cloud = &cloud;
 	_schema = schema;
+	_structureNames = std::make_shared<std::vector<std::string>>();
 	_pointOrder.resize(cloud.size());
 	std::iota(_pointOrder.begin(), _pointOrder.end(), 0u);
 
@@ -230,6 +231,7 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 	rebuildOrderedPointSoA();
 	computeNodeAggregates(_root.get());
 	buildLeafMicroIndexes(_root.get());
+	assignStructureIndexes(_root.get());
 }
 
 PointSpatialIndex::Stats PointSpatialIndex::stats() const
@@ -248,6 +250,7 @@ PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds)
 
 	result._stats._returnedPoints = result._pointIndices.size();
 	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
@@ -260,6 +263,7 @@ PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds)
 
 	result._stats._returnedPoints = result._count;
 	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
@@ -273,6 +277,7 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 
 	result._stats._returnedPoints = result._pointIndices.size();
 	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
@@ -447,6 +452,7 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 
 	result._stats._returnedPoints = result._pointIndices.size();
 	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
@@ -1042,25 +1048,33 @@ std::string PointSpatialIndex::structureNameForNode(const Node& node) const
 	return Config::dataStructureLevelName(node._type);
 }
 
-void PointSpatialIndex::recordNodeVisit(const Node& node, QueryStats& stats) const
+// Resolves the node's structure name to a slot in the breakdown arrays, registering it on
+// first sight. Build-time only: the query path just reads Node::_structureIndex.
+uint32_t PointSpatialIndex::structureIndexForNode(const Node& node)
 {
-	++stats._visitedNodes;
-	const size_t depth = std::min(node._depth, QueryStats::MaxBreakdownDepth - 1);
-	++stats._breakdown.visitedByDepth[depth];
-	++stats._breakdown._visitedByStructure[structureNameForNode(node)];
+	const std::string name = structureNameForNode(node);
+	std::vector<std::string>& names = *_structureNames;
+	for (size_t i = 0; i < names.size(); ++i)
+	{
+		if (names[i] == name)
+			return static_cast<uint32_t>(i);
+	}
+
+	if (names.size() >= QueryStats::MaxBreakdownStructures)
+		return static_cast<uint32_t>(QueryStats::MaxBreakdownStructures - 1);
+
+	names.push_back(name);
+	return static_cast<uint32_t>(names.size() - 1);
 }
 
-void PointSpatialIndex::recordTestedPoints(const Node& node, size_t count, QueryStats& stats) const
+void PointSpatialIndex::assignStructureIndexes(Node* node)
 {
-	stats._testedPoints += count;
-	if (count > 0)
-		stats._breakdown._testedPointsByStructure[structureNameForNode(node)] += count;
-}
+	if (!node)
+		return;
 
-void PointSpatialIndex::recordFullyContainedNode(const Node& node, QueryStats& stats) const
-{
-	++stats._fullyContainedNodes;
-	++stats._breakdown._fullyContainedByStructure[structureNameForNode(node)];
+	node->_structureIndex = structureIndexForNode(*node);
+	for (const std::unique_ptr<Node>& child : node->_children)
+		assignStructureIndexes(child.get());
 }
 
 void PointSpatialIndex::rangeQueryMicroGrid(const Node& node, const AABB& bounds, QueryResult& result) const

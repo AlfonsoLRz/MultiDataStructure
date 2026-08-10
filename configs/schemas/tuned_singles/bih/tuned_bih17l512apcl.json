@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih17l512apcl",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 17,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 17,
+    "leafCapacity": 512,
+    "minPointsToSplit": 128,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

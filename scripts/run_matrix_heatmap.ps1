@@ -10,7 +10,9 @@ function Test-CellSelected($name) { return (-not $Only) -or ($Only -contains $na
 $ErrorActionPreference = 'Continue'
 $repo = 'c:\Github\MultiDataStructure'
 $py = Join-Path $repo '.venv\Scripts\python.exe'
-$exe = Join-Path $repo 'MultiDataStructure\x64\Release\MultiDataStructure.exe'
+. "$PSScriptRoot\resolve_exe.ps1"
+# MSBuild links to <repo>\x64\Release; MultiDataStructure\x64\Release is a stale legacy copy.
+$exe = Resolve-MdsExe -Repo $repo
 Set-Location $repo
 
 $outDir = 'results/eval_traces/matrix'
@@ -53,6 +55,13 @@ function Invoke-MatrixCell($cell, $queries, $genSchemas, $generations, $populati
   $test = "results/traces/matrix/$($cell.ToLower())/pipeline_trace_test.csv"
   if (-not (Test-Path $cloud)) { Write-Output "$cell : cloud missing - skipping"; return }
   if (-not (Test-Path $opt)) { Write-Output "$cell : opt trace missing - skipping"; return }
+  if (-not (Test-Path $test)) { Write-Output "$cell : test trace missing - skipping"; return }
+
+  # The C++ --csv writer appends, so a re-run would leave the previous run's rows in place and
+  # Get-BestSchemaPath (which sorts the whole file) could return a winner from an older run.
+  foreach ($stale in @("$outDir/${cell}_ga.csv", "$outDir/${cell}_singles.csv", "$outDir/${cell}_test.csv")) {
+    if (Test-Path $stale) { Remove-Item -Force $stale }
+  }
 
   Step "$cell GA (opt)" {
     & $exe --mode schema-search --input $cloud --no-synthetic `

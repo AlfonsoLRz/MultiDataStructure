@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bvh21l32",
+  "levels": [
+    {
+      "type": "BVH",
+      "numLevels": 21,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 21,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

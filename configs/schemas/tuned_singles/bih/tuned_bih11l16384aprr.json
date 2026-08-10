@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih11l16384aprr",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 11,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 16384,
+    "minPointsToSplit": 4096,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

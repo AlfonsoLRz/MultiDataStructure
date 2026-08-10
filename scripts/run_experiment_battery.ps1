@@ -4,7 +4,9 @@ $ErrorActionPreference = 'Continue'
 $repo = 'c:\Github\MultiDataStructure'
 $py = Join-Path $repo '.venv\Scripts\python.exe'
 $pyMds = Join-Path $repo '.venv-mds\Scripts\python.exe'
-$exe = Join-Path $repo 'MultiDataStructure\x64\Release\MultiDataStructure.exe'
+. "$PSScriptRoot\resolve_exe.ps1"
+# MSBuild links to <repo>\x64\Release; MultiDataStructure\x64\Release is a stale legacy copy.
+$exe = Resolve-MdsExe -Repo $repo
 Set-Location $repo
 
 function Step($name, $script) {
@@ -86,13 +88,13 @@ Step 'CI x3' {
 
 # 4. Framework comparisons (Open3D) on the corrected replay.
 Step 'framework compare 5M + Alhambra' {
-  & $pyMds scripts/compare_frameworks.py --exe MultiDataStructure/x64/Release/MultiDataStructure.exe `
+  & $pyMds scripts/compare_frameworks.py --exe $exe `
     --input "D:\Datasets\Point Clouds\SanAndreas\5M.las" `
     --schema results/eval_traces/best_schemas/5M_pipeline_replay_best_schema.json `
     --workload-profile configs/workloads/pipeline_replay.json `
     --input-trace results/traces/sanandreas_5m/pipeline_trace.csv `
     --queries 3000 --frameworks open3d --out-dir results/framework_compare/sanandreas_5m_trace
-  & $pyMds scripts/compare_frameworks.py --exe MultiDataStructure/x64/Release/MultiDataStructure.exe `
+  & $pyMds scripts/compare_frameworks.py --exe $exe `
     --input "D:\Datasets\Point Clouds\Alhambra\Alhambra_100M.las" `
     --schema results/eval_traces/best_schemas/Alhambra_100M_pipeline_replay_best_schema.json `
     --workload-profile configs/workloads/pipeline_replay.json `
@@ -140,7 +142,7 @@ Step 'build pcl helper' {
 }
 Step 'PCL column on 5M trace' {
   & $py "C:\Users\PC\AppData\Local\Temp\claude\c--Github-MultiDataStructure\c5d468df-b0e4-4d44-aac6-68617e591b4c\scratchpad\to_binary_ply.py" "D:\Datasets\Point Clouds\SanAndreas\5M.las" "$repo\results\traces\sanandreas_5m\5M.ply"
-  & $pyMds scripts/compare_frameworks.py --exe MultiDataStructure/x64/Release/MultiDataStructure.exe `
+  & $pyMds scripts/compare_frameworks.py --exe $exe `
     --input "results/traces/sanandreas_5m/5M.ply" `
     --schema results/eval_traces/best_schemas/5M_pipeline_replay_best_schema.json `
     --workload-profile configs/workloads/pipeline_replay.json `

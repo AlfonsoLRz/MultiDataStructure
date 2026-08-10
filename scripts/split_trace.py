@@ -54,7 +54,10 @@ def split_pipeline_trace(path: Path, seed: int, ratio: float) -> dict:
     for key in sorted(strata):
         idx = strata[key][:]
         rng.shuffle(idx)
-        cut = round(len(idx) * ratio)
+        # int(x + 0.5), not round(): Python's round() is half-to-even, so a stratum of 5 rows
+        # at ratio 0.5 cuts at 2 while one of 7 cuts at 4, biasing small strata in alternating
+        # directions. Pipeline traces have many low-count (query_type, k, radius) strata.
+        cut = int(len(idx) * ratio + 0.5)
         opt_idx.extend(idx[:cut])
         test_idx.extend(idx[cut:])
         stratum_counts["|".join(key)] = {"total": len(idx), "opt": cut, "test": len(idx) - cut}

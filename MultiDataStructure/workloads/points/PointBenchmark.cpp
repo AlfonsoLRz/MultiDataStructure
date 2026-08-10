@@ -55,17 +55,25 @@ static void writeDVec3Json(std::ostream& stream, const glm::dvec3& value)
 
 using QueryBreakdown = PointSpatialIndex::QueryStats::QueryBreakdown;
 
+// Structure counters are positional, so merging is only meaningful when both breakdowns were
+// produced by the same index (same slot->name mapping). Every aggregation here draws its
+// samples from one index, so the tables are the same object; adopt it and merge by index.
 static void mergeBreakdown(QueryBreakdown& target, const QueryBreakdown& source)
 {
 	for (size_t i = 0; i < target.visitedByDepth.size(); ++i)
 		target.visitedByDepth[i] += source.visitedByDepth[i];
 
-	for (const auto& [name, count] : source._visitedByStructure)
-		target._visitedByStructure[name] += count;
-	for (const auto& [name, count] : source._testedPointsByStructure)
-		target._testedPointsByStructure[name] += count;
-	for (const auto& [name, count] : source._fullyContainedByStructure)
-		target._fullyContainedByStructure[name] += count;
+	if (!target._structureNames)
+		target._structureNames = source._structureNames;
+	else if (source._structureNames && source._structureNames != target._structureNames)
+		return;	// different index: counters are not comparable slot-for-slot, so drop them
+
+	for (size_t i = 0; i < target._visitedByStructure.size(); ++i)
+	{
+		target._visitedByStructure[i] += source._visitedByStructure[i];
+		target._testedPointsByStructure[i] += source._testedPointsByStructure[i];
+		target._fullyContainedByStructure[i] += source._fullyContainedByStructure[i];
+	}
 }
 
 static QueryBreakdown aggregateBreakdowns(const std::vector<PointSpatialIndex::QueryStats>& samples)
@@ -76,14 +84,7 @@ static QueryBreakdown aggregateBreakdowns(const std::vector<PointSpatialIndex::Q
 	return result;
 }
 
-static std::vector<std::pair<std::string, size_t>> sortedBreakdownMap(const std::unordered_map<std::string, size_t>& values)
-{
-	std::vector<std::pair<std::string, size_t>> sorted(values.begin(), values.end());
-	std::sort(sorted.begin(), sorted.end(), [](const auto& left, const auto& right) {
-		return left.first < right.first;
-	});
-	return sorted;
-}
+using StructureCounters = std::array<size_t, PointSpatialIndex::QueryStats::MaxBreakdownStructures>;
 
 static std::string formatDepthBreakdown(const QueryBreakdown& breakdown)
 {
@@ -102,11 +103,11 @@ static std::string formatDepthBreakdown(const QueryBreakdown& breakdown)
 	return output.str();
 }
 
-static std::string formatMapBreakdown(const std::unordered_map<std::string, size_t>& values)
+static std::string formatMapBreakdown(const QueryBreakdown& breakdown, const StructureCounters& counters)
 {
 	std::ostringstream output;
 	bool first = true;
-	for (const auto& [name, count] : sortedBreakdownMap(values))
+	for (const auto& [name, count] : breakdown.namedCounts(counters))
 	{
 		if (!first)
 			output << ';';
@@ -133,11 +134,11 @@ static void writeDepthBreakdownJson(std::ostream& stream, const QueryBreakdown& 
 	stream << '}';
 }
 
-static void writeMapBreakdownJson(std::ostream& stream, const std::unordered_map<std::string, size_t>& values)
+static void writeMapBreakdownJson(std::ostream& stream, const QueryBreakdown& breakdown, const StructureCounters& counters)
 {
 	stream << '{';
 	bool first = true;
-	for (const auto& [name, count] : sortedBreakdownMap(values))
+	for (const auto& [name, count] : breakdown.namedCounts(counters))
 	{
 		if (!first)
 			stream << ", ";
@@ -154,13 +155,13 @@ static void writeQueryBreakdownJson(std::ostream& stream, const char* name, cons
 	writeDepthBreakdownJson(stream, breakdown);
 	stream << ",\n";
 	stream << "      \"visited_by_structure\": ";
-	writeMapBreakdownJson(stream, breakdown._visitedByStructure);
+	writeMapBreakdownJson(stream, breakdown, breakdown._visitedByStructure);
 	stream << ",\n";
 	stream << "      \"tested_points_by_structure\": ";
-	writeMapBreakdownJson(stream, breakdown._testedPointsByStructure);
+	writeMapBreakdownJson(stream, breakdown, breakdown._testedPointsByStructure);
 	stream << ",\n";
 	stream << "      \"fully_contained_by_structure\": ";
-	writeMapBreakdownJson(stream, breakdown._fullyContainedByStructure);
+	writeMapBreakdownJson(stream, breakdown, breakdown._fullyContainedByStructure);
 	stream << "\n";
 	stream << "    }" << (trailingComma ? "," : "") << "\n";
 }
@@ -746,9 +747,9 @@ static void appendPointQueryTrace(
 			<< trace._stats._returnedPoints << ','
 			<< trace._stats._fullyContainedNodes << ','
 			<< csvEscape(formatDepthBreakdown(trace._stats._breakdown)) << ','
-			<< csvEscape(formatMapBreakdown(trace._stats._breakdown._visitedByStructure)) << ','
-			<< csvEscape(formatMapBreakdown(trace._stats._breakdown._testedPointsByStructure)) << ','
-			<< csvEscape(formatMapBreakdown(trace._stats._breakdown._fullyContainedByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(trace._stats._breakdown, trace._stats._breakdown._visitedByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(trace._stats._breakdown, trace._stats._breakdown._testedPointsByStructure)) << ','
+			<< csvEscape(formatMapBreakdown(trace._stats._breakdown, trace._stats._breakdown._fullyContainedByStructure)) << ','
 			<< "cpu" << ','
 			<< queryProfile._seed << '\n';
 	}

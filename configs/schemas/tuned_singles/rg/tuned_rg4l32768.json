@@ -1,0 +1,19 @@
+{
+  "name": "tuned_rg4l32768",
+  "levels": [
+    {
+      "type": "RegularGrid",
+      "numLevels": 4,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 4,
+    "leafCapacity": 32768,
+    "minPointsToSplit": 8192,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

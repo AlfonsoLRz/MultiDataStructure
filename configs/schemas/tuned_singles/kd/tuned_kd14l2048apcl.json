@@ -1,0 +1,20 @@
+{
+  "name": "tuned_kd14l2048apcl",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 14,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 14,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

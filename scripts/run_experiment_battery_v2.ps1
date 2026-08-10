@@ -30,7 +30,10 @@ $ErrorActionPreference = 'Continue'
 $repo = 'c:\Github\MultiDataStructure'
 $py = Join-Path $repo '.venv\Scripts\python.exe'
 $pyMds = Join-Path $repo '.venv-mds\Scripts\python.exe'
-$exe = Join-Path $repo 'MultiDataStructure\x64\Release\MultiDataStructure.exe'
+. "$PSScriptRoot\resolve_exe.ps1"
+# MSBuild links to <repo>\x64\Release; MultiDataStructure\x64\Release is a stale legacy copy
+# that nothing writes any more. Resolve-MdsExe also refuses a binary older than the sources.
+$exe = Resolve-MdsExe -Repo $repo
 Set-Location $repo
 
 $outDir = 'results/eval_traces/v2'
@@ -42,12 +45,30 @@ $defaults = @('quadtree', 'octree', 'kdtree', 'bvh', 'bih', 'hgrid', 'lbvh', 're
   ForEach-Object { "configs/schemas/$_.json" }) -join ';'
 $handNested = 'configs/schemas/octree_kdtree.json;configs/schemas/quadtree_octree.json'
 
+# Steps that failed, reported together at the end. A cell whose search arms all failed still
+# produced a plausible-looking *_test.csv (defaults only, no winners) and read as a legitimate
+# negative result, so failures must be impossible to miss.
+$script:FailedSteps = @()
+
 function Step($name, $script) {
   Write-Output "`n########## $name  [$(Get-Date -Format HH:mm:ss)] ##########"
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $global:LASTEXITCODE = 0
   & $script
+  $code = $LASTEXITCODE
   $sw.Stop()
-  Write-Output "########## $name done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $LASTEXITCODE) ##########"
+  if ($code -ne 0) { $script:FailedSteps += "$name (exit $code)" }
+  Write-Output "########## $name done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
+  return $code
+}
+
+# The C++ --csv writers APPEND (PointBenchmark.cpp appendCsvSummary, header-only-if-empty), so
+# a re-run leaves the previous run's rows in place. Get-BestSchemaPath sorts over the whole
+# file and would happily return a winner from an older run with different parameters, and
+# Get-EvalBudget counts unique schema names across all of it, inflating the budget-matched
+# random arm. Every step clears its own target first.
+function Reset-Csv([string[]]$paths) {
+  foreach ($p in $paths) { if ($p -and (Test-Path $p)) { Remove-Item -Force $p } }
 }
 
 # Lowest-score schema_path per unique schema in a results CSV (winner of an arm).
@@ -67,6 +88,21 @@ function Get-EvalBudget($csv) {
 function Invoke-PipelineCell($cell, $cloud, $traceDir, $queries, $genSchemas, $generations, $population, $tunedList, $extraGaArgs) {
   $opt = "$traceDir/pipeline_trace_opt.csv"
   $test = "$traceDir/pipeline_trace_test.csv"
+
+  # Guard before launching anything (run_matrix_heatmap.ps1 already did this; this script did
+  # not). Without it a missing trace lets all five steps fail and the cell still emits a
+  # *_test.csv containing only the default schemas.
+  foreach ($required in @($cloud, $opt, $test)) {
+    if (-not (Test-Path $required)) {
+      Write-Output "$cell : missing $required - skipping cell"
+      $script:FailedSteps += "$cell (missing $required)"
+      return
+    }
+  }
+
+  Reset-Csv @("$outDir/${cell}_ga.csv", "$outDir/${cell}_repair.csv",
+              "$outDir/${cell}_random.csv", "$outDir/${cell}_singles.csv",
+              "$outDir/${cell}_test.csv")
 
   # Separate output dirs per arm: the exported best-schema JSON is named from
   # dataset+workload only, so a shared dir would let the repair run overwrite the
@@ -103,17 +139,27 @@ function Invoke-PipelineCell($cell, $cloud, $traceDir, $queries, $genSchemas, $g
       --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
       --queries $queries --no-score-cache --no-pause --csv "$outDir/${cell}_singles.csv"
   }
+  $winners = @("$outDir/${cell}_ga.csv", "$outDir/${cell}_repair.csv",
+               "$outDir/${cell}_random.csv", "$outDir/${cell}_singles.csv" |
+    Where-Object { Test-Path $_ } | ForEach-Object { Get-BestSchemaPath $_ } |
+    Where-Object { $_ }) | Select-Object -Unique
+  if (-not $winners) {
+    # Every search arm produced nothing. Re-measuring here would emit a headline CSV holding
+    # only the default schemas, which is indistinguishable from "the search lost to the
+    # defaults" - the most damaging way this script can fail.
+    Write-Output "$cell : all search arms produced no winner - refusing to write a headline CSV"
+    $script:FailedSteps += "$cell (no winners from any arm; TEST skipped)"
+    return
+  }
+
   Step "$cell TEST re-measure (headline source)" {
-    $winners = @("$outDir/${cell}_ga.csv", "$outDir/${cell}_repair.csv",
-                 "$outDir/${cell}_random.csv", "$outDir/${cell}_singles.csv" |
-      ForEach-Object { Get-BestSchemaPath $_ } | Where-Object { $_ }) | Select-Object -Unique
     $list = (@($winners) + ($defaults -split ';') + ($handNested -split ';')) -join ';'
     & $exe --mode schema-search --flat-search --evaluator cpu --input $cloud --no-synthetic `
       --schemas $list --generate-schemas 0 --no-baselines `
       --workloads configs/workloads/pipeline_replay.json --input-trace $test `
       --queries $queries --measure-repeats 5 --no-score-cache --no-pause `
       --csv "$outDir/${cell}_test.csv"
-  }
+  } | Out-Null
 }
 
 # Batch CSVs have their own format (schema,tag,pass_ms,... — no schema_path/score),
@@ -261,13 +307,13 @@ Step 'rank transfer sub2m + sub5m (opt)' {
 # ---------------- framework comparisons (TEST half only) ----------------
 if (Test-CellSelected 'frameworks') {
 Step 'framework compare 5M + Alhambra (test)' {
-  & $pyMds scripts/compare_frameworks.py --exe MultiDataStructure/x64/Release/MultiDataStructure.exe `
+  & $pyMds scripts/compare_frameworks.py --exe $exe `
     --input "D:\Datasets\Point Clouds\SanAndreas\5M.las" `
     --schema (Get-BestSchemaPath "$outDir/sanandreas_5m_ga.csv") `
     --workload-profile configs/workloads/pipeline_replay.json `
     --input-trace results/traces/sanandreas_5m/pipeline_trace_test.csv `
     --queries 3000 --frameworks open3d --out-dir results/framework_compare/v2_sanandreas_5m
-  & $pyMds scripts/compare_frameworks.py --exe MultiDataStructure/x64/Release/MultiDataStructure.exe `
+  & $pyMds scripts/compare_frameworks.py --exe $exe `
     --input "D:\Datasets\Point Clouds\Alhambra\Alhambra_100M.las" `
     --schema (Get-BestSchemaPath "$outDir/alhambra_100m_ga.csv") `
     --workload-profile configs/workloads/pipeline_replay.json `
@@ -278,3 +324,11 @@ Step 'framework compare 5M + Alhambra (test)' {
 
 Write-Output "`n########## battery v2 complete [$(Get-Date -Format HH:mm:ss)] ##########"
 Write-Output 'Headline sources: results/eval_traces/v2/*_test.csv and *_testeval.csv ONLY.'
+
+if ($script:FailedSteps.Count -gt 0) {
+  Write-Output "`n########## $($script:FailedSteps.Count) STEP(S) FAILED ##########"
+  $script:FailedSteps | ForEach-Object { Write-Output "  FAILED: $_" }
+  Write-Output 'Results above are INCOMPLETE. Do not quote a cell whose steps appear here.'
+  exit 1
+}
+Write-Output 'All steps exited 0.'

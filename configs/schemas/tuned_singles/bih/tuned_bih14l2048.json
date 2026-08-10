@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih14l2048",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 14,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 14,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

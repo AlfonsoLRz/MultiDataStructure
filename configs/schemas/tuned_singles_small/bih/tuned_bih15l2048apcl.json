@@ -1,0 +1,20 @@
+{
+  "name": "tuned_bih15l2048apcl",
+  "levels": [
+    {
+      "type": "BIH",
+      "numLevels": 15,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 15,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

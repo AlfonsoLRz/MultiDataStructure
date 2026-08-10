@@ -46,16 +46,75 @@ Cross-cutting:
 - **Cross-cloud (SanAndreas-50M winner → SanSimeon 25M test half)**: transfers *safely* (+9% vs that cloud's best-known = quadtree; wrong singles 1.4–6.8×), not optimally. `results/eval_traces/v2/crosscloud_sansimeon.csv`.
 - **Frameworks (frame-fixed, counts verified ≤1-pt boundary deltas)**: MDS vs Open3D KDTreeFlann **3.7×** at both 5M (0.00363 vs 0.0133) and Alhambra 100M (0.0129 vs 0.0479): `results/framework_compare/v2_*_fixed/`.
 - **PCL columns (native FLANN, exact parity 0 mismatches)**: at 5M **pcl_kdtree BEATS MDS** (0.00285 vs 0.00337, 1.18×) — small clouds are FLANN territory (and parity cells anyway). At Alhambra 100M **MDS nested is 2.76× faster than pcl_kdtree** (0.01293 vs 0.03565) and 4.6× vs pcl_octree. Build: FLANN 12.4s vs MDS 67.5s → break-even ≈ 2.4M queries; one normal-estimation pass at 100M = 100M queries → amortizes ~40× within a single stage. `results/framework_compare/v2_{sanandreas_5m,alhambra_100m}_pcl/`. Helper needs vcpkg DLLs beside it (`tools/bin/*.dll`, copied); reads PLY not LAS (binary PLY converters in scratchpad, world frame).
-- **Indexicon sanity check (2026-07-29, `tools/indexicon_point_baseline.cpp`, clone at
-  `external/Indexicon`, MIT)**: identical 2000-query mixed trace on 5M, world frame,
-  **0 count mismatches in all four structure/op combinations** (independent correctness
-  cross-validation). Per-type ms — range: our octree 0.00242 ≈ theirs 0.00231, our kd
-  0.00387 vs theirs 0.02482 (10×); kNN: our octree 0.01207 vs theirs 0.01994 (1.65×),
-  our kd 0.01371 vs theirs 0.07186 (5.2×). **Our in-house primitives are not weak — the
-  nested wins cannot be attributed to baseline implementation quality.** Their builds are
-  5-7× faster (819/900 ms vs 4.9-6.3 s; lean nodes, no telemetry) — worth citing as their
-  strength alongside portability/dynamism. Radius unsupported in Indexicon (586 rows
-  skipped); comparison is range+kNN only. Raw: `results/eval_traces/v2/indexicon_cmp/`.
+- **Indexicon external baseline COMPLETE (2026-08-06, plan §F.3 closed)** —
+  `tools/indexicon_point_baseline.cpp` rewritten, built by
+  `tools/build_indexicon_baseline.ps1` (pins the gitignored clone at `c9f9b1d`, MIT), run by
+  `scripts/run_external_baselines.ps1`. Now covers **three** structures (octree, kd-tree,
+  **packed R-tree**) and **all** query types; reads `.las` via the `.mdspc` sidecar; emits
+  JSON. 13 matrix cells (4 shapes × 1/5/25M + indoor_1M), held-out `_test` halves, 3000
+  queries × 3 repeats, **both sides measured in the same session**.
+  Raw: `results/framework_compare/indexicon/` (+ `indexicon_summary.csv`).
+  - **Radius is no longer skipped.** Implemented per structure with the same
+    min-distance-to-node pruning each one's own kNN uses; `--verify-bruteforce` validates
+    against brute force and refuses to report on disagreement. The old run skipped 586/2000
+    rows — and pipeline traces are 2/3 radius, so the previous comparison covered a
+    *minority* of the real workload. `native_mbr_prune` is 1.39–1.59× faster than the naive
+    `aabb_filter` emulation, so reporting the naive one would have flattered us ~1.5×.
+  - **Exactness: 0 count mismatches over 351,000 measured samples.** This is the headline
+    and it is clean. (Only disagreement anywhere: 1 point at 3e-8 relative distance from a
+    query radius on the old 5M synthetic trace — `float` vs `double` rounding.)
+  - **⚠ The old claim "our primitives match or beat theirs" is WITHDRAWN.** Their octree and
+    kd-tree are faster in all 13 cells. Two separate causes, and the split matters:
+    - *Per-node traversal cost (octree) — NOT telemetry.* Per-cell fit of
+      latency = a·visited + b·tested gives **a ≈ 51–131 ns/node** vs **b ≈ 1.1–2.8 ns/point**,
+      stable across all 13 cells. Node counts are ~flat in scale while tested points grow
+      ~10×, so the fixed cost dilutes and the octree gap closes: 0.48→0.57→**0.94** (arch),
+      0.40→0.76→**1.01** (industrial), 0.52→0.76→**0.94** (terrain), 0.51→0.63→**0.84**
+      (urban). **Parity by 25M.**
+      ⚠ **Correction (2026-08-06, second revision — the first correction was itself wrong):**
+      the per-node telemetry (`recordNodeVisit` building a `std::string` by value and probing
+      an `unordered_map` per node, inside the timed region) was rewritten to arrays indexed by
+      a build-time `Node::_structureIndex`. An initial A/B said "no improvement" — that ran a
+      **stale binary** (see the `x64\Release` path bug below) which lacked the change. Redone
+      against the correct binaries, with **identical node/point counters** proving the
+      traversal is unchanged: **octree 1.21×, kd-tree 1.03×** (66.7 vs 28.7 visited
+      nodes/query) = **6–14 ns/node** of the ~106 ns/node total. The remaining ~90 ns/node is
+      real traversal work, chiefly node-struct cache misses (a 524k-node kd-tree spans ~50 MB).
+      Consequence: MDS was paying ~10% more per node than needed, so the octree ratios above
+      are pessimistic by ~1.2× and our octree likely **beats** Indexicon's at 25M on re-measure.
+    - *A kd grid configuration bug (real, but cheap).* Our kd-tree tests **8–19× more points
+      than our own octree** (15,008/query at industrial_25M vs octree 1,110). Cause is
+      arithmetic: kd is **binary**, so `numLevels: 12` caps it at 2¹²=4096 leaves, and the
+      builder stops on depth before consulting capacity (`PointSpatialIndex.cpp:888` before
+      `:894`). Measured on terrain_5M: `kdtree_default` = 8191 nodes, **avg leaf occupancy
+      1220.7 vs requested `leafCapacity` 32** (38× miss, p50/p90/p99 = 1221/1222/1224).
+      Reaching capacity 32 at 25M needs depth ≈20; grid ceiling is 12 → **every** kd schema
+      in `configs/schemas/tuned_singles*/kd/` is depth-capped at ≥1M, `leafCapacity` inert in
+      9/12. In `tuned_singles_small` (used by the whole heatmap battery) all 4 kd schemas are
+      depth-capped and **`tuned_kd12l32` builds a byte-identical tree to `kdtree_default`** —
+      the kd tuning arm was largely inert. Root cause: `make_single_grids.py:32-45` draws
+      depth and capacity as independent axes with depth ≤12, which is coherent for an 8-ary
+      octree but not for a binary kd-tree.
+    - **FIXED 2026-08-06.** `make_single_grids.py` now derives depth from capacity and cloud
+      size via a per-primitive branching factor (`--points`, default 25M; ceiling 12→24) and
+      clears stale schemas from its output dir (93 stale files were found beside the live
+      ones). Both grids regenerated at original sizes (108 / 36): **0 inert schemas**, kd arm
+      now spans depths 13–20 instead of all-12.
+    - **Baseline got 1.22× stronger** (terrain_5M, held-out, 3 repeats): best fixed-grid kd is
+      `tuned_kd16l1024` 0.00487 ms (16,383 nodes, occ 610) vs `kdtree_default` 0.00592 ms
+      (8,191 nodes, occ 1221). This *reduces* our reported margins wherever a kd-tree was the
+      best single. Grid now spans over-splitting too: `tuned_kd20l32` hits occ 19.1 as asked
+      and is 2nd slowest, so depth is a real trade-off rather than a cap.
+      **⚠ Every matrix/battery number with a kd baseline predates this and needs re-measuring.**
+      Note the depth sweep still shows only **1.03×** from cap-lifting alone on the *default*
+      capacity — the win comes from capacity/depth pairs the old grid could not express.
+  - **§F.3 gate answered: R-tree slowest of Indexicon's three in 8/13 cells, fastest in 0.**
+    Within-library comparison, immune to both problems above. The plan's condition ("revisit
+    an R/BVH primitive only if that baseline ever wins a cell") is not met — keep it out of
+    the grammar, now on external evidence rather than our own omission.
+  - Their builds remain 5–7× faster (lean nodes, no telemetry) — their genuine strength,
+    alongside portability and dynamism.
+  - Open3D/PCL wins (§ above) were earned *while* paying this instrumentation → conservative.
 - **Matrix heatmap DONE (2026-07-29 afternoon, `scripts/run_matrix_heatmap.ps1`)** — 16 cells,
   GA + tuned-singles arms on `_opt`, held-out `_test` re-measures; summary table:
   `results/eval_traces/matrix/heatmap_summary.csv` (speedup of searched winner vs best
@@ -85,6 +144,57 @@ The coordinate-frame bug (fixed in `076b226`; traces = world coords, LAS loads =
 local frame → radius queries returned 0 points) invalidated the first-round pipeline
 and Open3D numbers. Quarantined in `results/eval_traces/invalid_frame_bug/`.
 **Anything quoting per-query latency on a LAS cloud from before the fix is wrong.**
+
+### 2b. Audit of 2026-08-06 — ten defects fixed, two of them invalidating
+
+A read-only sweep of the C++ core, the capture/prep scripts and the orchestration found ten
+real defects. Two change what past numbers *mean*; the rest corrupt re-runs or baselines.
+
+- **⚠ INVALIDATING — trace radii were wrong above 2M points.** `mean_spacing()` built its
+  KD-tree from an independent 2M random subsample, so it measured the 2nd-nearest neighbour
+  in a cloud ~(N/2M) times sparser than the real one. Measured inflation vs exact: **1.00× at
+  1M, 2.03× at 5M, 5.03× at 25M**. Radius-outlier-removal (4× spacing) and clustering (2.5×)
+  derive from it, so the query radius was nearly *constant in world units* across a size
+  ladder instead of shrinking with density — larger cells got disproportionately larger
+  neighbourhoods. **This confounds the scale-crossover claim** and explains most of the ~5×
+  growth in tested-points from 5M→25M. Fixed with a local-block estimator (uniform anchors,
+  count-weighted, interior-only queries); verified 0.99–1.14× of exact across nine cells with
+  no size-dependent bias. Sidecar now records `spacing_estimator_version`. **Every trace must
+  be re-captured; version-1 traces are not comparable with version-2 above 2M points.**
+- **⚠ INVALIDATING — scripts ran a stale binary.** MSBuild links to `<repo>\x64\Release`, but
+  all four runner scripts used `<repo>\MultiDataStructure\x64\Release`, a legacy path nothing
+  writes to; the copy there was from **2026-07-28**. Any C++-dependent measurement since then
+  tested code that did not include the change under test — this is how the telemetry A/B got
+  the wrong answer. Fixed: `scripts/resolve_exe.ps1` resolves the real path and **throws if
+  the binary is older than the newest source**; the stale copy was deleted.
+- **Score cache ignored the replayed trace.** `makeEvaluationCacheKey` never hashed
+  `_tracePath`, and the bypass guard tested `_queryTracePath` (the `--query-trace` *output*
+  flag) instead of `--input-trace`. Two runs over different traces collided — reproduced: the
+  second returned the first's rows exactly (visited 65.7225 both), vs 66.16 with the cache
+  off. Fixed both; verified 0 hits / 0 misses on trace runs now.
+- **RegularGrid/HGrid branching factors were wrong** in the tuned-singles generator (1/8 vs
+  the real 27/64 from `gridSubdivisionsForLevel`), pinning every `tuned_rg*` to depth 1 with
+  an inert capacity. Fixed; `rg` now spans depths 3–5 and `tuned_rg5l32` reaches occupancy
+  36.5 against capacity 32. Side-effect worth noting: a *tuned* regular grid runs 0.0076 ms
+  vs `regular_grid_default` 0.508 ms — **67× stronger**, so the "regular grid 148–777×"
+  insurance figure in METHOD.md §3.5 will shrink substantially on re-measure.
+- **Warm `--measure-repeats` loop used the dominant k**, not per-query k, so on mixed-k traces
+  the CI could exclude `avg_latency_ms`. Fixed to mirror the cold pass.
+- **`--csv` writers append**, and re-runs selected the *oldest* row (`Select-Object -First 1`)
+  — so re-running a cell reported its first-ever numbers forever. All runner scripts now clear
+  their target CSV first.
+- **Battery cells failed silently**: no exit-code gating, no cloud/trace existence check, and
+  the TEST re-measure still ran with defaults-only after every search arm failed — producing a
+  headline CSV indistinguishable from a genuine negative result. Now guarded, gated, and
+  summarised, with a non-zero exit on any failure.
+- **Matrix subsampling degenerated to prefix truncation** when `target ≤ len < 2·target`
+  (`stride = len//target` → 1), taking the first N points — one flight line, not a subsample.
+  Replaced with a seeded uniform sample (verified spread 1.000 vs 0.556 before), plus a size
+  tolerance so a source 0.2% short still fills its rung, and a configurable LAS scale.
+- **`--max-load-points` was ignored** in the same band, and its stride restarted per 2M chunk.
+  Fixed globally with exact truncation.
+- **`make_single_grids.py --primitives <subset>`** overwrote `index.txt` with only that
+  subset while leaving other primitives' JSON on disk. Index is now built from disk.
 
 ## 3. Pending experiments (exact commands)
 

@@ -3086,14 +3086,7 @@ static bool shouldWriteCsvHeader(const std::filesystem::path& path)
 
 using QueryBreakdown = PointSpatialIndex::QueryStats::QueryBreakdown;
 
-static std::vector<std::pair<std::string, size_t>> sortedBreakdownMap(const std::unordered_map<std::string, size_t>& values)
-{
-	std::vector<std::pair<std::string, size_t>> sorted(values.begin(), values.end());
-	std::sort(sorted.begin(), sorted.end(), [](const auto& left, const auto& right) {
-		return left.first < right.first;
-	});
-	return sorted;
-}
+using StructureCounters = std::array<size_t, PointSpatialIndex::QueryStats::MaxBreakdownStructures>;
 
 static std::string formatDepthBreakdown(const QueryBreakdown& breakdown)
 {
@@ -3112,11 +3105,11 @@ static std::string formatDepthBreakdown(const QueryBreakdown& breakdown)
 	return output.str();
 }
 
-static std::string formatMapBreakdown(const std::unordered_map<std::string, size_t>& values)
+static std::string formatMapBreakdown(const QueryBreakdown& breakdown, const StructureCounters& counters)
 {
 	std::ostringstream output;
 	bool first = true;
-	for (const auto& [name, count] : sortedBreakdownMap(values))
+	for (const auto& [name, count] : breakdown.namedCounts(counters))
 	{
 		if (!first)
 			output << ';';
@@ -3227,9 +3220,9 @@ static void appendQueryTraceRow(
 		<< stats._returnedPoints << ','
 		<< stats._fullyContainedNodes << ','
 		<< csvEscape(formatDepthBreakdown(stats._breakdown)) << ','
-		<< csvEscape(formatMapBreakdown(stats._breakdown._visitedByStructure)) << ','
-		<< csvEscape(formatMapBreakdown(stats._breakdown._testedPointsByStructure)) << ','
-		<< csvEscape(formatMapBreakdown(stats._breakdown._fullyContainedByStructure)) << ','
+		<< csvEscape(formatMapBreakdown(stats._breakdown, stats._breakdown._visitedByStructure)) << ','
+		<< csvEscape(formatMapBreakdown(stats._breakdown, stats._breakdown._testedPointsByStructure)) << ','
+		<< csvEscape(formatMapBreakdown(stats._breakdown, stats._breakdown._fullyContainedByStructure)) << ','
 		<< csvEscape(backend) << ','
 		<< workload._querySeed << '\n';
 }
@@ -3403,7 +3396,11 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 				else if (query._kind == PreparedQueryKind::Radius)
 					totalMs += index.radiusQuery(query.center, query._radius)._stats._elapsedMs;
 				else
-					totalMs += index.knnQuery(query.center, knnK)._stats._elapsedMs;
+					// Must mirror the cold pass above, which honours the per-query k. Using the
+					// workload's dominant k here re-ran every kNN query at the wrong k on a
+					// mixed-k trace, so the repeat means measured a cheaper workload than
+					// _averageLatencyMs did and the resulting CI could exclude it.
+					totalMs += index.knnQuery(query.center, query._k > 0 ? query._k : knnK)._stats._elapsedMs;
 			}
 			repeatMeanLatencies.push_back(totalMs / static_cast<double>(prepared._cpuQueries.size()));
 		}
@@ -3742,7 +3739,17 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidateCached(
 	CudaIndexCacheEntry* cudaCacheEntry = nullptr)
 {
 	Experiments::EvaluationCache* cache = options._scoreCache;
-	if (cache && cache->enabled() && !options._rebuildScoreCache && options._queryTracePath.empty())
+	// Defence in depth. The cache key now hashes the replayed trace (path, size, mtime), so
+	// trace runs would be safe to cache -- but this guard previously tested _queryTracePath,
+	// the --query-trace OUTPUT flag, and so never covered --input-trace at all. Every battery
+	// script works around that with a hand-added --no-score-cache; making the guard mean what
+	// it was clearly meant to mean removes the reliance on remembering that flag. Relax this
+	// deliberately if trace-run caching is ever wanted, not by accident.
+	// workload._tracePath also covers a trace named inside a workload JSON's "trace" field,
+	// which never passes through --input-trace at all.
+	const bool replayingTrace = !options._queryTracePath.empty() || !options._inputTracePath.empty()
+		|| !workload._tracePath.empty();
+	if (cache && cache->enabled() && !options._rebuildScoreCache && !replayingTrace)
 	{
 		const std::string backendName = useCudaEvaluator(options) ? "cuda" : "cpu";
 		const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
