@@ -1,5 +1,14 @@
 # Evaluation: the optimizer's synthesized index (nested or single) vs. baselines
 
+> **SUPERSEDED — do not quote any number in this file.** This is the 12-cell synthetic
+> study. It has been replaced by the trace-driven evaluation (`testing.md`, and the
+> matrix battery in `results/eval_traces/matrix/`), which uses recorded application
+> traces, a held-out `_test` half, and tuned rather than default single-primitive
+> baselines. Its numbers also predate the 2026-08-06 audit: the query radii were
+> computed by the biased spacing estimator, the kd and grid baselines were crippled by
+> depth-capped tuning grids, and the binary it measured was stale. The file is kept for
+> the method description and for the record of what was claimed when. See METHOD.md §7.
+
 This is the focused evaluation of the project's central claim. It compares, on a common
 query workload, three ways of choosing a point-cloud spatial index:
 

@@ -1,11 +1,11 @@
 # Application-workload experiments (trace-driven schema search)
 
-> **RE-MEASUREMENT IN PROGRESS.** A coordinate-frame bug (fixed in commit `076b226`;
-> traces are world coordinates, LAS clouds load into a local frame) invalidated the
-> pipeline-replay and Open3D numbers below — replayed radius queries returned zero
-> points. The **batch-distribution (DL) results remain valid** (identity-frame XYZ
-> blocks). All other tables are being refreshed from the corrected battery; the
-> quarantined originals live in `results/eval_traces/invalid_frame_bug/`.
+> **SUPERSEDED.** The coordinate-frame bug that invalidated the pipeline-replay and
+> Open3D numbers below was fixed in `076b226`, and the corrected battery has since run
+> (`testing.md` §3, `results/eval_traces/`). Those results in turn predate the
+> 2026-08-06 audit — biased query radii, depth-capped kd/grid baselines, a stale
+> binary — so nothing in this file should be quoted. It is kept as the record of the
+> first full run and of the workload definitions, which are unchanged.
 
 This documents the first full run of the application-workload evaluation (2026-07-02
 overnight): schema search driven by **recorded application query traces** instead of

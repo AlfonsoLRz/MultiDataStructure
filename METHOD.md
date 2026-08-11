@@ -504,7 +504,9 @@ cache misses, so the CPU traversal favours shallow wide structures (§3.7; the p
 telemetry component was removed 2026-08-06, worth 1.21× on node-heavy schemas);
 `avg_latency_ms` is the *first* (cold) pass while the repeat CI covers the warm ones
 (`SchemaSearch.cpp:3380` vs `:3410`), a few percent apart on the cells checked but worth
-knowing before quoting either; warm `--measure-repeats` loop uses the workload's dominant kNN *k*
-instead of per-query *k* (`SchemaSearch.cpp:3406`) — harmless for uniform-k traces, fix
-before using repeats on mixed-k traces; `make_dataset_matrix.py` needs a size tolerance so
-99.99M counts as the 100M rung; positional shape args must precede `--sizes`.
+knowing before quoting either; positional shape args must precede `--sizes` in
+`make_dataset_matrix.py`.
+
+Two debts listed here before 2026-08-06 are now fixed and are no longer limitations: the
+warm `--measure-repeats` loop uses per-query *k* (`SchemaSearch.cpp:3403`), and
+`make_dataset_matrix.py` has a size tolerance so 99.99M fills the 100M rung.

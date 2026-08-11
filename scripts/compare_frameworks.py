@@ -326,7 +326,7 @@ def load_points_numpy(input_path: Path):
     if suffix == ".ply":
         return load_ascii_ply_numpy(input_path)
 
-    if suffix == ".las":
+    if suffix in {".las", ".laz"}:
         try:
             import laspy
         except ImportError as exc:
@@ -338,6 +338,19 @@ def load_points_numpy(input_path: Path):
         # wrong while kNN silently returned k plausible-looking neighbors.
         points = np.column_stack((las.x, las.y, las.z)).astype(np.float64, copy=False)
         return points, (0.0, 0.0, 0.0)
+
+    if suffix == ".mdspc":
+        # The curated benchmark ships .laz, which the C++ cannot decode, so both sides
+        # consume the .mdspc cache instead. Reading it here rather than the source keeps
+        # the baseline on exactly the same float32 positions the executable indexes -
+        # otherwise a "framework is faster" result could come from a different cloud.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import laz_to_mdspc
+
+        header = laz_to_mdspc.read_header(input_path)
+        cache = np.memmap(input_path, dtype=np.float32, mode="r",
+                          offset=laz_to_mdspc.HEADER_BYTES, shape=(header["points"], 3))
+        return np.asarray(cache, dtype=np.float64) + np.asarray(header["origin"]), (0.0, 0.0, 0.0)
 
     raise RuntimeError(f"Python point loader does not support {input_path.suffix}")
 

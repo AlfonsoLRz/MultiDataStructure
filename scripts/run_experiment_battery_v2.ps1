@@ -22,8 +22,13 @@
 # Run everything:            .\scripts\run_experiment_battery_v2.ps1
 # Run selected cells only:   .\scripts\run_experiment_battery_v2.ps1 -Only sanandreas_5m,dl_alhambra
 # Cell names: sanandreas_5m sanandreas_50m alhambra_100m dl_sanandreas dl_alhambra
-#             solar_700m rank_transfer frameworks
-param([string[]]$Only)
+#             solar_500m rank_transfer frameworks
+#
+# Clouds come from the curated benchmark via configs/datasets/curated_cells.json
+# (scripts/make_cell_config.py), not from hardcoded absolute paths. Every cloud here is
+# therefore a tier of the same nested ladder as the heatmap battery's cells, so the two
+# batteries are measuring the same objects.
+param([string[]]$Only, [string]$CellConfig = 'configs/datasets/curated_cells.json')
 function Test-CellSelected($name) { return (-not $Only) -or ($Only -contains $name) }
 
 $ErrorActionPreference = 'Continue'
@@ -38,6 +43,28 @@ Set-Location $repo
 
 $outDir = 'results/eval_traces/v2'
 New-Item -ItemType Directory -Force -Path $outDir, "$outDir/best_schemas", "$outDir/generated" | Out-Null
+
+if (-not (Test-Path $CellConfig)) {
+  throw "cell config not found: $CellConfig - run scripts/make_cell_config.py first"
+}
+$curated = @{}
+foreach ($c in (Get-Content $CellConfig -Raw | ConvertFrom-Json).cells) { $curated[$c.cell] = $c }
+Write-Output "cell config: $CellConfig ($($curated.Count) curated cells available)"
+
+# Resolve a curated cell to the path the C++ opens. The tiers ship as .laz, which the
+# built-in reader cannot decode, so the run consumes the .mdspc written by
+# scripts/laz_to_mdspc.py - the same bytes the Indexicon driver reads.
+function Get-CuratedCloud($name) {
+  if (-not $curated.ContainsKey($name)) {
+    Write-Output "curated cell '$name' is not in $CellConfig (refused as synthetic, or not built yet)"
+    return $null
+  }
+  return $curated[$name].mdspc_path
+}
+function Get-CuratedTraceDir($name) {
+  if (-not $curated.ContainsKey($name)) { return $null }
+  return $curated[$name].trace_dir
+}
 
 $tuned = (Get-Content configs/schemas/tuned_singles/index.txt) -join ';'          # 107 schemas (5M/50M cells)
 $tunedSmall = (Get-Content configs/schemas/tuned_singles_small/index.txt) -join ';' # 36 schemas (100M+/batch cells)
@@ -228,39 +255,46 @@ function Invoke-BatchCell($cell, $manifestDir, $generations) {
 # give the GA arms a different noise regime than the (always-serial) flat arms.
 # 50M keeps --parallel 8 for wall time; draw R3 conclusions from 5M + Alhambra.
 if (Test-CellSelected 'sanandreas_5m') {
-  Invoke-PipelineCell 'sanandreas_5m'  "D:\Datasets\Point Clouds\SanAndreas\5M.las" `
-    'results/traces/sanandreas_5m'  3000 32 3 24 $tuned @()
+  Invoke-PipelineCell 'sanandreas_5m'  (Get-CuratedCloud 'sanandreas_5M') `
+    (Get-CuratedTraceDir 'sanandreas_5M')  3000 32 3 24 $tuned @()
 }
 if (Test-CellSelected 'sanandreas_50m') {
-  Invoke-PipelineCell 'sanandreas_50m' 'results/traces/sanandreas_50m/50M_converted.las' `
-    'results/traces/sanandreas_50m' 1500 24 2 12 $tuned @('--parallel', '8')
+  Invoke-PipelineCell 'sanandreas_50m' (Get-CuratedCloud 'sanandreas_50M') `
+    (Get-CuratedTraceDir 'sanandreas_50M') 1500 24 2 12 $tuned @('--parallel', '8')
 }
 if (Test-CellSelected 'alhambra_100m') {
-  Invoke-PipelineCell 'alhambra_100m'  "D:\Datasets\Point Clouds\Alhambra\Alhambra_100M.las" `
-    'results/traces/alhambra_100m'  1000 16 2 10 $tunedSmall @()   # serial: the search-cost anchor
+  Invoke-PipelineCell 'alhambra_100m'  (Get-CuratedCloud 'alhambra_100M') `
+    (Get-CuratedTraceDir 'alhambra_100M')  1000 16 2 10 $tunedSmall @()   # serial: the search-cost anchor
 }
 
 # ---------------- DL batch cells ----------------
 if (Test-CellSelected 'dl_sanandreas') { Invoke-BatchCell 'dl_sanandreas' 'results/traces/dl_sanandreas' 3 }
 if (Test-CellSelected 'dl_alhambra')   { Invoke-BatchCell 'dl_alhambra'   'results/traces/dl_alhambra'   3 }
 
-# ---------------- 700M multi-fidelity (search on subsample _opt, confirm at full, test at full) ----------------
-if (Test-CellSelected 'solar_700m') {
-Step '700M GA on subsample (opt)' {
-  & $exe --mode schema-search --input 'results/traces/solarpanels_700m/solar_sub5m.las' --no-synthetic `
-    --workloads configs/workloads/pipeline_replay.json --input-trace results/traces/solarpanels_700m/pipeline_trace_opt.csv `
+# ---------------- 500M multi-fidelity (search on subsample _opt, confirm at full, test at full) ----------------
+# The subsample is now the 5M tier of the same nested ladder, so it is a guaranteed subset
+# of the 500M cloud rather than an independently drawn one - the rank-transfer premise
+# holds by construction. 500M rather than 728M because that is the largest SolarPlantation
+# tier containing no interpolated points.
+if (Test-CellSelected 'solar_500m') {
+$solarFull = Get-CuratedCloud 'solarplantation_500M'
+$solarSub = Get-CuratedCloud 'solarplantation_5M'
+$solarTraces = Get-CuratedTraceDir 'solarplantation_500M'
+Step '500M GA on subsample (opt)' {
+  & $exe --mode schema-search --input $solarSub --no-synthetic `
+    --workloads configs/workloads/pipeline_replay.json --input-trace "$solarTraces/pipeline_trace_opt.csv" `
     --queries 1500 --evaluator cpu --generate-schemas 32 --optimizer-generations 3 --optimizer-population 24 --parallel 8 `
-    --optimizer-output-dir "$outDir/best_schemas_700m" --no-score-cache --no-pause `
+    --optimizer-output-dir "$outDir/best_schemas_500m" --no-score-cache --no-pause `
     --csv "$outDir/solar_sub5m.csv"
 }
-Step '700M tuned singles on subsample (opt)' {
+Step '500M tuned singles on subsample (opt)' {
   & $exe --mode schema-search --flat-search --evaluator cpu `
-    --input 'results/traces/solarpanels_700m/solar_sub5m.las' --no-synthetic `
+    --input $solarSub --no-synthetic `
     --schemas $tunedSmall --generate-schemas 0 --no-baselines `
-    --workloads configs/workloads/pipeline_replay.json --input-trace results/traces/solarpanels_700m/pipeline_trace_opt.csv `
+    --workloads configs/workloads/pipeline_replay.json --input-trace "$solarTraces/pipeline_trace_opt.csv" `
     --queries 1500 --no-score-cache --no-pause --csv "$outDir/solar_sub5m_singles.csv"
 }
-Step '700M confirm top-10 at full scale (opt)' {
+Step '500M confirm top-10 at full scale (opt)' {
   $unique = [ordered]@{}
   foreach ($r in (Import-Csv "$outDir/solar_sub5m.csv" | Sort-Object { [double]$_.score })) {
     if (-not $unique.Contains($r.schema_name) -and $r.schema_path -and (Test-Path $r.schema_path)) { $unique[$r.schema_name] = $r.schema_path }
@@ -269,55 +303,61 @@ Step '700M confirm top-10 at full scale (opt)' {
   $best = Get-BestSchemaPath "$outDir/solar_sub5m_singles.csv"
   if ($best) { $unique['best_tuned_single'] = $best }
   $schemaList = (@($unique.Values) | Select-Object -Unique) -join ';'
-  Write-Output "confirming $((($schemaList -split ';')).Count) schemas at 700M"
+  Write-Output "confirming $((($schemaList -split ';')).Count) schemas at 500M"
   & $exe --mode schema-search --flat-search --evaluator cpu `
-    --input "D:\Datasets\Point Clouds\SolarPanels\SolarPanels700M.las" --no-synthetic `
+    --input $solarFull --no-synthetic `
     --schemas $schemaList --generate-schemas 0 `
-    --workloads configs/workloads/pipeline_replay.json --input-trace results/traces/solarpanels_700m/pipeline_trace_opt.csv `
-    --queries 1000 --no-score-cache --no-pause --csv "$outDir/solar_700m_confirm.csv"
+    --workloads configs/workloads/pipeline_replay.json --input-trace "$solarTraces/pipeline_trace_opt.csv" `
+    --queries 1000 --no-score-cache --no-pause --csv "$outDir/solar_500m_confirm.csv"
 }
-Step '700M TEST re-measure (headline source)' {
-  $winner = Get-BestSchemaPath "$outDir/solar_700m_confirm.csv"
+Step '500M TEST re-measure (headline source)' {
+  $winner = Get-BestSchemaPath "$outDir/solar_500m_confirm.csv"
   $list = (@($winner) + ($defaults -split ';') + ($handNested -split ';') | Where-Object { $_ }) -join ';'
   & $exe --mode schema-search --flat-search --evaluator cpu `
-    --input "D:\Datasets\Point Clouds\SolarPanels\SolarPanels700M.las" --no-synthetic `
+    --input $solarFull --no-synthetic `
     --schemas $list --generate-schemas 0 --no-baselines `
-    --workloads configs/workloads/pipeline_replay.json --input-trace results/traces/solarpanels_700m/pipeline_trace_test.csv `
-    --queries 1000 --measure-repeats 5 --no-score-cache --no-pause --csv "$outDir/solar_700m_test.csv"
+    --workloads configs/workloads/pipeline_replay.json --input-trace "$solarTraces/pipeline_trace_test.csv" `
+    --queries 1000 --measure-repeats 5 --no-score-cache --no-pause --csv "$outDir/solar_500m_test.csv"
 }
 }
 
 # ---------------- search-cost artifacts (opt side; unchanged science from v1) ----------------
 if (Test-CellSelected 'rank_transfer') {
-Step 'rank transfer sub2m + sub5m (opt)' {
+# The low-fidelity clouds are the 1M and 5M tiers of Alhambra's own ladder, which are
+# nested subsets of the 100M tier by construction. The v1 sub2m/sub5m files were drawn
+# independently, so a rank disagreement could have been a sampling artifact.
+Step 'rank transfer 1M + 5M (opt)' {
   $schemaList = (Import-Csv "$outDir/alhambra_100m_ga.csv" | ForEach-Object { $_.schema_path } |
     Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique) -join ';'
-  foreach ($sub in @('sub2m', 'sub5m')) {
+  $optTrace = "$(Get-CuratedTraceDir 'alhambra_100M')/pipeline_trace_opt.csv"
+  foreach ($sub in @('1M', '5M')) {
     & $exe --mode schema-search --flat-search --evaluator cpu `
-      --input "results/traces/alhambra_100m/alhambra_$sub.las" --no-synthetic `
+      --input (Get-CuratedCloud "alhambra_$sub") --no-synthetic `
       --schemas $schemaList --generate-schemas 0 --no-baselines `
-      --workloads configs/workloads/pipeline_replay.json --input-trace results/traces/alhambra_100m/pipeline_trace_opt.csv `
-      --queries 1000 --no-score-cache --no-pause --csv "$outDir/alhambra_$sub.csv"
+      --workloads configs/workloads/pipeline_replay.json --input-trace $optTrace `
+      --queries 1000 --no-score-cache --no-pause --csv "$outDir/alhambra_sub$sub.csv"
   }
   & $py scripts/analyze_rank_transfer.py --full "$outDir/alhambra_100m_ga.csv" `
-    --low "$outDir/alhambra_sub2m.csv" "$outDir/alhambra_sub5m.csv"
+    --low "$outDir/alhambra_sub1M.csv" "$outDir/alhambra_sub5M.csv"
 }
 }
 
 # ---------------- framework comparisons (TEST half only) ----------------
 if (Test-CellSelected 'frameworks') {
 Step 'framework compare 5M + Alhambra (test)' {
+  # Both sides read the same .mdspc, so Open3D indexes exactly the positions the
+  # executable does rather than a re-decoded copy of the source.
   & $pyMds scripts/compare_frameworks.py --exe $exe `
-    --input "D:\Datasets\Point Clouds\SanAndreas\5M.las" `
+    --input (Get-CuratedCloud 'sanandreas_5M') `
     --schema (Get-BestSchemaPath "$outDir/sanandreas_5m_ga.csv") `
     --workload-profile configs/workloads/pipeline_replay.json `
-    --input-trace results/traces/sanandreas_5m/pipeline_trace_test.csv `
+    --input-trace "$(Get-CuratedTraceDir 'sanandreas_5M')/pipeline_trace_test.csv" `
     --queries 3000 --frameworks open3d --out-dir results/framework_compare/v2_sanandreas_5m
   & $pyMds scripts/compare_frameworks.py --exe $exe `
-    --input "D:\Datasets\Point Clouds\Alhambra\Alhambra_100M.las" `
+    --input (Get-CuratedCloud 'alhambra_100M') `
     --schema (Get-BestSchemaPath "$outDir/alhambra_100m_ga.csv") `
     --workload-profile configs/workloads/pipeline_replay.json `
-    --input-trace results/traces/alhambra_100m/pipeline_trace_test.csv `
+    --input-trace "$(Get-CuratedTraceDir 'alhambra_100M')/pipeline_trace_test.csv" `
     --queries 3000 --frameworks open3d --out-dir results/framework_compare/v2_alhambra_100m
 }
 }

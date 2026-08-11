@@ -196,12 +196,17 @@ static BinaryHeader makeHeader(const std::string& sourcePath, size_t numPoints, 
 	return header;
 }
 
-static bool headerMatchesSource(const BinaryHeaderPrefix& header, const std::string& sourcePath)
+static bool headerFormatIsKnown(const BinaryHeaderPrefix& header)
 {
 	return std::memcmp(header.magic, CACHE_MAGIC, sizeof(header.magic)) == 0 &&
 		(header._version == POSITION_ONLY_CACHE_VERSION ||
 		 header._version == LEGACY_POSITION_ONLY_CACHE_VERSION ||
-		 header._version == LEGACY_FULL_POINT_CACHE_VERSION) &&
+		 header._version == LEGACY_FULL_POINT_CACHE_VERSION);
+}
+
+static bool headerMatchesSource(const BinaryHeaderPrefix& header, const std::string& sourcePath)
+{
+	return headerFormatIsKnown(header) &&
 		header._sourceSize == fileSize(sourcePath) &&
 		header._sourceWriteTime == fileWriteTime(sourcePath);
 }
@@ -235,8 +240,11 @@ static PointPrimitive fromLegacyBinaryPoint(const LegacyBinaryPoint& binaryPoint
 
 PointCloud PointCloud::load(const std::string& filename, const LoadOptions& options)
 {
+	// A `.mdspc` given as the input *is* the cache. It needs no sidecar probe, and
+	// writing `x.mdspc.mdspc` beside it would duplicate the whole cloud for nothing.
+	const bool inputIsCache = lowerExtension(filename) == ".mdspc";
 	const std::filesystem::path cachePath = cachePathFor(filename);
-	if (options._useBinaryCache && !options._rebuildBinaryCache)
+	if (options._useBinaryCache && !options._rebuildBinaryCache && !inputIsCache)
 	{
 		PointCloud cachedCloud;
 		if (cachedCloud.tryLoadBinaryCache(filename, cachePath))
@@ -245,6 +253,15 @@ PointCloud PointCloud::load(const std::string& filename, const LoadOptions& opti
 
 	PointCloud cloud = loadFromSource(filename);
 	cloud._sourcePath = filename;
+	if (inputIsCache)
+	{
+		// tryLoadBinaryCache already recomputed the stats; repeating that would be
+		// a second full pass over the positions.
+		cloud._cachePath = filename;
+		cloud._loadedFromCache = true;
+		return cloud;
+	}
+
 	cloud._cachePath = cachePath.string();
 	cloud._loadedFromCache = false;
 	cloud.recomputeStats();
@@ -372,7 +389,8 @@ void PointCloud::updateStatsForPoint(const PointPrimitive& point)
 		_stats._approximateDensity = static_cast<float>(_stats._numPoints) / volume;
 }
 
-bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::filesystem::path& cachePath)
+bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::filesystem::path& cachePath,
+								   bool requireSourceMatch)
 {
 	if (!std::filesystem::exists(cachePath))
 		return false;
@@ -383,7 +401,12 @@ bool PointCloud::tryLoadBinaryCache(const std::string& sourcePath, const std::fi
 
 	BinaryHeaderPrefix header;
 	file.read(reinterpret_cast<char*>(&header), sizeof(header));
-	if (!file || !headerMatchesSource(header, sourcePath))
+	if (!file)
+		return false;
+
+	// When the cache *is* the input rather than a sidecar for one, there is no
+	// source to match against: only the format itself has to check out.
+	if (requireSourceMatch ? !headerMatchesSource(header, sourcePath) : !headerFormatIsKnown(header))
 		return false;
 
 	if (header._numPoints > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
@@ -478,6 +501,18 @@ void PointCloud::saveBinaryCache(const std::string& sourcePath, const std::files
 	std::filesystem::rename(tempPath, cachePath);
 }
 
+// A `.mdspc` opened directly, rather than found as the sidecar of the file it was
+// built from. This is how compressed sources are read: nothing here decodes LAZ, so
+// scripts/laz_to_mdspc.py writes the cache and the cache becomes the input.
+PointCloud PointCloud::loadBinaryCache(const std::string& filename)
+{
+	PointCloud cloud;
+	if (!cloud.tryLoadBinaryCache(filename, filename, /*requireSourceMatch=*/false))
+		throw std::runtime_error("Unable to read point-cloud cache: " + filename);
+
+	return cloud;
+}
+
 PointCloud PointCloud::loadFromSource(const std::string& filename)
 {
 	const std::string extension = lowerExtension(filename);
@@ -489,8 +524,11 @@ PointCloud PointCloud::loadFromSource(const std::string& filename)
 		return loadPLY(filename);
 	if (extension == ".las")
 		return loadLAS(filename);
+	if (extension == ".mdspc")
+		return loadBinaryCache(filename);
 	if (extension == ".laz")
-		throw std::runtime_error("LAZ is compressed and is not supported by the built-in reader yet; convert to LAS first");
+		throw std::runtime_error("LAZ is compressed and is not supported by the built-in reader; convert it with "
+								 "scripts/laz_to_mdspc.py and open the resulting .mdspc, or convert to LAS first");
 
 	throw std::runtime_error("Unsupported point-cloud extension: " + extension);
 }

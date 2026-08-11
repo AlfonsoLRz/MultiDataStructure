@@ -61,7 +61,8 @@ private:
 	void recomputeStats();
 	void updateStatsForPoint(const PointPrimitive& point);
 
-	bool tryLoadBinaryCache(const std::string& sourcePath, const std::filesystem::path& cachePath);
+	bool tryLoadBinaryCache(const std::string& sourcePath, const std::filesystem::path& cachePath,
+							bool requireSourceMatch = true);
 	void saveBinaryCache(const std::string& sourcePath, const std::filesystem::path& cachePath) const;
 
 	static PointCloud loadFromSource(const std::string& filename);
@@ -69,4 +70,5 @@ private:
 	static PointCloud loadCSV(const std::string& filename);
 	static PointCloud loadPLY(const std::string& filename);
 	static PointCloud loadLAS(const std::string& filename);
+	static PointCloud loadBinaryCache(const std::string& filename);
 };

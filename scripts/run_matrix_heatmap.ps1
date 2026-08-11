@@ -1,10 +1,19 @@
-# Shape x size heatmap battery (testing.md section 4): per matrix cell run a GA arm
-# and the tuned-singles arm on the _opt trace half, then re-measure winners + all
-# default singles + hand-designed nested on the _test half (serial, 5 repeats).
-# Gate B is settled (random >= GA), so no repair/random arms here - the heatmap
-# needs the winner FAMILY per cell, not another optimizer comparison.
+# Morphology x scale heatmap battery (testing.md section 4): per cell run a GA arm and
+# the tuned-singles arm on the _opt trace half, then re-measure winners + all default
+# singles + hand-designed nested on the _test half (serial, 5 repeats).
+# Gate B is settled (random >= GA), so no repair/random arms here - the heatmap needs
+# the winner FAMILY per cell, not another optimizer comparison.
+#
+# Cells come from a config written by scripts/make_cell_config.py, not from literals:
+# the dataset root, the cell list and the per-cell budgets all live in one JSON so that
+# re-pointing at a different dataset is not a PowerShell edit.
+#
 # Output: results/eval_traces/matrix/<cell>_{ga,singles,test}.csv
-param([string[]]$Only)
+param(
+  [string[]]$Only,
+  [string]$CellConfig = 'configs/datasets/curated_cells.json',
+  [switch]$SkipCapture
+)
 function Test-CellSelected($name) { return (-not $Only) -or ($Only -contains $name) }
 
 $ErrorActionPreference = 'Continue'
@@ -15,6 +24,16 @@ $py = Join-Path $repo '.venv\Scripts\python.exe'
 $exe = Resolve-MdsExe -Repo $repo
 Set-Location $repo
 
+if (-not (Test-Path $CellConfig)) {
+  throw "cell config not found: $CellConfig - run scripts/make_cell_config.py first"
+}
+$config = Get-Content $CellConfig -Raw | ConvertFrom-Json
+$cells = $config.cells
+Write-Output "cell config: $CellConfig ($($cells.Count) cells, profile $($config.profile))"
+if ($config.refused.Count) {
+  Write-Output "  $($config.refused.Count) cell(s) refused by the config as not fully measured"
+}
+
 $outDir = 'results/eval_traces/matrix'
 New-Item -ItemType Directory -Force -Path $outDir, "$outDir/best_schemas" | Out-Null
 
@@ -23,87 +42,126 @@ $defaults = @('quadtree', 'octree', 'kdtree', 'bvh', 'bih', 'hgrid', 'lbvh', 're
   ForEach-Object { "configs/schemas/$_.json" }) -join ';'
 $handNested = 'configs/schemas/octree_kdtree.json;configs/schemas/quadtree_octree.json'
 
+$script:FailedSteps = @()
 function Step($name, $script) {
   Write-Output "`n########## $name  [$(Get-Date -Format HH:mm:ss)] ##########"
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
-  try { & $script } catch { Write-Output "STEP FAILED: $($_.Exception.Message)" }
+  $global:LASTEXITCODE = 0
+  $failure = $null
+  try { & $script } catch { $failure = $_.Exception.Message }
+  $code = $LASTEXITCODE
   $sw.Stop()
-  Write-Output "########## $name done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $LASTEXITCODE) ##########"
+  if ($failure) { Write-Output "STEP FAILED: $failure" }
+  if ($failure -or $code -ne 0) { $script:FailedSteps += "$name (exit $code)" }
+  Write-Output "########## $name done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
+  return ($null -eq $failure -and $code -eq 0)
 }
 function Get-BestSchemaPath($csv) {
+  if (-not (Test-Path $csv)) { return $null }
   foreach ($r in (Import-Csv $csv | Sort-Object { [double]$_.score })) {
     if ($r.schema_path -and (Test-Path $r.schema_path)) { return $r.schema_path }
   }
   return $null
 }
 
-# Capture traces for the 100M cells (only <=25M were captured this morning).
-Step 'capture 100M matrix traces' {
-  Get-ChildItem "D:\Datasets\Point Clouds\matrix\*_100M.las" -ErrorAction SilentlyContinue | ForEach-Object {
-    $name = $_.BaseName.ToLower()
-    $traceDir = "results/traces/matrix/$name"
-    if (Test-Path "$traceDir/pipeline_trace_opt.csv") { return }
-    Write-Output "capturing $($_.Name) -> $traceDir"
-    & $py scripts/capture_pipeline_workload.py $_.FullName --out $traceDir --max-queries-per-stage 20000
-    & $py scripts/split_trace.py "$traceDir/pipeline_trace.csv"
+# Tier C is not searched: at 250M and above the GA would cost days for a claim that
+# only needs the winner to hold up as the cloud grows. The donor is the largest
+# searched rung of the same scene.
+function Get-TransferWinners($cell) {
+  $donors = $cells |
+    Where-Object { $_.scene -eq $cell.scene -and $_.arm -eq 'search' } |
+    Sort-Object -Property points -Descending
+  foreach ($donor in $donors) {
+    $winners = @("$outDir/$($donor.cell)_ga.csv", "$outDir/$($donor.cell)_singles.csv" |
+      ForEach-Object { Get-BestSchemaPath $_ } | Where-Object { $_ }) | Select-Object -Unique
+    if ($winners) {
+      Write-Output "$($cell.cell): transferring winners from $($donor.cell)"
+      return $winners
+    }
   }
+  Write-Output "$($cell.cell): no searched donor rung has a winner yet"
+  return @()
 }
 
-function Invoke-MatrixCell($cell, $queries, $genSchemas, $generations, $population) {
-  $cloud = "D:\Datasets\Point Clouds\matrix\$cell.las"
-  $opt = "results/traces/matrix/$($cell.ToLower())/pipeline_trace_opt.csv"
-  $test = "results/traces/matrix/$($cell.ToLower())/pipeline_trace_test.csv"
-  if (-not (Test-Path $cloud)) { Write-Output "$cell : cloud missing - skipping"; return }
-  if (-not (Test-Path $opt)) { Write-Output "$cell : opt trace missing - skipping"; return }
-  if (-not (Test-Path $test)) { Write-Output "$cell : test trace missing - skipping"; return }
+function Invoke-Cell($cell) {
+  $name = $cell.cell
+  $cloud = $cell.mdspc_path
+  $opt = "$($cell.trace_dir)/pipeline_trace_opt.csv"
+  $test = "$($cell.trace_dir)/pipeline_trace_test.csv"
+
+  if (-not (Test-Path $cell.laz_path)) { Write-Output "$name : cloud missing - skipping"; $script:FailedSteps += "$name (cloud missing)"; return }
+  if (-not (Test-Path $cloud)) { Write-Output "$name : .mdspc missing - run scripts/laz_to_mdspc.py"; $script:FailedSteps += "$name (mdspc missing)"; return }
+  if (-not (Test-Path $opt))   { Write-Output "$name : opt trace missing - skipping"; $script:FailedSteps += "$name (opt trace missing)"; return }
+  if (-not (Test-Path $test))  { Write-Output "$name : test trace missing - skipping"; $script:FailedSteps += "$name (test trace missing)"; return }
 
   # The C++ --csv writer appends, so a re-run would leave the previous run's rows in place and
   # Get-BestSchemaPath (which sorts the whole file) could return a winner from an older run.
-  foreach ($stale in @("$outDir/${cell}_ga.csv", "$outDir/${cell}_singles.csv", "$outDir/${cell}_test.csv")) {
+  foreach ($stale in @("$outDir/${name}_ga.csv", "$outDir/${name}_singles.csv", "$outDir/${name}_test.csv")) {
     if (Test-Path $stale) { Remove-Item -Force $stale }
   }
 
-  Step "$cell GA (opt)" {
-    & $exe --mode schema-search --input $cloud --no-synthetic `
-      --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
-      --queries $queries --evaluator cpu --generate-schemas $genSchemas `
-      --optimizer-generations $generations --optimizer-population $population --parallel 8 `
-      --optimizer-output-dir "$outDir/best_schemas/${cell}_ga" --no-score-cache --no-pause `
-      --csv "$outDir/${cell}_ga.csv"
+  $searched = $false
+  if ($cell.arm -eq 'search') {
+    $ga = Step "$name GA (opt)" {
+      & $exe --mode schema-search --input $cloud --no-synthetic `
+        --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
+        --queries $cell.queries --evaluator cpu --generate-schemas $cell.gen_schemas `
+        --optimizer-generations $cell.generations --optimizer-population $cell.population --parallel 8 `
+        --optimizer-output-dir "$outDir/best_schemas/${name}_ga" --no-score-cache --no-pause `
+        --csv "$outDir/${name}_ga.csv"
+    }
+    $singles = Step "$name tuned singles (opt)" {
+      & $exe --mode schema-search --flat-search --evaluator cpu --input $cloud --no-synthetic `
+        --schemas $tunedSmall --generate-schemas 0 --no-baselines `
+        --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
+        --queries $cell.queries --no-score-cache --no-pause --csv "$outDir/${name}_singles.csv"
+    }
+    $searched = $ga -or $singles
+    if (-not $searched) {
+      # Every search arm failed, so the only schemas left would be the defaults. That
+      # re-measure looks like a legitimate "nothing beats the baseline" result.
+      Write-Output "$name : all search arms failed - refusing the TEST re-measure"
+      return
+    }
   }
-  Step "$cell tuned singles (opt)" {
-    & $exe --mode schema-search --flat-search --evaluator cpu --input $cloud --no-synthetic `
-      --schemas $tunedSmall --generate-schemas 0 --no-baselines `
-      --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
-      --queries $queries --no-score-cache --no-pause --csv "$outDir/${cell}_singles.csv"
-  }
-  Step "$cell TEST re-measure" {
-    $winners = @("$outDir/${cell}_ga.csv", "$outDir/${cell}_singles.csv" |
-      ForEach-Object { Get-BestSchemaPath $_ } | Where-Object { $_ }) | Select-Object -Unique
+
+  Step "$name TEST re-measure" {
+    if ($cell.arm -eq 'search') {
+      $winners = @("$outDir/${name}_ga.csv", "$outDir/${name}_singles.csv" |
+        ForEach-Object { Get-BestSchemaPath $_ } | Where-Object { $_ }) | Select-Object -Unique
+    } else {
+      $winners = Get-TransferWinners $cell
+    }
     $list = (@($winners) + ($defaults -split ';') + ($handNested -split ';')) -join ';'
     & $exe --mode schema-search --flat-search --evaluator cpu --input $cloud --no-synthetic `
       --schemas $list --generate-schemas 0 --no-baselines `
       --workloads configs/workloads/pipeline_replay.json --input-trace $test `
-      --queries $queries --measure-repeats 5 --no-score-cache --no-pause `
-      --csv "$outDir/${cell}_test.csv"
-  }
+      --queries $cell.queries --measure-repeats 5 --no-score-cache --no-pause `
+      --csv "$outDir/${name}_test.csv"
+  } | Out-Null
 }
 
-# Cheap cells first so partial results are useful early; 100M giants last.
-$cells = @(
-  @('indoor_1M',       3000, 24, 2, 16), @('terrain_1M',    3000, 24, 2, 16),
-  @('architecture_1M', 3000, 24, 2, 16), @('urban_1M',      3000, 24, 2, 16),
-  @('industrial_1M',   3000, 24, 2, 16),
-  @('terrain_5M',      3000, 24, 2, 16), @('architecture_5M', 3000, 24, 2, 16),
-  @('urban_5M',        3000, 24, 2, 16), @('industrial_5M', 3000, 24, 2, 16),
-  @('terrain_25M',     2000, 24, 2, 12), @('architecture_25M', 2000, 24, 2, 12),
-  @('urban_25M',       2000, 24, 2, 12), @('industrial_25M', 2000, 24, 2, 12),
-  @('terrain_100M',    1000, 16, 2, 10), @('urban_100M',    1000, 16, 2, 10),
-  @('industrial_100M', 1000, 16, 2, 10)
-)
-foreach ($c in $cells) {
-  if (Test-CellSelected $c[0]) { Invoke-MatrixCell $c[0] $c[1] $c[2] $c[3] $c[4] }
+if (-not $SkipCapture) {
+  Step 'capture missing traces' {
+    foreach ($cell in $cells) {
+      if (-not (Test-CellSelected $cell.cell)) { continue }
+      if (Test-Path "$($cell.trace_dir)/pipeline_trace_opt.csv") { continue }
+      if (-not (Test-Path $cell.laz_path)) { Write-Output "$($cell.cell): cloud missing, cannot capture"; continue }
+      Write-Output "capturing $($cell.cell) -> $($cell.trace_dir)"
+      & $py scripts/capture_pipeline_workload.py $cell.laz_path --out $cell.trace_dir --max-queries-per-stage 20000
+      & $py scripts/split_trace.py "$($cell.trace_dir)/pipeline_trace.csv"
+    }
+  } | Out-Null
+}
+
+foreach ($cell in $cells) {
+  if (Test-CellSelected $cell.cell) { Invoke-Cell $cell }
 }
 
 Write-Output "`n########## heatmap battery complete [$(Get-Date -Format HH:mm:ss)] ##########"
 Write-Output 'Headline sources: results/eval_traces/matrix/*_test.csv'
+if ($script:FailedSteps.Count) {
+  Write-Output "`n$($script:FailedSteps.Count) step(s) failed:"
+  $script:FailedSteps | ForEach-Object { Write-Output "  $_" }
+  exit 1
+}

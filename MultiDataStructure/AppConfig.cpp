@@ -761,7 +761,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --mode gui|points|schema-search|evaluate-one|tests\n"
 		<< "  --mode evaluate-one          One-shot: build/query a single (cloud, schema, workload) and emit JSON to stdout\n"
 		<< "  --gui                       Open the ImGui optimizer interface\n"
-		<< "  --input <path>              Point cloud path (.las, .ply, .xyz, .csv)\n"
+		<< "  --input <path>              Point cloud path (.las, .ply, .xyz, .csv, .mdspc)\n"
 		<< "  --schema <path>             Spatial schema JSON\n"
 		<< "  --schema auto               Select a schema with a measured, JSON, or ONNX score ranker\n"
 		<< "  --schemas <a;b;c>           Run the same point benchmark across schemas\n"
