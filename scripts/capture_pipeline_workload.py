@@ -53,6 +53,30 @@ def subsample_to(points: np.ndarray, max_points: int) -> np.ndarray:
     return points[::stride][:max_points]
 
 
+def load_mdspc(path: Path, max_points: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Memory-map a `.mdspc` cache, returning (local float32 positions, origin).
+
+    Materialising a billion points as float64 world coordinates is 24 GB, so the
+    top of the scale ladder cannot be captured the way the smaller cells are. The
+    cache is 12 B/point and already on disk, and mapping it means the trace is
+    generated from exactly the positions the executable indexes.
+
+    Positions stay in the cache's local frame; the caller adds the origin when it
+    writes coordinates out. Spacing is translation-invariant, so the estimator does
+    not care, and the frame convention (traces are world coordinates) is preserved
+    at the one place it matters.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import laz_to_mdspc
+
+    header = laz_to_mdspc.read_header(path)
+    if header["magic"] != laz_to_mdspc.CACHE_MAGIC:
+        raise SystemExit(f"not a point-cloud cache: {path}")
+    points = np.memmap(path, dtype=np.float32, mode="r",
+                       offset=laz_to_mdspc.HEADER_BYTES, shape=(header["points"], 3))
+    return subsample_to(points, max_points), np.asarray(header["origin"], dtype=np.float64)
+
+
 def load_points(path: Path, max_points: int = 0) -> np.ndarray:
     suffix = path.suffix.lower()
     if suffix in (".las", ".laz"):
@@ -213,7 +237,7 @@ def mean_spacing(points: np.ndarray, sample: int = 100_000, seed: int = 1337,
         block_hi = np.minimum(block_lo + side, hi)
         block_lo = np.maximum(block_hi - side, lo)
 
-        block = points[np.all((points >= block_lo) & (points <= block_hi), axis=1)]
+        block = points_in_box(points, block_lo, block_hi)
         if len(block) < 1000:
             side = side * 1.6  # too sparse here: widen and retry
             empty_streak += 1
@@ -262,6 +286,27 @@ def write_stage_trace(path: Path, centers: np.ndarray, kind: str, radius: float,
     return len(centers)
 
 
+def points_in_box(points: np.ndarray, lo: np.ndarray, hi: np.ndarray,
+                  chunk: int = 20_000_000) -> np.ndarray:
+    """Points inside an axis-aligned box, filtered in chunks.
+
+    The obvious `points[np.all((points >= lo) & (points <= hi), axis=1)]` allocates
+    two boolean arrays the size of the cloud. At a billion points that is 4 GB of
+    temporaries per attempt, and the estimator makes up to sixty attempts. Chunking
+    bounds the temporaries instead, and works the same on a memmap as on an array.
+    """
+    if len(points) <= chunk:
+        return np.asarray(points[np.all((points >= lo) & (points <= hi), axis=1)])
+
+    kept = []
+    for start in range(0, len(points), chunk):
+        part = np.asarray(points[start:start + chunk])
+        hit = part[np.all((part >= lo) & (part <= hi), axis=1)]
+        if len(hit):
+            kept.append(hit)
+    return np.concatenate(kept, axis=0) if kept else np.empty((0, 3), dtype=points.dtype)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("cloud", type=Path, help="input point cloud (.las/.laz/.ply/.xyz/.csv)")
@@ -279,7 +324,10 @@ def main() -> None:
     args = parser.parse_args()
 
     started = time.perf_counter()
-    points = load_points(args.cloud, args.max_load_points)
+    if args.cloud.suffix.lower() == ".mdspc":
+        points, origin = load_mdspc(args.cloud, args.max_load_points)
+    else:
+        points, origin = load_points(args.cloud, args.max_load_points), np.zeros(3)
     load_seconds = time.perf_counter() - started
     print(f"loaded {len(points):,} points from {args.cloud} in {load_seconds:.1f}s")
 
@@ -290,7 +338,9 @@ def main() -> None:
 
     total = len(points)
     step = max(1, total // args.max_queries_per_stage) if args.max_queries_per_stage else 1
-    query_points = points[::step]
+    # Only the strided subset is materialised, and only here does the frame matter:
+    # trace coordinates are always world, whatever frame the source was read in.
+    query_points = np.asarray(points[::step], dtype=np.float64) + origin
 
     stages = [
         ("normal_estimation", "knn", 0.0, args.normal_k),
@@ -306,6 +356,9 @@ def main() -> None:
         # clouds above 2M points and are not comparable with version 2 -- see mean_spacing().
         "spacing_estimator_version": SPACING_ESTIMATOR_VERSION,
         "query_stride": step,
+        # Non-zero only for .mdspc inputs, where positions are stored relative to the
+        # cloud's origin. Recorded so a trace can be traced back to the exact frame.
+        "source_origin": [float(v) for v in origin],
         "stages": [],
     }
 
