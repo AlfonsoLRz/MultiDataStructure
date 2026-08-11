@@ -1,0 +1,43 @@
+\section{Application workloads}
+\label{sec:applications}
+
+The methodology of Section~\ref{sec:methodology} is agnostic to where queries come from. This section instantiates it on the workloads that motivate the paper: query streams issued by real applications in which the spatial index is an inner loop. We first describe how such streams are captured and replayed, then the two application regimes used in the evaluation, and finally a boundary study that delimits where schema search is worthwhile.
+
+\subsection{Trace-driven workload replay}
+\label{sec:trace-replay}
+
+A recorded workload is a \emph{query trace}: an ordered CSV of queries, each row carrying the query type (axis-aligned range, count-range, radius, or $k$-nearest-neighbor), its geometry (bounds or center), and its parameters (radius or $k$). The same file format is written by the framework's per-query audit tracing and replayed by the external-library baselines, so a single trace can be executed, identically, by the schema-search evaluator and by third-party indexes. When the search pipeline evaluates a candidate schema against a trace, the recorded order and geometry are preserved exactly; when a staged search requests fewer queries than the trace holds (proxy rungs, successive halving), a deterministic even stride is taken so that every subset preserves the recorded mixture of stages.
+
+For the pipeline stages considered below, no library instrumentation is required to obtain the trace, because the stages are \emph{self-queries}: every point of the cloud issues exactly one query with fixed stage parameters. The trace is therefore derivable from the cloud and the stage configuration, and its full-scale query count is known even when the emitted trace is subsampled --- a property we use to project end-to-end costs.
+
+\subsection{LiDAR processing pipelines}
+\label{sec:app-pipelines}
+
+Classical geometry-processing pipelines interleave stages that are, per point, a single neighborhood query:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{normal estimation}: one $k$-nearest-neighbor query per point ($k{=}16$ in our configuration, matching common library defaults);
+  \item \textbf{radius outlier removal}: one radius query per point, with the radius set to a multiple of the cloud's mean point spacing (4$\times$, estimated from a sample and recorded for reproducibility);
+  \item \textbf{Euclidean clustering}: one radius query per point at the clustering tolerance (2.5$\times$ mean spacing), a lower bound for DBSCAN-style expansion, which revisits points.
+\end{itemize}
+
+A single pass of this three-stage pipeline over an $N$-point cloud issues $3N$ queries --- $3\times10^8$ for a hundred-million-point scan --- against one static cloud. The index is built once and amortized across all stages, so query latency dominates and build time is secondary. The evaluation datasets span distinct distributions on purpose (an architectural heritage scan, UAV survey terrain at three sizes, and an industrial site), because the claim under test is not that one schema wins, but that the \emph{winning schema differs per dataset} and that the search finds it. For each dataset, the genetic optimizer searches single and nested schemas against the replayed pipeline trace, with single-primitive and hand-designed nested baselines evaluated under identical queries.
+
+\subsection{Deep-learning dataloaders: the batch-distribution regime}
+\label{sec:app-batch}
+
+The second application inverts the cost profile. A PointNet++-style dataloader normalizes blocks of a few thousand points and, per block, issues the network's neighborhood queries: ball queries of radius 0.2 (capped at 32 neighbors) around 512 farthest-point-sampled centroids at the first set-abstraction level; ball queries of radius 0.4 around 128 centroids at the second level, searching \emph{among the previous level's centroids}; and 3-nearest-neighbor interpolation queries at each feature-propagation level~\cite{qi2017pointnetpp}. Each layer queries a different point set (the block, then successive centroid subsets), and the supporting structure is rebuilt for every block of every batch.
+
+We model this as a \emph{batch-distribution} workload: a manifest of (point set, trace) pairs --- three pairs per block, one per queried level --- sampled from a real cloud. A candidate schema is scored by the wall cost of a full pass: the sum, over all pairs, of index construction plus replay of that pair's recorded queries. Build time is thus a first-class objective rather than an amortized afterthought, which shifts the optimum away from deep, well-separated hierarchies toward shallow, cheap-to-build ones --- and, as the held-out evaluation shows, at these block sizes all the way to a shallow single primitive, which the search correctly converges to. One schema is tuned for the entire distribution, matching how a dataloader would deploy it: the tuning cost is paid once, and the tuned schema is reused for every block of every epoch. Since profiling attributes the majority of end-to-end runtime of such networks to neighborhood structuring~\cite{li2022psnet}, reductions in full-pass cost translate directly into training wall time.
+
+\subsection{Search cost}
+\label{sec:app-search-cost}
+
+The dominant cost of the search is candidate construction, not the optimizer itself: on a hundred-million-point cloud, more than 95\% of a fifty-minute search is spent building the few dozen candidate indexes that get measured. Three mitigations, all measured, keep this practical. First, \emph{multi-fidelity search}: candidate rankings obtained on a 2--5M-point subsample correlate strongly with full-scale rankings (Spearman $\rho = 0.88$--$0.95$), and although the nearly-flat top of the ranking reshuffles under subsampling, the true full-scale winner sits inside the low-fidelity top-3 in every measured case --- reducing the search to minutes of low-fidelity evaluation plus a handful of full-scale builds at zero measured regret. Second, candidate evaluations are embarrassingly parallel; dispatching eight CPU workers reduced a representative search from nine minutes to under ninety seconds. Third, the cost is one-off per data-distribution and workload: the regimes of Sections~\ref{sec:app-pipelines} and~\ref{sec:app-batch} reuse the tuned schema across hundreds of pipeline passes or training epochs, so the search amortizes exactly like the offline optimization steps accepted throughout the instance-optimized indexing literature~\cite{nathan2020flood,ding2020tsunami}.
+
+\subsection{Boundary study: ray tracing over triangle meshes}
+\label{sec:app-boundary}
+
+To delimit where measured schema search pays off, we applied the same methodology to a domain with a hyper-engineered incumbent: ray tracing over triangle meshes, where decades of engineering have converged on surface-area-heuristic bounding-volume hierarchies, traversed on GPUs in compressed wide layouts~\cite{ylitie2017cwbvh}. We wrapped state-of-the-art single-mesh BVHs~\cite{bikker2024tinybvh} in searched top-level structures (uniform grids, octrees, kd-trees, and nested combinations thereof), with per-cell BVH leaves, and let the same optimizer maximize GPU ray throughput on path-tracing workloads, validating every candidate against the single global BVH for exactness and identical ray paths.
+
+The outcome is a negative result with a useful shape. On a synthetic axis-aligned scene, a searched grid top level nearly doubled coherent-ray throughput --- an artifact of trivially grid-aligned geometry. On a real scanned model, the single global SAH BVH won against every searched wrapper and every nested schema, and the optimizer correctly converged to it. The lesson transfers: schema search adds value where workloads are mixed and dense and no dominant engineered structure exists (the point-cloud regimes above); where such an incumbent exists, the honest behavior of a measured search is to return it, and ours does. We report this boundary explicitly rather than restricting the evaluation to favorable domains.

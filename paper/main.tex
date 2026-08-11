@@ -1,0 +1,82 @@
+%% Workload-Aware Synthesis of Point-Cloud Spatial Indexes
+%% Elsevier CAS double-column class (cas-dc), targeting Computers & Graphics.
+%% Sections live in sections/*.tex and are shared with the elsarticle draft in
+%% ../paper_elsevier (copy them over after editing, or edit here and copy back).
+\documentclass[a4paper,fleqn]{cas-dc}
+
+\usepackage[numbers]{natbib}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+% NOTE: cas-dc loads hyperref itself; loading it again causes an option clash.
+
+% Placeholder frames for figures that are still to be drawn. Remove this macro
+% (and the \figureplaceholder calls) once the real figures exist.
+\newcommand{\figureplaceholder}[2]{%
+  \fbox{%
+    \begin{minipage}[c][#1][c]{0.92\linewidth}
+      \centering
+      \textbf{Figure placeholder}\\[0.6em]
+      \small #2
+    \end{minipage}%
+  }%
+}
+
+\begin{document}
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{Workload-aware synthesis of point-cloud spatial indexes}
+\shortauthors{A. L\'opez-Ruiz et~al.}
+
+\title[mode = title]{Workload-Aware Synthesis of Nested Spatial Indexes for Large Point Clouds}
+
+\author[1]{Alfonso L\'opez-Ruiz}
+\cormark[1]
+\ead{allopezr@ujaen.es}
+\credit{Conceptualization, Methodology, Software, Investigation, Writing -- original draft}
+
+\affiliation[1]{organization={University of Ja\'en},
+    % addressline={},
+    % city={Ja\'en},
+    % postcode={},
+    country={Spain}}
+
+\cortext[cor1]{Corresponding author}
+
+\begin{abstract}
+The spatial queries that dominate point-cloud practice are dense and machine generated: geometry-processing pipelines issue one neighborhood query per point per stage, and hierarchical point networks issue sampling and grouping queries at every layer of every batch, so the index is an inner loop of the application rather than a service for sparse interactive requests. This manuscript introduces a workload-aware framework that synthesizes the point-cloud spatial index for exactly these regimes. Rather than selecting a fixed quadtree, octree, kd-tree, grid, or bounding-volume hierarchy in advance, the framework treats the index as a measured design variable: it captures the query trace a real application issues, generates single, nested, and conditionally activated schemas, builds them over the target data, and selects by replaying the recorded workload, recording the provenance needed for fair comparison. Held-out evaluation across five morphologies and four orders of point count locates a decision boundary: below roughly ten million points a tuned single structure is unbeatable and the search returns one, whereas above twenty-five million the synthesized schema wins on every morphology, reaching $2.13\times$ over the strongest single structure on a 700-million-point industrial scan and $2.76\times$ over a FLANN kd-tree at one hundred million. A wrongly fixed default costs between four and thirteen times the best choice in every cell measured, which makes measured selection valuable even where composition is not. Two application regimes anchor the evaluation --- LiDAR processing pipelines, where one static index is amortized across per-point stages, and PointNet++-style dataloaders, where the index is rebuilt per block and construction cost is first-class --- together with a boundary study on ray tracing showing that, against a hyper-engineered incumbent structure, the measured search correctly converges to the incumbent.
+\end{abstract}
+
+\begin{highlights}
+\item Point-cloud indexes are inner loops of dense, machine-generated query workloads.
+\item Single, nested, and conditional index designs are searched in one replayable format.
+\item Held-out gains appear above 25M points on every morphology; below 10M a single structure wins.
+\item $2.13\times$ over the best single structure at 700M points; $2.76\times$ over a FLANN kd-tree at 100M.
+\item A wrongly fixed default index costs $4$--$13\times$ the best choice on every cloud measured.
+\end{highlights}
+
+\begin{keywords}
+point clouds \sep spatial indexes \sep workload-aware optimization \sep nested data structures \sep instance-optimized indexing \sep LiDAR
+\end{keywords}
+
+\maketitle
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methodology}
+\input{sections/applications}
+\input{sections/evaluation}
+
+\section*{Acknowledgements}
+To be completed.
+
+\section*{Declaration of Competing Interest}
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\bibliographystyle{model1-num-names}
+\bibliography{references}
+
+\end{document}
