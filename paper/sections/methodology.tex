@@ -27,12 +27,46 @@ Each level stores a primitive type, a level budget, a leaf-capacity target, a mi
 
 This representation has two useful consequences. First, a conventional index is a degenerate schema with one level. The search can therefore compare tuned single structures and nested structures in the same candidate pool. Second, the chosen design is portable. It is written as JSON and can be replayed later without rerunning the search. This matters for publication workflows because discovery measurements and final measurements must remain separated.
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \figureplaceholder{0.24\textheight}{Schema schematic: a single-level baseline on the left; a nested schema in the center; and a conditional schema on the right where branches enter or skip later levels according to local node statistics. Include small JSON snippets or block labels for primitive type, level budget, leaf capacity, split policy, and condition predicate.}
-  \caption{Schema representation used by the optimizer. The final figure should make clear that single primitives, fixed nested chains, and conditional nested structures share one replayable JSON representation and can therefore be measured in the same candidate pool.}
+  \begin{tikzpicture}[x=1mm, y=1mm]
+    % --- single ---
+    \node[mdslabel] (ls) at (0, 10) {single};
+    \node[mdsbox, minimum width=26mm] (s1) at (0,   0) {octree\\{\tiny levels 8 $\cdot$ leaf 32}};
+    \node[mdsbox, minimum width=26mm, fill=white] (s2) at (0, -14) {points};
+    \draw[mdsflow] (s1) -- (s2);
+
+    % --- nested ---
+    \node[mdslabel] (ln) at (44, 10) {nested};
+    \node[mdsbox, minimum width=26mm] (n1) at (44,   0) {quadtree\\{\tiny levels 4 $\cdot$ leaf 2k}};
+    \node[mdsbox, minimum width=26mm] (n2) at (44, -14) {octree\\{\tiny levels 5 $\cdot$ leaf 256}};
+    \node[mdsbox, minimum width=26mm, fill=white] (n3) at (44, -28) {points};
+    \draw[mdsflow] (n1) -- (n2);
+    \draw[mdsflow] (n2) -- (n3);
+
+    % --- conditional ---
+    \node[mdslabel] (lc) at (92, 10) {conditional};
+    \node[mdsbox, minimum width=30mm] (c1) at (92, 0) {octree\\{\tiny levels 5 $\cdot$ leaf 512}};
+    \node[diamond, draw=mdsaccent, fill=mdsaccentfill, aspect=3.1, inner sep=0.5pt,
+          font=\tiny] (cond) at (92, -12) {anisotropy $>0.7$};
+    \node[mdsbox, minimum width=18mm] (c2) at (78, -26) {kd-tree\\{\tiny levels 3}};
+    \node[mdsbox, minimum width=16mm, fill=white] (c3) at (106, -26) {points};
+    \node[mdsbox, minimum width=18mm, fill=white] (c4) at (78, -38) {points};
+    \draw[mdsflow] (c1) -- (cond);
+    \draw[mdsflow] (cond.west) -| (c2) node[mdslabel, pos=0.25, above] {yes};
+    \draw[mdsflow] (cond.east) -| (c3) node[mdslabel, pos=0.25, above] {no};
+    \draw[mdsflow] (c2) -- (c4);
+
+    \begin{scope}[on background layer]
+      \node[draw=mdsout, dashed, rounded corners=2pt, inner sep=3mm,
+            fit=(ls)(s2)(ln)(n3)(lc)(c3)(c4)] (all) {};
+    \end{scope}
+    \node[mdslabel, below=0.4mm of all.south, text=mdsout]
+      {one replayable JSON format $\cdot$ one candidate pool $\cdot$ one measurement path};
+  \end{tikzpicture}
+  \caption{Schema representation used by the optimizer. A conventional index is a one-level schema, so tuned single primitives, fixed nested chains, and conditional structures compete in the same candidate pool and are measured identically. There is no separate baseline path that could be accidentally handicapped, and the conditional form lets the structure vary by location within a single cloud.}
   \label{fig:schema-representation}
-\end{figure}
+\end{figure*}
 
 \subsection{Point-cloud and workload features}
 
@@ -40,12 +74,50 @@ Before ranking or training selectors, the system computes deterministic features
 
 The workload feature vector records the query mix, $k$ for nearest-neighbor queries, the number of generated queries, range and radius scale intervals, a deterministic summary of generated query scales, and the score weights. These features are copied into each raw schema-search row. The immediate use is auditability; the later use is supervised learning, where a selector can rank schemas for a new cloud and workload before expensive measurement.
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \figureplaceholder{0.23\textheight}{Feature sketch: show a point cloud bounding box with sampled points, covariance axes, an 8x8x8 occupancy grid, and workload query glyphs for range boxes, radius balls, and k-nearest-neighbor probes. A side panel should list the resulting cloud/workload features.}
-  \caption{Deterministic feature extraction for point clouds and workloads. The final figure should connect geometric descriptors, occupancy summaries, and query-profile descriptors to the schema-ranking and training rows.}
+  \begin{tikzpicture}[node distance=3mm]
+    % cloud side: bounding box, covariance axes, occupancy grid
+    \begin{scope}[shift={(0,0)}]
+      \draw[draw=mdsline] (0,0) rectangle (1.55,1.15);
+      \foreach \i in {1,...,4} \draw[draw=mdsline!35, very thin] (\i*0.31,0) -- (\i*0.31,1.15);
+      \foreach \j in {1,...,3} \draw[draw=mdsline!35, very thin] (0,\j*0.2875) -- (1.55,\j*0.2875);
+      \foreach \p in {(0.2,0.25),(0.35,0.32),(0.5,0.28),(0.62,0.4),(0.78,0.36),(0.95,0.5),
+                      (1.1,0.46),(1.25,0.6),(0.42,0.72),(0.58,0.8),(0.72,0.75),(1.35,0.72),
+                      (0.28,0.5),(0.88,0.68),(1.18,0.88)}
+        \fill[mdsink] \p circle (0.5pt);
+      \draw[-{Stealth[length=3pt]}, mdsaccent, thick] (0.75,0.55) -- ++(0.42,0.2);
+      \draw[-{Stealth[length=3pt]}, mdsaccent, thick] (0.75,0.55) -- ++(-0.12,0.26);
+      \node[mdslabel] at (0.775,-0.16) {cloud: extent, anisotropy, occupancy};
+    \end{scope}
+
+    % workload side: the three query glyphs
+    \begin{scope}[shift={(3.05,0)}]
+      \draw[draw=mdsline] (0,0) rectangle (1.55,1.15);
+      \draw[draw=mdsaccent, thick] (0.14,0.66) rectangle (0.56,0.98);
+      \node[mdslabel, text=mdsaccent] at (0.35,0.55) {range};
+      \draw[draw=mdsaccent, thick] (1.12,0.76) circle (0.2);
+      \node[mdslabel, text=mdsaccent] at (1.12,0.48) {radius};
+      \fill[mdsink] (0.5,0.34) circle (0.7pt);
+      \foreach \p in {(0.4,0.44),(0.6,0.42),(0.44,0.24),(0.62,0.26)} {
+        \fill[mdsink] \p circle (0.5pt);
+        \draw[draw=mdsaccent, very thin] (0.5,0.34) -- \p;
+      }
+      \node[mdslabel, text=mdsaccent] at (0.5,0.1) {$k$-NN};
+      \node[mdslabel] at (0.775,-0.16) {workload: type mix, scales, $k$};
+    \end{scope}
+
+    \node[mdsbox, right=7mm of current bounding box.east, minimum width=20mm, anchor=west]
+      (rows) {feature row};
+    \node[mdsartifact, below=5mm of rows, minimum width=20mm] (use)
+      {schema ranking\\{\tiny and selector training}};
+    \draw[mdsflow] (1.55,0.575) -- (3.05,0.575);
+    \draw[mdsflow] (4.6,0.575) -- (rows.west);
+    \draw[mdsflow] (rows) -- (use);
+  \end{tikzpicture}
+  \caption{Deterministic feature extraction. Geometric descriptors of the cloud (extent and aspect, covariance-derived anisotropy, and occupancy statistics over a fixed sub-grid) are combined with descriptors of the query profile (type mix, range and radius scales, neighbor count) into one row per (cloud, workload) pair. The same rows serve two purposes: ranking candidate schemas during search, and training a selector that predicts a schema without searching.}
   \label{fig:feature-extraction}
-\end{figure}
+\end{figure*}
 
 \subsection{Index construction}
 
@@ -93,12 +165,41 @@ For per-cloud conditional tuning, the system first estimates a shallow sketch of
 
 The evolutionary optimizer follows the same measurement contract. It keeps elites, applies mutations and crossover, introduces random candidates, and can add diagnostic repair children. Repair mutations are based on measured counters: high leaf occupancy suggests smaller leaves or deeper splits; high tested-points-per-visit suggests tighter or more selective subdivision; high visited-node counts suggest shallower or better aligned splits; and excessive single-child chains indicate poor subdivision for the local geometry. A candidate created by repair is still benchmarked normally before it can be selected.
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \figureplaceholder{0.25\textheight}{Staged search diagram: a large generated candidate pool passes through proxy measurement, shortlist measurement, confirmation with full query count/seeds, and final replay next to baselines. Mark proxy rows and final latency rows with different colors; show canonical single-primitive controls being carried through the stages.}
-  \caption{Multi-stage schema search and measurement protocol. The final figure should emphasize that discovery measurements are used to choose candidates, while final claims come from replaying exported schemas under a uniform provenance against baseline controls.}
+  \begin{tikzpicture}[node distance=4mm]
+    \node[mdsbox, minimum width=17mm] (gen) {generated\\candidates};
+    \node[mdsbox, right=of gen, minimum width=17mm] (proxy)
+      {proxy stage\\{\tiny few queries}\\{\tiny visit-count score}};
+    \node[mdsbox, right=of proxy, minimum width=17mm] (short)
+      {shortlist\\{\tiny full latency}\\{\tiny subsampled cloud}};
+    \node[mdsmeasured, right=of short, minimum width=17mm] (confirm)
+      {confirmation\\{\tiny full scale}\\{\tiny full query count}};
+    \node[mdsartifact, right=of confirm, minimum width=18mm] (final)
+      {held-out replay\\{\tiny vs.\ tuned singles}\\{\tiny 5 repeats, CIs}};
+
+    \draw[mdsflow] (gen) -- (proxy);
+    \draw[mdsflow] (proxy) -- (short) node[mdslabel, midway, above] {top-$k$};
+    \draw[mdsflow] (short) -- (confirm) node[mdslabel, midway, above] {top-$k$};
+    \draw[mdsflow] (confirm) -- (final);
+
+    \node[mdsbox, below=7mm of short, minimum width=40mm, fill=white]
+      (controls) {tuned single-primitive controls, carried through every stage};
+    \draw[mdsflow, dotted] (controls.north west) -- (proxy.south);
+    \draw[mdsflow, dotted] (controls.north) -- (short.south);
+    \draw[mdsflow, dotted] (controls.north east) -- (confirm.south);
+
+    \begin{scope}[on background layer]
+      \node[draw=mdsline, dashed, rounded corners=2pt, inner sep=2.2mm,
+            fit=(gen)(proxy)(short)(confirm)] (disc) {};
+      \node[draw=mdsout, dashed, rounded corners=2pt, inner sep=2.2mm, fit=(final)] (rep) {};
+    \end{scope}
+    \node[mdslabel, above=0.4mm of disc.north] {discovery: the \emph{opt} half of the trace};
+    \node[mdslabel, above=0.4mm of rep.north, text=mdsout] {reporting: the \emph{test} half};
+  \end{tikzpicture}
+  \caption{Multi-stage schema search and measurement protocol. Discovery measurements choose candidates and are allowed to be cheap and noisy; every reported claim comes from replaying the exported schema on the untouched half of the trace, under one uniform provenance, alongside tuned single-primitive controls that are carried through each stage rather than measured once at the end.}
   \label{fig:staged-search}
-\end{figure}
+\end{figure*}
 
 \subsection{Measurement protocol}
 

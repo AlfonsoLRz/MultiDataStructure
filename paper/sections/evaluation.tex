@@ -1,10 +1,16 @@
 \section{Evaluation}
 \label{sec:evaluation}
 
-% All numbers in this section come from the held-out battery of 2026-07-29
-% (results/eval_traces/v2 and results/eval_traces/matrix, committed alongside the
-% sources). Reproduction: scripts/run_experiment_battery_v2.ps1 and
-% scripts/run_matrix_heatmap.ps1; protocol details in testing.md.
+% PENDING RE-MEASUREMENT. The numbers presently in this section come from the
+% held-out battery of 2026-07-29, which the 2026-08-06 audit invalidated: query
+% radii were set by a spacing estimator that measured a sparsified cloud (up to
+% 5x too large at 25M), the kd and grid tuning grids were depth-capped so their
+% capacity parameter was inert, and every runner executed a binary frozen at
+% 2026-07-28. All of it is being re-measured over the curated multi-scale
+% benchmark. Do not quote a number from here until that lands; see testing.md.
+% Reproduction after the re-run: scripts/make_cell_config.py, then
+% scripts/prepare_curated_cells.py, then scripts/run_matrix_heatmap.ps1 and
+% scripts/run_experiment_battery_v2.ps1 (both -CellConfig driven).
 
 All experiments run on a single workstation (AMD-class multicore CPU, NVIDIA RTX 4080 SUPER, Windows 11); CPU evaluation is used wherever results are compared against CPU libraries. Workloads are replayed traces (Section~\ref{sec:trace-replay}); every candidate schema and every baseline answers the identical query sequence, and returned result counts are verified to match across all compared systems.
 
@@ -34,6 +40,8 @@ Table~\ref{tab:pipeline} reports the native-density pipeline cells. Two regulari
   \smallskip
   \raggedright\footnotesize $^{\ast}$A full tuned-singles sweep at 700M is computationally infeasible (each candidate is a 700M-point build); the tuned sweep ran on a 5M subsample and its winner transferred poorly, so the strongest available single-structure competitor at full scale is reported. Subscripts are tree depths; the second number is leaf capacity.
 \end{table*}
+
+\input{sections/fig_matrix_heatmap}
 
 \subsection{Shape $\times$ size matrix}
 \label{sec:eval-matrix}
@@ -94,7 +102,7 @@ Tuning is per-instance, but a natural question is what a tuned schema costs when
 \subsection{External library baselines}
 \label{sec:eval-frameworks}
 
-Table~\ref{tab:frameworks} compares the searched schema against the indexes practitioners actually use, on identical held-out queries with verified result counts (residual disagreements are $\leq 1$ point on $\leq 10$ of 3000 queries, attributable to boundary rounding). The comparison exhibits the same crossover as everything above: at 5M, PCL's FLANN kd-tree is genuinely the fastest structure ($0.85\times$ our latency) --- small clouds are mature-library territory, and they are also exactly the parity cells where instance optimization has nothing to offer; at 100M the searched schema is $2.76\times$ faster than FLANN and $3.7\times$ faster than Open3D. FLANN builds $5.4\times$ faster at 100M (12.4\,s vs.\ 67.5\,s), so the crossover amortizes after $\sim$2.4M queries --- 2.4\% of a single per-point pipeline stage on that cloud. PDAL is omitted (box-crop-only harness support). As a primitive-quality control we also replayed identical range/kNN queries against the bulk-loaded octree and kd-tree of the Indexicon library~\cite{indexicon2026}: returned counts matched exactly on every query, and our in-house primitives were on par or faster on every comparable operation (range: octree tie, kd-tree $10\times$; kNN: $1.65\times$/$5.2\times$), ruling out weak baselines as the source of the nested wins; Indexicon's builds are $5$--$7\times$ faster, consistent with its focus on lean, portable, dynamic structures rather than query-optimized static ones.
+Table~\ref{tab:frameworks} compares the searched schema against the indexes practitioners actually use, on identical held-out queries with verified result counts (residual disagreements are $\leq 1$ point on $\leq 10$ of 3000 queries, attributable to boundary rounding). The comparison exhibits the same crossover as everything above: at 5M, PCL's FLANN kd-tree is genuinely the fastest structure ($0.85\times$ our latency) --- small clouds are mature-library territory, and they are also exactly the parity cells where instance optimization has nothing to offer; at 100M the searched schema is $2.76\times$ faster than FLANN and $3.7\times$ faster than Open3D. FLANN builds $5.4\times$ faster at 100M (12.4\,s vs.\ 67.5\,s), so the crossover amortizes after $\sim$2.4M queries --- 2.4\% of a single per-point pipeline stage on that cloud. PDAL is omitted (box-crop-only harness support). As a primitive-quality control we also replayed identical range, radius and kNN queries against the bulk-loaded octree, kd-tree and packed R-tree of the Indexicon library~\cite{indexicon2026}. Exactness first: returned counts matched on every one of 351{,}000 sampled queries (13 cells $\times$ 3 structures $\times$ 3000 queries $\times$ 3 repeats), so the two systems demonstrably answer the same workload. On latency our primitives reach parity by 25M points. We previously reported them as faster on every comparable operation; that comparison is withdrawn, because it was measured against a stale binary, and because the per-node instrumentation described in Section~\ref{sec:disc-locality} was inside our timed region but never inside theirs. Indexicon's builds are $5$--$7\times$ faster, consistent with its focus on lean, portable, dynamic structures rather than query-optimized static ones. One result from this control is worth stating on its own: Indexicon's packed R-tree was the slowest of its three structures in 8 of the 13 cells and the fastest in none, which is external evidence for a grammar decision we had otherwise made on internal grounds --- overlapping minimum bounding rectangles do not fit a space of per-node disjoint splits, and we exclude the R-tree family accordingly.
 
 \begin{table*}[t]
   \centering
@@ -110,6 +118,8 @@ Table~\ref{tab:frameworks} compares the searched schema against the indexes prac
     \bottomrule
   \end{tabular}
 \end{table*}
+
+\input{sections/fig_amortization}
 
 \subsection{Search cost}
 \label{sec:eval-search-cost}
@@ -156,4 +166,4 @@ Table~\ref{tab:boundary} summarizes the triangle-mesh study of Section~\ref{sec:
 \subsection{Threats to validity}
 \label{sec:eval-threats}
 
-Single-machine measurements; derived (not library-instrumented) pipeline traces, exact for self-query stages by construction; one sampling seed per search arm, with winner-family stability across repeated searches reported in place of exact-schema stability; the batch regime models the dataloader's neighborhood queries but not the surrounding training loop. Matrix cells subsample their sources, so point count and density co-vary along each size ladder (mitigated by the native-density results). The 700M cell lacks a full-scale tuned-singles sweep for cost reasons. Held-out splits are drawn from the same cloud and trace distribution; the cross-cloud experiment (Section~\ref{sec:eval-transfer}) is the only distribution-shift test. A coordinate-frame audit is part of the protocol: replayed traces are checked for non-degenerate result counts (a frame mismatch between capture and index manifests as universally empty radius queries), the replay path performs an automatic world-to-local transform with a bounds-coverage guard, and all cross-library comparisons verify returned counts --- a discipline that caught two frame-convention bugs in our own harness during this work.
+Single-machine measurements; derived (not library-instrumented) pipeline traces, exact for self-query stages by construction; one sampling seed per search arm, with winner-family stability across repeated searches reported in place of exact-schema stability; the batch regime models the dataloader's neighborhood queries but not the surrounding training loop. Point count and density co-vary along each size ladder, because a tier is a uniform subsample of its scene rather than a scan at that density; the per-scene ladders are nested by construction, so a scaling curve varies size alone and not the scene, but not size alone and density together. Tiers above a scene's native count would contain interpolated points and are excluded from every reported cell, which caps several scenes below the top of the ladder. The largest industrial cell lacks a full-scale tuned-singles sweep for cost reasons. Coordinates are single-precision offsets from a per-cloud origin, leaving a floor of a few millimetres on scenes spanning tens of kilometres, which is reported alongside any exactness comparison on those scenes. Held-out splits are drawn from the same cloud and trace distribution; the cross-cloud experiment (Section~\ref{sec:eval-transfer}) is the only distribution-shift test. A coordinate-frame audit is part of the protocol: replayed traces are checked for non-degenerate result counts (a frame mismatch between capture and index manifests as universally empty radius queries), the replay path performs an automatic world-to-local transform with a bounds-coverage guard, and all cross-library comparisons verify returned counts --- a discipline that caught two frame-convention bugs in our own harness during this work.

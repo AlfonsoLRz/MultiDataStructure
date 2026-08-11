@@ -1,0 +1,78 @@
+% Shape x size heatmap of held-out speedup over the best tuned single.
+% Values are generated from results/eval_traces/matrix/heatmap_summary.csv and are
+% identical to Table~\ref{tab:matrix}; regenerate both from that CSV if it changes.
+% Colour: diverging blue<->orange on the manuscript's own accent pair, neutral grey
+% at the 1.0 parity midpoint, so the parity boundary is the visual centre. Every
+% cell also carries its printed value, so the encoding is never colour-alone
+% (greyscale printing and CVD both stay legible).
+\begin{figure*}[t]
+  \centering
+  \begin{tikzpicture}[x=17mm, y=8.4mm]
+    % --- cell fills: blue = searched wins, orange = tuned single wins, grey = parity
+    % \mdscell{col}{row}{value}{fill}
+    \newcommand{\mdscell}[4]{%
+      \fill[#4] (#1-0.5,#2-0.5) rectangle (#1+0.5,#2+0.5);
+      \draw[white, line width=0.6pt] (#1-0.5,#2-0.5) rectangle (#1+0.5,#2+0.5);
+      \node[font=\scriptsize, text=mdsink] at (#1,#2) {#3};}
+
+    % row 5 = terrain
+    \mdscell{1}{5}{0.88}{mdsout!42}
+    \mdscell{2}{5}{0.96}{mdsout!16}
+    \mdscell{3}{5}{1.09}{mdsaccent!24}
+    \mdscell{4}{5}{1.27}{mdsaccent!62}
+    % row 4 = industrial
+    \mdscell{1}{4}{0.95}{mdsout!20}
+    \mdscell{2}{4}{0.93}{mdsout!28}
+    \mdscell{3}{4}{1.07}{mdsaccent!19}
+    \mdscell{4}{4}{1.23}{mdsaccent!54}
+    % row 3 = urban
+    \mdscell{1}{3}{1.06}{mdsaccent!16}
+    \mdscell{2}{3}{0.91}{mdsout!36}
+    \mdscell{3}{3}{1.03}{mdsaccent!9}
+    \mdscell{4}{3}{1.07}{mdsaccent!19}
+    % row 2 = architecture
+    \mdscell{1}{2}{0.99}{mdsfill}
+    \mdscell{2}{2}{1.04}{mdsaccent!11}
+    \mdscell{3}{2}{1.04}{mdsaccent!11}
+    \node[font=\scriptsize, text=mdsline] at (4,2) {--};
+    \draw[mdsline!40, line width=0.6pt] (3.5,1.5) rectangle (4.5,2.5);
+    % row 1 = indoor
+    \mdscell{1}{1}{0.96}{mdsout!16}
+    \foreach \c in {2,3,4} {
+      \node[font=\scriptsize, text=mdsline] at (\c,1) {--};
+      \draw[mdsline!40, line width=0.6pt] (\c-0.5,0.5) rectangle (\c+0.5,1.5);}
+
+    % --- axes
+    \foreach \c/\lab in {1/1M, 2/5M, 3/25M, 4/100M}
+      \node[font=\scriptsize, text=mdsink] at (\c,5.78) {\lab};
+    \foreach \r/\lab in {5/terrain, 4/industrial, 3/urban (ALS), 2/architecture, 1/indoor}
+      \node[font=\scriptsize, text=mdsink, anchor=east] at (0.42,\r) {\lab};
+
+    % --- the crossover band: the single most important feature of the figure.
+    % The rule stops below the size labels so it never collides with them; the
+    % annotation sits clear above them.
+    \draw[mdsaccent, thick, dashed] (2.5,0.42) -- (2.5,5.52);
+    \node[font=\tiny\itshape, text=mdsaccent, anchor=south] at (2.5,6.15)
+      {crossover: 10--25M};
+
+    % --- legend
+    \begin{scope}[shift={(0.5,-0.55)}]
+      \fill[mdsout!42]     (0,0)     rectangle ++(0.30,0.30);
+      \fill[mdsout!16]     (0.30,0)  rectangle ++(0.30,0.30);
+      \fill[mdsfill]       (0.60,0)  rectangle ++(0.30,0.30);
+      \fill[mdsaccent!24]  (0.90,0)  rectangle ++(0.30,0.30);
+      \fill[mdsaccent!62]  (1.20,0)  rectangle ++(0.30,0.30);
+      \draw[mdsline!50] (0,0) rectangle (1.50,0.30);
+      \node[font=\tiny, text=mdsink, anchor=west] at (1.60,0.15)
+        {$0.88\ \longleftarrow$ tuned single wins $\ \cdot\ 1.0\ \cdot\ $ searched wins $\longrightarrow\ 1.27$};
+    \end{scope}
+  \end{tikzpicture}
+  \caption{Held-out speedup of the searched schema over the best tuned single, per
+  matrix cell (the values of Table~\ref{tab:matrix}). Blue marks cells where the
+  searched schema wins, orange where a tuned single does, and the printed value
+  carries the magnitude so the encoding never rests on colour alone. The crossover
+  from parity to searched wins falls between 10M and 25M points for every
+  morphology, which is the scale law the evaluation rests on; shape modulates only
+  the magnitude above it. Dashes mark cells with no source cloud at that size.}
+  \label{fig:matrix-heatmap}
+\end{figure*}

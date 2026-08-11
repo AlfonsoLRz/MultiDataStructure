@@ -1,7 +1,8 @@
 %% Workload-Aware Synthesis of Point-Cloud Spatial Indexes
 %% Elsevier CAS double-column class (cas-dc), targeting Computers & Graphics.
-%% Sections live in sections/*.tex and are shared with the elsarticle draft in
-%% ../paper_elsevier (copy them over after editing, or edit here and copy back).
+%% Sections live in sections/*.tex. This is the only copy: the single-column
+%% elsarticle draft that used to live in ../paper_elsevier was deleted on 2026-08-11
+%% after its text fell behind (git history has it if it is ever needed).
 \documentclass[a4paper,fleqn]{cas-dc}
 
 \usepackage[numbers]{natbib}
@@ -9,19 +10,35 @@
 \usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc,shapes.geometric}
 % NOTE: cas-dc loads hyperref itself; loading it again causes an option clash.
 
-% Placeholder frames for figures that are still to be drawn. Remove this macro
-% (and the \figureplaceholder calls) once the real figures exist.
-\newcommand{\figureplaceholder}[2]{%
-  \fbox{%
-    \begin{minipage}[c][#1][c]{0.92\linewidth}
-      \centering
-      \textbf{Figure placeholder}\\[0.6em]
-      \small #2
-    \end{minipage}%
-  }%
+% Shared visual language for the diagrams. Greys carry structure, one accent marks
+% the measured path, and a second marks the artifacts that leave the system, so the
+% four figures read as one system rather than four unrelated drawings.
+\definecolor{mdsink}{gray}{0.25}
+\definecolor{mdsline}{gray}{0.45}
+\definecolor{mdsfill}{gray}{0.94}
+\definecolor{mdsaccent}{RGB}{0,90,150}
+\definecolor{mdsaccentfill}{RGB}{224,238,247}
+\definecolor{mdsout}{RGB}{150,75,0}
+\definecolor{mdsoutfill}{RGB}{250,235,215}
+
+\tikzset{
+  mdsbox/.style={draw=mdsline, fill=mdsfill, rounded corners=1.5pt, align=center,
+                 font=\scriptsize, inner sep=3pt, minimum height=6.5mm},
+  mdsmeasured/.style={mdsbox, draw=mdsaccent, fill=mdsaccentfill},
+  mdsartifact/.style={mdsbox, draw=mdsout, fill=mdsoutfill},
+  mdsflow/.style={-{Stealth[length=4pt]}, draw=mdsline, thick},
+  mdsloop/.style={-{Stealth[length=4pt]}, draw=mdsaccent, thick, dashed},
+  mdslabel/.style={font=\tiny\itshape, text=mdsink, inner sep=1.5pt},
 }
+
+% A quantity awaiting the pending re-measurement. Every number that has to be
+% refreshed once the battery re-runs is wrapped in this, so \grep{pendingnum}
+% finds them all instead of relying on memory. Remove the macro once none remain.
+\newcommand{\pendingnum}[1]{\textbf{[#1]}}
 
 \begin{document}
 \let\WriteBookmarks\relax
@@ -69,6 +86,7 @@ point clouds \sep spatial indexes \sep workload-aware optimization \sep nested d
 \input{sections/methodology}
 \input{sections/applications}
 \input{sections/evaluation}
+\input{sections/discussion}
 
 \section*{Acknowledgements}
 To be completed.

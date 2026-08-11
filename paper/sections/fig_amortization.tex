@@ -1,0 +1,73 @@
+% Amortization of the one-off build cost against query volume, Alhambra 100M cell.
+% Source: results/framework_compare/v2_alhambra_100m_pcl/framework_comparison.md
+%   ours  : build 67 453.68 ms, 0.012930 ms/query
+%   FLANN : build 12 385.20 ms, 0.035645 ms/query
+% Break-even = (67.4537 - 12.3852) / (3.5645e-5 - 1.2930e-5) = 2 424 322 queries.
+% Curve coordinates are precomputed (scratchpad/gen_amort.py) because TeX overflows
+% on 10^x. y is sqrt-compressed over 0..3600 s so both the early build gap and the
+% late linear growth stay readable in one panel; curves clamp at the 60-min ceiling.
+% Colours are the manuscript's accent pair, validated as a diverging/emphasis pair,
+% and both lines are directly labelled so identity never rests on colour alone.
+\begin{figure*}[t]
+  \centering
+  \begin{tikzpicture}[x=1.55mm, y=1.15mm]
+    % gridlines behind the curves
+    \foreach \yy/\lab in {16.330/10, 28.284/30, 40.000/60} {
+      \draw[mdsline!22, very thin] (0,\yy) -- (62,\yy);
+      \draw[mdsline] (0,\yy) -- (-1.2,\yy);
+      \node[font=\tiny, text=mdsink, anchor=east] at (-1.5,\yy) {\lab\,min};}
+    \node[font=\tiny, text=mdsink, anchor=east] at (-1.5,0) {0};
+
+    % axes
+    \draw[mdsline] (0,0) -- (62,0);
+    \draw[mdsline] (0,0) -- (0,40);
+
+    \foreach \e/\lab in {0/4, 12.4/5, 24.8/6, 37.2/7, 49.6/8, 62/9} {
+      \draw[mdsline] (\e,0) -- (\e,-1.2);
+      \node[font=\tiny, text=mdsink, anchor=north] at (\e,-1.4) {$10^{\lab}$};}
+    \node[font=\scriptsize, text=mdsink, anchor=north] at (31,-6.5)
+      {queries issued against the index};
+    \node[font=\scriptsize, text=mdsink, rotate=90] at (-11,20)
+      {cumulative wall cost};
+
+    % one full pipeline pass over the 100M cloud = 3e8 queries. The annotation is
+    % anchored inside the panel so it cannot overflow the right-hand column edge.
+    \draw[mdsaccent!45, dotted, thick] (55.516,0) -- (55.516,30);
+    \node[font=\tiny\itshape, text=mdsaccent, anchor=north west, align=left]
+      at (56.4,15.5) {one pipeline pass\\($3{\times}10^{8}$ queries)};
+
+    % FLANN kd-tree: cheaper to build, dearer per query
+    \draw[mdsout, very thick, dashed]
+      plot coordinates {(0.000,2.380) (3.100,2.405) (6.200,2.451) (9.300,2.529)
+      (12.400,2.662) (15.500,2.885) (18.600,3.243) (21.700,3.796) (24.800,4.620)
+      (27.900,5.803) (31.000,7.457) (34.100,9.726) (37.200,12.803) (40.300,16.948)
+      (43.400,22.505) (46.500,29.940) (49.600,39.871) (49.900,40.000)};
+
+    % searched schema: dearer to build, cheaper per query
+    \draw[mdsaccent, very thick]
+      plot coordinates {(0.000,5.481) (3.100,5.485) (6.200,5.492) (9.300,5.505)
+      (12.400,5.528) (15.500,5.568) (18.600,5.639) (21.700,5.763) (24.800,5.977)
+      (27.900,6.340) (31.000,6.939) (34.100,7.893) (37.200,9.351) (40.300,11.497)
+      (43.400,14.550) (46.500,18.792) (49.600,24.590) (52.700,32.433)
+      (55.300,40.000)};
+
+    % break-even
+    \draw[mdsink!55, dotted] (29.569,0) -- (29.569,6.627);
+    \fill[mdsink] (29.569,6.627) circle (0.9pt);
+    \node[font=\tiny\itshape, text=mdsink, anchor=south east] at (28.4,10.5)
+      {break-even $\approx2.4$M};
+
+    % direct labels
+    \node[font=\tiny, text=mdsout, anchor=east] at (46.0,31.6) {PCL FLANN kd-tree};
+    \node[font=\tiny, text=mdsaccent, anchor=west] at (50.6,22.0) {searched schema};
+  \end{tikzpicture}
+  \caption{Why the one-off cost is free in this regime, on the Alhambra 100M cell.
+  The searched schema builds more slowly (67.5\,s vs.\ 12.4\,s) but answers each
+  query $2.76\times$ faster, so it repays the difference after roughly 2.4 million
+  queries. One three-stage pipeline pass over that cloud issues $3\times10^{8}$
+  queries --- two orders of magnitude past break-even --- which is why the build
+  gap is 2.4\% of a single pass. Below the crossover the ordering reverses: at 5M
+  the mature library is faster per query, and no query volume repays the
+  difference.}
+  \label{fig:amortization}
+\end{figure*}
