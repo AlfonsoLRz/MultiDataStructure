@@ -481,7 +481,7 @@ infrequently-changing clouds queried densely. Indexicon is the reference for dyn
 | Heatmap summary table | `results/eval_traces/matrix/heatmap_summary.csv` |
 | Framework comparisons | `results/framework_compare/v2_*_fixed`, `v2_*_pcl`, `v2/indexicon_cmp` |
 | Durable archive | `D:\MDS_results_archive\2026-07-29_battery_v2_heatmap.zip` |
-| Manuscript | `paper_elsevier/` (evaluation section written from the above) |
+| Manuscript | `nested-data-structures/` (cas-dc double column; separate git remote, gitignored here) |
 | Reproduce the battery | `scripts/run_experiment_battery_v2.ps1` (`-Only <cells>`) |
 | Reproduce the heatmap | `scripts/run_matrix_heatmap.ps1` |
 | Rigor tooling | `scripts/split_trace.py`, `scripts/make_single_grids.py` |

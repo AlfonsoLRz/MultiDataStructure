@@ -1,11 +1,11 @@
 # Testing plan — application-workload evaluation for the paper
 
 Status ledger + exact commands for everything still to measure and write. Context:
-the paper (Computers & Graphics draft, `paper_elsevier/`) is reframed around
+the paper (Computers & Graphics draft, `nested-data-structures/`) is reframed around
 **instance-optimized spatial index schemas for dense, machine-generated workloads**
 (pipeline self-queries + DL dataloader neighborhood queries), with trace-driven
 replay as the evaluation mechanism. See `docs/application_workloads.md` for the
-protocol and `paper_elsevier/sections/evaluation.tex` for the tables to fill
+protocol and `nested-data-structures/sections/evaluation.tex` for the tables to fill
 (placeholders are marked `\todonum{}`).
 
 ## 1. What is DONE and VALID (do not rerun)
@@ -334,7 +334,7 @@ paper figure this feeds: a **shape × size heatmap of winning schema families** 
 the strongest possible visualization of the instance-optimization thesis (and it
 subsumes today's ad-hoc pipeline table).
 
-## 5. Paper writing checklist (`paper_elsevier/`)
+## 5. Paper writing checklist (`nested-data-structures/`)
 
 - [ ] Fill `sections/evaluation.tex` `\todonum{}` placeholders: pipeline table
       (from corrected + matrix runs), framework table, search-cost table
