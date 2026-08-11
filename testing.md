@@ -1,11 +1,11 @@
 # Testing plan — application-workload evaluation for the paper
 
 Status ledger + exact commands for everything still to measure and write. Context:
-the paper (Computers & Graphics draft, `nested-data-structures/`) is reframed around
+the paper (Computers & Graphics draft, `paper/`) is reframed around
 **instance-optimized spatial index schemas for dense, machine-generated workloads**
 (pipeline self-queries + DL dataloader neighborhood queries), with trace-driven
 replay as the evaluation mechanism. See `docs/application_workloads.md` for the
-protocol and `nested-data-structures/sections/evaluation.tex` for the tables to fill
+protocol and `paper/sections/evaluation.tex` for the tables to fill
 (placeholders are marked `\todonum{}`).
 
 ## 1. What is DONE and VALID (do not rerun)
@@ -161,6 +161,18 @@ real defects. Two change what past numbers *mean*; the rest corrupt re-runs or b
   count-weighted, interior-only queries); verified 0.99–1.14× of exact across nine cells with
   no size-dependent bias. Sidecar now records `spacing_estimator_version`. **Every trace must
   be re-captured; version-1 traces are not comparable with version-2 above 2M points.**
+
+  *2026-08-11 follow-up (estimator v3):* the v2 block estimator itself failed on the curated
+  benchmark's terrestrial scans. TLS density spans two orders of magnitude across a scene
+  (occupancy p99/p50 = 186× on DomFountain vs 6× aerial), and v2's bbox-uniform block anchors
+  landed in a different density regime every seed: 3.4× seed spread on Cathedral, 1.48× bias
+  on DomFountain, and per-scene spacing curves that *rose* with point count — the
+  `prepare_curated_cells.py` exponent gate caught it before the battery ran. v3 measures
+  clouds up to 130M points **exactly** (full tree, probes drawn from the points; 13 s at 25M)
+  and, above that, anchors blocks on random *points* with fixed equal-weight probes per block,
+  which is the density-correct sampling. Verified on the two worst scenes: Cathedral exponent
+  −0.464, DomFountain −0.479 (theory −0.5), monotone, seed-stable to 2.5%. v2 traces on
+  non-uniform clouds are not comparable with v3; the whole battery recaptured under v3.
 - **⚠ INVALIDATING — scripts ran a stale binary.** MSBuild links to `<repo>\x64\Release`, but
   all four runner scripts used `<repo>\MultiDataStructure\x64\Release`, a legacy path nothing
   writes to; the copy there was from **2026-07-28**. Any C++-dependent measurement since then
@@ -334,7 +346,7 @@ paper figure this feeds: a **shape × size heatmap of winning schema families** 
 the strongest possible visualization of the instance-optimization thesis (and it
 subsumes today's ad-hoc pipeline table).
 
-## 5. Paper writing checklist (`nested-data-structures/`)
+## 5. Paper writing checklist (`paper/`)
 
 - [ ] Fill `sections/evaluation.tex` `\todonum{}` placeholders: pipeline table
       (from corrected + matrix runs), framework table, search-cost table

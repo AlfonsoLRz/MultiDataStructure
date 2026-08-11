@@ -153,9 +153,14 @@ def props_done(props):
 # Bumped whenever the spacing estimator changes in a way that moves derived radii. Recorded
 # in the sidecar so traces captured with an older estimator are identifiable rather than
 # silently mixed into a comparison.
-SPACING_ESTIMATOR_VERSION = 2
+SPACING_ESTIMATOR_VERSION = 3
 
 BLOCK_TARGET_POINTS = 2_000_000
+
+# Largest cloud measured exactly (full tree over every point). A scipy cKDTree
+# copies coordinates to float64, so this ceiling costs ~3 GB and a few minutes at
+# the top; above it the point-anchored block estimator takes over.
+EXACT_SPACING_MAX = 130_000_000
 
 
 def mean_spacing(points: np.ndarray, sample: int = 100_000, seed: int = 1337,
@@ -185,29 +190,35 @@ def mean_spacing(points: np.ndarray, sample: int = 100_000, seed: int = 1337,
     regardless of total cloud size. Clouds that already fit in one block are measured
     exactly.
 
-    Blocks are anchored uniformly within the bounding box and the per-block means are
-    combined weighted by how many points each contributed, which makes this an unbiased
-    estimator of the same point-weighted mean the exact computation produces. Anchoring on
-    randomly chosen POINTS instead would be more robust but biases the result toward dense
-    regions -- measured 0.88-0.95x of truth on a bimodal industrial cloud -- so point
-    anchoring is used only as a fallback when uniform anchors keep landing in empty space,
-    as they do on sparse or L-shaped clouds.
+    Version 3 changes two things, prompted by the terrestrial scans in the curated
+    benchmark. A TLS cloud is radially dense near the scanner and orders of magnitude
+    sparser far away (occupancy p99/p50 of 186x on DomFountain vs 6x on an aerial
+    survey), and version 2's bbox-uniform block anchors landed in a different density
+    regime on every seed: 3.4x spread across seeds on Cathedral, and scene-ladder
+    spacing curves that rose with point count, which is physically impossible. So:
 
-    Measured against exact full-cloud computation over nine matrix cells (1M-25M, four
-    morphologies, three seeds each): within 1% on homogeneous clouds, worst case 1.14x on
-    industrial_25M, whose density is strongly bimodal (dense panels, sparse ground). Crucially
-    the error does NOT grow with cloud size, which is what made the old estimator's bias
-    corrosive. Smaller-but-more-numerous blocks were tried and are worse (up to 1.29x) because
-    the interior margin discards proportionally more of a small block.
+    - clouds up to EXACT_SPACING_MAX are now measured EXACTLY, with a tree over every
+      point and probes drawn uniformly from the points. No estimator, no bias, no seed
+      sensitivity; this covers the whole morphology grid and the mid-scale rungs.
+    - above that, blocks are anchored on randomly chosen POINTS with a fixed number of
+      probes per block, averaged with equal weight. Point anchors visit regions in
+      proportion to their point mass, which is exactly the point-weighted mean the
+      exact computation produces; the bbox-uniform anchoring they replace weighted
+      regions by volume instead, which is only the same thing when density is uniform.
+      (Version 2's note that point anchors read 0.88-0.95x of truth was an artifact of
+      combining them with count-weighted averaging, which double-weights dense blocks;
+      fixed-probe equal-weight averaging removes that.)
     """
     from scipy.spatial import cKDTree
 
     rng = np.random.default_rng(seed)
 
-    if len(points) <= BLOCK_TARGET_POINTS:
+    if len(points) <= EXACT_SPACING_MAX:
         idx = rng.choice(len(points), size=min(sample, len(points)), replace=False)
-        tree = cKDTree(points)
-        dists, _ = tree.query(points[idx], k=2, workers=-1)
+        tree = cKDTree(np.asarray(points))
+        # Probes are members of the tree, so dists[:, 0] is the probe itself and
+        # dists[:, 1] its true nearest neighbour.
+        dists, _ = tree.query(np.asarray(points[idx]), k=2, workers=-1)
         return float(np.mean(dists[:, 1]))
 
     lo = points.min(axis=0)
@@ -222,16 +233,18 @@ def mean_spacing(points: np.ndarray, sample: int = 100_000, seed: int = 1337,
     distance_total = 0.0
     sampled_total = 0
     accepted = 0
-    empty_streak = 0
     attempts = 0
     max_attempts = blocks * 10
+    probes_per_block = max(1, sample // blocks)
 
     while accepted < blocks and attempts < max_attempts:
         attempts += 1
-        if empty_streak >= 4:
-            anchor = points[rng.integers(len(points))]  # fallback: land on real data
-        else:
-            anchor = lo + rng.random(3) * extent
+        # Anchor on a point, never on the bounding box: regions are then visited in
+        # proportion to their point mass, which is the point-weighted expectation the
+        # exact path computes. A uniform bbox anchor weights regions by volume and,
+        # on a TLS scan whose density spans two orders of magnitude, lands somewhere
+        # different every seed (3.4x seed spread measured on Cathedral).
+        anchor = points[rng.integers(len(points))]
 
         block_lo = np.clip(anchor - side / 2.0, lo, hi)
         block_hi = np.minimum(block_lo + side, hi)
@@ -239,13 +252,11 @@ def mean_spacing(points: np.ndarray, sample: int = 100_000, seed: int = 1337,
 
         block = points_in_box(points, block_lo, block_hi)
         if len(block) < 1000:
-            side = side * 1.6  # too sparse here: widen and retry
-            empty_streak += 1
+            side = side * 1.6  # an isolated point in a sparse pocket: widen and retry
             continue
         if len(block) > BLOCK_TARGET_POINTS * 4:
             side = side * 0.7  # denser than assumed: shrink so the tree stays cheap
             continue
-        empty_streak = 0
 
         # Query only the interior. The margin is a first-pass spacing estimate, so it adapts
         # to whatever density this block actually has.
@@ -260,7 +271,10 @@ def mean_spacing(points: np.ndarray, sample: int = 100_000, seed: int = 1337,
             side = side * 1.6  # block too thin to have an interior; widen
             continue
 
-        idx = rng.choice(len(candidates), size=min(sample, len(candidates)), replace=False)
+        # Fixed probes per block, averaged with equal weight. Anchors already visit
+        # dense regions more often; letting dense blocks also contribute more probes
+        # would count that density twice.
+        idx = rng.choice(len(candidates), size=min(probes_per_block, len(candidates)), replace=False)
         dists, _ = tree.query(candidates[idx], k=2, workers=-1)
         distance_total += float(np.sum(dists[:, 1]))
         sampled_total += len(idx)
