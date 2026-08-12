@@ -118,7 +118,10 @@ def build_cells(manifest: dict, profile: list[str], allow_synthetic: bool,
             refused.append(f"{cell_name(scene, size_label)}: manifest predates per-tier "
                            f"synthetic counts - rebuild with _tools/build.py")
             continue
-        if fraction > 0 and not allow_synthetic:
+        # Not exactly zero: Alhambra's native count is 224 points short of the 100M
+        # rung, and refusing a 2e-6 fraction would silently drop the only heritage
+        # scene from Tier B. One in ten thousand is far below measurement noise.
+        if fraction > 1e-4 and not allow_synthetic:
             refused.append(f"{cell_name(scene, size_label)}: {fraction:.1%} interpolated "
                            f"(native {raw['native_points']:,})")
             continue
