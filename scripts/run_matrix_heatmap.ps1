@@ -43,17 +43,25 @@ $defaults = @('quadtree', 'octree', 'kdtree', 'bvh', 'bih', 'hgrid', 'lbvh', 're
 $handNested = 'configs/schemas/octree_kdtree.json;configs/schemas/quadtree_octree.json'
 
 $script:FailedSteps = @()
-function Step($name, $script) {
-  Write-Output "`n########## $name  [$(Get-Date -Format HH:mm:ss)] ##########"
+# The parameter names are deliberately obscure. PowerShell scoping is dynamic: a
+# scriptblock passed in here executes inside this function's scope, so any variable
+# it references that happens to share a name with a parameter of Step resolves to
+# Step's parameter, not the caller's variable. With a parameter called $name, every
+# "${name}_ga.csv" inside a step silently became "<cell> GA (opt)_ga.csv" - the GA
+# results went to mangled filenames, the winner lookup found nothing, and the test
+# re-measure quietly ran with defaults only. An entire battery passed with exit 0
+# while measuring the wrong thing.
+function Step($stepTitle, $stepBody) {
+  Write-Output "`n########## $stepTitle  [$(Get-Date -Format HH:mm:ss)] ##########"
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $global:LASTEXITCODE = 0
   $failure = $null
-  try { & $script } catch { $failure = $_.Exception.Message }
+  try { & $stepBody } catch { $failure = $_.Exception.Message }
   $code = $LASTEXITCODE
   $sw.Stop()
   if ($failure) { Write-Output "STEP FAILED: $failure" }
-  if ($failure -or $code -ne 0) { $script:FailedSteps += "$name (exit $code)" }
-  Write-Output "########## $name done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
+  if ($failure -or $code -ne 0) { $script:FailedSteps += "$stepTitle (exit $code)" }
+  Write-Output "########## $stepTitle done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
   return ($null -eq $failure -and $code -eq 0)
 }
 function Get-BestSchemaPath($csv) {

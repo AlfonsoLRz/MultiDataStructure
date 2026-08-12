@@ -77,15 +77,20 @@ $handNested = 'configs/schemas/octree_kdtree.json;configs/schemas/quadtree_octre
 # negative result, so failures must be impossible to miss.
 $script:FailedSteps = @()
 
-function Step($name, $script) {
-  Write-Output "`n########## $name  [$(Get-Date -Format HH:mm:ss)] ##########"
+# Obscure parameter names on purpose: the scriptblock runs inside this function's
+# scope (PowerShell dynamic scoping), so a caller variable sharing a name with a
+# parameter here silently resolves to the parameter instead. A Step($name, ...)
+# collided with a caller's $name in run_matrix_heatmap.ps1 and sent a whole
+# battery's CSVs to mangled filenames while everything exited 0.
+function Step($stepTitle, $stepBody) {
+  Write-Output "`n########## $stepTitle  [$(Get-Date -Format HH:mm:ss)] ##########"
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $global:LASTEXITCODE = 0
-  & $script
+  & $stepBody
   $code = $LASTEXITCODE
   $sw.Stop()
-  if ($code -ne 0) { $script:FailedSteps += "$name (exit $code)" }
-  Write-Output "########## $name done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
+  if ($code -ne 0) { $script:FailedSteps += "$stepTitle (exit $code)" }
+  Write-Output "########## $stepTitle done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
   return $code
 }
 
