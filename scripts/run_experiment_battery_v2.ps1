@@ -56,7 +56,9 @@ Write-Output "cell config: $CellConfig ($($curated.Count) curated cells availabl
 # scripts/laz_to_mdspc.py - the same bytes the Indexicon driver reads.
 function Get-CuratedCloud($name) {
   if (-not $curated.ContainsKey($name)) {
-    Write-Output "curated cell '$name' is not in $CellConfig (refused as synthetic, or not built yet)"
+    # Write-Host: inside a function Write-Output would join the return value, and the
+    # caller would receive [message, $null] instead of $null.
+    Write-Host "curated cell '$name' is not in $CellConfig (refused as synthetic, or not built yet)"
     return $null
   }
   return $curated[$name].mdspc_path

@@ -59,7 +59,7 @@ TIERS = {
     "B": ["50M", "100M"],
     "C": ["250M", "500M", "1B"],
 }
-TIER_C_SCENES = ["SanAndreas", "Waikato_Hamilton", "Galicia Forest"]
+TIER_C_SCENES = ["SanAndreas", "Waikato_Hamilton", "GaliciaForest"]
 
 # size label -> (queries, generated schemas, GA generations, GA population).
 # Above 100M the GA is not run at all: the winner is transferred from the largest

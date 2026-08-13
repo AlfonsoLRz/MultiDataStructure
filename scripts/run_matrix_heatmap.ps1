@@ -51,6 +51,10 @@ $script:FailedSteps = @()
 # results went to mangled filenames, the winner lookup found nothing, and the test
 # re-measure quietly ran with defaults only. An entire battery passed with exit 0
 # while measuring the wrong thing.
+# Success is reported through $script:LastStepOk rather than a return value: a
+# PowerShell function's "return" is its accumulated pipeline output, so callers
+# capturing it ($ok = Step ...) also capture every log line the step printed -
+# the battery logs were nearly empty because the output sat in those variables.
 function Step($stepTitle, $stepBody) {
   Write-Output "`n########## $stepTitle  [$(Get-Date -Format HH:mm:ss)] ##########"
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -62,7 +66,7 @@ function Step($stepTitle, $stepBody) {
   if ($failure) { Write-Output "STEP FAILED: $failure" }
   if ($failure -or $code -ne 0) { $script:FailedSteps += "$stepTitle (exit $code)" }
   Write-Output "########## $stepTitle done in $([math]::Round($sw.Elapsed.TotalMinutes,1)) min (exit $code) ##########"
-  return ($null -eq $failure -and $code -eq 0)
+  $script:LastStepOk = ($null -eq $failure -and $code -eq 0)
 }
 function Get-BestSchemaPath($csv) {
   if (-not (Test-Path $csv)) { return $null }
@@ -83,11 +87,14 @@ function Get-TransferWinners($cell) {
     $winners = @("$outDir/$($donor.cell)_ga.csv", "$outDir/$($donor.cell)_singles.csv" |
       ForEach-Object { Get-BestSchemaPath $_ } | Where-Object { $_ }) | Select-Object -Unique
     if ($winners) {
-      Write-Output "$($cell.cell): transferring winners from $($donor.cell)"
+      # Write-Host, NOT Write-Output: inside a function, Write-Output is the return
+      # value. The first Tier C run returned this message as the first "schema path"
+      # and every re-measure died on "Unable to open schema config: <message>".
+      Write-Host "$($cell.cell): transferring winners from $($donor.cell)"
       return $winners
     }
   }
-  Write-Output "$($cell.cell): no searched donor rung has a winner yet"
+  Write-Host "$($cell.cell): no searched donor rung has a winner yet"
   return @()
 }
 
@@ -110,7 +117,7 @@ function Invoke-Cell($cell) {
 
   $searched = $false
   if ($cell.arm -eq 'search') {
-    $ga = Step "$name GA (opt)" {
+    Step "$name GA (opt)" {
       & $exe --mode schema-search --input $cloud --no-synthetic `
         --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
         --queries $cell.queries --evaluator cpu --generate-schemas $cell.gen_schemas `
@@ -118,13 +125,14 @@ function Invoke-Cell($cell) {
         --optimizer-output-dir "$outDir/best_schemas/${name}_ga" --no-score-cache --no-pause `
         --csv "$outDir/${name}_ga.csv"
     }
-    $singles = Step "$name tuned singles (opt)" {
+    $ga = $script:LastStepOk
+    Step "$name tuned singles (opt)" {
       & $exe --mode schema-search --flat-search --evaluator cpu --input $cloud --no-synthetic `
         --schemas $tunedSmall --generate-schemas 0 --no-baselines `
         --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
         --queries $cell.queries --no-score-cache --no-pause --csv "$outDir/${name}_singles.csv"
     }
-    $searched = $ga -or $singles
+    $searched = $ga -or $script:LastStepOk
     if (-not $searched) {
       # Every search arm failed, so the only schemas left would be the defaults. That
       # re-measure looks like a legitimate "nothing beats the baseline" result.
@@ -146,7 +154,7 @@ function Invoke-Cell($cell) {
       --workloads configs/workloads/pipeline_replay.json --input-trace $test `
       --queries $cell.queries --measure-repeats 5 --no-score-cache --no-pause `
       --csv "$outDir/${name}_test.csv"
-  } | Out-Null
+  }
 }
 
 if (-not $SkipCapture) {
@@ -159,7 +167,7 @@ if (-not $SkipCapture) {
       & $py scripts/capture_pipeline_workload.py $cell.laz_path --out $cell.trace_dir --max-queries-per-stage 20000
       & $py scripts/split_trace.py "$($cell.trace_dir)/pipeline_trace.csv"
     }
-  } | Out-Null
+  }
 }
 
 foreach ($cell in $cells) {
