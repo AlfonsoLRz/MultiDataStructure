@@ -69,7 +69,14 @@ BUDGET = {
     "5M":   (3000, 24, 2, 16),
     "25M":  (2000, 24, 2, 12),
     "50M":  (1500, 20, 2, 12),
-    "100M": (1000, 16, 2, 10),
+    # Doubled from (1000, 16, 2, 10) on 2026-08-14. At the original budget the GA
+    # evaluated ~43 schemas and lost every 100M cell to a deep tuned single; at this
+    # budget (~99 evaluations) it found a nested design 1.3x FASTER than that single
+    # on the worst such cell. Search effort has to scale with N: at fixed budget the
+    # 100M column measures the budget, not the design space. Original-budget results
+    # are preserved under results/eval_traces/matrix/budget43_100M/ for the
+    # sensitivity comparison.
+    "100M": (1000, 32, 3, 20),
     "250M": (600, 0, 0, 0),
     "500M": (400, 0, 0, 0),
     "1B":   (300, 0, 0, 0),
