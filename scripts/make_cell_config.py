@@ -68,7 +68,11 @@ BUDGET = {
     "1M":   (3000, 24, 2, 16),
     "5M":   (3000, 24, 2, 16),
     "25M":  (2000, 24, 2, 12),
-    "50M":  (1500, 20, 2, 12),
+    # Scaled 2026-08-15 for the same reason as 100M below: at ~60 evaluations the
+    # rung read as parity (5/14, median 1.03), the signature the 100M column showed
+    # before its budget was found to be binding. Originals preserved under
+    # results/eval_traces/matrix/budget60_50M/.
+    "50M":  (1500, 32, 3, 20),
     # Doubled from (1000, 16, 2, 10) on 2026-08-14. At the original budget the GA
     # evaluated ~43 schemas and lost every 100M cell to a deep tuned single; at this
     # budget (~99 evaluations) it found a nested design 1.3x FASTER than that single

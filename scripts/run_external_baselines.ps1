@@ -43,7 +43,8 @@ if (-not (Test-Path $driver)) { throw "driver missing - run .\tools\build_indexi
 $exe = Resolve-MdsExe -Repo $repo
 if (-not $SkipMds -and -not (Test-Path $exe)) { throw "MultiDataStructure.exe missing - build it or pass -SkipMds" }
 
-$matrixDir = 'D:\Datasets\Point Clouds\matrix'
+$CellConfig = 'configs/datasets/curated_cells.json'
+if (-not (Test-Path $CellConfig)) { throw "cell config not found: $CellConfig" }
 $outDir = 'results/framework_compare/indexicon'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
@@ -78,18 +79,22 @@ function Get-WinnerSchema($cell) {
   return $null
 }
 
-$cells = Get-ChildItem "$matrixDir\*.las" -ErrorAction SilentlyContinue |
-  ForEach-Object { $_.BaseName } | Sort-Object
-if ($Only) { $cells = $cells | Where-Object { $Only -contains $_ } }
-if (-not $cells) { throw "no matrix cells found under $matrixDir" }
+# The primitive-quality control runs at 25M, the scale where "parity by 25M" was
+# claimed, on every scene that has a fully-measured 25M tier - plus Museum's 1M,
+# its only real rung. -Only overrides the selection.
+$config = Get-Content $CellConfig -Raw | ConvertFrom-Json
+$curated = $config.cells | Where-Object { $_.size_label -eq '25M' -or $_.cell -eq 'museum_1M' }
+if ($Only) { $curated = $config.cells | Where-Object { $Only -contains $_.cell } }
+if (-not $curated) { throw "no cells selected from $CellConfig" }
 
 $summary = @()
-foreach ($cell in $cells) {
-  $cloud = "$matrixDir\$cell.las"
-  $trace = "results/traces/matrix/$cell/pipeline_trace_test.csv"
+foreach ($entry in $curated) {
+  $cell = $entry.cell
+  $cloud = $entry.mdspc_path
+  $trace = "$($entry.trace_dir)/pipeline_trace_test.csv"
   if (-not (Test-Path $trace)) { Write-Output "$cell : held-out trace missing - skipping"; continue }
-  if (-not (Test-Path "$cloud.mdspc")) {
-    Write-Output "$cell : no .mdspc cache beside the cloud - run MultiDataStructure on it once; skipping"
+  if (-not (Test-Path $cloud)) {
+    Write-Output "$cell : .mdspc missing - run scripts/laz_to_mdspc.py; skipping"
     continue
   }
 
@@ -98,7 +103,7 @@ foreach ($cell in $cells) {
   # Verification builds all three structures a second time, so it is skipped on the giant cells
   # where that would not fit in memory. Correctness is a property of the traversal, not of the
   # cloud, so verifying it on the small cells covers the large ones too.
-  $cellPoints = [int64](((Get-Item "$cloud.mdspc").Length - 88) / 12)
+  $cellPoints = [int64](((Get-Item $cloud).Length - 88) / 12)
   $verify = if ($cellPoints -gt 30000000) { 0 } else { $VerifyBruteforce }
   if ($verify -eq 0 -and $VerifyBruteforce -gt 0) {
     Write-Output "$cell : $cellPoints points - skipping brute-force verification (memory)"
