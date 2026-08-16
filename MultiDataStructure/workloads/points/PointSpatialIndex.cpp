@@ -59,13 +59,21 @@ static bool containsAABB(const AABB& outer, const AABB& inner)
 
 static float distanceSquaredToAABB(const AABB& bounds, const glm::vec3& point)
 {
+	// Flat per-axis scalar accumulation, no vector temporaries. This runs once per
+	// visited node in every kNN/radius traversal; the previous glm::clamp/length2
+	// form built three temporaries per call. The pattern follows the min-dist
+	// helpers in lean reference implementations (e.g. Indexicon's
+	// kdMindistToRegion), which the external baseline showed to matter.
 	const glm::vec3 min = bounds.min();
 	const glm::vec3 max = bounds.max();
-	const glm::vec3 clamped(
-		std::clamp(point.x, min.x, max.x),
-		std::clamp(point.y, min.y, max.y),
-		std::clamp(point.z, min.z, max.z));
-	return glm::length2(point - clamped);
+	float distanceSquared = 0.0f;
+	if (point.x < min.x) { const float d = min.x - point.x; distanceSquared += d * d; }
+	else if (point.x > max.x) { const float d = point.x - max.x; distanceSquared += d * d; }
+	if (point.y < min.y) { const float d = min.y - point.y; distanceSquared += d * d; }
+	else if (point.y > max.y) { const float d = point.y - max.y; distanceSquared += d * d; }
+	if (point.z < min.z) { const float d = min.z - point.z; distanceSquared += d * d; }
+	else if (point.z > max.z) { const float d = point.z - max.z; distanceSquared += d * d; }
+	return distanceSquared;
 }
 
 static double clampedAdaptiveFactor(double value)

@@ -10,7 +10,10 @@ protected:
 public:
 	AABB(const glm::vec3& min = glm::vec3(INFINITY), const glm::vec3& max = glm::vec3(-INFINITY));
 	AABB(const AABB& aabb);
-	virtual ~AABB();
+	// Not virtual: nothing derives from AABB, and every spatial-index Node embeds
+	// two of these by value. The vtable pointer alone cost 16 bytes per node, paid
+	// in cache misses on every traversal.
+	~AABB();
 	AABB& operator=(const AABB& aabb);
 
 	glm::vec3 center() const { return (_max + _min) / 2.0f; }
