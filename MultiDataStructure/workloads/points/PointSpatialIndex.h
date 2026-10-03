@@ -155,7 +155,7 @@ public:
 
 	// Names the query/build engine revision in every measurement that depends on it (score-cache
 	// keys, engine-check output), so numbers from different engines are never silently mixed.
-	static constexpr const char* EngineVersion = "5-simd-leaves";
+	static constexpr const char* EngineVersion = "6-dfs-knn";
 
 	// Full fills every QueryStats counter and the per-depth/per-structure breakdown; it is what
 	// scoring, the visit proxy and diagnostics read. Off compiles all of that out of the
@@ -235,6 +235,10 @@ public:
 	Stats stats() const;
 	// Bytes held by the node pool, the ordered point arrays and any leaf micro-indexes.
 	size_t memoryFootprintBytes() const;
+	// Cloud index of each point in tree order: a node's points are
+	// pointOrder()[node.pointOffset(), node.pointOffset() + node.pointCount()).
+	const std::vector<uint32_t>& pointOrder() const { return _pointOrder; }
+	const PointCloud* cloud() const { return _cloud; }
 	// Node storage cost, for estimates made from node counts alone.
 	static size_t bytesPerNode();
 	// Order-independent digest of the built tree: every node's shape, bounds bits, type and
@@ -414,4 +418,6 @@ private:
 	template <bool Telemetry, bool Micro> void countSearch(const AABB& bounds, CountResult& result) const;
 	template <bool Telemetry, bool Micro> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
 	template <bool Telemetry, bool Micro> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
+	template <bool Telemetry, bool Micro> void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
+	template <bool Telemetry, bool Micro> void knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const;
 };

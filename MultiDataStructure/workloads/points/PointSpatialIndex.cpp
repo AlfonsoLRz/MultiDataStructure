@@ -639,6 +639,12 @@ namespace
 		return microPending;
 	}
 
+	std::vector<std::pair<float, uint32_t>>& knnStackScratch()
+	{
+		static thread_local std::vector<std::pair<float, uint32_t>> stack;
+		return stack;
+	}
+
 	std::vector<uint32_t>& traversalStackScratch()
 	{
 		static thread_local std::vector<uint32_t> stack;
@@ -728,6 +734,34 @@ namespace
 	}
 #endif
 
+	// Offers one candidate to the k-best set. `best` is a max-heap on (distance, pointIndex) once
+	// it holds k entries; below that it is an unordered bucket that make_heap orders as it fills.
+	inline void offerKnnPoint(std::vector<std::pair<float, size_t>>& best, size_t k, const uint32_t* order,
+							  float distance, uint32_t orderedIndex)
+	{
+		if (best.size() < k)
+		{
+			best.emplace_back(distance, static_cast<size_t>(order[orderedIndex]));
+			if (best.size() == k)
+				std::make_heap(best.begin(), best.end());
+			return;
+		}
+
+		const std::pair<float, size_t>& worst = best.front();
+		// Fast reject before touching the identity array: only an exact distance tie or an
+		// accepted point needs it.
+		if (distance > worst.first)
+			return;
+
+		const size_t pointIndex = static_cast<size_t>(order[orderedIndex]);
+		if (distance < worst.first || pointIndex < worst.second)
+		{
+			std::pop_heap(best.begin(), best.end());
+			best.back() = { distance, pointIndex };
+			std::push_heap(best.begin(), best.end());
+		}
+	}
+
 	inline bool pointInBox(float x, float y, float z, const glm::vec3& queryMin, const glm::vec3& queryMax)
 	{
 		return x >= queryMin.x && x <= queryMax.x &&
@@ -804,7 +838,17 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 	const auto start = std::chrono::steady_clock::now();
 	if (_cloud && k > 0 && indexedPoints > 0)
 	{
-		if (full)
+		// Depth-first for the small k of every captured workload; best-first above, where its
+		// node-optimality pays for the heap.
+		constexpr size_t DepthFirstMaxK = 64;
+		if (k <= DepthFirstMaxK)
+		{
+			if (full)
+				micro ? knnSearchDepthFirst<true, true>(center, k, result) : knnSearchDepthFirst<true, false>(center, k, result);
+			else
+				micro ? knnSearchDepthFirst<false, true>(center, k, result) : knnSearchDepthFirst<false, false>(center, k, result);
+		}
+		else if (full)
 			micro ? knnSearch<true, true>(center, k, result) : knnSearch<true, false>(center, k, result);
 		else
 			micro ? knnSearch<false, true>(center, k, result) : knnSearch<false, false>(center, k, result);
@@ -1039,44 +1083,116 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 	}
 }
 
-// Best-first kNN, as before the pool: same heap order, same sequence tie-break, same pruning,
-// so the same nodes are entered in the same order.
+// One leaf of a kNN traversal: its micro-index if it has one, else every point, eight at a time.
+// Shared by both traversals, so they offer identical candidates in identical order per leaf.
+template <bool Telemetry, bool Micro>
+void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const
+{
+	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
+	const HotNode& node = _hot[slot];
+	const uint32_t* order = _pointOrder.data();
+	const float* xs = _orderedX.data();
+	const float* ys = _orderedY.data();
+	const float* zs = _orderedZ.data();
+
+	if constexpr (Micro)
+	{
+		const uint32_t microSlot = _cold[slot]._microSlot;
+		if (microSlot != NoSlot && _microIndexes[microSlot]->hasKdTree())
+		{
+			const LeafMicroIndex& micro = *_microIndexes[microSlot];
+			std::vector<KnnMicroCandidate>& microPending = knnMicroPendingScratch();
+			microPending.clear();
+			microPending.push_back({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
+
+			while (!microPending.empty())
+			{
+				std::pop_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
+				const KnnMicroCandidate microCandidate = microPending.back();
+				microPending.pop_back();
+				if (best.size() == k && microCandidate._distance > best.front().first)
+					break;
+
+				const LeafMicroIndex::KdNode& microNode = micro._kdNodes[microCandidate._nodeIndex];
+				if (microNode.isLeaf())
+				{
+					if constexpr (Telemetry)
+						recordTestedPoints(slot, microNode._count, result._stats);
+					const uint32_t microEnd = microNode._begin + microNode._count;
+					for (uint32_t i = microNode._begin; i < microEnd; ++i)
+					{
+						const uint32_t orderedIndex = micro._kdOrder[i];
+						const float dx = xs[orderedIndex] - center.x;
+						const float dy = ys[orderedIndex] - center.y;
+						const float dz = zs[orderedIndex] - center.z;
+						offerKnnPoint(best, k, order, dx * dx + dy * dy + dz * dz, orderedIndex);
+					}
+					continue;
+				}
+
+				for (const uint32_t childIndex : { microNode._left, microNode._right })
+				{
+					if (childIndex == std::numeric_limits<uint32_t>::max())
+						continue;
+
+					const float childDistance = distanceSquaredToAABB(micro._kdNodes[childIndex]._bounds, center);
+					if (best.size() == k && childDistance > best.front().first)
+						continue;
+					microPending.push_back({ childDistance, childIndex });
+					std::push_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
+				}
+			}
+			return;
+		}
+	}
+
+	if constexpr (Telemetry)
+		recordTestedPoints(slot, node.count(), result._stats);
+	const uint32_t end = node._first + node.count();
+	uint32_t i = node._first;
+#if defined(__AVX2__)
+	const __m256 cx = _mm256_set1_ps(center.x);
+	const __m256 cy = _mm256_set1_ps(center.y);
+	const __m256 cz = _mm256_set1_ps(center.z);
+	alignas(32) float distances[8];
+	for (; i + 8 <= end; i += 8)
+	{
+		const __m256 dx = _mm256_sub_ps(_mm256_loadu_ps(xs + i), cx);
+		const __m256 dy = _mm256_sub_ps(_mm256_loadu_ps(ys + i), cy);
+		const __m256 dz = _mm256_sub_ps(_mm256_loadu_ps(zs + i), cz);
+		const __m256 d2 = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(dx, dx), _mm256_mul_ps(dy, dy)), _mm256_mul_ps(dz, dz));
+		unsigned mask = 0xFFu;
+		if (best.size() == k)
+			mask = static_cast<unsigned>(_mm256_movemask_ps(_mm256_cmp_ps(d2, _mm256_set1_ps(best.front().first), _CMP_NGT_UQ)));
+		if (!mask)
+			continue;
+		_mm256_store_ps(distances, d2);
+		while (mask)
+		{
+			const unsigned lane = static_cast<unsigned>(_tzcnt_u32(mask));
+			offerKnnPoint(best, k, order, distances[lane], i + lane);
+			mask &= mask - 1;
+		}
+	}
+#endif
+	for (; i < end; ++i)
+	{
+		const float dx = xs[i] - center.x;
+		const float dy = ys[i] - center.y;
+		const float dz = zs[i] - center.z;
+		offerKnnPoint(best, k, order, dx * dx + dy * dy + dz * dz, i);
+	}
+}
+
+// Best-first kNN: a global min-heap of pending nodes by lower-bound distance, so nodes are
+// entered in distance order and the search stops at the first that cannot improve the answer.
+// Node-optimal, but every push and pop is an O(log n) sift. Used for large k.
 template <bool Telemetry, bool Micro>
 void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
 	std::vector<KnnNodeCandidate>& pending = knnPendingScratch();
 	const HotNode* hot = _hot.data();
-	const uint32_t* order = _pointOrder.data();
-	const float* xs = _orderedX.data();
-	const float* ys = _orderedY.data();
-	const float* zs = _orderedZ.data();
-
-	// `best` is a max-heap on (distance, pointIndex) once it is full. Below k elements it is an
-	// unordered bucket: nothing reads front() until size() == k, and make_heap runs as it fills.
-	const auto offerPoint = [&best, k, order](float distance, uint32_t orderedIndex) {
-		if (best.size() < k)
-		{
-			best.emplace_back(distance, static_cast<size_t>(order[orderedIndex]));
-			if (best.size() == k)
-				std::make_heap(best.begin(), best.end());
-			return;
-		}
-
-		const std::pair<float, size_t>& worst = best.front();
-		// Fast reject before touching the identity array: only an exact distance tie or an
-		// accepted point needs it.
-		if (distance > worst.first)
-			return;
-
-		const size_t pointIndex = static_cast<size_t>(order[orderedIndex]);
-		if (distance < worst.first || pointIndex < worst.second)
-		{
-			std::pop_heap(best.begin(), best.end());
-			best.back() = { distance, pointIndex };
-			std::push_heap(best.begin(), best.end());
-		}
-	};
 
 	uint32_t sequence = 0;
 	if constexpr (Telemetry)
@@ -1101,93 +1217,7 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 
 		if (!node.isInternal())
 		{
-			if constexpr (Micro)
-			{
-				const uint32_t microSlot = _cold[slot]._microSlot;
-				if (microSlot != NoSlot && _microIndexes[microSlot]->hasKdTree())
-				{
-					const LeafMicroIndex& micro = *_microIndexes[microSlot];
-					std::vector<KnnMicroCandidate>& microPending = knnMicroPendingScratch();
-					microPending.clear();
-					microPending.push_back({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
-
-					while (!microPending.empty())
-					{
-						std::pop_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
-						const KnnMicroCandidate microCandidate = microPending.back();
-						microPending.pop_back();
-						if (best.size() == k && microCandidate._distance > best.front().first)
-							break;
-
-						const LeafMicroIndex::KdNode& microNode = micro._kdNodes[microCandidate._nodeIndex];
-						if (microNode.isLeaf())
-						{
-							if constexpr (Telemetry)
-								recordTestedPoints(slot, microNode._count, result._stats);
-							const uint32_t microEnd = microNode._begin + microNode._count;
-							for (uint32_t i = microNode._begin; i < microEnd; ++i)
-							{
-								const uint32_t orderedIndex = micro._kdOrder[i];
-								const float dx = xs[orderedIndex] - center.x;
-								const float dy = ys[orderedIndex] - center.y;
-								const float dz = zs[orderedIndex] - center.z;
-								offerPoint(dx * dx + dy * dy + dz * dz, orderedIndex);
-							}
-							continue;
-						}
-
-						for (const uint32_t childIndex : { microNode._left, microNode._right })
-						{
-							if (childIndex == std::numeric_limits<uint32_t>::max())
-								continue;
-
-							const float childDistance = distanceSquaredToAABB(micro._kdNodes[childIndex]._bounds, center);
-							if (best.size() == k && childDistance > best.front().first)
-								continue;
-							microPending.push_back({ childDistance, childIndex });
-							std::push_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
-						}
-					}
-					continue;
-				}
-			}
-
-			if constexpr (Telemetry)
-				recordTestedPoints(slot, node.count(), result._stats);
-			const uint32_t end = node._first + node.count();
-			uint32_t i = node._first;
-#if defined(__AVX2__)
-			const __m256 cx = _mm256_set1_ps(center.x);
-			const __m256 cy = _mm256_set1_ps(center.y);
-			const __m256 cz = _mm256_set1_ps(center.z);
-			alignas(32) float distances[8];
-			for (; i + 8 <= end; i += 8)
-			{
-				const __m256 dx = _mm256_sub_ps(_mm256_loadu_ps(xs + i), cx);
-				const __m256 dy = _mm256_sub_ps(_mm256_loadu_ps(ys + i), cy);
-				const __m256 dz = _mm256_sub_ps(_mm256_loadu_ps(zs + i), cz);
-				const __m256 d2 = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(dx, dx), _mm256_mul_ps(dy, dy)), _mm256_mul_ps(dz, dz));
-				unsigned mask = 0xFFu;
-				if (best.size() == k)
-					mask = static_cast<unsigned>(_mm256_movemask_ps(_mm256_cmp_ps(d2, _mm256_set1_ps(best.front().first), _CMP_NGT_UQ)));
-				if (!mask)
-					continue;
-				_mm256_store_ps(distances, d2);
-				while (mask)
-				{
-					const unsigned lane = static_cast<unsigned>(_tzcnt_u32(mask));
-					offerPoint(distances[lane], i + lane);
-					mask &= mask - 1;
-				}
-			}
-#endif
-			for (; i < end; ++i)
-			{
-				const float dx = xs[i] - center.x;
-				const float dy = ys[i] - center.y;
-				const float dz = zs[i] - center.z;
-				offerPoint(dx * dx + dy * dy + dz * dz, i);
-			}
+			knnLeaf<Telemetry, Micro>(slot, center, k, result);
 			continue;
 		}
 
@@ -1208,6 +1238,71 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 			pending.push_back({ childDistance, sequence++, first + c });
 			std::push_heap(pending.begin(), pending.end(), KnnNodeCandidateGreater{});
 		}
+	}
+}
+
+// Depth-first kNN, nearest child first, for small k. At each internal node the surviving
+// children are ordered by lower-bound distance and pushed farthest-first, so the nearest subtree
+// is searched first and tightens the k-th distance before its siblings are reconsidered; a node
+// is skipped when popped if its bound no longer beats that distance. This may enter a few nodes
+// best-first would not, but trades the global heap for a stack and a sort of at most 64 entries.
+// The answer is identical: the prune is strict and (distance, index) is a total order, so the k
+// best are the same whatever order the leaves are offered in.
+template <bool Telemetry, bool Micro>
+void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const
+{
+	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
+	std::vector<std::pair<float, uint32_t>>& stack = knnStackScratch();
+	stack.clear();
+	const HotNode* hot = _hot.data();
+
+	if constexpr (Telemetry)
+		++result._stats._testedBoxes;
+	stack.emplace_back(boxDistanceSquared(hot[0]._lo, hot[0]._hi, center), 0u);
+
+	std::pair<float, uint32_t> children[64];
+	while (!stack.empty())
+	{
+		const auto [distance, slot] = stack.back();
+		stack.pop_back();
+		if (best.size() == k && distance > best.front().first)
+			continue;
+
+		const HotNode& node = hot[slot];
+		if constexpr (Telemetry)
+			recordNodeVisit(slot, result._stats);
+
+		if (!node.isInternal())
+		{
+			knnLeaf<Telemetry, Micro>(slot, center, k, result);
+			continue;
+		}
+
+		size_t survivors = 0;
+		const uint32_t first = node._first;
+		const uint32_t count = node.count();
+		for (uint32_t c = 0; c < count; ++c)
+		{
+			const HotNode& child = hot[first + c];
+			if (!child.isInternal() && child.count() == 0)
+				continue;
+			if constexpr (Telemetry)
+				++result._stats._testedBoxes;
+			const float childDistance = boxDistanceSquared(child._lo, child._hi, center);
+			if (best.size() == k && childDistance > best.front().first)
+				continue;
+			// Insertion into descending order (at most 64 children): the nearest ends up last, on
+			// top of the stack. Ties keep child order, so the traversal is deterministic.
+			size_t at = survivors++;
+			while (at > 0 && children[at - 1].first < childDistance)
+			{
+				children[at] = children[at - 1];
+				--at;
+			}
+			children[at] = { childDistance, first + c };
+		}
+		for (size_t i = 0; i < survivors; ++i)
+			stack.push_back(children[i]);
 	}
 }
 
