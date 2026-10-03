@@ -1,0 +1,27 @@
+{
+  "name": "winner_cathedral_50M",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 8,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048
+    },
+    {
+      "type": "Octree",
+      "numLevels": 4,
+      "leafCapacity": 64,
+      "minPointsToSplit": 32
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 8192,
+    "minPointsToSplit": 2048,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

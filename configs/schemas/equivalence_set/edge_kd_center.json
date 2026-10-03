@@ -1,0 +1,19 @@
+{
+  "name": "edge_kd_center",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 18,
+      "leafCapacity": 64,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 18,
+    "leafCapacity": 64,
+    "minPointsToSplit": 2,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

@@ -96,6 +96,9 @@
     <ClInclude Include="experiments\Metrics.h">
       <Filter>experiments</Filter>
     </ClInclude>
+    <ClInclude Include="experiments\EngineCheck.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
     <ClInclude Include="experiments\EvaluationCache.h">
       <Filter>experiments</Filter>
     </ClInclude>
@@ -165,6 +168,9 @@
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_config_parsing.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_engine_equivalence.cpp">
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_hgrid.cpp">
@@ -261,6 +267,9 @@
       <Filter>core</Filter>
     </ClCompile>
     <ClCompile Include="experiments\Metrics.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
+    <ClCompile Include="experiments\EngineCheck.cpp">
       <Filter>experiments</Filter>
     </ClCompile>
     <ClCompile Include="experiments\EvaluationCache.cpp">

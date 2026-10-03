@@ -1,0 +1,28 @@
+{
+  "name": "winner_alhambra_100M",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 8,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 1,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 9,
+    "leafCapacity": 512,
+    "minPointsToSplit": 128,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

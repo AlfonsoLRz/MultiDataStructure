@@ -1,0 +1,29 @@
+{
+  "name": "winner_galiciaforest_1M",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 11,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 1,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

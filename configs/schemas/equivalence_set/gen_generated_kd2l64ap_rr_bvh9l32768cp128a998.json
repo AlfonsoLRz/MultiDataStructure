@@ -1,0 +1,32 @@
+{
+  "name": "gen_generated_kd2l64ap=rr_bvh9l32768cp128a998",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 2,
+      "leafCapacity": 64,
+      "minPointsToSplit": 16,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "BVH",
+      "numLevels": 9,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192,
+      "condition": {
+        "minPoints": 128,
+        "minAnisotropy": 0.998978
+      }
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 32768,
+    "minPointsToSplit": 8192,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

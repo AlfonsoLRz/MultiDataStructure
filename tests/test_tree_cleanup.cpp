@@ -27,6 +27,7 @@ namespace BaselineTests
 	void runOctreeTests();
 	void runQuadTreeTests();
 	void runRegularGridTests();
+	void runEngineEquivalenceTests();
 
 	bool nearlyEqual(float left, float right, float epsilon = 1e-5f)
 	{
@@ -126,6 +127,7 @@ int runBaselineTests()
 		BaselineTests::runAABBTests();
 		BaselineTests::runPointCloudTests();
 		BaselineTests::runPointQueryTests();
+		BaselineTests::runEngineEquivalenceTests();
 		BaselineTests::runMetricsTests();
 		BaselineTests::runConfigParsingTests();
 		BaselineTests::runSchemaSearchTests();

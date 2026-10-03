@@ -1,0 +1,28 @@
+{
+  "name": "winner_retiro_5M",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 8,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "BVH",
+      "numLevels": 3,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

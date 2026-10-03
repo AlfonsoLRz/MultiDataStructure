@@ -1,0 +1,21 @@
+{
+  "name": "winner_galiciaforest_es05_5M",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 8,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 8,
+    "leafCapacity": 512,
+    "minPointsToSplit": 128,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

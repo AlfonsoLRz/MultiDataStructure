@@ -1114,6 +1114,101 @@ void PointSpatialIndex::collectStats(const Node* node, Stats& stats) const
 		collectStats(child.get(), stats);
 }
 
+namespace
+{
+	uint64_t avalanche64(uint64_t value)
+	{
+		value += 0x9E3779B97F4A7C15ull;
+		value ^= value >> 30;
+		value *= 0xBF58476D1CE4E5B9ull;
+		value ^= value >> 27;
+		value *= 0x94D049BB133111EBull;
+		value ^= value >> 31;
+		return value;
+	}
+
+	// Order-dependent fold of one field into a node's hash. Within a node the field order is
+	// fixed, so position-sensitivity is wanted; ACROSS nodes the digests are summed instead.
+	void foldDigest(uint64_t& hash, uint64_t value)
+	{
+		hash = avalanche64(hash ^ avalanche64(value));
+	}
+
+	// FNV-1a, not std::hash: the digest is compared across machines (Windows goldens replayed on
+	// the Linux runner), and std::hash<std::string> differs between standard libraries.
+	uint64_t stableStringHash(const std::string& value)
+	{
+		uint64_t hash = 0xCBF29CE484222325ull;
+		for (const char c : value)
+		{
+			hash ^= static_cast<unsigned char>(c);
+			hash *= 0x100000001B3ull;
+		}
+		return hash;
+	}
+
+	uint64_t floatBits(float value)
+	{
+		uint32_t bits = 0;
+		std::memcpy(&bits, &value, sizeof(bits));
+		return bits;
+	}
+
+	void foldBounds(uint64_t& hash, const AABB& bounds)
+	{
+		const glm::vec3 min = bounds.min();
+		const glm::vec3 max = bounds.max();
+		for (int axis = 0; axis < 3; ++axis)
+		{
+			foldDigest(hash, floatBits(min[axis]));
+			foldDigest(hash, floatBits(max[axis]));
+		}
+	}
+}
+
+uint64_t PointSpatialIndex::structureDigest() const
+{
+	uint64_t digest = 0;
+	std::vector<const Node*> stack;
+	if (_root)
+		stack.push_back(_root.get());
+
+	while (!stack.empty())
+	{
+		const Node* node = stack.back();
+		stack.pop_back();
+
+		uint64_t hash = 0;
+		foldDigest(hash, node->isLeaf() ? 1u : 0u);
+		foldDigest(hash, node->_depth);
+		foldDigest(hash, node->_schemaDepth);
+		foldDigest(hash, static_cast<uint64_t>(node->_type));
+		foldDigest(hash, stableStringHash(structureNameForNode(*node)));
+		foldDigest(hash, node->_children.size());
+		foldDigest(hash, node->_subtreePointCount);
+		foldDigest(hash, node->_microIndex ? 1u : 0u);
+		foldBounds(hash, node->_bounds);
+		foldBounds(hash, node->_tightBounds);
+
+		if (node->isLeaf())
+		{
+			uint64_t leafIds = 0;
+			for (size_t i = 0; i < node->_pointCount; ++i)
+				accumulateResultChecksum(leafIds, _pointOrder[node->_pointOffset + i]);
+			foldDigest(hash, leafIds);
+		}
+
+		digest += hash;
+		for (const std::unique_ptr<Node>& child : node->_children)
+		{
+			if (child)
+				stack.push_back(child.get());
+		}
+	}
+
+	return digest;
+}
+
 void PointSpatialIndex::appendSubtreePoints(const Node* node, std::vector<size_t>& pointIndices) const
 {
 	if (!node)

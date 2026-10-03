@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stdafx.h"
+#include "experiments/EngineCheck.h"
 #include "experiments/SchemaSearch.h"
 #include "workloads/points/PointBenchmark.h"
 
@@ -53,6 +54,13 @@ public:
 	bool	_showHelp = false;
 	PointBenchmark::Options	_pointOptions;
 	Experiments::SchemaSearchOptions	_schemaSearchOptions;
+	// engine-check only; the rest of its options are shared with schema-search (see main.cpp).
+	std::string	_engineQueryCsvPath;
+	std::string	_engineSummaryCsvPath;
+	size_t		_engineWarmupPasses = 1;
+	size_t		_engineBuildRepeats = 1;
+
+	Experiments::EngineCheckOptions engineCheckOptions() const;
 
 	AppConfig();
 

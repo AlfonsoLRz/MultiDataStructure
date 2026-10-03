@@ -1,0 +1,33 @@
+{
+  "name": "gen_generated_kd3l8192_ot7l8192cp8h750E450",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 3,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "Octree",
+      "numLevels": 7,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "condition": {
+        "minPoints": 8,
+        "minHeightRatio": 0.75,
+        "maxOccupancyEntropy": 0.45
+      }
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 1024,
+    "minPointsToSplit": 256,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

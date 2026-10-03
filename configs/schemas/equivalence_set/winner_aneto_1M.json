@@ -1,0 +1,35 @@
+{
+  "name": "winner_aneto_1M",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 4,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 5,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "median_longest_axis"
+    },
+    {
+      "type": "BVH",
+      "numLevels": 1,
+      "leafCapacity": 16384,
+      "minPointsToSplit": 4096
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

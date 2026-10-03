@@ -1,0 +1,37 @@
+{
+  "name": "gen_generated_ot5l1024_bvh5l512cp1_kd1l256",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 5,
+      "leafCapacity": 1024,
+      "minPointsToSplit": 256
+    },
+    {
+      "type": "BVH",
+      "numLevels": 5,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "condition": {
+        "minPoints": 1
+      }
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "median_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 11,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

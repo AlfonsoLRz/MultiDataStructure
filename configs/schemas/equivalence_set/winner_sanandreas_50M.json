@@ -1,0 +1,36 @@
+{
+  "name": "winner_sanandreas_50M",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 4,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 128,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "KDTree",
+      "numLevels": 1,
+      "leafCapacity": 8192,
+      "minPointsToSplit": 2048,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 7,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

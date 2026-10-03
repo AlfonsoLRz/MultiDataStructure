@@ -1,5 +1,6 @@
 #include "../stdafx.h"
 #include "EvaluationCache.h"
+#include "../workloads/points/PointSpatialIndex.h"
 
 #include <boost/json.hpp>
 
@@ -497,6 +498,10 @@ namespace Experiments
 
 		std::ostringstream evaluatorText;
 		evaluatorText << evaluatorBackend;
+		// The engine revision changes latency and counters without changing anything above, so a
+		// score cached by one engine must never be served to another.
+		if (evaluatorBackend != "cuda")
+			evaluatorText << "|engine=" << PointSpatialIndex::EngineVersion;
 		if (evaluatorBackend == "cuda" && !cudaBuilder.empty())
 			evaluatorText << ":" << cudaBuilder;
 		evaluatorText << "|ll=" << formatDouble(weights._lambdaLatency, 6)

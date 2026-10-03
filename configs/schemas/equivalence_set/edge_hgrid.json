@@ -1,0 +1,18 @@
+{
+  "name": "edge_hgrid",
+  "levels": [
+    {
+      "type": "HGrid",
+      "numLevels": 3,
+      "leafCapacity": 32
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 3,
+    "leafCapacity": 32,
+    "minPointsToSplit": 2,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

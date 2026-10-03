@@ -1,0 +1,43 @@
+{
+  "name": "gen_generated_kd3l128ap=rr_bvh8l32768cp8E750_ot1l256cp128h500A998",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 3,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "round_robin"
+    },
+    {
+      "type": "BVH",
+      "numLevels": 8,
+      "leafCapacity": 32768,
+      "minPointsToSplit": 8192,
+      "condition": {
+        "minPoints": 8,
+        "maxOccupancyEntropy": 0.75
+      }
+    },
+    {
+      "type": "Octree",
+      "numLevels": 1,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64,
+      "condition": {
+        "minPoints": 128,
+        "minHeightRatio": 0.5,
+        "maxAnisotropy": 0.998978
+      }
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

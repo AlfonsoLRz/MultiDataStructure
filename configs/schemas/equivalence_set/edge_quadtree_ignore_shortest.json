@@ -1,0 +1,19 @@
+{
+  "name": "edge_quadtree_ignore_shortest",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 10,
+      "leafCapacity": 32,
+      "axisPolicy": "ignore_shortest"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 10,
+    "leafCapacity": 32,
+    "minPointsToSplit": 2,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

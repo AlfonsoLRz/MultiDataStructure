@@ -165,9 +165,18 @@ public:
 		QueryStats	_stats;
 	};
 
+	// Names the query/build engine revision in every measurement that depends on it (score-cache
+	// keys, engine-check output), so numbers from different engines are never silently mixed.
+	static constexpr const char* EngineVersion = "1-node-tree";
+
 	void build(const PointCloud& cloud, const SchemaConfig& schema);
 	const Node* root() const { return _root.get(); }
 	Stats stats() const;
+	// Order-independent digest of the built tree: every node's shape, bounds bits, type and
+	// structure name, plus each leaf's point-identity set. Two builds with equal digests are the
+	// same tree, which is what lets a storage rewrite prove it changed layout and nothing else.
+	// Walks the whole index; not for timed paths.
+	uint64_t structureDigest() const;
 	// Names for the per-structure breakdown slots, in slot order. Readers zip this against
 	// QueryBreakdown's arrays to recover the old name:count pairs.
 	const std::vector<std::string>& structureBreakdownNames() const

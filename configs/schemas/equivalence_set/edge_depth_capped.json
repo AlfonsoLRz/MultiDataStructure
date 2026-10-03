@@ -1,0 +1,18 @@
+{
+  "name": "edge_depth_capped",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 3,
+      "leafCapacity": 8
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 3,
+    "leafCapacity": 8,
+    "minPointsToSplit": 2,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

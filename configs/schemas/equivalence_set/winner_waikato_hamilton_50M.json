@@ -1,0 +1,35 @@
+{
+  "name": "winner_waikato_hamilton_50M",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 4,
+      "leafCapacity": 2048,
+      "minPointsToSplit": 512,
+      "axisPolicy": "xy"
+    },
+    {
+      "type": "BVH",
+      "numLevels": 1,
+      "leafCapacity": 256,
+      "minPointsToSplit": 64
+    },
+    {
+      "type": "QuadTree",
+      "numLevels": 7,
+      "leafCapacity": 512,
+      "minPointsToSplit": 128,
+      "axisPolicy": "xy"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 12,
+    "leafCapacity": 2048,
+    "minPointsToSplit": 512,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false,
+    "enableLeafMicroIndexes": false,
+    "leafMicroIndexThreshold": 512
+  }
+}

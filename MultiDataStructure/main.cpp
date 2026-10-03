@@ -30,13 +30,16 @@ int main(int argc, char* argv[])
 		if (config._mode == "batch-search")
 			return Experiments::runBatchSearch(config._schemaSearchOptions);
 
+		if (config._mode == "engine-check")
+			return Experiments::runEngineCheck(config.engineCheckOptions());
+
 		if (config._mode == "evaluate-one")
 			return Experiments::runEvaluateOne(config._schemaSearchOptions);
 
 		if (config._mode == "gui")
 			return OptimizerGui::run();
 
-		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode batch-search, --mode evaluate-one, or --run-tests");
+		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode batch-search, --mode evaluate-one, --mode engine-check, or --run-tests");
 	}
 	catch (const std::exception& exception)
 	{

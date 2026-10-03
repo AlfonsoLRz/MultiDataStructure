@@ -645,6 +645,22 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._schemaSearchOptions._confirmTopK = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--query-csv" && i + 1 < argc)
+		{
+			config._engineQueryCsvPath = argv[++i];
+		}
+		else if (arg == "--summary-csv" && i + 1 < argc)
+		{
+			config._engineSummaryCsvPath = argv[++i];
+		}
+		else if (arg == "--warmup" && i + 1 < argc)
+		{
+			config._engineWarmupPasses = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--build-repeats" && i + 1 < argc)
+		{
+			config._engineBuildRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
+		}
 		else if (arg == "--measure-repeats" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._measurementRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
@@ -854,6 +870,13 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --confirm-top <k>           Number of top candidates per (dataset, workload) to re-measure, default 4\n"
 		<< "  --measure-repeats <n>       Re-time each candidate's query batch N times (same queries) and record\n"
 		<< "                              latency mean/stddev/CV/95% CI on queryMetrics. 1 disables (default).\n"
+		<< "  --mode engine-check         Build each --schema(s) on --input and replay one fixed query set\n"
+		<< "                              (--input-trace, else a seeded generator over every query kind):\n"
+		<< "                              per-query checksums/counters and per-type latency, for engine A/B work\n"
+		<< "  --query-csv <path>          engine-check: per-query rows (checksum, counters, structure digest)\n"
+		<< "  --summary-csv <path>        engine-check: one appended row per schema (build, per-type latency)\n"
+		<< "  --warmup <n>                engine-check: untimed passes before the --measure-repeats timed ones (default 1)\n"
+		<< "  --build-repeats <n>         engine-check: builds per schema, for build-time statistics (default 1)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
 		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
 		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
@@ -875,6 +898,25 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --rebuild-score-cache       Delete the score cache file before this run\n"
 		<< "  --run-tests                 Run smoke tests\n"
 		<< "  --no-pause                  Skip the final console pause\n";
+}
+
+Experiments::EngineCheckOptions AppConfig::engineCheckOptions() const
+{
+	Experiments::EngineCheckOptions options;
+	options._inputPath = _schemaSearchOptions._inputPaths.empty() ? _pointOptions._inputPath : _schemaSearchOptions._inputPaths.front();
+	options._schemaPaths = _schemaSearchOptions._schemaPaths;
+	options._inputTracePath = _schemaSearchOptions._inputTracePath;
+	options._queryCsvPath = _engineQueryCsvPath;
+	options._summaryCsvPath = _engineSummaryCsvPath;
+	options._queryCount = _schemaSearchOptions._queryCountOverride;
+	options._querySeed = _schemaSearchOptions._querySeed;
+	options._warmupPasses = _engineWarmupPasses;
+	options._timedPasses = _schemaSearchOptions._measurementRepeats;
+	options._buildRepeats = _engineBuildRepeats;
+	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
+	options._enableLeafMicroIndexes = _schemaSearchOptions._enableLeafMicroIndexes;
+	options._leafMicroIndexThreshold = _schemaSearchOptions._leafMicroIndexThreshold;
+	return options;
 }
 
 bool AppConfig::wantsTests() const

@@ -1,0 +1,19 @@
+{
+  "name": "tuned_rg5l32",
+  "levels": [
+    {
+      "type": "RegularGrid",
+      "numLevels": 5,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 5,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}
