@@ -48,6 +48,9 @@ $winners = @{
 function Invoke-Pinned([string]$exe, [string[]]$arguments, [string]$log) {
     $p = Start-Process -FilePath $exe -ArgumentList $arguments -NoNewWindow -PassThru `
         -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+    # Touching Handle now is what makes ExitCode readable later: without it, a Start-Process
+    # object with redirected streams reports a null exit code once the process has ended.
+    $null = $p.Handle
     try {
         $p.ProcessorAffinity = [IntPtr](1L -shl $Cpu)
         $p.PriorityClass = 'High'

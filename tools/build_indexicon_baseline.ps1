@@ -60,7 +60,9 @@ $objDir = Join-Path $binDir 'obj'
 New-Item -ItemType Directory -Force -Path $objDir | Out-Null
 
 # /Fo keeps the .obj out of the repo root (an earlier build left one stranded there).
-$clArgs = "/nologo /std:c++17 /EHsc /O2 /MD /DNOMINMAX /I `"$clone`" `"$source`" /Fo`"$objDir\\`" /Fe`"$exe`""
+# Same optimisation flags as MultiDataStructure.vcxproj (/O2 /arch:AVX2 /GL), so neither side
+# of the comparison is compiled more aggressively than the other.
+$clArgs = "/nologo /std:c++17 /EHsc /O2 /arch:AVX2 /GL /MD /DNOMINMAX /I `"$clone`" `"$source`" /Fo`"$objDir\\`" /Fe`"$exe`""
 if ($vcvars) {
   # vcvars64.bat shells out to vswhere.exe by bare name; if the Installer directory is not on
   # PATH it prints a spurious "not recognized" line to stderr before carrying on. Putting the

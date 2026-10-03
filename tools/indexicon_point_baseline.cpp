@@ -524,13 +524,16 @@ namespace
 	// Replay driver shared by all three structures. `range`, `radius` and `knn` are supplied as
 	// callables so the timing loop, parity accounting and repeat handling stay identical across
 	// structures - the only thing that varies is the index being measured.
+	// Untimed passes before the recorded ones, matching MDS engine-check's --warmup.
+	size_t g_warmupPasses = 0;
+
 	template <typename RangeFn, typename RadiusFn, typename KnnFn>
 	void replay(Result& result, const std::vector<TraceQuery>& queries, size_t repeats,
 				RangeFn range, RadiusFn radius, KnnFn knn)
 	{
 		std::vector<size_t> hits;
 		result.samples.reserve(queries.size() * repeats);
-		for (size_t repeat = 0; repeat < repeats; ++repeat)
+		for (size_t repeat = 0; repeat < g_warmupPasses + repeats; ++repeat)
 		{
 			for (const TraceQuery& q : queries)
 			{
@@ -566,7 +569,8 @@ namespace
 					continue;
 				}
 				sample.count = static_cast<long long>(hits.size());
-				result.samples.push_back(std::move(sample));
+				if (repeat >= g_warmupPasses)
+					result.samples.push_back(std::move(sample));
 			}
 		}
 		result.repeats = repeats;
@@ -795,7 +799,7 @@ namespace
 	constexpr const char* Usage =
 		"usage: indexicon_point_baseline --input <cloud.ply|.xyz|.mdspc|.las> --query-trace <trace.csv>\n"
 		"       [--output result.json] [--structures octree,kdtree,rtree] [--max-queries N]\n"
-		"       [--repeats R] [--radius-mode native_mbr_prune|aabb_filter] [--verify-bruteforce N]\n"
+		"       [--repeats R] [--warmup W] [--radius-mode native_mbr_prune|aabb_filter] [--verify-bruteforce N]\n"
 		"       indexicon_point_baseline <cloud> <trace.csv> [max_queries]   (legacy positional form)\n";
 
 	// Thrown for --help so main() can print usage on stdout and exit 0 rather than treating a
@@ -822,6 +826,7 @@ namespace
 			else if (arg == "--structures" && i + 1 < argc) args.structures = argv[++i];
 			else if (arg == "--max-queries" && i + 1 < argc) args.maxQueries = std::stoull(argv[++i]);
 			else if (arg == "--repeats" && i + 1 < argc) args.repeats = std::stoull(argv[++i]);
+			else if (arg == "--warmup" && i + 1 < argc) g_warmupPasses = std::stoull(argv[++i]);
 			else if (arg == "--verify-bruteforce" && i + 1 < argc) args.verifyBruteforce = std::stoull(argv[++i]);
 			else if (arg == "--radius-mode" && i + 1 < argc)
 			{
@@ -861,8 +866,9 @@ int main(int argc, char** argv)
 		{
 			// deterministic even stride, matching the MDS replayer's subsetting
 			std::vector<TraceQuery> subset;
-			const double step = static_cast<double>(queries.size()) / static_cast<double>(args.maxQueries);
-			for (size_t i = 0; i < args.maxQueries; ++i) subset.push_back(queries[static_cast<size_t>(i * step)]);
+			// Integer stride, exactly as MDS's replay and engine-check subset a trace. The previous
+			// floating-point step could round to a neighbouring query on non-integer ratios.
+			for (size_t i = 0; i < args.maxQueries; ++i) subset.push_back(queries[(i * queries.size()) / args.maxQueries]);
 			queries.swap(subset);
 		}
 		std::cout << "replaying " << queries.size() << " queries from " << args.queryTrace
