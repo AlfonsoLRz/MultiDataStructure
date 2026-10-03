@@ -30,7 +30,7 @@ import statistics
 import sys
 from pathlib import Path
 
-MATRIX = Path("results/eval_traces/matrix")
+MATRIX = [Path("results/eval_traces/matrix")]  # --matrix overrides; several dirs are merged
 INDEXICON = Path("results/framework_compare/indexicon")
 
 SEARCHED = re.compile(r"^(evolved_|xover_|generated_)")
@@ -85,7 +85,7 @@ def collect() -> list[dict]:
             config_cells[cell["cell"]] = cell
 
     out, skipped = [], []
-    for path in sorted(MATRIX.glob("*_test.csv")):
+    for path in sorted(p for directory in MATRIX for p in directory.glob("*_test.csv")):
         name = path.name[: -len("_test.csv")]
         # Only cells the current config declares. results/eval_traces/matrix/ still holds CSVs
         # from the superseded ad-hoc dataset (terrain_*, industrial_*, urban_*), and folding those
@@ -192,17 +192,26 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--csv", action="store_true", help="also refresh final_results_table.csv")
     parser.add_argument("--compare", type=Path, help="a preserved prior summary to diff against")
+    parser.add_argument("--matrix", type=Path, nargs="+",
+                        help="result dirs holding <cell>_test.csv (default results/eval_traces/matrix). "
+                             "Several dirs are merged, e.g. the workstation's and the server's engine-6 runs: "
+                             "every ratio is within one cell, so each stays within one machine.")
+    parser.add_argument("--no-indexicon", action="store_true", help="skip the August Indexicon table")
     args = parser.parse_args()
+    global MATRIX
+    if args.matrix:
+        MATRIX = args.matrix
 
     cells = collect()
     if not cells:
         sys.exit(f"no *_test.csv under {MATRIX}")
     by_size_table(cells)
-    head_to_head(args.compare if args.compare else INDEXICON /
-                 "PREFIX_2026-08-15_indexicon_summary_capped.csv")
+    if not args.no_indexicon:
+        head_to_head(args.compare if args.compare else INDEXICON /
+                     "PREFIX_2026-08-15_indexicon_summary_capped.csv")
 
     if args.csv:
-        out = MATRIX / "final_results_table.csv"
+        out = MATRIX[0] / "final_results_table.csv"
         fields = list(cells[0].keys())
         with out.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields)

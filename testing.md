@@ -242,6 +242,13 @@ Fixed for new runs: `scripts/run_cells.py` and the GUI pass `--benchmark-top 0`,
 longer loads the rank model when pruning is off. The model file was also gitignored (blanket
 `*.json`), so a fresh clone could not run a default flat search; it is now tracked.
 
+**Repeat statistics (fixed 2026-10-04, `2325c5e`).** From engine 2 to that commit,
+`latency_repeat_*` pooled the instrumented first pass with the uninstrumented timed passes - two
+different measurements in one mean and CI. Now `latency_repeat_*` covers only the uninstrumented
+passes; `avg_latency_ms` remains the instrumented pass. Only held-out TEST re-measures use repeats;
+the engine-6 batteries were restarted (PC) or rebuilt mid-run with the affected cell re-tested
+(makinon2: sanandreas_100M).
+
 ### 2d. Engine rewrite ledger (from 2026-10-03)
 
 Every engine change is gated by `scripts/engine_equivalence.ps1` + `scripts/diff_engine_equivalence.py`
