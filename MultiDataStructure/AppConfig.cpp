@@ -657,6 +657,13 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._engineWarmupPasses = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--timed-telemetry" && i + 1 < argc)
+		{
+			const std::string value = argv[++i];
+			if (value != "off" && value != "full")
+				throw std::invalid_argument("--timed-telemetry expects off or full");
+			config._engineTimedTelemetryFull = value == "full";
+		}
 		else if (arg == "--build-repeats" && i + 1 < argc)
 		{
 			config._engineBuildRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
@@ -877,6 +884,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --summary-csv <path>        engine-check: one appended row per schema (build, per-type latency)\n"
 		<< "  --warmup <n>                engine-check: untimed passes before the --measure-repeats timed ones (default 1)\n"
 		<< "  --build-repeats <n>         engine-check: builds per schema, for build-time statistics (default 1)\n"
+		<< "  --timed-telemetry off|full  engine-check: counters during timed passes (default off; pass 0 is always full)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
 		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
 		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
@@ -913,6 +921,7 @@ Experiments::EngineCheckOptions AppConfig::engineCheckOptions() const
 	options._warmupPasses = _engineWarmupPasses;
 	options._timedPasses = _schemaSearchOptions._measurementRepeats;
 	options._buildRepeats = _engineBuildRepeats;
+	options._timedTelemetryFull = _engineTimedTelemetryFull;
 	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	options._enableLeafMicroIndexes = _schemaSearchOptions._enableLeafMicroIndexes;
 	options._leafMicroIndexThreshold = _schemaSearchOptions._leafMicroIndexThreshold;

@@ -150,18 +150,20 @@ namespace
 		size_t		_returned = 0;
 		uint64_t	_checksum = 0;
 		size_t		_visited = 0;
+		size_t		_testedBoxes = 0;
 		size_t		_tested = 0;
 		size_t		_fullyContained = 0;
 	};
 
-	PointSpatialIndex::QueryStats runQuery(const PointSpatialIndex& index, const CheckQuery& query)
+	PointSpatialIndex::QueryStats runQuery(const PointSpatialIndex& index, const CheckQuery& query,
+										   PointSpatialIndex::QueryTelemetry telemetry)
 	{
 		switch (query._kind)
 		{
-		case CheckKind::Range: return index.rangeQuery(query._bounds)._stats;
-		case CheckKind::CountRange: return index.countRange(query._bounds)._stats;
-		case CheckKind::Radius: return index.radiusQuery(query._center, query._radius)._stats;
-		case CheckKind::Knn: return index.knnQuery(query._center, query._k)._stats;
+		case CheckKind::Range: return index.rangeQuery(query._bounds, telemetry)._stats;
+		case CheckKind::CountRange: return index.countRange(query._bounds, telemetry)._stats;
+		case CheckKind::Radius: return index.radiusQuery(query._center, query._radius, telemetry)._stats;
+		case CheckKind::Knn: return index.knnQuery(query._center, query._k, telemetry)._stats;
 		}
 		return {};
 	}
@@ -211,7 +213,7 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 		if (!queryCsv)
 			throw std::runtime_error("cannot write " + options._queryCsvPath);
 		queryCsv << "schema_name,structure_digest,num_nodes,num_leaves,max_depth,query_id,query_type,k,"
-				 << "returned_points,result_checksum,visited_nodes,tested_points,fully_contained_nodes\n";
+				 << "returned_points,result_checksum,visited_nodes,tested_boxes,tested_points,fully_contained_nodes\n";
 	}
 
 	std::ofstream summaryCsv;
@@ -228,7 +230,7 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 					   << "build_ms_mean,build_ms_min,num_nodes,num_leaves,max_depth,structure_digest,"
 					   << "range_queries,range_mean_ms,count_queries,count_mean_ms,radius_queries,radius_mean_ms,"
 					   << "knn_queries,knn_mean_ms,all_mean_ms,mean_visited_nodes,mean_tested_points,"
-					   << "mean_returned_points,query_set_checksum,pass_checksum_mismatches\n";
+					   << "mean_returned_points,query_set_checksum,pass_checksum_mismatches,timed_telemetry,mean_tested_boxes\n";
 		}
 	}
 
@@ -265,13 +267,20 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 		{
 			for (size_t q = 0; q < queries.size(); ++q)
 			{
-				const PointSpatialIndex::QueryStats queryStats = runQuery(index, queries[q]);
+				// Pass 0 is always instrumented, since the per-query counters come from it; timed
+				// passes run uninstrumented unless --timed-telemetry full asks otherwise.
+				const bool timed = pass >= options._warmupPasses;
+				const PointSpatialIndex::QueryTelemetry telemetry = (pass == 0 || !timed || options._timedTelemetryFull)
+					? PointSpatialIndex::QueryTelemetry::Full
+					: PointSpatialIndex::QueryTelemetry::Off;
+				const PointSpatialIndex::QueryStats queryStats = runQuery(index, queries[q], telemetry);
 				QueryRecord& record = records[q];
 				if (pass == 0)
 				{
 					record._returned = queryStats._returnedPoints;
 					record._checksum = queryStats._resultChecksum;
 					record._visited = queryStats._visitedNodes;
+					record._testedBoxes = queryStats._testedBoxes;
 					record._tested = queryStats._testedPoints;
 					record._fullyContained = queryStats._fullyContainedNodes;
 				}
@@ -280,7 +289,7 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 					++passMismatches;
 				}
 
-				if (pass >= options._warmupPasses)
+				if (timed)
 				{
 					const size_t slot = static_cast<size_t>(queries[q]._kind);
 					latencySum[slot] += queryStats._elapsedMs;
@@ -290,12 +299,13 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 		}
 
 		const std::string schemaName = schema._name.empty() ? std::filesystem::path(schemaPath).stem().string() : schema._name;
-		double visited = 0.0, tested = 0.0, returned = 0.0;
+		double visited = 0.0, testedBoxes = 0.0, tested = 0.0, returned = 0.0;
 		uint64_t querySetChecksum = 0;
 		for (size_t q = 0; q < queries.size(); ++q)
 		{
 			const QueryRecord& record = records[q];
 			visited += static_cast<double>(record._visited);
+			testedBoxes += static_cast<double>(record._testedBoxes);
 			tested += static_cast<double>(record._tested);
 			returned += static_cast<double>(record._returned);
 			// Folded with the query position so a result moving between queries still registers.
@@ -305,7 +315,7 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 				queryCsv << csvField(schemaName) << ',' << digest << ',' << stats._numNodes << ',' << stats._numLeaves << ','
 						 << stats._maxDepth << ',' << q << ',' << kindName(queries[q]._kind) << ',' << queries[q]._k << ','
 						 << record._returned << ',' << record._checksum << ',' << record._visited << ','
-						 << record._tested << ',' << record._fullyContained << '\n';
+						 << record._testedBoxes << ',' << record._tested << ',' << record._fullyContained << '\n';
 			}
 		}
 
@@ -339,7 +349,8 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 					   << latencyCount[2] / options._timedPasses << ',' << mean(latencySum[2], latencyCount[2]) << ','
 					   << latencyCount[3] / options._timedPasses << ',' << mean(latencySum[3], latencyCount[3]) << ','
 					   << mean(allSum, allCount) << ',' << visited / queryCount << ',' << tested / queryCount << ','
-					   << returned / queryCount << ',' << querySetChecksum << ',' << passMismatches << '\n';
+					   << returned / queryCount << ',' << querySetChecksum << ',' << passMismatches << ','
+					   << (options._timedTelemetryFull ? "full" : "off") << ',' << testedBoxes / queryCount << '\n';
 			summaryCsv.flush();
 		}
 

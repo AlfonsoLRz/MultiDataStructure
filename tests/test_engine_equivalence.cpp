@@ -229,6 +229,23 @@ namespace BaselineTests
 				const PointSpatialIndex::QueryResult knn = index.knnQuery(center, k);
 				expect(knn._pointIndices == expectedKnn, "engine knn == brute force order: " + where);
 				expect(knn._stats._resultChecksum == checksumOf(expectedKnn), "engine knn checksum: " + where);
+
+				// The uninstrumented timed path must answer identically and record no counters.
+				constexpr PointSpatialIndex::QueryTelemetry off = PointSpatialIndex::QueryTelemetry::Off;
+				const PointSpatialIndex::QueryResult rangeOff = index.rangeQuery(box, off);
+				expect(rangeOff._stats._resultChecksum == range._stats._resultChecksum &&
+					   rangeOff._stats._visitedNodes == 0 && rangeOff._stats._testedPoints == 0,
+					   "telemetry-off range matches and records nothing: " + where);
+				expect(index.countRange(box, off)._count == expectedRange.size(), "telemetry-off count matches: " + where);
+				expect(index.radiusQuery(center, radius, off)._stats._resultChecksum == sphere._stats._resultChecksum,
+					   "telemetry-off radius matches: " + where);
+				expect(index.knnQuery(center, k, off)._pointIndices == expectedKnn, "telemetry-off knn matches: " + where);
+
+				// Entered nodes are a subset of bounds-tested ones.
+				expect(range._stats._visitedNodes <= range._stats._testedBoxes &&
+					   sphere._stats._visitedNodes <= sphere._stats._testedBoxes &&
+					   knn._stats._visitedNodes <= knn._stats._testedBoxes,
+					   "visited nodes never exceed tested boxes: " + where);
 			}
 		}
 	}

@@ -19,7 +19,7 @@ from pathlib import Path
 GROUPS = {
     "results": ("returned_points", "result_checksum"),
     "structure": ("structure_digest", "num_nodes", "num_leaves", "max_depth"),
-    "counters": ("visited_nodes", "tested_points", "fully_contained_nodes"),
+    "counters": ("visited_nodes", "tested_boxes", "tested_points", "fully_contained_nodes"),
 }
 
 
@@ -62,7 +62,8 @@ def main():
         for key in golden.keys() & candidate.keys():
             g, c = golden[key], candidate[key]
             for group, columns in GROUPS.items():
-                differing = [col for col in columns if g[col] != c[col]]
+                # A column only one snapshot has (added by a later engine) is not compared.
+                differing = [col for col in columns if col in g and col in c and g[col] != c[col]]
                 if differing:
                     mismatches[group].append((key, differing, g, c))
 

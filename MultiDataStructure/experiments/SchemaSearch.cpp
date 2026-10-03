@@ -3148,7 +3148,7 @@ static void writeQueryTraceHeader(std::ostream& output)
 	output
 		<< "dataset_name,dataset_source,schema_name,schema_path,workload_name,score_stage,"
 		<< "query_id,query_type,query_stratum,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
-		<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,result_checksum,"
+		<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,result_checksum,tested_boxes,"
 		<< "fully_contained_nodes,visited_by_depth,visited_by_structure,tested_points_by_structure,"
 		<< "fully_contained_by_structure,backend,query_seed\n";
 }
@@ -3222,6 +3222,7 @@ static void appendQueryTraceRow(
 		<< stats._testedPoints << ','
 		<< stats._returnedPoints << ','
 		<< stats._resultChecksum << ','
+		<< stats._testedBoxes << ','
 		<< stats._fullyContainedNodes << ','
 		<< csvEscape(formatDepthBreakdown(stats._breakdown)) << ','
 		<< csvEscape(formatMapBreakdown(stats._breakdown, stats._breakdown._visitedByStructure)) << ','
@@ -3390,21 +3391,32 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 		std::vector<double> repeatMeanLatencies;
 		repeatMeanLatencies.reserve(repeats);
 		repeatMeanLatencies.push_back(result._metrics._averageLatencyMs);
+		// Repeat passes run with telemetry compiled out, so the repeat statistics time the
+		// traversal alone; the instrumented first pass above still supplies every counter the
+		// score and diagnostics read. Each repeat must reproduce that pass's results exactly,
+		// which turns every multi-pass measurement into a free engine self-check.
+		constexpr PointSpatialIndex::QueryTelemetry timed = PointSpatialIndex::QueryTelemetry::Off;
 		for (size_t r = 1; r < repeats; ++r)
 		{
 			double totalMs = 0.0;
-			for (const PreparedCpuQuery& query : prepared._cpuQueries)
+			for (size_t q = 0; q < prepared._cpuQueries.size(); ++q)
 			{
+				const PreparedCpuQuery& query = prepared._cpuQueries[q];
+				PointSpatialIndex::QueryStats stats;
 				if (query._kind == PreparedQueryKind::Range)
-					totalMs += index.rangeQuery(query._bounds)._stats._elapsedMs;
+					stats = index.rangeQuery(query._bounds, timed)._stats;
 				else if (query._kind == PreparedQueryKind::Radius)
-					totalMs += index.radiusQuery(query.center, query._radius)._stats._elapsedMs;
+					stats = index.radiusQuery(query.center, query._radius, timed)._stats;
 				else
 					// Must mirror the cold pass above, which honours the per-query k. Using the
 					// workload's dominant k here re-ran every kNN query at the wrong k on a
 					// mixed-k trace, so the repeat means measured a cheaper workload than
 					// _averageLatencyMs did and the resulting CI could exclude it.
-					totalMs += index.knnQuery(query.center, query._k > 0 ? query._k : knnK)._stats._elapsedMs;
+					stats = index.knnQuery(query.center, query._k > 0 ? query._k : knnK, timed)._stats;
+
+				if (stats._resultChecksum != samples[q]._resultChecksum || stats._returnedPoints != samples[q]._returnedPoints)
+					throw std::runtime_error("CPU engine returned different results for the same query across measurement passes");
+				totalMs += stats._elapsedMs;
 			}
 			repeatMeanLatencies.push_back(totalMs / static_cast<double>(prepared._cpuQueries.size()));
 		}

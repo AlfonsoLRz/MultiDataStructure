@@ -229,6 +229,29 @@ What this means for past numbers:
 - **MDS-internal comparisons stay self-consistent.** Searched vs tuned singles, the heatmap and transfer arms all saw the same displaced queries, so their rankings are rankings for a plausible workload, just not the recorded one. Re-run before quoting magnitudes on the affected scenes.
 - **External comparisons on affected cells were apples to oranges.** That's 8 of the 17 Indexicon cells (aneto, barcelona, galiciaforest, galiciaforest_es05, ottobrunncampus, retiro, sanandreas, toronto, waikato_hamilton) and the SanAndreas PCL/Open3D rows. Re-measure all of them.
 
+### 2d. Engine rewrite ledger (from 2026-10-03)
+
+Every engine change is gated by `scripts/engine_equivalence.ps1` + `scripts/diff_engine_equivalence.py`
+against golden snapshots in `D:\MDS_equivalence\` (golden_v1 = binary of `8349c52`, engine
+`1-node-tree`). `PointSpatialIndex::EngineVersion` names the engine in every engine-check row and
+in the score-cache key, so cached scores never cross engines.
+
+**Counter definitions changed in engine 2 (`2-telemetry-off`).** `visited_nodes` now counts nodes
+*entered* (bounds passed the prune) for every query type. Before, range/count/radius also counted
+nodes that were tested and pruned; that number is now `tested_boxes`. Verified on 196,500
+SanAndreas_1M queries: old `visited` == new `tested_boxes` exactly, except on the two schemas
+that keep empty nodes (the old count included empty nodes, `tested_boxes` does not). kNN
+`visited` is unchanged (it already counted entered nodes). **Old and new `visited_nodes` are not
+comparable for range/radius; compare old `visited` with new `tested_boxes`.** Timed passes
+(`--measure-repeats` > 1 in search, every timed pass in engine-check) now run with telemetry
+compiled out; the first pass stays instrumented and feeds scoring.
+
+| Step | Change | Equivalence | Effect |
+|---|---|---|---|
+| 1 | kNN sort and range-containment copy moved out of / simplified in the timer | results + structure identical | (A/B pending) |
+| 2 | telemetry-off timed path, `tested_boxes` | results + structure identical; counters remapped as above | (A/B pending) |
+| 3a | split rules resolved once per build instead of string-parsed per point per level | 131/131 schemas bit-identical trees on SanAndreas_1M | **build 16.2x faster** (95.0 s -> 5.9 s summed over 131 schemas) |
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**

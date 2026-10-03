@@ -59,6 +59,7 @@ public:
 	std::string	_engineSummaryCsvPath;
 	size_t		_engineWarmupPasses = 1;
 	size_t		_engineBuildRepeats = 1;
+	bool		_engineTimedTelemetryFull = false;
 
 	Experiments::EngineCheckOptions engineCheckOptions() const;
 

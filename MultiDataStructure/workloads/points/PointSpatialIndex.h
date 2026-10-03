@@ -121,7 +121,14 @@ public:
 			}
 		};
 
+		// Nodes ENTERED: their bounds passed the query's prune test and the traversal went on to
+		// read their children or points. Same definition for range, count, radius and kNN since
+		// engine 2; before that, range/count/radius also counted nodes that were tested and
+		// pruned, which is what _testedBoxes now holds.
 		size_t			_visitedNodes = 0;
+		// Bounds tests performed on non-empty nodes, entered or pruned. Equal to the pre-engine-2
+		// "visited" count for range/count/radius on any schema that drops empty nodes.
+		size_t			_testedBoxes = 0;
 		size_t			_testedPoints = 0;
 		size_t			_returnedPoints = 0;
 		size_t			_fullyContainedNodes = 0;
@@ -167,7 +174,45 @@ public:
 
 	// Names the query/build engine revision in every measurement that depends on it (score-cache
 	// keys, engine-check output), so numbers from different engines are never silently mixed.
-	static constexpr const char* EngineVersion = "1-node-tree";
+	static constexpr const char* EngineVersion = "3-build-plan";
+
+	// Full fills every QueryStats counter and the per-depth/per-structure breakdown; it is what
+	// scoring, the visit proxy and diagnostics read. Off compiles all of that out of the
+	// traversal and leaves only the result, its checksum and the elapsed time, so a timed pass
+	// measures the same work an uninstrumented library does. Results are identical in both.
+	enum class QueryTelemetry
+	{
+		Full,
+		Off,
+	};
+
+	// A schema level's split rule, resolved from its strings once per build. The build used to
+	// re-derive this per POINT per level - Config::parseSchemaPrimitiveKind and the axis-policy
+	// normalizer allocate and lowercase strings - twice per level (count pass and scatter pass).
+	struct ResolvedLevel
+	{
+		enum class Split : uint8_t { Grid, Octree, Quad, BinaryKd, Binary };
+		enum class KdPolicy : uint8_t { Median, RoundRobin, Center };
+
+		Split		_split = Split::Octree;
+		glm::uvec3	_gridSubdivisions = glm::uvec3(1);
+		// Axis a quadtree level does not split; -1 = the node's shortest axis, decided per node.
+		int			_quadIgnoredAxis = 2;
+		KdPolicy	_kdPolicy = KdPolicy::Median;
+	};
+
+	// One node's split, computed once before its points are routed to children.
+	struct SplitPlan
+	{
+		ResolvedLevel::Split	_split = ResolvedLevel::Split::Octree;
+		glm::vec3	_min = glm::vec3(0.0f);
+		glm::vec3	_extent = glm::vec3(0.0f);
+		glm::vec3	_center = glm::vec3(0.0f);
+		glm::uvec3	_subdivisions = glm::uvec3(1);
+		glm::uint	_axis = 0;
+		float		_value = 0.0f;
+		size_t		_childCount = 0;
+	};
 
 	void build(const PointCloud& cloud, const SchemaConfig& schema);
 	const Node* root() const { return _root.get(); }
@@ -184,10 +229,10 @@ public:
 		static const std::vector<std::string> empty;
 		return _structureNames ? *_structureNames : empty;
 	}
-	QueryResult rangeQuery(const AABB& bounds) const;
-	CountResult countRange(const AABB& bounds) const;
-	QueryResult radiusQuery(const glm::vec3& center, float radius) const;
-	QueryResult knnQuery(const glm::vec3& center, size_t k) const;
+	QueryResult rangeQuery(const AABB& bounds, QueryTelemetry telemetry = QueryTelemetry::Full) const;
+	CountResult countRange(const AABB& bounds, QueryTelemetry telemetry = QueryTelemetry::Full) const;
+	QueryResult radiusQuery(const glm::vec3& center, float radius, QueryTelemetry telemetry = QueryTelemetry::Full) const;
+	QueryResult knnQuery(const glm::vec3& center, size_t k, QueryTelemetry telemetry = QueryTelemetry::Full) const;
 
 private:
 	struct ActiveLevel
@@ -202,6 +247,10 @@ private:
 		std::vector<uint32_t>	_childCounts;
 		std::vector<size_t>		_childOffsets;
 		std::vector<AABB>		_childBounds;
+		// Child slot of each point of the node being split (at most 64 children: HGrid 4^3),
+		// written by the counting pass so the scatter pass does not locate every point again.
+		std::vector<uint8_t>	_childOf;
+		std::vector<float>		_medianScratch;
 	};
 
 	const PointCloud*		_cloud = nullptr;
@@ -219,6 +268,8 @@ private:
 	std::vector<float>		_orderedY;
 	std::vector<float>		_orderedZ;
 	std::shared_ptr<std::vector<std::string>>	_structureNames;
+	std::vector<ResolvedLevel>	_resolvedLevels;	// parallel to _schema._levels
+	std::vector<int32_t>		_structureSlotBySchemaDepth;	// build-time cache, -1 = unresolved
 
 	void buildNode(std::unique_ptr<Node>& node, BuildScratch& scratch);
 	void rebuildOrderedPointSoA();
@@ -233,8 +284,9 @@ private:
 	double nodeDensity(const Node& node) const;
 	double nodeHeightRatio(const Node& node) const;
 	double nodeAnisotropy(const Node& node) const;
-	void childBounds(const Node& node, const SchemaLevelConfig& levelConfig, float& splitValue, glm::uint& splitAxis, std::vector<AABB>& bounds) const;
-	size_t locateChild(const glm::vec3& point, const SchemaLevelConfig& levelConfig, const Node& node, float splitValue, glm::uint splitAxis, size_t numChildren) const;
+	const ResolvedLevel& resolvedLevelFor(const SchemaLevelConfig& levelConfig) const;
+	void makeSplitPlan(const Node& node, const ResolvedLevel& level, SplitPlan& plan, BuildScratch& scratch) const;
+	void routePointsToChildren(const Node& node, const SplitPlan& plan, BuildScratch& scratch) const;
 	void collectStats(const Node* node, Stats& stats) const;
 	void appendSubtreePoints(const Node* node, std::vector<size_t>& pointIndices) const;
 	std::string structureNameForNode(const Node& node) const;
@@ -258,10 +310,12 @@ private:
 		++stats._fullyContainedNodes;
 		++stats._breakdown._fullyContainedByStructure[node._structureIndex];
 	}
-	void rangeQueryMicroGrid(const Node& node, const AABB& bounds, QueryResult& result) const;
-	void countRangeMicroGrid(const Node& node, const AABB& bounds, CountResult& result) const;
-	void radiusQueryMicroGrid(const Node& node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	void rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const;
-	void countRangeNode(const Node* node, const AABB& bounds, CountResult& result) const;
-	void radiusQueryNode(const Node* node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	// Telemetry=false is the timed path: every record*() call below is compiled out of it.
+	template <bool Telemetry> void rangeQueryMicroGrid(const Node& node, const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry> void countRangeMicroGrid(const Node& node, const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry> void radiusQueryMicroGrid(const Node& node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry> void rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry> void countRangeNode(const Node* node, const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry> void radiusQueryNode(const Node* node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
 };

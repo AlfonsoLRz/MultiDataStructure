@@ -30,6 +30,8 @@ namespace Experiments
 		size_t						_warmupPasses = 1;
 		size_t						_timedPasses = 3;
 		size_t						_buildRepeats = 1;
+		// Timed passes run with QueryTelemetry::Off unless this is set; pass 0 is always Full.
+		bool						_timedTelemetryFull = false;
 		bool						_useBinaryCache = true;
 		bool						_enableLeafMicroIndexes = false;
 		size_t						_leafMicroIndexThreshold = 512;
