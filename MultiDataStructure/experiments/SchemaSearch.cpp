@@ -70,6 +70,9 @@ struct WorkloadRun
 	std::map<std::string, Experiments::QueryMetrics>	_stratumMetrics;
 	std::string	_stratumSummary;
 	double	_gpuQueryMs = 0.0;
+	// Which kNN kernel the GPU structure actually ran, as reported by the structure itself
+	// (e.g. KDTree.cu sets "gpu_tree_knn" or "gpu_bruteforce_knn"). Empty on the CPU path.
+	std::string	_gpuKnnBackend;
 };
 
 enum class PreparedQueryKind
@@ -3145,7 +3148,7 @@ static void writeQueryTraceHeader(std::ostream& output)
 	output
 		<< "dataset_name,dataset_source,schema_name,schema_path,workload_name,score_stage,"
 		<< "query_id,query_type,query_stratum,bounds_min_x,bounds_min_y,bounds_min_z,bounds_max_x,bounds_max_y,bounds_max_z,"
-		<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,"
+		<< "center_x,center_y,center_z,radius,k,latency_ms,visited_nodes,tested_points,returned_points,result_checksum,"
 		<< "fully_contained_nodes,visited_by_depth,visited_by_structure,tested_points_by_structure,"
 		<< "fully_contained_by_structure,backend,query_seed\n";
 }
@@ -3218,6 +3221,7 @@ static void appendQueryTraceRow(
 		<< stats._visitedNodes << ','
 		<< stats._testedPoints << ','
 		<< stats._returnedPoints << ','
+		<< stats._resultChecksum << ','
 		<< stats._fullyContainedNodes << ','
 		<< csvEscape(formatDepthBreakdown(stats._breakdown)) << ','
 		<< csvEscape(formatMapBreakdown(stats._breakdown, stats._breakdown._visitedByStructure)) << ','
@@ -3424,6 +3428,7 @@ static WorkloadRun runCudaWorkloadProfile(
 	const PointGpu::QueryResult queryResult = index.query(prepared._cudaQueries, cudaOptions);
 	result._metrics = queryResult._metrics;
 	result._gpuQueryMs = queryResult._gpuQueryTimeMs;
+	result._gpuKnnBackend = queryResult._knnBackend;
 	result._samples.reserve(queryResult._samples.size());
 	std::vector<PointSpatialIndex::QueryStats> rangeSamples;
 	std::vector<PointSpatialIndex::QueryStats> countRangeSamples;
@@ -3709,9 +3714,17 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 		effectiveConfig, pointFeatures, workloadFeatures, record._weights._visitProxyAlpha);
 	record._backend = backend;
 	record._gpuSupportStatus = gpuSupportStatus;
+	// Report the kernel that actually ran, not a guess from the backend name. This used to be
+	// hardcoded to "bruteforce_gpu_scan" for every CUDA row, which was true of the default mixed
+	// builder (MixedTree serves kNN with a full-cloud scan) but silently mislabels the KDTree and
+	// BIH builders, whose treeKnnKernel is a real traversal for k <= MaxTrackedKnnK. The column
+	// was therefore unusable as evidence either way: it could neither confirm a GPU tree kNN run
+	// nor detect a fallback, which is exactly what it is consulted for.
 	record._knnBackend = record._knnQueries == 0
 		? "none"
-		: (backend == "cuda" ? "bruteforce_gpu_scan" : "cpu_tree_knn");
+		: (backend == "cuda"
+			? (workloadRun._gpuKnnBackend.empty() ? "unreported_gpu_knn" : workloadRun._gpuKnnBackend)
+			: "cpu_tree_knn");
 	record._cudaDevice = cudaDevice;
 	record._cudaBuilder = cudaBuilder;
 	record._gpuUploadMs = gpuUploadMs;
@@ -3946,7 +3959,7 @@ static void writeSearchHeader(std::ostream& output)
 		<< "p95_latency_mean_ms,p95_latency_ci_low_ms,p95_latency_ci_high_ms,"
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
-		<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
+		<< "measurement_repeats,latency_repeat_mean_ms,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
 		<< "estimated_query_cost\n";
 }
 
@@ -4086,6 +4099,7 @@ static void writeSearchRows(const std::string& csvPath, const std::vector<Experi
 			<< (record._weights._useVisitProxy ? 1 : 0) << ','
 			<< record._weights._visitProxyAlpha << ','
 			<< record._queryMetrics._measurementRepeats << ','
+			<< record._queryMetrics._latencyMeanMs << ','
 			<< record._queryMetrics._latencyStdDevMs << ','
 			<< record._queryMetrics._latencyCoeffVar << ','
 			<< record._queryMetrics._latencyCiLowMs << ','
@@ -4132,7 +4146,7 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 		<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
-		<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
+		<< "measurement_repeats,latency_repeat_mean_ms,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
 		<< "estimated_query_cost\n";
 	output << std::fixed << std::setprecision(6);
 	for (const Experiments::SchemaSearchRecord& record : bestRecords)
@@ -4237,6 +4251,7 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 			<< (record._weights._useVisitProxy ? 1 : 0) << ','
 			<< record._weights._visitProxyAlpha << ','
 			<< record._queryMetrics._measurementRepeats << ','
+			<< record._queryMetrics._latencyMeanMs << ','
 			<< record._queryMetrics._latencyStdDevMs << ','
 			<< record._queryMetrics._latencyCoeffVar << ','
 			<< record._queryMetrics._latencyCiLowMs << ','
@@ -4269,7 +4284,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 		<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
-		<< "measurement_repeats,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
+		<< "measurement_repeats,latency_repeat_mean_ms,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
 		<< "estimated_query_cost\n";
 	output << std::fixed << std::setprecision(6);
 	for (const Experiments::SchemaSearchRecord& record : front)
@@ -4332,6 +4347,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 			<< (record._weights._useVisitProxy ? 1 : 0) << ','
 			<< record._weights._visitProxyAlpha << ','
 			<< record._queryMetrics._measurementRepeats << ','
+			<< record._queryMetrics._latencyMeanMs << ','
 			<< record._queryMetrics._latencyStdDevMs << ','
 			<< record._queryMetrics._latencyCoeffVar << ','
 			<< record._queryMetrics._latencyCiLowMs << ','

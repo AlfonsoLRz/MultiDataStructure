@@ -249,140 +249,241 @@ PointSpatialIndex::Stats PointSpatialIndex::stats() const
 	return result;
 }
 
+// Output-buffer sizing hints, one per query kind, carried across calls on the calling thread.
+//
+// The timed region has to contain the traversal and nothing else. It used to contain the
+// QueryResult construction - a 1336-byte QueryStats zero-init - plus every reallocation of an
+// output vector that started at capacity 0, so a radius query returning N points paid ~log2(N)
+// mallocs and copy chains against the clock. The external baseline we are measured against
+// (tools/indexicon_point_baseline.cpp) declares its hit buffer once outside both loops and only
+// clear()s it, so after a handful of queries its timed region allocates nothing at all. Reserving
+// from a high-water mark before the clock starts reproduces that: once the hint settles, the
+// traversal does zero allocations, and the two sides are timing the same work.
+//
+// The hints live on the index (see the mutable atomics in the header), not in a thread_local: a
+// thread_local hint is shared across every index that thread touches, so querying a cloud that
+// returns 100k points would make every later query on a small cloud reserve 100k slots.
+namespace
+{
+	// Raises a hint to at least `observed`, without ever lowering it. Relaxed throughout: this is
+	// a sizing heuristic, and the worst outcome of a lost update is one extra reallocation.
+	void raiseHint(std::atomic<size_t>& hint, size_t observed)
+	{
+		size_t current = hint.load(std::memory_order_relaxed);
+		while (current < observed &&
+			   !hint.compare_exchange_weak(current, observed, std::memory_order_relaxed))
+		{
+		}
+	}
+}
+
 PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds) const
 {
-	const auto start = std::chrono::steady_clock::now();
 	QueryResult result;
+	result._pointIndices.reserve(_rangeReserveHint.load(std::memory_order_relaxed));
 
+	const auto start = std::chrono::steady_clock::now();
 	rangeQueryNode(_root.get(), bounds, result);
+	const double elapsedMs = elapsedMilliseconds(start);
 
+	raiseHint(_rangeReserveHint, result._pointIndices.size());
 	result._stats._returnedPoints = result._pointIndices.size();
-	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._elapsedMs = elapsedMs;
+	for (size_t pointIndex : result._pointIndices)
+		accumulateResultChecksum(result._stats._resultChecksum, pointIndex);
 	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
 PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds) const
 {
-	const auto start = std::chrono::steady_clock::now();
 	CountResult result;
 
+	const auto start = std::chrono::steady_clock::now();
 	countRangeNode(_root.get(), bounds, result);
+	const double elapsedMs = elapsedMilliseconds(start);
 
 	result._stats._returnedPoints = result._count;
-	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._elapsedMs = elapsedMs;
 	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
 PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& center, float radius) const
 {
-	const auto start = std::chrono::steady_clock::now();
 	QueryResult result;
+	result._pointIndices.reserve(_radiusReserveHint.load(std::memory_order_relaxed));
 
+	const auto start = std::chrono::steady_clock::now();
 	if (radius >= 0.0f)
 		radiusQueryNode(_root.get(), center, radius * radius, result);
+	const double elapsedMs = elapsedMilliseconds(start);
 
+	raiseHint(_radiusReserveHint, result._pointIndices.size());
 	result._stats._returnedPoints = result._pointIndices.size();
-	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._elapsedMs = elapsedMs;
+	for (size_t pointIndex : result._pointIndices)
+		accumulateResultChecksum(result._stats._resultChecksum, pointIndex);
 	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }
 
+namespace
+{
+	struct KnnNodeCandidate
+	{
+		float								_distance = 0.0f;
+		size_t								_sequence = 0;
+		const PointSpatialIndex::Node*		_node = nullptr;
+	};
+
+	struct KnnNodeCandidateGreater
+	{
+		bool operator()(const KnnNodeCandidate& left, const KnnNodeCandidate& right) const
+		{
+			if (left._distance == right._distance)
+				return left._sequence > right._sequence;
+			return left._distance > right._distance;
+		}
+	};
+
+	struct KnnMicroCandidate
+	{
+		float		_distance = 0.0f;
+		uint32_t	_nodeIndex = 0;
+	};
+
+	struct KnnMicroCandidateGreater
+	{
+		bool operator()(const KnnMicroCandidate& left, const KnnMicroCandidate& right) const
+		{
+			return left._distance > right._distance;
+		}
+	};
+
+	// The three kNN working sets, reused across queries on the calling thread.
+	//
+	// These were std::priority_queue locals: `best` and `pending` allocated once per query with no
+	// reserve (so they reallocated during fill), and `microPending` was constructed fresh for
+	// EVERY micro-indexed leaf the traversal reached - an operator new/delete apiece to search a
+	// bucket of at most MicroKdLeafCapacity points. Vector + heap algorithms give identical
+	// ordering with clear() preserving capacity, so a warm thread does no allocation at all.
+	std::vector<std::pair<float, size_t>>& knnBestScratch()
+	{
+		static thread_local std::vector<std::pair<float, size_t>> best;
+		return best;
+	}
+
+	std::vector<KnnNodeCandidate>& knnPendingScratch()
+	{
+		static thread_local std::vector<KnnNodeCandidate> pending;
+		return pending;
+	}
+
+	std::vector<KnnMicroCandidate>& knnMicroPendingScratch()
+	{
+		static thread_local std::vector<KnnMicroCandidate> microPending;
+		return microPending;
+	}
+}
+
 PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& center, size_t k) const
 {
-	const auto start = std::chrono::steady_clock::now();
 	QueryResult result;
+
+	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
+	std::vector<KnnNodeCandidate>& pending = knnPendingScratch();
+	std::vector<KnnMicroCandidate>& microPending = knnMicroPendingScratch();
+	best.clear();
+	pending.clear();
+	// Clamped: k comes from a replayed trace and nothing bounds it against the cloud, so a
+	// pathological k must not turn a reserve into a multi-gigabyte allocation.
+	if (k > 0 && _root)
+		best.reserve(std::min<size_t>(k, _root->_subtreePointCount));
+
+	const auto start = std::chrono::steady_clock::now();
 
 	if (_root && _cloud && k > 0 && _root->_subtreePointCount > 0)
 	{
-		struct NodeCandidate
-		{
-			float		_distance = 0.0f;
-			size_t		_sequence = 0;
-			const Node*	_node = nullptr;
-		};
-
-		struct NodeCandidateGreater
-		{
-			bool operator()(const NodeCandidate& left, const NodeCandidate& right) const
+		// `best` is a max-heap on (distance, pointIndex) once it is full, exactly as the
+		// std::priority_queue it replaces. Below k elements it is an unordered bucket: nothing
+		// reads front() until size() == k, and make_heap runs at the moment it fills.
+		const auto bestWorst = [&best]() -> const std::pair<float, size_t>& { return best.front(); };
+		const auto offerPoint = [&best, k](float distance, const uint32_t* order, size_t orderedIndex) {
+			if (best.size() < k)
 			{
-				if (left._distance == right._distance)
-					return left._sequence > right._sequence;
-				return left._distance > right._distance;
+				best.emplace_back(distance, static_cast<size_t>(order[orderedIndex]));
+				if (best.size() == k)
+					std::make_heap(best.begin(), best.end());
+				return;
+			}
+
+			const std::pair<float, size_t>& worst = best.front();
+			// Fast reject before touching _pointOrder. The identity is only needed to break an
+			// exact distance tie or to store an accepted point, so the common case - a candidate
+			// strictly worse than the current kth - never pays the extra memory stream.
+			if (distance > worst.first)
+				return;
+
+			const size_t pointIndex = static_cast<size_t>(order[orderedIndex]);
+			if (distance < worst.first || pointIndex < worst.second)
+			{
+				std::pop_heap(best.begin(), best.end());
+				best.back() = { distance, pointIndex };
+				std::push_heap(best.begin(), best.end());
 			}
 		};
 
-		std::priority_queue<std::pair<float, size_t>> best;
-		std::priority_queue<NodeCandidate, std::vector<NodeCandidate>, NodeCandidateGreater> pending;
 		size_t sequence = 0;
-		pending.push({ distanceSquaredToAABB(_root->_tightBounds, center), sequence++, _root.get() });
+		pending.push_back({ distanceSquaredToAABB(_root->_tightBounds, center), sequence++, _root.get() });
 
 		while (!pending.empty())
 		{
-			const NodeCandidate candidate = pending.top();
-			pending.pop();
+			std::pop_heap(pending.begin(), pending.end(), KnnNodeCandidateGreater{});
+			const KnnNodeCandidate candidate = pending.back();
+			pending.pop_back();
 			const Node* node = candidate._node;
 			if (!node || node->_subtreePointCount == 0)
 				continue;
 
+			// `pending` is a min-heap on node lower-bound distance, so a candidate that fails this
+			// test proves every remaining entry fails it too: their distances are all >= this one
+			// and the kth-best distance only shrinks. Draining the rest with `continue` cost an
+			// O(log n) sift-down per leftover node and, because recordNodeVisit used to run before
+			// the test, inflated the visited-node telemetry with nodes that were never examined.
+			if (best.size() == k && candidate._distance > bestWorst().first)
+				break;
+
 			recordNodeVisit(*node, result._stats);
-			if (best.size() == k && candidate._distance > best.top().first)
-				continue;
 
 			if (node->isLeaf())
 			{
 				if (node->_microIndex && node->_microIndex->hasKdTree())
 				{
-					struct MicroCandidate
-					{
-						float		_distance = 0.0f;
-						uint32_t	_nodeIndex = 0;
-					};
-
-					struct MicroCandidateGreater
-					{
-						bool operator()(const MicroCandidate& left, const MicroCandidate& right) const
-						{
-							return left._distance > right._distance;
-						}
-					};
-
 					const LeafMicroIndex& micro = *node->_microIndex;
-					std::priority_queue<MicroCandidate, std::vector<MicroCandidate>, MicroCandidateGreater> microPending;
-					microPending.push({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
+					microPending.clear();
+					microPending.push_back({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
 
 					while (!microPending.empty())
 					{
-						const MicroCandidate microCandidate = microPending.top();
-						microPending.pop();
-						if (best.size() == k && microCandidate._distance > best.top().first)
-							continue;
+						std::pop_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
+						const KnnMicroCandidate microCandidate = microPending.back();
+						microPending.pop_back();
+						if (best.size() == k && microCandidate._distance > bestWorst().first)
+							break;
 
 						const LeafMicroIndex::KdNode& microNode = micro._kdNodes[microCandidate._nodeIndex];
 						if (microNode.isLeaf())
 						{
 							recordTestedPoints(*node, microNode._count, result._stats);
-							for (uint32_t i = microNode._begin; i < microNode._begin + microNode._count; ++i)
+							const uint32_t microEnd = microNode._begin + microNode._count;
+							for (uint32_t i = microNode._begin; i < microEnd; ++i)
 							{
 								const uint32_t orderedIndex = micro._kdOrder[i];
-								const size_t pointIndex = _pointOrder[orderedIndex];
 								const float dx = _orderedX[orderedIndex] - center.x;
 								const float dy = _orderedY[orderedIndex] - center.y;
 								const float dz = _orderedZ[orderedIndex] - center.z;
-								const float distance = dx * dx + dy * dy + dz * dz;
-								if (best.size() < k)
-								{
-									best.push({ distance, pointIndex });
-									continue;
-								}
-
-								const std::pair<float, size_t>& worst = best.top();
-								if (distance < worst.first || (distance == worst.first && pointIndex < worst.second))
-								{
-									best.pop();
-									best.push({ distance, pointIndex });
-								}
+								offerPoint(dx * dx + dy * dy + dz * dz, _pointOrder.data(), orderedIndex);
 							}
 							continue;
 						}
@@ -393,35 +494,23 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 								continue;
 
 							const float childDistance = distanceSquaredToAABB(micro._kdNodes[childIndex]._bounds, center);
-							if (best.size() == k && childDistance > best.top().first)
+							if (best.size() == k && childDistance > bestWorst().first)
 								continue;
-							microPending.push({ childDistance, childIndex });
+							microPending.push_back({ childDistance, childIndex });
+							std::push_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
 						}
 					}
 					continue;
 				}
 
 				recordTestedPoints(*node, node->_pointCount, result._stats);
-				for (size_t i = 0; i < node->_pointCount; ++i)
+				const size_t leafEnd = node->_pointOffset + node->_pointCount;
+				for (size_t orderedIndex = node->_pointOffset; orderedIndex < leafEnd; ++orderedIndex)
 				{
-					const size_t orderedIndex = node->_pointOffset + i;
-					const size_t pointIndex = _pointOrder[orderedIndex];
 					const float dx = _orderedX[orderedIndex] - center.x;
 					const float dy = _orderedY[orderedIndex] - center.y;
 					const float dz = _orderedZ[orderedIndex] - center.z;
-					const float distance = dx * dx + dy * dy + dz * dz;
-					if (best.size() < k)
-					{
-						best.push({ distance, pointIndex });
-						continue;
-					}
-
-					const std::pair<float, size_t>& worst = best.top();
-					if (distance < worst.first || (distance == worst.first && pointIndex < worst.second))
-					{
-						best.pop();
-						best.push({ distance, pointIndex });
-					}
+					offerPoint(dx * dx + dy * dy + dz * dz, _pointOrder.data(), orderedIndex);
 				}
 				continue;
 			}
@@ -432,34 +521,33 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 					continue;
 
 				const float childDistance = distanceSquaredToAABB(child->_tightBounds, center);
-				if (best.size() == k && childDistance > best.top().first)
+				if (best.size() == k && childDistance > bestWorst().first)
 					continue;
 
-				pending.push({ childDistance, sequence++, child.get() });
+				pending.push_back({ childDistance, sequence++, child.get() });
+				std::push_heap(pending.begin(), pending.end(), KnnNodeCandidateGreater{});
 			}
 		}
 
-		std::vector<std::pair<float, size_t>> ordered;
-		ordered.reserve(best.size());
-		while (!best.empty())
-		{
-			ordered.push_back(best.top());
-			best.pop();
-		}
-
-		std::sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+		// Sorted, deterministic output. The comparator is a total order on (distance, pointIndex),
+		// so this reproduces the previous drain-then-sort exactly; the intermediate `ordered`
+		// vector it used to build is gone.
+		std::sort(best.begin(), best.end(), [](const auto& left, const auto& right) {
 			if (left.first == right.first)
 				return left.second < right.second;
 			return left.first < right.first;
 		});
 
-		result._pointIndices.reserve(ordered.size());
-		for (const auto& entry : ordered)
+		result._pointIndices.reserve(best.size());
+		for (const auto& entry : best)
 			result._pointIndices.push_back(entry.second);
 	}
 
+	const double elapsedMs = elapsedMilliseconds(start);
 	result._stats._returnedPoints = result._pointIndices.size();
-	result._stats._elapsedMs = elapsedMilliseconds(start);
+	result._stats._elapsedMs = elapsedMs;
+	for (size_t pointIndex : result._pointIndices)
+		accumulateResultChecksum(result._stats._resultChecksum, pointIndex);
 	result._stats._breakdown._structureNames = _structureNames;
 	return result;
 }

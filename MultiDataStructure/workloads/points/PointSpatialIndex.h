@@ -126,8 +126,32 @@ public:
 		size_t			_returnedPoints = 0;
 		size_t			_fullyContainedNodes = 0;
 		double			_elapsedMs = 0.0;
+		// Order-independent digest of the returned point identities, computed OUTSIDE the timed
+		// region. This is the equivalence gate for traversal work: latency, visited-node and
+		// tested-point counts are all expected to move when the traversal is optimized, so none
+		// of them can tell an optimization from a regression. The result set must not move, and
+		// this is the column that proves it. Order-independent on purpose - a legitimate change
+		// to descent order must not read as a behaviour change, while any gained or lost point
+		// does. kNN output is additionally sorted, so for kNN this is exact set equality.
+		uint64_t		_resultChecksum = 0;
 		QueryBreakdown	_breakdown;
 	};
+
+	// Mixes one returned point identity into an order-independent digest: each identity is passed
+	// through a bit-avalanche (splitmix64's finalizer) and the results are SUMMED. Addition is
+	// commutative, so the digest depends on the multiset of returned points and not on the order
+	// the traversal happened to emit them. Avalanching first is what makes it discriminating -
+	// summing raw indices would collide on any swap preserving the total, e.g. {3, 8} vs {4, 7}.
+	static void accumulateResultChecksum(uint64_t& checksum, size_t pointIndex)
+	{
+		uint64_t mixed = static_cast<uint64_t>(pointIndex) + 0x9E3779B97F4A7C15ull;
+		mixed ^= mixed >> 30;
+		mixed *= 0xBF58476D1CE4E5B9ull;
+		mixed ^= mixed >> 27;
+		mixed *= 0x94D049BB133111EBull;
+		mixed ^= mixed >> 31;
+		checksum += mixed;
+	}
 
 	struct QueryResult
 	{
@@ -174,6 +198,13 @@ private:
 	const PointCloud*		_cloud = nullptr;
 	SchemaConfig			_schema;
 	std::unique_ptr<Node>	_root;
+	// Output-buffer sizing hints, per index and per query kind, so a query can reserve its result
+	// vector BEFORE the clock starts and then allocate nothing while being timed. See the query
+	// entry points for why that matters. mutable + atomic because the query methods are const and
+	// callers may query one index from several threads; the value is only a hint, so relaxed
+	// ordering is sufficient and a lost update just costs one reallocation.
+	mutable std::atomic<size_t>	_rangeReserveHint{ 0 };
+	mutable std::atomic<size_t>	_radiusReserveHint{ 0 };
 	std::vector<uint32_t>	_pointOrder;
 	std::vector<float>		_orderedX;
 	std::vector<float>		_orderedY;

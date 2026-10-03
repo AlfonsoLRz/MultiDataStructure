@@ -870,7 +870,9 @@ namespace BaselineTests
 				"schema search CUDA KNN workload keeps query override count");
 			expect(static_cast<size_t>(std::stoull(cudaValues[cudaKnnQueriesColumn])) == 5,
 				"schema search CUDA KNN workload measures KNN on GPU");
-			expect(cudaKnnBackendColumn < cudaValues.size() && cudaValues[cudaKnnBackendColumn] == "bruteforce_gpu_scan",
+			// The label is now the kernel MixedTree reports running, not a guess from the backend
+			// name. The default mixed builder serves kNN with a full-cloud scan.
+			expect(cudaKnnBackendColumn < cudaValues.size() && cudaValues[cudaKnnBackendColumn] == "gpu_bruteforce_knn",
 				"schema search CUDA KNN CSV labels brute-force GPU scan backend");
 		}
 		else
