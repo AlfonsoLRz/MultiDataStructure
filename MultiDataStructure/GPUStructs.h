@@ -3,7 +3,9 @@
 #include "stdafx.h"
 
 #include "CudaHelper.h"
+#ifndef MDS_HEADLESS
 #include <cuda_gl_interop.h>
+#endif
 
 struct CameraGPU
 {
@@ -155,6 +157,7 @@ struct TransientInfoGPU
 	glm::uint	_unwarpCamera;
 };
 
+#ifndef MDS_HEADLESS
 struct TextureResources
 {
 	GLuint					_id, _pbo;
@@ -218,3 +221,4 @@ struct TextureResources
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 };
+#endif

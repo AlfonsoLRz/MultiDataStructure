@@ -3,7 +3,9 @@
 #include "AppConfig.h"
 #include "experiments/BatchSearch.h"
 #include "experiments/SchemaSearch.h"
+#ifndef MDS_HEADLESS
 #include "ui/OptimizerGui.h"
+#endif
 #include "workloads/points/PointBenchmark.h"
 #include "../tests/BaselineTests.h"
 
@@ -37,7 +39,13 @@ int main(int argc, char* argv[])
 			return Experiments::runEvaluateOne(config._schemaSearchOptions);
 
 		if (config._mode == "gui")
+		{
+#ifdef MDS_HEADLESS
+			throw std::invalid_argument("--mode gui is not available in this headless build; use --mode points, schema-search, batch-search, evaluate-one, engine-check, or --run-tests");
+#else
 			return OptimizerGui::run();
+#endif
+		}
 
 		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode batch-search, --mode evaluate-one, --mode engine-check, or --run-tests");
 	}

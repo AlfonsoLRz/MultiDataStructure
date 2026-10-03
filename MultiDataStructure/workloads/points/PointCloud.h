@@ -19,7 +19,10 @@ public:
 		bool	_rebuildBinaryCache = false;
 	};
 
-	static PointCloud load(const std::string& filename, const LoadOptions& options = {});
+	// An overload rather than `options = {}`: GCC rejects a default argument that needs the
+	// member initializers of a nested class before the enclosing class is complete.
+	static PointCloud load(const std::string& filename) { return load(filename, LoadOptions{}); }
+	static PointCloud load(const std::string& filename, const LoadOptions& options);
 	static std::filesystem::path cachePathFor(const std::string& filename);
 
 	size_t size() const;
