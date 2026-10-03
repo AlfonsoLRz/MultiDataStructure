@@ -155,7 +155,7 @@ public:
 
 	// Names the query/build engine revision in every measurement that depends on it (score-cache
 	// keys, engine-check output), so numbers from different engines are never silently mixed.
-	static constexpr const char* EngineVersion = "4-node-pool";
+	static constexpr const char* EngineVersion = "5-simd-leaves";
 
 	// Full fills every QueryStats counter and the per-depth/per-structure breakdown; it is what
 	// scoring, the visit proxy and diagnostics read. Off compiles all of that out of the

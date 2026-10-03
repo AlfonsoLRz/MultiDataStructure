@@ -252,6 +252,7 @@ compiled out; the first pass stays instrumented and feeds scoring.
 | 2 | telemetry-off timed path, `tested_boxes` | results + structure identical; counters remapped as above | (A/B pending) |
 | 3a | split rules resolved once per build instead of string-parsed per point per level | 131/131 schemas bit-identical trees on SanAndreas_1M | **build 16.2x faster** (95.0 s -> 5.9 s summed over 131 schemas) |
 | 4 | node pool: 32 B hot nodes in contiguous 64 B-aligned sibling groups, cold data split off, explicit-stack traversals, `NodeView` API | results + structure identical to golden_v1 (393k queries, 2 clouds); counters identical to step 3a | 1M unpinned: radius 0.83x, kNN 0.81x, range 0.77x (geomean over 131 schemas); 25M A/B pending |
+| 5b | AVX2 leaf scans for radius/range/count and kNN candidate filtering; explicit mul+add (no FMA), ordered compares, scalar tail | results + structure + counters identical to step 4 (393k queries) | 1M unpinned vs step 4: count 0.50-0.55x, range 0.83-0.89x, kNN 0.89-0.91x, radius 0.93-0.97x |
 
 ## 3. Pending experiments (exact commands)
 

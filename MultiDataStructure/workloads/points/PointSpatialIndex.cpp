@@ -1,6 +1,10 @@
 #include "../../stdafx.h"
 #include "PointSpatialIndex.h"
 
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 static constexpr double EPSILON = 1e-9;
 
 static glm::uint longestAxis(const AABB& bounds)
@@ -668,6 +672,115 @@ namespace
 			   lo[1] >= queryMin.y && hi[1] <= queryMax.y &&
 			   lo[2] >= queryMin.z && hi[2] <= queryMax.z;
 	}
+
+	// Leaf scans, eight points per step under AVX2. Results must be bit-identical to the scalar
+	// loops they replace, so the arithmetic is spelled out rather than left to the compiler:
+	// (dx*dx + dy*dy) + dz*dz with separate multiplies and adds (an FMA rounds once, not twice,
+	// and would move points on the radius boundary), ordered compares (false on NaN, like the
+	// scalar operators), and hits emitted in ascending index order. The remainder runs scalar.
+	inline void scanLeafRadius(const float* xs, const float* ys, const float* zs, const uint32_t* order,
+							   uint32_t begin, uint32_t end, const glm::vec3& center, float radiusSquared,
+							   std::vector<size_t>& out)
+	{
+		uint32_t i = begin;
+#if defined(__AVX2__)
+		const __m256 cx = _mm256_set1_ps(center.x);
+		const __m256 cy = _mm256_set1_ps(center.y);
+		const __m256 cz = _mm256_set1_ps(center.z);
+		const __m256 r2 = _mm256_set1_ps(radiusSquared);
+		for (; i + 8 <= end; i += 8)
+		{
+			const __m256 dx = _mm256_sub_ps(_mm256_loadu_ps(xs + i), cx);
+			const __m256 dy = _mm256_sub_ps(_mm256_loadu_ps(ys + i), cy);
+			const __m256 dz = _mm256_sub_ps(_mm256_loadu_ps(zs + i), cz);
+			const __m256 d2 = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(dx, dx), _mm256_mul_ps(dy, dy)), _mm256_mul_ps(dz, dz));
+			unsigned mask = static_cast<unsigned>(_mm256_movemask_ps(_mm256_cmp_ps(d2, r2, _CMP_LE_OQ)));
+			while (mask)
+			{
+				const unsigned lane = static_cast<unsigned>(_tzcnt_u32(mask));
+				out.push_back(order[i + lane]);
+				mask &= mask - 1;
+			}
+		}
+#endif
+		for (; i < end; ++i)
+		{
+			const float dx = xs[i] - center.x;
+			const float dy = ys[i] - center.y;
+			const float dz = zs[i] - center.z;
+			if (dx * dx + dy * dy + dz * dz <= radiusSquared)
+				out.push_back(order[i]);
+		}
+	}
+
+#if defined(__AVX2__)
+	inline unsigned boxMask8(const float* xs, const float* ys, const float* zs, uint32_t i,
+							 const __m256& minX, const __m256& minY, const __m256& minZ,
+							 const __m256& maxX, const __m256& maxY, const __m256& maxZ)
+	{
+		const __m256 x = _mm256_loadu_ps(xs + i);
+		const __m256 y = _mm256_loadu_ps(ys + i);
+		const __m256 z = _mm256_loadu_ps(zs + i);
+		__m256 inside = _mm256_and_ps(_mm256_cmp_ps(x, minX, _CMP_GE_OQ), _mm256_cmp_ps(x, maxX, _CMP_LE_OQ));
+		inside = _mm256_and_ps(inside, _mm256_and_ps(_mm256_cmp_ps(y, minY, _CMP_GE_OQ), _mm256_cmp_ps(y, maxY, _CMP_LE_OQ)));
+		inside = _mm256_and_ps(inside, _mm256_and_ps(_mm256_cmp_ps(z, minZ, _CMP_GE_OQ), _mm256_cmp_ps(z, maxZ, _CMP_LE_OQ)));
+		return static_cast<unsigned>(_mm256_movemask_ps(inside));
+	}
+#endif
+
+	inline bool pointInBox(float x, float y, float z, const glm::vec3& queryMin, const glm::vec3& queryMax)
+	{
+		return x >= queryMin.x && x <= queryMax.x &&
+			   y >= queryMin.y && y <= queryMax.y &&
+			   z >= queryMin.z && z <= queryMax.z;
+	}
+
+	inline void scanLeafRange(const float* xs, const float* ys, const float* zs, const uint32_t* order,
+							  uint32_t begin, uint32_t end, const glm::vec3& queryMin, const glm::vec3& queryMax,
+							  std::vector<size_t>& out)
+	{
+		uint32_t i = begin;
+#if defined(__AVX2__)
+		const __m256 minX = _mm256_set1_ps(queryMin.x), maxX = _mm256_set1_ps(queryMax.x);
+		const __m256 minY = _mm256_set1_ps(queryMin.y), maxY = _mm256_set1_ps(queryMax.y);
+		const __m256 minZ = _mm256_set1_ps(queryMin.z), maxZ = _mm256_set1_ps(queryMax.z);
+		for (; i + 8 <= end; i += 8)
+		{
+			unsigned mask = boxMask8(xs, ys, zs, i, minX, minY, minZ, maxX, maxY, maxZ);
+			while (mask)
+			{
+				const unsigned lane = static_cast<unsigned>(_tzcnt_u32(mask));
+				out.push_back(order[i + lane]);
+				mask &= mask - 1;
+			}
+		}
+#endif
+		for (; i < end; ++i)
+		{
+			if (pointInBox(xs[i], ys[i], zs[i], queryMin, queryMax))
+				out.push_back(order[i]);
+		}
+	}
+
+	inline size_t countLeafRange(const float* xs, const float* ys, const float* zs,
+								 uint32_t begin, uint32_t end, const glm::vec3& queryMin, const glm::vec3& queryMax)
+	{
+		size_t contained = 0;
+		uint32_t i = begin;
+#if defined(__AVX2__)
+		const __m256 minX = _mm256_set1_ps(queryMin.x), maxX = _mm256_set1_ps(queryMax.x);
+		const __m256 minY = _mm256_set1_ps(queryMin.y), maxY = _mm256_set1_ps(queryMax.y);
+		const __m256 minZ = _mm256_set1_ps(queryMin.z), maxZ = _mm256_set1_ps(queryMax.z);
+		for (; i + 8 <= end; i += 8)
+			contained += static_cast<size_t>(_mm_popcnt_u32(boxMask8(xs, ys, zs, i, minX, minY, minZ, maxX, maxY, maxZ)));
+#endif
+		for (; i < end; ++i)
+		{
+			if (pointInBox(xs[i], ys[i], zs[i], queryMin, queryMax))
+				++contained;
+		}
+		return contained;
+	}
 }
 
 PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& center, size_t k, QueryTelemetry telemetry) const
@@ -782,19 +895,7 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 			}
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
-			const uint32_t end = node._first + node.count();
-			for (uint32_t i = node._first; i < end; ++i)
-			{
-				const float x = xs[i];
-				const float y = ys[i];
-				const float z = zs[i];
-				if (x >= queryMin.x && x <= queryMax.x &&
-					y >= queryMin.y && y <= queryMax.y &&
-					z >= queryMin.z && z <= queryMax.z)
-				{
-					out.push_back(order[i]);
-				}
-			}
+			scanLeafRange(xs, ys, zs, order, node._first, node._first + node.count(), queryMin, queryMax, out);
 			continue;
 		}
 
@@ -861,21 +962,7 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 			}
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
-			size_t contained = 0;
-			const uint32_t end = node._first + node.count();
-			for (uint32_t i = node._first; i < end; ++i)
-			{
-				const float x = xs[i];
-				const float y = ys[i];
-				const float z = zs[i];
-				if (x >= queryMin.x && x <= queryMax.x &&
-					y >= queryMin.y && y <= queryMax.y &&
-					z >= queryMin.z && z <= queryMax.z)
-				{
-					++contained;
-				}
-			}
-			result._count += contained;
+			result._count += countLeafRange(xs, ys, zs, node._first, node._first + node.count(), queryMin, queryMax);
 			continue;
 		}
 
@@ -934,15 +1021,7 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 			}
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
-			const uint32_t end = node._first + node.count();
-			for (uint32_t i = node._first; i < end; ++i)
-			{
-				const float dx = xs[i] - center.x;
-				const float dy = ys[i] - center.y;
-				const float dz = zs[i] - center.z;
-				if (dx * dx + dy * dy + dz * dz <= radiusSquared)
-					out.push_back(order[i]);
-			}
+			scanLeafRadius(xs, ys, zs, order, node._first, node._first + node.count(), center, radiusSquared, out);
 			continue;
 		}
 
@@ -1076,7 +1155,33 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
 			const uint32_t end = node._first + node.count();
-			for (uint32_t i = node._first; i < end; ++i)
+			uint32_t i = node._first;
+#if defined(__AVX2__)
+			const __m256 cx = _mm256_set1_ps(center.x);
+			const __m256 cy = _mm256_set1_ps(center.y);
+			const __m256 cz = _mm256_set1_ps(center.z);
+			alignas(32) float distances[8];
+			for (; i + 8 <= end; i += 8)
+			{
+				const __m256 dx = _mm256_sub_ps(_mm256_loadu_ps(xs + i), cx);
+				const __m256 dy = _mm256_sub_ps(_mm256_loadu_ps(ys + i), cy);
+				const __m256 dz = _mm256_sub_ps(_mm256_loadu_ps(zs + i), cz);
+				const __m256 d2 = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(dx, dx), _mm256_mul_ps(dy, dy)), _mm256_mul_ps(dz, dz));
+				unsigned mask = 0xFFu;
+				if (best.size() == k)
+					mask = static_cast<unsigned>(_mm256_movemask_ps(_mm256_cmp_ps(d2, _mm256_set1_ps(best.front().first), _CMP_NGT_UQ)));
+				if (!mask)
+					continue;
+				_mm256_store_ps(distances, d2);
+				while (mask)
+				{
+					const unsigned lane = static_cast<unsigned>(_tzcnt_u32(mask));
+					offerPoint(distances[lane], i + lane);
+					mask &= mask - 1;
+				}
+			}
+#endif
+			for (; i < end; ++i)
 			{
 				const float dx = xs[i] - center.x;
 				const float dy = ys[i] - center.y;
