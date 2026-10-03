@@ -2750,8 +2750,8 @@ static PreparedWorkload prepareWorkloadFromTrace(
 	const size_t total = trace.size();
 	const size_t target = (profile._numQueries > 0 && profile._numQueries < total) ? profile._numQueries : total;
 
-	const auto toLocal = [&](const glm::vec3& world) {
-		return cloud.toLocalPosition(glm::dvec3(world));
+	const auto toLocal = [&](const glm::dvec3& world) {
+		return cloud.toLocalPosition(world);
 	};
 
 	PreparedWorkload prepared;

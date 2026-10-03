@@ -17,10 +17,14 @@ namespace Experiments
 			Knn,
 		};
 
+		// World coordinates, kept in double until the cloud's local transform. They used to be
+		// glm::vec3, and float has a 0.25 m step at UTM northings (~4e6): every replayed center
+		// moved by up to 12 cm, more than the median query radius on some curated scenes, while
+		// the external baselines read the same CSV as doubles and answered the recorded queries.
 		Kind		_kind = Kind::Range;
-		glm::vec3	_minBound = glm::vec3(0.0f);
-		glm::vec3	_maxBound = glm::vec3(0.0f);
-		glm::vec3	_center = glm::vec3(0.0f);
+		glm::dvec3	_minBound = glm::dvec3(0.0);
+		glm::dvec3	_maxBound = glm::dvec3(0.0);
+		glm::dvec3	_center = glm::dvec3(0.0);
 		float		_radius = 0.0f;
 		size_t		_k = 0;
 	};

@@ -24,7 +24,7 @@ namespace BaselineTests
 			out << "1,count_range,0,0,0,4,4,4,2,2,2,0,0,7,0.1\n";
 			out << "2,radius,0,0,0,0,0,0,1.5,2.5,3.5,0.75,0,12,0.2\n";
 			out << "3,knn,0,0,0,0,0,0,9,8,7,0,16,16,0.3\n";
-			out << "4,knn,0,0,0,0,0,0,1,1,1,0,16,16,0.3\n";
+			out << "4,knn,0,0,0,0,0,0,672983.005,4038560.647947,431.99,0,16,16,0.3\n";
 			out << "5,unsupported_kind,0,0,0,0,0,0,0,0,0,0,0,0,0\n";
 		}
 
@@ -42,6 +42,12 @@ namespace BaselineTests
 
 		expect(trace[3]._kind == Experiments::TraceQuery::Kind::Knn, "query 3 is a knn query");
 		expect(trace[3]._k == 16 && nearlyEqualTrace(trace[3]._center.x, 9.0f), "knn k/center round-trip");
+
+		// A real UTM center from the sanandreas trace. As float, the northing snaps to a 0.25 m
+		// grid (4038560.75), which displaced replayed queries by more than their radius.
+		expect(std::abs(trace[4]._center.y - 4038560.647947) < 1e-6 &&
+			   std::abs(trace[4]._center.x - 672983.005) < 1e-6,
+			   "UTM-magnitude trace centers keep sub-millimetre precision");
 
 		expect(Experiments::dominantKnnK(trace) == 16, "dominant knn k is 16");
 

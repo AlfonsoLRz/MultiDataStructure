@@ -31,12 +31,12 @@ namespace
 		return value;
 	}
 
-	float parseFloatCell(const std::string& value)
+	double parseDoubleCell(const std::string& value)
 	{
 		if (value.empty())
-			return 0.0f;
-		try { return std::stof(value); }
-		catch (...) { return 0.0f; }
+			return 0.0;
+		try { return std::stod(value); }
+		catch (...) { return 0.0; }
 	}
 
 	size_t parseSizeCell(const std::string& value)
@@ -96,19 +96,19 @@ std::vector<Experiments::TraceQuery> Experiments::loadQueryTrace(const std::stri
 		else
 			continue;
 
-		query._minBound = glm::vec3(
-			parseFloatCell(cell(row, "bounds_min_x")),
-			parseFloatCell(cell(row, "bounds_min_y")),
-			parseFloatCell(cell(row, "bounds_min_z")));
-		query._maxBound = glm::vec3(
-			parseFloatCell(cell(row, "bounds_max_x")),
-			parseFloatCell(cell(row, "bounds_max_y")),
-			parseFloatCell(cell(row, "bounds_max_z")));
-		query._center = glm::vec3(
-			parseFloatCell(cell(row, "center_x")),
-			parseFloatCell(cell(row, "center_y")),
-			parseFloatCell(cell(row, "center_z")));
-		query._radius = parseFloatCell(cell(row, "radius"));
+		query._minBound = glm::dvec3(
+			parseDoubleCell(cell(row, "bounds_min_x")),
+			parseDoubleCell(cell(row, "bounds_min_y")),
+			parseDoubleCell(cell(row, "bounds_min_z")));
+		query._maxBound = glm::dvec3(
+			parseDoubleCell(cell(row, "bounds_max_x")),
+			parseDoubleCell(cell(row, "bounds_max_y")),
+			parseDoubleCell(cell(row, "bounds_max_z")));
+		query._center = glm::dvec3(
+			parseDoubleCell(cell(row, "center_x")),
+			parseDoubleCell(cell(row, "center_y")),
+			parseDoubleCell(cell(row, "center_z")));
+		query._radius = static_cast<float>(parseDoubleCell(cell(row, "radius")));
 		query._k = parseSizeCell(cell(row, "k"));
 		trace.push_back(query);
 	}

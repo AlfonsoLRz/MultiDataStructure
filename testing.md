@@ -208,6 +208,27 @@ real defects. Two change what past numbers *mean*; the rest corrupt re-runs or b
 - **`make_single_grids.py --primitives <subset>`** overwrote `index.txt` with only that
   subset while leaving other primitives' JSON on disk. Index is now built from disk.
 
+### 2c. 2026-10-03 — replayed trace centers were rounded to float32
+
+`loadQueryTrace` parsed world coordinates with `std::stof` into `glm::vec3`. Float32 steps are
+0.25 m at UTM northings (~4e6) and 0.0625 m at eastings (~6e5), so every replayed query center
+on a UTM-framed scene moved before the world→local transform. The external drivers
+(`tools/indexicon_point_baseline.cpp`, PCL, Open3D) parse the same CSV as doubles, so **they
+answered the recorded queries and MDS answered displaced ones.** Fixed: `TraceQuery` holds
+`glm::dvec3`, parsed with `stod`; regression test in `tests/test_query_trace.cpp`.
+
+Mean center shift on the held-out traces, vs the median query radius where known:
+
+| Scenes | Mean shift | Effect |
+|---|---|---|
+| Aneto, Barcelona, GaliciaForest (+ES_05), OttobrunnCampus, Retiro, Toronto, Waikato_Hamilton | 12.4–13.3 cm | Toronto: radius median 8.1 cm, so most radius spheres missed the surface they were captured on |
+| SanAndreas | 6.6 cm | radius median 58 cm, 11% displacement |
+| Alhambra, Cathedral, DomFountain, Lille, Museum, Neugasse, ParisLux, SolarPlantation | 0 | small local frames, unaffected |
+
+What this means for past numbers:
+- **MDS-internal comparisons stay self-consistent.** Searched vs tuned singles, the heatmap and transfer arms all saw the same displaced queries, so their rankings are rankings for a plausible workload, just not the recorded one. Re-run before quoting magnitudes on the affected scenes.
+- **External comparisons on affected cells were apples to oranges.** That's 8 of the 17 Indexicon cells (aneto, barcelona, galiciaforest, galiciaforest_es05, ottobrunncampus, retiro, sanandreas, toronto, waikato_hamilton) and the SanAndreas PCL/Open3D rows. Re-measure all of them.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
