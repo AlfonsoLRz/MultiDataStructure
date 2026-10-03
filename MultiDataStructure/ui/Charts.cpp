@@ -129,8 +129,12 @@ int Charts::plot(const char* id, const std::vector<Series>& series, const PlotOp
 	}
 	draw->PopClipRect();
 
-	// Legend.
-	float legendX = p0.x + 8.0f;
+	// Legend, right-aligned so it never covers the axis label at the top left.
+	float legendWidth = 0.0f;
+	for (const Series& s : series)
+		if (!s._label.empty())
+			legendWidth += 24.0f + ImGui::CalcTextSize(s._label.c_str()).x;
+	float legendX = p1.x - legendWidth;
 	for (const Series& s : series)
 	{
 		if (s._label.empty())

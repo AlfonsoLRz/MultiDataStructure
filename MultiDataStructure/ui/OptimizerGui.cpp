@@ -686,8 +686,10 @@ namespace
 
 		// Live leaderboard.
 		std::vector<const SearchFlow::LiveRecord*> ranked;
+		// Search steps only: the held-out validation times a different query set, so its rows
+		// are not comparable with the search's and belong on the Results step.
 		for (const SearchFlow::LiveRecord& record : live)
-			if (record._latencyMs > 0.0)
+			if (record._latencyMs > 0.0 && (record._arm >= armLabels.size() || armLabels[record._arm] != "Held-out validation"))
 				ranked.push_back(&record);
 		std::sort(ranked.begin(), ranked.end(), [](const auto* a, const auto* b) { return a->_latencyMs < b->_latencyMs; });
 		std::set<std::string> seen;
