@@ -172,6 +172,23 @@ namespace Experiments
 		std::string	_knnBackend = "auto";
 	};
 
+	// Thrown out of runSchemaSearch when SchemaSearchOptions::cancelRequested is raised. Candidate
+	// evaluation catches ordinary failures and records them as failed rows; this one it rethrows.
+	struct SearchCancelled : std::runtime_error
+	{
+		SearchCancelled() : std::runtime_error("schema search cancelled") {}
+	};
+
+	// Coarse progress for a front-end: which phase is running and how far through it the search
+	// is (e.g. "generation" 2 of 4, or a rung over 128 candidates). Per-candidate results still
+	// arrive through progressCallback.
+	struct SearchStage
+	{
+		std::string	_label;
+		size_t		_index = 0;
+		size_t		_total = 0;
+	};
+
 	struct SchemaSearchOptions
 	{
 		std::vector<std::string>	_inputPaths;
@@ -241,6 +258,10 @@ namespace Experiments
 		// Build canonical schemas on CPU and GPU and compare per-query returned counts (results/parity_report.csv).
 		bool	_verifyParity = false;
 		std::function<void(const SchemaSearchRecord&)> progressCallback;
+		std::function<void(const SearchStage&)> stageCallback;
+		// Shared, not owned: options are copied freely inside the search, and every copy must see
+		// the same flag. Raised from another thread to stop at the next candidate boundary.
+		std::shared_ptr<std::atomic<bool>> cancelRequested;
 	};
 
 	struct SchemaSearchRecord

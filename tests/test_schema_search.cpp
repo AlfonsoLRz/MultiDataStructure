@@ -447,8 +447,31 @@ namespace BaselineTests
 		options._queryCountOverride = 9;
 		options._evaluator = "cpu";
 		options._pauseAtEnd = false;
+		// Stage reports arrive, and a raised cancel flag stops the search with SearchCancelled
+		// rather than being swallowed as a failed candidate.
+		{
+			Experiments::SchemaSearchOptions cancelled = options;
+			cancelled._csvPath.clear();
+			cancelled._bestCsvPath.clear();
+			cancelled._explainReportPath.clear();
+			cancelled.cancelRequested = std::make_shared<std::atomic<bool>>(true);
+			bool threwCancelled = false;
+			try
+			{
+				Experiments::runSchemaSearch(cancelled);
+			}
+			catch (const Experiments::SearchCancelled&)
+			{
+				threwCancelled = true;
+			}
+			expect(threwCancelled, "schema search honours a raised cancel flag");
+		}
+
+		size_t stageReports = 0;
+		options.stageCallback = [&stageReports](const Experiments::SearchStage&) { ++stageReports; };
 		const int exitCode = Experiments::runSchemaSearch(options);
 		expect(exitCode == 0, "schema search smoke run succeeds");
+		options.stageCallback = nullptr;
 		std::ifstream explain(explainPath);
 		expect(explain.is_open(), "schema search writes schema explain report");
 		const std::string explainText((std::istreambuf_iterator<char>(explain)), std::istreambuf_iterator<char>());

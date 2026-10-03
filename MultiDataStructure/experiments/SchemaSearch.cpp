@@ -3520,6 +3520,18 @@ static SchemaConfig effectiveSchemaForEvaluation(
 	return config;
 }
 
+static void throwIfCancelled(const Experiments::SchemaSearchOptions& options)
+{
+	if (options.cancelRequested && options.cancelRequested->load(std::memory_order_relaxed))
+		throw Experiments::SearchCancelled();
+}
+
+static void reportStage(const Experiments::SchemaSearchOptions& options, const std::string& label, size_t index, size_t total)
+{
+	if (options.stageCallback)
+		options.stageCallback(Experiments::SearchStage{ label, index, total });
+}
+
 static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	const SearchDataset& dataset,
 	const Experiments::PointCloudFeatures& pointFeatures,
@@ -3763,6 +3775,8 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidateCached(
 	const Experiments::SchemaSearchOptions& options,
 	CudaIndexCacheEntry* cudaCacheEntry = nullptr)
 {
+	// Every evaluation path (flat, staged, GA, refinement, confirmation) passes through here.
+	throwIfCancelled(options);
 	Experiments::EvaluationCache* cache = options._scoreCache;
 	// Defence in depth. The cache key now hashes the replayed trace (path, size, mtime), so
 	// trace runs would be safe to cache -- but this guard previously tested _queryTracePath,
@@ -3851,6 +3865,7 @@ static EvaluatedCandidate evaluateCandidate(
 	const Experiments::SchemaSearchOptions& options,
 	CudaIndexCache* cudaCache = nullptr)
 {
+	throwIfCancelled(options);
 	EvaluatedCandidate evaluation;
 	evaluation._candidate = candidate;
 	evaluation._records.reserve(datasets.size() * workloads.size());
@@ -3883,6 +3898,10 @@ static EvaluatedCandidate evaluateCandidate(
 				scoreSum += record._score;
 				++scoreCount;
 				evaluation._records.push_back(std::move(record));
+			}
+			catch (const Experiments::SearchCancelled&)
+			{
+				throw;
 			}
 			catch (const std::exception& exception)
 			{
@@ -5948,6 +5967,7 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 		? std::min(options._parallelDispatch, candidates.size())
 		: 1;
 
+	reportStage(options, "auto-conditions " + label, 0, candidates.size());
 	std::cout << "  auto-conditions " << label << ": " << candidates.size() << " candidates, "
 		<< (workloads.empty() ? size_t(0) : workloads.front()._numQueries) << " queries";
 	if (parallelWorkers > 1)
@@ -5964,17 +5984,25 @@ static std::vector<EvaluatedCandidate> evaluateAutoConditionStage(
 		for (size_t w = 0; w < parallelWorkers; ++w)
 		{
 			workers.emplace_back([&]() {
-				for (;;)
+				try
 				{
-					const size_t i = nextIndex.fetch_add(1);
-					if (i >= candidates.size())
-						return;
-					evaluations[i] = evaluateCandidate(candidates[i], contexts, workloads, options, nullptr);
+					for (;;)
+					{
+						const size_t i = nextIndex.fetch_add(1);
+						if (i >= candidates.size())
+							return;
+						evaluations[i] = evaluateCandidate(candidates[i], contexts, workloads, options, nullptr);
+					}
+				}
+				catch (const Experiments::SearchCancelled&)
+				{
+					// An exception may not leave a std::thread; the join below rethrows it.
 				}
 			});
 		}
 		for (std::thread& worker : workers)
 			worker.join();
+		throwIfCancelled(options);
 
 		for (size_t i = 0; i < candidates.size(); ++i)
 		{
@@ -6389,6 +6417,8 @@ static std::vector<EvaluatedCandidate> runRungSchedule(
 	for (size_t r = 0; r < schedule._rungs.size(); ++r)
 	{
 		const Experiments::RungSpec& rung = schedule._rungs[r];
+		reportStage(options, batchLabel + ": rung " + rung._name + " (" + std::to_string(current.size()) + " candidates)",
+					r + 1, schedule._rungs.size());
 
 		const std::vector<Experiments::WorkloadProfile> rungWorkloads = withQueryCount(baseWorkloads, rung._queryCountOverride);
 		const std::vector<DatasetContext> rungContexts = makeDatasetContextsFromPointers(datasetPtrs, rungWorkloads, cudaEvaluator);
@@ -6594,17 +6624,25 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			for (size_t w = 0; w < parallelWorkers; ++w)
 			{
 				workers.emplace_back([&]() {
-					for (;;)
+					try
 					{
-						const size_t i = nextIndex.fetch_add(1);
-						if (i >= candidates.size())
-							return;
-						evaluations[i] = evaluateCandidate(candidates[i], datasets, workloads, options, nullptr);
+						for (;;)
+						{
+							const size_t i = nextIndex.fetch_add(1);
+							if (i >= candidates.size())
+								return;
+							evaluations[i] = evaluateCandidate(candidates[i], datasets, workloads, options, nullptr);
+						}
+					}
+					catch (const Experiments::SearchCancelled&)
+					{
+						// An exception may not leave a std::thread; the join below rethrows it.
 					}
 				});
 			}
 			for (std::thread& worker : workers)
 				worker.join();
+			throwIfCancelled(options);
 
 			for (size_t i = 0; i < candidates.size(); ++i)
 			{
@@ -6645,10 +6683,12 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 			std::cout << "      best so far: " << archive.front()._candidate._config._name << " score " << archive.front().aggregateScore << '\n';
 	};
 
+	reportStage(options, "initial population", 0, evolution._generations);
 	evaluateBatch(batch, "initial");
 
 	for (size_t generation = 1; generation <= evolution._generations; ++generation)
 	{
+		reportStage(options, "generation", generation, evolution._generations);
 		rankArchive();
 		const size_t currentEliteCount = std::min(eliteCount, archive.size());
 		if (currentEliteCount == 0)
