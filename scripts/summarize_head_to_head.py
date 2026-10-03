@@ -22,8 +22,9 @@ def main():
     ix = defaultdict(lambda: defaultdict(list))   # (cell, structure) -> metric -> values
     mds = defaultdict(lambda: defaultdict(list))  # (cell, schema) -> metric -> values
 
-    for path in sorted(run.glob("ix_*_r*.json")):
-        cell = path.stem[len("ix_"):path.stem.rindex("_r")].lower()
+    # External libraries: Indexicon (ix_*) and nanoflann (nf_*), keyed by structure name.
+    for path in sorted(list(run.glob("ix_*_r*.json")) + list(run.glob("nf_*_r*.json"))):
+        cell = path.stem[3:path.stem.rindex("_r")].lower()
         for result in json.loads(path.read_text())["results"]:
             if result.get("status") != "ok":
                 continue
@@ -32,6 +33,7 @@ def main():
                 if kind in result["by_type"]:
                     ix[key][kind].append(1000.0 * result["by_type"][kind]["avg_latency_ms"])
             ix[key]["build"].append(result["build_ms"])
+            ix[key]["library"] = ["nanoflann" if path.name.startswith("nf_") else "indexicon"]
 
     for path in sorted(run.glob("mds_r*.csv")):
         with open(path, newline="") as handle:
@@ -56,7 +58,8 @@ def main():
         print(f"\n== {cell}")
         print(f"   {'method':44s} {'radius us':>10s} {'knn us':>10s} {'build ms':>10s}")
         for key in sorted(k for k in ix if k[0] == cell):
-            print(f"   {'indexicon ' + key[1]:44s} {mean(ix, key, 'radius'):10.3f} {mean(ix, key, 'knn'):10.3f} {mean(ix, key, 'build'):10.0f}")
+            label = key[1] if key[1].startswith("nanoflann") else "indexicon " + key[1]
+            print(f"   {label:44s} {mean(ix, key, 'radius'):10.3f} {mean(ix, key, 'knn'):10.3f} {mean(ix, key, 'build'):10.0f}")
         for key in sorted(k for k in mds if k[0] == cell):
             print(f"   {'mds ' + key[1]:44s} {mean(mds, key, 'radius'):10.3f} {mean(mds, key, 'knn'):10.3f} {mean(mds, key, 'build'):10.0f}")
 
@@ -64,6 +67,8 @@ def main():
             ("octree vs octree", (cell, "octree_default"), (cell, "octree")),
             ("kd vs kd", (cell, "kdtree_default"), (cell, "kdtree")),
             ("same-bucket kd (128)", (cell, "tuned_kd19l128"), (cell, "kdtree")),
+            ("kd vs nanoflann (leaf 10)", (cell, "kdtree_default"), (cell, "nanoflann_kdtree_leaf10")),
+            ("kd128 vs nanoflann (leaf 128)", (cell, "tuned_kd19l128"), (cell, "nanoflann_kdtree_leaf128")),
         ]
         mds_keys = [k for k in mds if k[0] == cell]
         ix_keys = [k for k in ix if k[0] == cell]
@@ -71,6 +76,7 @@ def main():
             best_mds = min(mds_keys, key=lambda k: mixed(mds, k))
             best_ix = min(ix_keys, key=lambda k: mixed(ix, k))
             pairs.append((f"best ({best_mds[1]} vs {best_ix[1]})", best_mds, best_ix))
+        pairs = [p for p in pairs if p[1] in mds and p[2] in ix]
         for label, mk, ik in pairs:
             r = mean(mds, mk, "radius") / mean(ix, ik, "radius")
             k = mean(mds, mk, "knn") / mean(ix, ik, "knn")

@@ -229,6 +229,19 @@ What this means for past numbers:
 - **MDS-internal comparisons stay self-consistent.** Searched vs tuned singles, the heatmap and transfer arms all saw the same displaced queries, so their rankings are rankings for a plausible workload, just not the recorded one. Re-run before quoting magnitudes on the affected scenes.
 - **External comparisons on affected cells were apples to oranges.** That's 8 of the 17 Indexicon cells (aneto, barcelona, galiciaforest, galiciaforest_es05, ottobrunncampus, retiro, sanandreas, toronto, waikato_hamilton) and the SanAndreas PCL/Open3D rows. Re-measure all of them.
 
+### 2c'. 2026-10-04 — the tuned-singles arm never measured all 36 singles
+
+Flat searches default to `--benchmark-top 32`: with more listed schemas than that, the surrogate
+rank model (`models/schema_selector.json`) keeps 32 and drops the rest **unmeasured**. The tuned-
+singles list has 36 entries and the battery never passed `--benchmark-top`, so every `_singles.csv`
+has 32 rows. In 72 of 85 cells the dropped four were the 32768/8192-point-leaf singles
+(`tuned_bih11l32768apcl`, `tuned_bvh10l32768`, `tuned_rg3l32768`, `tuned_rg3l8192`), which are
+not plausible winners. In 13 cells the model also dropped competitive ones (`tuned_bih20l32`,
+`tuned_bih20l32apcl`, `tuned_bvh16l1024`), so the "best tuned single" there may be understated.
+Fixed for new runs: `scripts/run_cells.py` and the GUI pass `--benchmark-top 0`, and the search no
+longer loads the rank model when pruning is off. The model file was also gitignored (blanket
+`*.json`), so a fresh clone could not run a default flat search; it is now tracked.
+
 ### 2d. Engine rewrite ledger (from 2026-10-03)
 
 Every engine change is gated by `scripts/engine_equivalence.ps1` + `scripts/diff_engine_equivalence.py`
@@ -253,6 +266,49 @@ compiled out; the first pass stays instrumented and feeds scoring.
 | 3a | split rules resolved once per build instead of string-parsed per point per level | 131/131 schemas bit-identical trees on SanAndreas_1M | **build 16.2x faster** (95.0 s -> 5.9 s summed over 131 schemas) |
 | 4 | node pool: 32 B hot nodes in contiguous 64 B-aligned sibling groups, cold data split off, explicit-stack traversals, `NodeView` API | results + structure identical to golden_v1 (393k queries, 2 clouds); counters identical to step 3a | 1M unpinned: radius 0.83x, kNN 0.81x, range 0.77x (geomean over 131 schemas); 25M A/B pending |
 | 5b | AVX2 leaf scans for radius/range/count and kNN candidate filtering; explicit mul+add (no FMA), ordered compares, scalar tail | results + structure + counters identical to step 4 (393k queries) | 1M unpinned vs step 4: count 0.50-0.55x, range 0.83-0.89x, kNN 0.89-0.91x, radius 0.93-0.97x |
+| 7 | depth-first nearest-child kNN for k <= 64 (best-first kept above) | results + structure identical; kNN counters change (v4) | **pinned 25M A/B vs step 5: kNN 0.872x geomean, faster in 15/15 cell x schema pairs, both rounds agree**; radius (identical code, control) 0.966x |
+
+**Reading an A/B: binary layout noise.** In the step 5 -> 7 A/B the radius code is byte-identical,
+yet single (cell, schema) radius ratios ranged 0.78-1.07 across two pinned rounds. Relinking
+moves code alignment enough to shift one measurement by up to ~20%. Per-case ratios are not
+evidence; quote geomeans over many cases and net them against an unchanged-code control column.
+
+**Pinned head-to-head vs Indexicon (2026-10-04, `scripts/head_to_head.ps1 -Tag engine6`, engine
+`6-dfs-knn`, Indexicon rebuilt with the same `/O2 /arch:AVX2 /GL`, 1 warm-up + 3 timed passes,
+3000 held-out trace queries, P-core 4).** MDS / Indexicon, mixed = equal-weight mean of radius and
+kNN latency; < 1 = MDS faster. `D:\MDS_ab\h2h\engine6\summary.csv`.
+
+| Pair | Alhambra 25M | SanAndreas 25M | Toronto 25M |
+|---|---|---|---|
+| octree vs octree | 0.58 | 0.46 | 0.65 |
+| kd vs kd | 0.69 | 0.86 | 0.84 |
+| same-bucket kd (128) vs kd | 0.69 | 0.80 | 0.73 |
+| build, octree vs octree | 0.44 | 0.42 | 0.38 |
+
+**Overall engine A/B (step 0 = engine 1 vs engine 6, pinned, 2 rounds, 3 cells x 5 schemas, every
+case consistent):** query latency 0.508x geomean (radius 0.466x, kNN 0.557x), build 0.070x.
+**Equivalence of engine 6 vs golden_v1:** 1,260,000 queries over all tiers (131 schemas x five 1M
+clouds, micro-indexes, three 25M traces): 0 result and 0 structure mismatches.
+
+**nanoflann (1.10.1, header-only, same flags, `D:\MDS_ab\h2h\engine6_nf`), pinned.** MDS / nanoflann:
+
+| Pair | Alhambra 25M | SanAndreas 25M | Toronto 25M |
+|---|---|---|---|
+| MDS kd19l128 vs nanoflann leaf 128: radius | 0.78 | 0.82 | 0.82 |
+| ... kNN | 1.13 | 1.05 | 1.25 |
+| ... mixed | 1.00 | 0.97 | 0.99 |
+| ... build | 0.81 | 0.81 | 0.63 |
+| MDS kdtree_default vs nanoflann leaf 10: mixed | 0.89 | 0.91 | 0.92 |
+
+nanoflann is the strongest single-structure baseline: parity on the mixed trace, MDS ahead on
+radius and build, behind on kNN. Likely source of the kNN gap: nanoflann's depth-first search
+updates the cell distance incrementally along the split axis; ours recomputes a full 3D distance
+to each child's tight box. Candidate next engine step.
+
+August (engine 1, float-shifted queries on SanAndreas/Toronto): Indexicon was faster on every
+one of these pairs (kd ~2x). The searched winners in `equivalence_set/winner_*` were selected by
+engine 1 on shifted queries and are now stale (best radius, poor kNN: winner_toronto_25M kNN
+9.05 us vs 2.98 us for kdtree_default). **Re-run the searches before quoting searched-vs-single.**
 
 ## 3. Pending experiments (exact commands)
 

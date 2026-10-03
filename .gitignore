@@ -41,6 +41,9 @@ x86/
 *.json
 !configs/**/*.json
 !models/*.example.json
+# The default surrogate rank model: flat searches with --benchmark-top > 0 load it, so a fresh
+# clone must have it.
+!models/schema_selector.json
 *.onnx
 *.mdspc
 

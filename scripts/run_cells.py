@@ -83,9 +83,13 @@ class Battery:
         return code == 0
 
     def common(self, cloud, trace, queries):
+        # --benchmark-top 0: measure every listed schema. The default (32) lets the surrogate
+        # rank model silently drop candidates before measurement - with the 36 tuned singles,
+        # 4 of them, possibly including the best one. The PowerShell battery had that flaw.
         return ["--mode", "schema-search", "--input", cloud, "--no-synthetic",
                 "--workloads", "configs/workloads/pipeline_replay.json", "--input-trace", trace,
-                "--queries", str(queries), "--evaluator", "cpu", "--no-score-cache", "--no-pause"]
+                "--queries", str(queries), "--evaluator", "cpu", "--benchmark-top", "0",
+                "--no-score-cache", "--no-pause"]
 
     def cell(self, cell, cells):
         name = cell["cell"]

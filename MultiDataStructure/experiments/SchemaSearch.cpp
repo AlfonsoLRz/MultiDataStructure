@@ -8502,7 +8502,10 @@ int Experiments::runSchemaSearch(const SchemaSearchOptions& options)
 			throw std::runtime_error("Schema search has no schemas. Provide --schemas, omit --generated-only, or use --generate-schemas.");
 	}
 	const std::vector<WorkloadProfile> workloads = loadWorkloads(resolvedOptions);
-	const std::optional<SchemaSelectorModel> rankModel = (resolvedOptions._rankModelPath.empty() || resolvedOptions._evolution._enabled || resolvedOptions._autoConditions._enabled)
+	// The model only ranks candidates for --benchmark-top pruning; with pruning off (0) it would be
+	// loaded for nothing, and a missing default model file would fail a run that never needs it.
+	const std::optional<SchemaSelectorModel> rankModel = (resolvedOptions._rankModelPath.empty() || resolvedOptions._evolution._enabled
+			|| resolvedOptions._autoConditions._enabled || resolvedOptions._benchmarkTopK == 0)
 		? std::optional<SchemaSelectorModel>()
 		: std::optional<SchemaSelectorModel>(loadSchemaSelectorModel(resolvedOptions._rankModelPath));
 

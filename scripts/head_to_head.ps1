@@ -37,6 +37,8 @@ Set-Location $repo
 if (-not $Mds) { $Mds = Resolve-MdsExe }
 $driver = Join-Path $repo 'tools\bin\indexicon_point_baseline.exe'
 if (-not (Test-Path $driver)) { throw "driver missing - run tools\build_indexicon_baseline.ps1" }
+# nanoflann is optional: included when its driver has been built (tools\build_nanoflann_baseline.ps1).
+$nanoflann = Join-Path $repo 'tools\bin\nanoflann_point_baseline.exe'
 $out = Join-Path $OutRoot $Tag
 New-Item -ItemType Directory -Force $out | Out-Null
 
@@ -74,10 +76,14 @@ for ($round = 1; $round -le $Rounds; $round++) {
             @{ side = 'ix'; exe = $driver; args = @('--input', "`"$($cell.mdspc_path)`"", '--query-trace', "`"$trace`"",
                 '--structures', 'octree,kdtree', '--max-queries', $Queries, '--warmup', '1', '--repeats', '3',
                 '--output', "`"$(Join-Path $out "ix_${name}_r${round}.json")`"") },
+            @{ side = 'nf'; exe = $nanoflann; args = @('--input', "`"$($cell.mdspc_path)`"", '--query-trace', "`"$trace`"",
+                '--max-queries', $Queries, '--warmup', '1', '--repeats', '3',
+                '--output', "`"$(Join-Path $out "nf_${name}_r${round}.json")`"") },
             @{ side = 'mds'; exe = (Resolve-Path $Mds).Path; args = @('--mode', 'engine-check', '--input', "`"$($cell.mdspc_path)`"",
                 '--schemas', "`"$($schemas -join ';')`"", '--input-trace', "`"$trace`"", '--queries', $Queries,
                 '--warmup', '1', '--measure-repeats', '3', '--summary-csv', "`"$(Join-Path $out "mds_r${round}.csv")`"") }
         )
+        $runs = @($runs | Where-Object { $_.side -ne 'nf' -or (Test-Path $nanoflann) })
         if ($round % 2 -eq 0) { [array]::Reverse($runs) }
         foreach ($run in $runs) {
             $sw = [Diagnostics.Stopwatch]::StartNew()

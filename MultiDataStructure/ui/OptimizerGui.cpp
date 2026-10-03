@@ -1326,6 +1326,8 @@ namespace
 	{
 		std::string	_dir;
 		std::string	_schema;
+		bool		_runSearch = false;
+		bool		_searchStarted = false;
 		int			_step = 0;
 		int			_frames = 0;
 		double		_waitStart = 0.0;
@@ -1486,6 +1488,7 @@ int OptimizerGui::run(const AppConfig* config)
 			std::filesystem::create_directories(capture._dir);
 			if (const char* schema = std::getenv("MDS_GUI_CAPTURE_SCHEMA"))
 				capture._schema = schema;
+			capture._runSearch = std::getenv("MDS_GUI_CAPTURE_RUN") != nullptr;
 			if (const char* results = std::getenv("MDS_GUI_CAPTURE_RESULTS"))
 				loadResultsFolder(app, results);
 		}
@@ -1498,6 +1501,15 @@ int OptimizerGui::run(const AppConfig* config)
 			if (capture.active())
 			{
 				app._step = static_cast<Step>(capture._step);
+				// MDS_GUI_CAPTURE_RUN: run the configured search for real (Quick budget) and capture
+				// the Run and Results steps after it finishes - an end-to-end check of the GUI path.
+				if (app._step == Step::Run && capture._runSearch && !capture._searchStarted)
+				{
+					app._settings._budget = SearchFlow::Budget::Quick;
+					app._settings.applyBudget();
+					app._session.start(app._settings);
+					capture._searchStarted = true;
+				}
 				if (app._step == Step::Inspect && !capture._schema.empty() && !app._inspect._index && !app._inspect._busy)
 				{
 					app._inspect._schemaPath = capture._schema;
@@ -1517,8 +1529,8 @@ int OptimizerGui::run(const AppConfig* config)
 			if (capture.active() && width > 0 && height > 0)
 			{
 				// Wait for the Inspect build (bounded), then let the layout settle a few frames.
-				const bool waiting = app._step == Step::Inspect && (app._inspect._busy || app._inspect._ready) &&
-					ImGui::GetTime() - capture._waitStart < 300.0;
+				const bool waiting = (app._step == Step::Inspect && (app._inspect._busy || app._inspect._ready) &&
+					ImGui::GetTime() - capture._waitStart < 300.0) || (app._step == Step::Run && app._session._running);
 				if (!waiting && ++capture._frames >= 8)
 				{
 					capture.target(width, height);

@@ -104,8 +104,10 @@ namespace
 			args.insert(args.end(), { "--workloads", s._workloadPath, "--knn-k", std::to_string(s._knnK),
 									  "--query-seed", std::to_string(s._querySeed) });
 		}
+		// --benchmark-top 0: measure every listed schema instead of letting the surrogate model
+		// prune the list to 32 first (it would drop 4 of the 36 tuned singles unmeasured).
 		args.insert(args.end(), { "--queries", std::to_string(s._queries),
-								  "--evaluator", s._useCuda ? "cuda" : "cpu", "--no-pause" });
+								  "--evaluator", s._useCuda ? "cuda" : "cpu", "--benchmark-top", "0", "--no-pause" });
 		return args;
 	}
 }
@@ -353,6 +355,11 @@ void SearchFlow::Session::start(const Settings& settingsIn)
 				_log += "\n=== " + arm._label + " ===\n" + commandLine(arm) + "\n";
 			}
 			std::filesystem::create_directories(settings._outputDir);
+			// The CSV writers append, so a re-run into the same folder would otherwise mix in the
+			// previous run's rows (and could report its winner).
+			std::error_code ignored;
+			std::filesystem::remove(arm._csvPath, ignored);
+			std::filesystem::remove(arm._bestCsvPath, ignored);
 
 			std::vector<std::string> argv = { (Gui::executableDirectory() / "MultiDataStructure.exe").string() };
 			argv.insert(argv.end(), arm._args.begin(), arm._args.end());
