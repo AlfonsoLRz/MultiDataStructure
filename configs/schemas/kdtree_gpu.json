@@ -1,0 +1,21 @@
+{
+  "name": "kdtree_gpu",
+  "_comment": "GPU-native twin of kdtree_default, for the batched-throughput arm. Two things differ from the CPU default and both are forced by the CUDA builder, not by taste: axisPolicy is center_longest_axis because median_longest_axis is classified unsupported_policy and would silently fall back to a CPU measurement wearing a GPU label (SchemaSearch.cpp gpuSupportStatusForSchema), and this schema must be run with --cuda-builder kdtree rather than the default mixed builder, because MixedTree caps maxDepth at 12 while the KDTree builder allows 22 and, more importantly, MixedTree serves kNN with a brute-force full-cloud scan that does not return neighbours at all. Depth and leaf capacity are held identical to kdtree_default so the two backends are answering with the same tree shape.",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 22,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "center_longest_axis"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 22,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

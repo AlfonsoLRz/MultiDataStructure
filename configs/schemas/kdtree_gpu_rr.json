@@ -1,0 +1,21 @@
+{
+  "name": "kdtree_gpu_rr",
+  "_comment": "Diagnostic variant: round_robin instead of center_longest_axis, to separate axis CHOICE from split POSITION as the cause of the degenerate GPU kd-tree.",
+  "levels": [
+    {
+      "type": "KDTree",
+      "numLevels": 22,
+      "leafCapacity": 32,
+      "minPointsToSplit": 8,
+      "axisPolicy": "round_robin"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 22,
+    "leafCapacity": 32,
+    "minPointsToSplit": 8,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

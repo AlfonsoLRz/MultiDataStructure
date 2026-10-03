@@ -12,10 +12,18 @@
 # bounding-box-plus-filter alternative instead; the two are NOT comparable and the mode is
 # recorded in every JSON payload and every summary row.
 #
-# CAVEAT that the numbers cannot settle on their own: MDS records per-query telemetry (visited
-# nodes, tested points, per-depth and per-structure breakdowns) that Indexicon does not. Any MDS
-# deficit here is a joint measurement of index quality AND instrumentation cost. Treat a loss as
-# a prompt to measure a telemetry-free MDS path, not as a settled result.
+# CAVEAT, now quantified rather than hypothesised: MDS records per-query telemetry (visited nodes,
+# tested points, per-depth and per-structure breakdowns) that Indexicon does not, so an MDS deficit
+# is a joint measurement of index quality AND instrumentation cost. Audited 2026-08-16: the cost is
+# 3 stores per visited node and 2 per leaf (not per point), no maps, no allocations - roughly 5% on
+# octree and under 1% on kd-tree. Real, but not load-bearing; the expensive string-keyed version was
+# removed long ago (see PointSpatialIndex.h). Do not use it to explain away a large loss.
+#
+# Asymmetries that WERE load-bearing, and are now fixed: both sides report a pooled mean over the
+# same repeats (see MdsMs below), and the MDS timed region no longer contains QueryResult
+# construction or output-vector growth, matching Indexicon's reused hit buffer. What remains
+# structurally in Indexicon's favour is nothing - we compile with /O2 /arch:AVX2 /GL /LTCG against
+# its plain /O2, both sides are single-threaded, and we carry float coordinates against its double.
 #
 #   .\scripts\run_external_baselines.ps1                          # every matrix cell with a cache
 #   .\scripts\run_external_baselines.ps1 -Only indoor_1M,terrain_25M
@@ -135,10 +143,27 @@ foreach ($entry in $curated) {
 
   $mdsRows = @()
   if (Test-Path $mdsCsv) { $mdsRows = Import-Csv $mdsCsv | Where-Object { $_.avg_latency_ms } }
+  # Read the pooled mean over all repeats, NOT avg_latency_ms. The two sides were not computing
+  # the same statistic: avg_latency_ms is the cold first pass only (SchemaSearch.cpp:3373 - the
+  # repeat loop never writes it back), while the Indexicon driver pools every query of every
+  # repeat into one mean (indexicon_point_baseline.cpp:454), so at -Repeats 3 two thirds of its
+  # number is warm. That asymmetry alone was worth ~11-13% against us on octree cells.
+  # latency_repeat_mean_ms degenerates to avg_latency_ms at repeats = 1, so the fallback is exact.
   function MdsMs($name) {
     $row = $mdsRows | Where-Object { $_.schema_name -eq $name } | Select-Object -First 1
-    if ($row) { return [double]$row.avg_latency_ms }
-    return $null
+    if (-not $row) { return $null }
+    if ($row.PSObject.Properties['latency_repeat_mean_ms'] -and $row.latency_repeat_mean_ms) {
+      return [double]$row.latency_repeat_mean_ms
+    }
+    return [double]$row.avg_latency_ms
+  }
+  # Ranking must use the same statistic as the reported numbers, or 'best' can name one schema
+  # while the ms column quotes another's cold pass.
+  function MdsRowMs($row) {
+    if ($row.PSObject.Properties['latency_repeat_mean_ms'] -and $row.latency_repeat_mean_ms) {
+      return [double]$row.latency_repeat_mean_ms
+    }
+    return [double]$row.avg_latency_ms
   }
 
   $row = [ordered]@{
@@ -156,11 +181,11 @@ foreach ($entry in $curated) {
   }
   $mdsOctree = MdsMs 'octree_default'
   $mdsKdTree = MdsMs 'kdtree_default'
-  $mdsBestRow = $mdsRows | Sort-Object { [double]$_.avg_latency_ms } | Select-Object -First 1
+  $mdsBestRow = $mdsRows | Sort-Object { MdsRowMs $_ } | Select-Object -First 1
   $row['mds_octree_ms'] = Fmt $mdsOctree
   $row['mds_kdtree_ms'] = Fmt $mdsKdTree
   $row['mds_best'] = if ($mdsBestRow) { $mdsBestRow.schema_name } else { '' }
-  $row['mds_best_ms'] = Fmt ($mdsBestRow.avg_latency_ms)
+  $row['mds_best_ms'] = if ($mdsBestRow) { Fmt (MdsRowMs $mdsBestRow) } else { '' }
   # Node/point counts make the per-visited-node cost recoverable: regressing MDS latency on
   # (avg_visited_nodes, avg_tested_points) across the schemas in a cell separates fixed per-node
   # cost - which is where the per-node telemetry lands - from the actual distance tests.
@@ -173,8 +198,10 @@ foreach ($entry in $curated) {
   $row['mds_octree_tested'] = Fmt (MdsCol 'octree_default' 'avg_tested_points') 2
   $row['mds_kdtree_visited'] = Fmt (MdsCol 'kdtree_default' 'avg_visited_nodes') 2
   $row['mds_kdtree_tested'] = Fmt (MdsCol 'kdtree_default' 'avg_tested_points') 2
-  # Cold/warm spread: avg_latency_ms is the first pass (SchemaSearch.cpp:3380), while the repeat
-  # CI covers the warm passes. Reported so the cold-pass bias stays visible rather than assumed.
+  # Cold/warm spread, kept so the bias stays visible rather than assumed. Note the CI covers ALL
+  # passes, cold included (SchemaSearch.cpp:3388 seeds repeatMeanLatencies with the cold mean) -
+  # an earlier version of this comment claimed it covered only the warm ones. On a cell where the
+  # cold pass is the slowest of the three, ci_high therefore equals avg_latency_ms exactly.
   $row['mds_octree_ci_low'] = Fmt (MdsCol 'octree_default' 'latency_repeat_ci_low_ms')
   $row['mds_octree_ci_high'] = Fmt (MdsCol 'octree_default' 'latency_repeat_ci_high_ms')
 

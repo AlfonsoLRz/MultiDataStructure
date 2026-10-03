@@ -12,7 +12,13 @@
 param(
   [string[]]$Only,
   [string]$CellConfig = 'configs/datasets/curated_cells.json',
-  [switch]$SkipCapture
+  [switch]$SkipCapture,
+  # Re-run only the held-out TEST re-measure, reusing the winners already selected in each cell's
+  # existing _ga.csv / _singles.csv. For when the MEASUREMENT changed but the search did not: a
+  # C++ traversal change or a default-schema fix invalidates every latency in *_test.csv while
+  # leaving the selected winners perfectly valid, and re-running the GA to learn that would cost
+  # days. Refuses any cell whose arm CSVs are missing rather than silently measuring defaults only.
+  [switch]$TestOnly
 )
 function Test-CellSelected($name) { return (-not $Only) -or ($Only -contains $name) }
 
@@ -111,12 +117,23 @@ function Invoke-Cell($cell) {
 
   # The C++ --csv writer appends, so a re-run would leave the previous run's rows in place and
   # Get-BestSchemaPath (which sorts the whole file) could return a winner from an older run.
-  foreach ($stale in @("$outDir/${name}_ga.csv", "$outDir/${name}_singles.csv", "$outDir/${name}_test.csv")) {
+  # Under -TestOnly the arm CSVs are the INPUT, so only the test output is cleared.
+  $staleFiles = if ($TestOnly) { @("$outDir/${name}_test.csv") }
+                else { @("$outDir/${name}_ga.csv", "$outDir/${name}_singles.csv", "$outDir/${name}_test.csv") }
+  foreach ($stale in $staleFiles) {
     if (Test-Path $stale) { Remove-Item -Force $stale }
   }
 
   $searched = $false
-  if ($cell.arm -eq 'search') {
+  if ($cell.arm -eq 'search' -and $TestOnly) {
+    $searched = (Test-Path "$outDir/${name}_ga.csv") -or (Test-Path "$outDir/${name}_singles.csv")
+    if (-not $searched) {
+      Write-Output "$name : -TestOnly but no _ga.csv/_singles.csv to take winners from - skipping"
+      $script:FailedSteps += "$name (no arm CSVs for -TestOnly)"
+      return
+    }
+  }
+  elseif ($cell.arm -eq 'search') {
     Step "$name GA (opt)" {
       & $exe --mode schema-search --input $cloud --no-synthetic `
         --workloads configs/workloads/pipeline_replay.json --input-trace $opt `
