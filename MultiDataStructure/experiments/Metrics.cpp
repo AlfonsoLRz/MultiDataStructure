@@ -9,16 +9,16 @@ static double boundsVolume(const AABB& bounds)
 	return static_cast<double>(size.x) * static_cast<double>(size.y) * static_cast<double>(size.z);
 }
 
-static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig* schema, const PointSpatialIndex::Node& node)
+static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig* schema, const PointSpatialIndex::NodeView& node)
 {
 	if (!schema || schema->_levels.empty() || schema->totalLevels() == 0)
 		return nullptr;
 
-	const size_t schemaDepth = std::min(node._schemaDepth, schema->totalLevels() - 1);
+	const size_t schemaDepth = std::min(node.schemaDepth(), schema->totalLevels() - 1);
 	return &schema->levelForDepth(schemaDepth);
 }
 
-static size_t expectedFanoutForNode(const PointSpatialIndex::Node& node, const SchemaConfig* schema)
+static size_t expectedFanoutForNode(const PointSpatialIndex::NodeView& node, const SchemaConfig* schema)
 {
 	if (const SchemaLevelConfig* level = schemaLevelForNode(schema, node))
 	{
@@ -44,7 +44,7 @@ static size_t expectedFanoutForNode(const PointSpatialIndex::Node& node, const S
 		}
 	}
 
-	switch (node._type)
+	switch (node.type())
 	{
 	case MultiDataStructure::DataStructureLevel::QuadTreeNode:
 		return 4;
@@ -72,44 +72,44 @@ struct TreeHealthAccumulator
 	size_t						_microIndexedPoints = 0;
 };
 
-static void collectTreeHealth(const PointSpatialIndex::Node* node, const SchemaConfig* schema, TreeHealthAccumulator& accumulator)
+static void collectTreeHealth(const PointSpatialIndex::NodeView& node, const SchemaConfig* schema, TreeHealthAccumulator& accumulator)
 {
 	if (!node)
 		return;
 
-	accumulator._totalDepth += node->_depth;
+	accumulator._totalDepth += node.depth();
 
-	const double nodeVolume = boundsVolume(node->_bounds);
-	if (nodeVolume > 0.0 && node->_subtreePointCount > 0)
+	const double nodeVolume = boundsVolume(node.bounds());
+	if (nodeVolume > 0.0 && node.subtreePointCount() > 0)
 	{
-		const double tightVolume = boundsVolume(node->_tightBounds);
+		const double tightVolume = boundsVolume(node.tightBounds());
 		accumulator._tightVolumeRatioSum += std::clamp(tightVolume / nodeVolume, 0.0, 1.0);
 		++accumulator._tightVolumeRatioSamples;
 	}
 
-	if (node->isLeaf())
+	if (node.isLeaf())
 	{
-		accumulator._occupancies.push_back(node->_pointCount);
-		if (node->_microIndex)
+		accumulator._occupancies.push_back(node.pointCount());
+		if (node.microIndex())
 		{
 			++accumulator._microIndexedLeaves;
-			accumulator._microIndexedPoints += node->_pointCount;
+			accumulator._microIndexedPoints += node.pointCount();
 		}
 		return;
 	}
 
-	const size_t fanout = node->_children.size();
+	const size_t fanout = node.childCount();
 	++accumulator._fanoutCounts[fanout];
 	++accumulator._internalNodes;
 	if (fanout == 1)
 		++accumulator._singleChildNodeCount;
 
-	const size_t expected = std::max(expectedFanoutForNode(*node, schema), fanout);
+	const size_t expected = std::max(expectedFanoutForNode(node, schema), fanout);
 	accumulator._totalExpectedChildren += expected;
 	accumulator._totalPresentChildren += fanout;
 
-	for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->_children)
-		collectTreeHealth(child.get(), schema, accumulator);
+	for (size_t c = 0; c < fanout; ++c)
+		collectTreeHealth(node.child(c), schema, accumulator);
 }
 
 static double percentile(std::vector<double> values, double p)
@@ -137,7 +137,7 @@ static std::string formatFanoutSummary(const std::map<size_t, size_t>& fanoutCou
 	return output.str();
 }
 
-static Experiments::BuildMetrics collectBuildMetricsImpl(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs, const SchemaConfig* schema)
+static Experiments::BuildMetrics collectBuildMetricsImpl(const PointSpatialIndex::Stats& stats, PointSpatialIndex::NodeView root, double buildTimeMs, const SchemaConfig* schema)
 {
 	Experiments::BuildMetrics metrics;
 	metrics._buildTimeMs = buildTimeMs;
@@ -182,7 +182,7 @@ static Experiments::BuildMetrics collectBuildMetricsImpl(const PointSpatialIndex
 	metrics._microIndexedPoints = health._microIndexedPoints;
 	metrics._nodeFanoutSummary = formatFanoutSummary(health._fanoutCounts);
 	metrics._memoryEstimateBytes =
-		stats._numNodes * sizeof(PointSpatialIndex::Node) +
+		stats._numNodes * PointSpatialIndex::bytesPerNode() +
 		stats._numPoints * sizeof(uint32_t);
 	if (root)
 	{
@@ -193,12 +193,12 @@ static Experiments::BuildMetrics collectBuildMetricsImpl(const PointSpatialIndex
 	return metrics;
 }
 
-Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs)
+Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialIndex::Stats& stats, PointSpatialIndex::NodeView root, double buildTimeMs)
 {
 	return collectBuildMetricsImpl(stats, root, buildTimeMs, nullptr);
 }
 
-Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs, const SchemaConfig& schema)
+Experiments::BuildMetrics Experiments::collectBuildMetrics(const PointSpatialIndex::Stats& stats, PointSpatialIndex::NodeView root, double buildTimeMs, const SchemaConfig& schema)
 {
 	return collectBuildMetricsImpl(stats, root, buildTimeMs, &schema);
 }

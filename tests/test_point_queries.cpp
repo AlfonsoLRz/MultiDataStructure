@@ -177,7 +177,7 @@ namespace BaselineTests
 		index.build(cloud, schema);
 
 		const PointSpatialIndex::Stats buildStats = index.stats();
-		expect(index.root() && index.root()->_pointCount == cloud.size(), "point query index stores root as a contiguous point range");
+		expect(index.root() && index.root().pointCount() == cloud.size(), "point query index stores root as a contiguous point range");
 		expect(buildStats._numPoints == cloud.size(), "point query index keeps every point in leaves");
 		expect(buildStats._numNodes > 1, "point query index creates a searchable hierarchy");
 
@@ -257,7 +257,7 @@ namespace BaselineTests
 		tightBoundsIndex.build(tightBoundsCloud, makePrimitiveSchema("Octree", 4));
 		const PointSpatialIndex::QueryResult tightBoundsRadius = tightBoundsIndex.radiusQuery(glm::vec3(49.0f, 49.0f, 49.0f), 0.25f);
 		expect(tightBoundsRadius._pointIndices.empty(), "radius query outside tight node bounds returns no points");
-		expect(tightBoundsIndex.root() && tightBoundsRadius._stats._visitedNodes <= tightBoundsIndex.root()->_children.size() + 1,
+		expect(tightBoundsIndex.root() && tightBoundsRadius._stats._visitedNodes <= tightBoundsIndex.root().childCount() + 1,
 			"radius query prunes sparse nodes with tight bounds before visiting grandchildren");
 
 		SchemaConfig microSchema = makePrimitiveSchema("Octree", 1);
@@ -269,8 +269,8 @@ namespace BaselineTests
 		microSchema._buildPolicy._leafMicroIndexThreshold = 16;
 		PointSpatialIndex microIndex;
 		microIndex.build(cloud, microSchema);
-		expect(microIndex.root() && microIndex.root()->isLeaf(), "micro-index test keeps one heavy leaf");
-		expect(microIndex.root() && microIndex.root()->_microIndex, "heavy leaf builds optional micro-index");
+		expect(microIndex.root() && microIndex.root().isLeaf(), "micro-index test keeps one heavy leaf");
+		expect(microIndex.root() && microIndex.root().microIndex(), "heavy leaf builds optional micro-index");
 		expectQueryCorrectness(cloud, microIndex, rangeBounds, denseCenter, radius, "heavy-leaf micro-index");
 
 		const AABB gridRange(glm::vec3(-15.0f, -15.0f, -4.0f), glm::vec3(15.0f, 15.0f, 8.0f));
@@ -278,9 +278,9 @@ namespace BaselineTests
 		{
 			PointSpatialIndex gridIndex;
 			gridIndex.build(cloud, makePrimitiveSchema(typeName, 2));
-			expect(gridIndex.root() && gridIndex.root()->_children.size() > 8, typeName + " CPU split creates grid cells instead of collapsing to Octree");
+			expect(gridIndex.root() && gridIndex.root().childCount() > 8, typeName + " CPU split creates grid cells instead of collapsing to Octree");
 			expect(gridIndex.stats()._numPoints == cloud.size(), typeName + " CPU split preserves point count");
-			expect(gridIndex.root()->_subtreePointCount == cloud.size(), typeName + " CPU split preserves subtree point count");
+			expect(gridIndex.root().subtreePointCount() == cloud.size(), typeName + " CPU split preserves subtree point count");
 			expectQueryCorrectness(cloud, gridIndex, gridRange, denseCenter, radius, typeName + " CPU grid");
 		}
 	}

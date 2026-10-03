@@ -35,25 +35,6 @@ public:
 		bool hasKdTree() const { return !_kdNodes.empty() && !_kdOrder.empty(); }
 	};
 
-	struct Node
-	{
-		AABB	_bounds;
-		MultiDataStructure::DataStructureLevel	_type = MultiDataStructure::DataStructureLevel::OctreeNode;
-		size_t	_depth = 0;
-		size_t	_schemaDepth = 0;
-		// Index into the breakdown counter arrays, resolved once during build so that query
-		// traversal never has to name a structure. See QueryStats::QueryBreakdown.
-		uint32_t _structureIndex = 0;
-		AABB	_tightBounds;
-		size_t	_subtreePointCount = 0;
-		size_t	_pointOffset = 0;
-		size_t	_pointCount = 0;
-		std::unique_ptr<LeafMicroIndex>	_microIndex;
-		std::vector<std::unique_ptr<Node>>	_children;
-
-		bool isLeaf() const { return _children.empty(); }
-	};
-
 	struct Stats
 	{
 		size_t	_numNodes = 0;
@@ -174,7 +155,7 @@ public:
 
 	// Names the query/build engine revision in every measurement that depends on it (score-cache
 	// keys, engine-check output), so numbers from different engines are never silently mixed.
-	static constexpr const char* EngineVersion = "3-build-plan";
+	static constexpr const char* EngineVersion = "4-node-pool";
 
 	// Full fills every QueryStats counter and the per-depth/per-structure breakdown; it is what
 	// scoring, the visit proxy and diagnostics read. Off compiles all of that out of the
@@ -214,9 +195,48 @@ public:
 		size_t		_childCount = 0;
 	};
 
+	// Read-only view of one node of a built index. After build the tree lives in a contiguous
+	// pool addressed by slot, so a node is an (index, slot) pair rather than a pointer; a view
+	// stays valid until the index is rebuilt or destroyed. This is the only way code outside the
+	// engine (metrics, search diagnostics, the GUI) reads tree structure.
+	class NodeView
+	{
+	public:
+		NodeView() = default;
+		bool valid() const { return _index != nullptr; }
+		explicit operator bool() const { return valid(); }
+		uint32_t id() const { return _slot; }
+		bool isLeaf() const;
+		size_t childCount() const;
+		NodeView child(size_t i) const;
+		// Split-geometry bounds and the tight bounds of the points beneath (equal for empty nodes).
+		AABB bounds() const;
+		AABB tightBounds() const;
+		size_t depth() const;
+		size_t schemaDepth() const;
+		MultiDataStructure::DataStructureLevel type() const;
+		uint32_t structureIndex() const;
+		// The node's points are _pointOrder[pointOffset(), pointOffset() + pointCount()), for
+		// internal nodes as well as leaves: the build keeps every subtree contiguous.
+		size_t pointOffset() const;
+		size_t pointCount() const;
+		size_t subtreePointCount() const { return pointCount(); }
+		const LeafMicroIndex* microIndex() const;
+
+	private:
+		friend class PointSpatialIndex;
+		NodeView(const PointSpatialIndex* index, uint32_t slot) : _index(index), _slot(slot) {}
+		const PointSpatialIndex*	_index = nullptr;
+		uint32_t					_slot = 0;
+	};
+
 	void build(const PointCloud& cloud, const SchemaConfig& schema);
-	const Node* root() const { return _root.get(); }
+	NodeView root() const { return _hot.empty() ? NodeView() : NodeView(this, 0); }
 	Stats stats() const;
+	// Bytes held by the node pool, the ordered point arrays and any leaf micro-indexes.
+	size_t memoryFootprintBytes() const;
+	// Node storage cost, for estimates made from node counts alone.
+	static size_t bytesPerNode();
 	// Order-independent digest of the built tree: every node's shape, bounds bits, type and
 	// structure name, plus each leaf's point-identity set. Two builds with equal digests are the
 	// same tree, which is what lets a storage rewrite prove it changed layout and nothing else.
@@ -235,6 +255,74 @@ public:
 	QueryResult knnQuery(const glm::vec3& center, size_t k, QueryTelemetry telemetry = QueryTelemetry::Full) const;
 
 private:
+	// Build-time tree. buildNode() grows it recursively exactly as the engine always has, then
+	// flattenTree() lays it out into the query pool below and frees it. Nothing after build()
+	// reads it.
+	struct Node
+	{
+		AABB	_bounds;
+		MultiDataStructure::DataStructureLevel	_type = MultiDataStructure::DataStructureLevel::OctreeNode;
+		size_t	_depth = 0;
+		size_t	_schemaDepth = 0;
+		// Index into the breakdown counter arrays, resolved once during build so that query
+		// traversal never has to name a structure. See QueryStats::QueryBreakdown.
+		uint32_t _structureIndex = 0;
+		AABB	_tightBounds;
+		size_t	_subtreePointCount = 0;
+		size_t	_pointOffset = 0;
+		size_t	_pointCount = 0;
+		std::unique_ptr<LeafMicroIndex>	_microIndex;
+		std::vector<std::unique_ptr<Node>>	_children;
+
+		bool isLeaf() const { return _children.empty(); }
+	};
+
+	// Query-time node: tight bounds and the payload range, 32 bytes, two per cache line. Every
+	// internal node's children occupy one contiguous group starting on an even slot, so with the
+	// pool 64-byte aligned a binary node's children share one cache line and an octree's four,
+	// and a pruned child costs no fetch of its own. This replaces vector<unique_ptr<Node>>, where
+	// each level down cost two dependent cache misses (children buffer, then the child) into
+	// nodes scattered across the heap.
+	struct alignas(32) HotNode
+	{
+		float		_lo[3] = { 0.0f, 0.0f, 0.0f };
+		float		_hi[3] = { 0.0f, 0.0f, 0.0f };
+		uint32_t	_first = 0;	// internal: first child slot; leaf: first point in tree order
+		uint32_t	_word = 0;	// InternalBit | child count, or the leaf's point count
+
+		bool isInternal() const { return (_word & InternalBit) != 0; }
+		uint32_t count() const { return _word & ~InternalBit; }
+	};
+	static constexpr uint32_t InternalBit = 0x80000000u;
+	static constexpr uint32_t NoSlot = 0xFFFFFFFFu;
+
+	// Everything the traversal does not need, indexed by the same slot.
+	struct ColdNode
+	{
+		float		_looseLo[3] = { 0.0f, 0.0f, 0.0f };
+		float		_looseHi[3] = { 0.0f, 0.0f, 0.0f };
+		uint32_t	_subtreeOffset = 0;
+		uint32_t	_subtreeCount = 0;
+		uint32_t	_microSlot = NoSlot;
+		uint16_t	_depth = 0;
+		uint16_t	_schemaDepth = 0;
+		uint8_t		_type = 0;
+		uint8_t		_structureIndex = 0;
+	};
+
+	template <typename T, size_t Alignment>
+	struct AlignedAllocator
+	{
+		using value_type = T;
+		AlignedAllocator() = default;
+		template <typename U> AlignedAllocator(const AlignedAllocator<U, Alignment>&) {}
+		T* allocate(size_t n) { return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t(Alignment))); }
+		void deallocate(T* p, size_t) { ::operator delete(p, std::align_val_t(Alignment)); }
+		template <typename U> struct rebind { using other = AlignedAllocator<U, Alignment>; };
+		bool operator==(const AlignedAllocator&) const { return true; }
+		bool operator!=(const AlignedAllocator&) const { return false; }
+	};
+
 	struct ActiveLevel
 	{
 		const SchemaLevelConfig*	_config = nullptr;
@@ -255,7 +343,10 @@ private:
 
 	const PointCloud*		_cloud = nullptr;
 	SchemaConfig			_schema;
-	std::unique_ptr<Node>	_root;
+	std::unique_ptr<Node>	_root;	// build-time only; null after build()
+	std::vector<HotNode, AlignedAllocator<HotNode, 64>>	_hot;
+	std::vector<ColdNode>								_cold;
+	std::vector<std::unique_ptr<LeafMicroIndex>>		_microIndexes;
 	// Output-buffer sizing hints, per index and per query kind, so a query can reserve its result
 	// vector BEFORE the clock starts and then allocate nothing while being timed. See the query
 	// entry points for why that matters. mutable + atomic because the query methods are const and
@@ -287,35 +378,40 @@ private:
 	const ResolvedLevel& resolvedLevelFor(const SchemaLevelConfig& levelConfig) const;
 	void makeSplitPlan(const Node& node, const ResolvedLevel& level, SplitPlan& plan, BuildScratch& scratch) const;
 	void routePointsToChildren(const Node& node, const SplitPlan& plan, BuildScratch& scratch) const;
-	void collectStats(const Node* node, Stats& stats) const;
-	void appendSubtreePoints(const Node* node, std::vector<size_t>& pointIndices) const;
+	void flattenTree();
+	void writePoolNode(Node& node, uint32_t slot);
+	void layoutChildren(Node& node, uint32_t slot);
+	void appendSubtreePoints(uint32_t slot, std::vector<size_t>& pointIndices) const;
+	std::string structureNameFor(size_t schemaDepth, MultiDataStructure::DataStructureLevel type) const;
 	std::string structureNameForNode(const Node& node) const;
 	uint32_t structureIndexForNode(const Node& node);
 	void assignStructureIndexes(Node* node);
-	// Hot path: called once per visited node inside the timed region. Must stay allocation-
-	// free and branch-light - see QueryStats::QueryBreakdown for what this used to cost.
-	void recordNodeVisit(const Node& node, QueryStats& stats) const
+	// Hot path: called once per visited node inside the timed region, on the instrumented path
+	// only. Must stay allocation-free - see QueryStats::QueryBreakdown for what this used to cost.
+	void recordNodeVisit(uint32_t slot, QueryStats& stats) const
 	{
+		const ColdNode& cold = _cold[slot];
 		++stats._visitedNodes;
-		++stats._breakdown.visitedByDepth[std::min(node._depth, QueryStats::MaxBreakdownDepth - 1)];
-		++stats._breakdown._visitedByStructure[node._structureIndex];
+		++stats._breakdown.visitedByDepth[std::min<size_t>(cold._depth, QueryStats::MaxBreakdownDepth - 1)];
+		++stats._breakdown._visitedByStructure[cold._structureIndex];
 	}
-	void recordTestedPoints(const Node& node, size_t count, QueryStats& stats) const
+	void recordTestedPoints(uint32_t slot, size_t count, QueryStats& stats) const
 	{
 		stats._testedPoints += count;
-		stats._breakdown._testedPointsByStructure[node._structureIndex] += count;
+		stats._breakdown._testedPointsByStructure[_cold[slot]._structureIndex] += count;
 	}
-	void recordFullyContainedNode(const Node& node, QueryStats& stats) const
+	void recordFullyContainedNode(uint32_t slot, QueryStats& stats) const
 	{
 		++stats._fullyContainedNodes;
-		++stats._breakdown._fullyContainedByStructure[node._structureIndex];
+		++stats._breakdown._fullyContainedByStructure[_cold[slot]._structureIndex];
 	}
-	// Telemetry=false is the timed path: every record*() call below is compiled out of it.
-	template <bool Telemetry> void rangeQueryMicroGrid(const Node& node, const AABB& bounds, QueryResult& result) const;
-	template <bool Telemetry> void countRangeMicroGrid(const Node& node, const AABB& bounds, CountResult& result) const;
-	template <bool Telemetry> void radiusQueryMicroGrid(const Node& node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	template <bool Telemetry> void rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const;
-	template <bool Telemetry> void countRangeNode(const Node* node, const AABB& bounds, CountResult& result) const;
-	template <bool Telemetry> void radiusQueryNode(const Node* node, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	template <bool Telemetry> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
+	// Telemetry=false is the timed path: every record*() call is compiled out of it. Micro=false
+	// (no leaf micro-indexes in this index, the default) drops the per-leaf micro check.
+	template <bool Telemetry> void rangeQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry> void countRangeMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry> void radiusQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry, bool Micro> void rangeSearch(const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry, bool Micro> void countSearch(const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry, bool Micro> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry, bool Micro> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
 };

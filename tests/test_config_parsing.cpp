@@ -152,15 +152,15 @@ namespace BaselineTests
 		}
 		PointSpatialIndex conditionalIndex;
 		conditionalIndex.build(conditionalCloud, Config::parseSchemaConfig(conditionalSkipJson, "conditional_skip"));
-		const PointSpatialIndex::Node* conditionalRoot = conditionalIndex.root();
+		const PointSpatialIndex::NodeView conditionalRoot = conditionalIndex.root();
 		bool skippedOctreeEnteredKdTree = false;
 		if (conditionalRoot)
 		{
-			for (const std::unique_ptr<PointSpatialIndex::Node>& child : conditionalRoot->_children)
+			for (size_t c = 0; c < conditionalRoot.childCount(); ++c)
 			{
-				if (child &&
-					child->_schemaDepth == 3 &&
-					child->_type == MultiDataStructure::DataStructureLevel::KDTreeNode)
+				const PointSpatialIndex::NodeView child = conditionalRoot.child(c);
+				if (child.schemaDepth() == 3 &&
+					child.type() == MultiDataStructure::DataStructureLevel::KDTreeNode)
 				{
 					skippedOctreeEnteredKdTree = true;
 					break;
@@ -194,12 +194,12 @@ namespace BaselineTests
 		)json";
 		PointSpatialIndex wideIndex;
 		wideIndex.build(wideTerrain, Config::parseSchemaConfig(quadtreeSplitJson, "quadtree_xy_split"));
-		const PointSpatialIndex::Node* wideRoot = wideIndex.root();
-		expect(wideRoot != nullptr && wideRoot->_children.size() == 4, "quadtree XY split creates four root children");
-		if (wideRoot && !wideRoot->_children.empty())
+		const PointSpatialIndex::NodeView wideRoot = wideIndex.root();
+		expect(wideRoot && wideRoot.childCount() == 4, "quadtree XY split creates four root children");
+		if (wideRoot && wideRoot.childCount() > 0)
 		{
-			const glm::vec3 rootSize = wideRoot->_bounds.size();
-			const glm::vec3 childSize = wideRoot->_children.front()->_bounds.size();
+			const glm::vec3 rootSize = wideRoot.bounds().size();
+			const glm::vec3 childSize = wideRoot.child(0).bounds().size();
 			expect(childSize.x < rootSize.x && childSize.y < rootSize.y,
 				"quadtree default splits X and Y for terrain-shaped clouds");
 			expect(nearlyEqual(childSize.z, rootSize.z),
@@ -308,26 +308,26 @@ namespace BaselineTests
 
 		PointSpatialIndex kdMedianIndex;
 		kdMedianIndex.build(kdPolicyCloud, makeKDTreePolicySchema("median_longest_axis"));
-		expect(kdMedianIndex.root() && kdMedianIndex.root()->_children.size() == 2,
+		expect(kdMedianIndex.root() && kdMedianIndex.root().childCount() == 2,
 			"KDTree median-longest policy splits the root");
-		expect(nearlyEqual(kdMedianIndex.root()->_children[0]->_bounds.max().x, 2.0f),
+		expect(nearlyEqual(kdMedianIndex.root().child(0).bounds().max().x, 2.0f),
 			"KDTree median-longest policy uses the point median as split plane");
 
 		PointSpatialIndex kdCenterIndex;
 		kdCenterIndex.build(kdPolicyCloud, makeKDTreePolicySchema("center_longest_axis"));
-		expect(kdCenterIndex.root() && kdCenterIndex.root()->_children.size() == 2,
+		expect(kdCenterIndex.root() && kdCenterIndex.root().childCount() == 2,
 			"KDTree center-longest policy splits the root");
-		expect(nearlyEqual(kdCenterIndex.root()->_children[0]->_bounds.max().x, 50.0f),
+		expect(nearlyEqual(kdCenterIndex.root().child(0).bounds().max().x, 50.0f),
 			"KDTree center-longest policy uses the bbox center as split plane");
 
 		PointSpatialIndex kdRoundRobinIndex;
 		kdRoundRobinIndex.build(kdPolicyCloud, makeKDTreePolicySchema("round_robin"));
-		const PointSpatialIndex::Node* roundLeft = kdRoundRobinIndex.root() && !kdRoundRobinIndex.root()->_children.empty()
-			? kdRoundRobinIndex.root()->_children[0].get()
-			: nullptr;
-		expect(roundLeft && roundLeft->_children.size() == 2,
+		const PointSpatialIndex::NodeView roundLeft = kdRoundRobinIndex.root() && kdRoundRobinIndex.root().childCount() > 0
+			? kdRoundRobinIndex.root().child(0)
+			: PointSpatialIndex::NodeView();
+		expect(roundLeft && roundLeft.childCount() == 2,
 			"KDTree round-robin policy advances to the Y axis at depth 1");
-		expect(nearlyEqual(roundLeft->_children[0]->_bounds.max().y, 5.0f),
+		expect(nearlyEqual(roundLeft.child(0).bounds().max().y, 5.0f),
 			"KDTree round-robin policy uses the depth-selected axis center");
 
 		PointCloud adaptiveCloud;

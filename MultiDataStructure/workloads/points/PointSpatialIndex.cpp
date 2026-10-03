@@ -292,13 +292,189 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 	computeNodeAggregates(_root.get());
 	buildLeafMicroIndexes(_root.get());
 	assignStructureIndexes(_root.get());
+	flattenTree();
+	_root.reset();
 }
 
 PointSpatialIndex::Stats PointSpatialIndex::stats() const
 {
 	Stats result;
-	collectStats(_root.get(), result);
+	if (_hot.empty())
+		return result;
+
+	std::vector<uint32_t> stack{ 0u };
+	while (!stack.empty())
+	{
+		const uint32_t slot = stack.back();
+		stack.pop_back();
+		++result._numNodes;
+		result._maxDepth = std::max<size_t>(result._maxDepth, _cold[slot]._depth);
+		const HotNode& node = _hot[slot];
+		if (!node.isInternal())
+		{
+			++result._numLeaves;
+			result._numPoints += node.count();
+			continue;
+		}
+		for (uint32_t c = 0; c < node.count(); ++c)
+			stack.push_back(node._first + c);
+	}
 	return result;
+}
+
+size_t PointSpatialIndex::bytesPerNode()
+{
+	return sizeof(HotNode) + sizeof(ColdNode);
+}
+
+size_t PointSpatialIndex::memoryFootprintBytes() const
+{
+	size_t bytes = _hot.size() * sizeof(HotNode) + _cold.size() * sizeof(ColdNode);
+	bytes += _pointOrder.size() * sizeof(uint32_t);
+	bytes += (_orderedX.size() + _orderedY.size() + _orderedZ.size()) * sizeof(float);
+	for (const std::unique_ptr<LeafMicroIndex>& micro : _microIndexes)
+	{
+		bytes += sizeof(LeafMicroIndex);
+		bytes += (micro->_gridOffsets.size() + micro->_gridOrder.size() + micro->_kdOrder.size()) * sizeof(uint32_t);
+		bytes += micro->_kdNodes.size() * sizeof(LeafMicroIndex::KdNode);
+	}
+	return bytes;
+}
+
+// ---------------------------------------------------------------- node views
+
+bool PointSpatialIndex::NodeView::isLeaf() const { return !_index->_hot[_slot].isInternal(); }
+
+size_t PointSpatialIndex::NodeView::childCount() const
+{
+	const HotNode& node = _index->_hot[_slot];
+	return node.isInternal() ? node.count() : 0;
+}
+
+PointSpatialIndex::NodeView PointSpatialIndex::NodeView::child(size_t i) const
+{
+	return NodeView(_index, _index->_hot[_slot]._first + static_cast<uint32_t>(i));
+}
+
+AABB PointSpatialIndex::NodeView::bounds() const
+{
+	const ColdNode& cold = _index->_cold[_slot];
+	return AABB(glm::vec3(cold._looseLo[0], cold._looseLo[1], cold._looseLo[2]),
+				glm::vec3(cold._looseHi[0], cold._looseHi[1], cold._looseHi[2]));
+}
+
+AABB PointSpatialIndex::NodeView::tightBounds() const
+{
+	if (_index->_cold[_slot]._subtreeCount == 0)
+		return bounds();
+	const HotNode& node = _index->_hot[_slot];
+	return AABB(glm::vec3(node._lo[0], node._lo[1], node._lo[2]), glm::vec3(node._hi[0], node._hi[1], node._hi[2]));
+}
+
+size_t PointSpatialIndex::NodeView::depth() const { return _index->_cold[_slot]._depth; }
+size_t PointSpatialIndex::NodeView::schemaDepth() const { return _index->_cold[_slot]._schemaDepth; }
+
+MultiDataStructure::DataStructureLevel PointSpatialIndex::NodeView::type() const
+{
+	return static_cast<MultiDataStructure::DataStructureLevel>(_index->_cold[_slot]._type);
+}
+
+uint32_t PointSpatialIndex::NodeView::structureIndex() const { return _index->_cold[_slot]._structureIndex; }
+size_t PointSpatialIndex::NodeView::pointOffset() const { return _index->_cold[_slot]._subtreeOffset; }
+size_t PointSpatialIndex::NodeView::pointCount() const { return _index->_cold[_slot]._subtreeCount; }
+
+const PointSpatialIndex::LeafMicroIndex* PointSpatialIndex::NodeView::microIndex() const
+{
+	const uint32_t microSlot = _index->_cold[_slot]._microSlot;
+	return microSlot == NoSlot ? nullptr : _index->_microIndexes[microSlot].get();
+}
+
+// ---------------------------------------------------------------- pool layout
+
+// Lays the build tree out depth-first by sibling GROUP: a node's children are written together,
+// then each child's subtree follows in child order. A subtree therefore occupies one contiguous
+// slot range, so a spatially local query walks nearby memory all the way down, and each group
+// starts on an even slot so that, with the pool 64-byte aligned, it begins on a cache line.
+void PointSpatialIndex::flattenTree()
+{
+	_hot.clear();
+	_cold.clear();
+	_microIndexes.clear();
+	if (!_root)
+		return;
+
+	_hot.resize(1);
+	_cold.resize(1);
+	writePoolNode(*_root, 0);
+	layoutChildren(*_root, 0);
+	if (_hot.size() >= static_cast<size_t>(NoSlot))
+		throw std::runtime_error("CPU point index node pool exceeds the 32-bit slot space; use a larger leaf capacity.");
+}
+
+void PointSpatialIndex::writePoolNode(Node& node, uint32_t slot)
+{
+	HotNode& hot = _hot[slot];
+	const glm::vec3 tightMin = node._tightBounds.min();
+	const glm::vec3 tightMax = node._tightBounds.max();
+	for (int axis = 0; axis < 3; ++axis)
+	{
+		hot._lo[axis] = tightMin[axis];
+		hot._hi[axis] = tightMax[axis];
+	}
+	if (node.isLeaf())
+	{
+		if (node._pointCount >= InternalBit)
+			throw std::runtime_error("CPU point index leaf holds 2^31 or more points; use a schema that splits further.");
+		hot._first = static_cast<uint32_t>(node._pointOffset);
+		hot._word = static_cast<uint32_t>(node._pointCount);
+	}
+
+	ColdNode& cold = _cold[slot];
+	const glm::vec3 looseMin = node._bounds.min();
+	const glm::vec3 looseMax = node._bounds.max();
+	for (int axis = 0; axis < 3; ++axis)
+	{
+		cold._looseLo[axis] = looseMin[axis];
+		cold._looseHi[axis] = looseMax[axis];
+	}
+	cold._subtreeOffset = static_cast<uint32_t>(node._pointOffset);
+	cold._subtreeCount = static_cast<uint32_t>(node._subtreePointCount);
+	if (node._depth > std::numeric_limits<uint16_t>::max() || node._schemaDepth > std::numeric_limits<uint16_t>::max())
+		throw std::runtime_error("CPU point index depth exceeds 65535.");
+	cold._depth = static_cast<uint16_t>(node._depth);
+	cold._schemaDepth = static_cast<uint16_t>(node._schemaDepth);
+	cold._type = static_cast<uint8_t>(node._type);
+	cold._structureIndex = static_cast<uint8_t>(node._structureIndex);
+	if (node._microIndex)
+	{
+		cold._microSlot = static_cast<uint32_t>(_microIndexes.size());
+		_microIndexes.push_back(std::move(node._microIndex));
+	}
+}
+
+void PointSpatialIndex::layoutChildren(Node& node, uint32_t slot)
+{
+	if (node.isLeaf())
+		return;
+
+	if (_hot.size() % 2 != 0)
+	{
+		// Padding slot: a zero-count leaf nothing points to, so the group below starts aligned.
+		_hot.emplace_back();
+		_cold.emplace_back();
+	}
+
+	const uint32_t first = static_cast<uint32_t>(_hot.size());
+	const uint32_t count = static_cast<uint32_t>(node._children.size());
+	_hot.resize(_hot.size() + count);
+	_cold.resize(_cold.size() + count);
+	_hot[slot]._first = first;
+	_hot[slot]._word = InternalBit | count;
+
+	for (uint32_t c = 0; c < count; ++c)
+		writePoolNode(*node._children[c], first + c);
+	for (uint32_t c = 0; c < count; ++c)
+		layoutChildren(*node._children[c], first + c);
 }
 
 // Output-buffer sizing hints, one per query kind, carried across calls on the calling thread.
@@ -334,11 +510,16 @@ PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds,
 	QueryResult result;
 	result._pointIndices.reserve(_rangeReserveHint.load(std::memory_order_relaxed));
 
+	const bool full = telemetry == QueryTelemetry::Full;
+	const bool micro = !_microIndexes.empty();
 	const auto start = std::chrono::steady_clock::now();
-	if (telemetry == QueryTelemetry::Full)
-		rangeQueryNode<true>(_root.get(), bounds, result);
-	else
-		rangeQueryNode<false>(_root.get(), bounds, result);
+	if (!_hot.empty())
+	{
+		if (full)
+			micro ? rangeSearch<true, true>(bounds, result) : rangeSearch<true, false>(bounds, result);
+		else
+			micro ? rangeSearch<false, true>(bounds, result) : rangeSearch<false, false>(bounds, result);
+	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
 	raiseHint(_rangeReserveHint, result._pointIndices.size());
@@ -354,11 +535,16 @@ PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds,
 {
 	CountResult result;
 
+	const bool full = telemetry == QueryTelemetry::Full;
+	const bool micro = !_microIndexes.empty();
 	const auto start = std::chrono::steady_clock::now();
-	if (telemetry == QueryTelemetry::Full)
-		countRangeNode<true>(_root.get(), bounds, result);
-	else
-		countRangeNode<false>(_root.get(), bounds, result);
+	if (!_hot.empty())
+	{
+		if (full)
+			micro ? countSearch<true, true>(bounds, result) : countSearch<true, false>(bounds, result);
+		else
+			micro ? countSearch<false, true>(bounds, result) : countSearch<false, false>(bounds, result);
+	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
 	result._stats._returnedPoints = result._count;
@@ -372,13 +558,16 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 	QueryResult result;
 	result._pointIndices.reserve(_radiusReserveHint.load(std::memory_order_relaxed));
 
+	const bool full = telemetry == QueryTelemetry::Full;
+	const bool micro = !_microIndexes.empty();
+	const float radiusSquared = radius * radius;
 	const auto start = std::chrono::steady_clock::now();
-	if (radius >= 0.0f)
+	if (radius >= 0.0f && !_hot.empty())
 	{
-		if (telemetry == QueryTelemetry::Full)
-			radiusQueryNode<true>(_root.get(), center, radius * radius, result);
+		if (full)
+			micro ? radiusSearch<true, true>(center, radiusSquared, result) : radiusSearch<true, false>(center, radiusSquared, result);
 		else
-			radiusQueryNode<false>(_root.get(), center, radius * radius, result);
+			micro ? radiusSearch<false, true>(center, radiusSquared, result) : radiusSearch<false, false>(center, radiusSquared, result);
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -393,11 +582,13 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 
 namespace
 {
+	// Pending-node entry of the best-first kNN: (lower-bound distance, push sequence) is a total
+	// order, the sequence breaking distance ties in push order exactly as before the pool.
 	struct KnnNodeCandidate
 	{
-		float								_distance = 0.0f;
-		size_t								_sequence = 0;
-		const PointSpatialIndex::Node*		_node = nullptr;
+		float		_distance = 0.0f;
+		uint32_t	_sequence = 0;
+		uint32_t	_slot = 0;
 	};
 
 	struct KnnNodeCandidateGreater
@@ -424,13 +615,8 @@ namespace
 		}
 	};
 
-	// The three kNN working sets, reused across queries on the calling thread.
-	//
-	// These were std::priority_queue locals: `best` and `pending` allocated once per query with no
-	// reserve (so they reallocated during fill), and `microPending` was constructed fresh for
-	// EVERY micro-indexed leaf the traversal reached - an operator new/delete apiece to search a
-	// bucket of at most MicroKdLeafCapacity points. Vector + heap algorithms give identical
-	// ordering with clear() preserving capacity, so a warm thread does no allocation at all.
+	// Working sets reused across queries on the calling thread, so a warm thread allocates
+	// nothing inside the timed region.
 	std::vector<std::pair<float, size_t>>& knnBestScratch()
 	{
 		static thread_local std::vector<std::pair<float, size_t>> best;
@@ -448,6 +634,40 @@ namespace
 		static thread_local std::vector<KnnMicroCandidate> microPending;
 		return microPending;
 	}
+
+	std::vector<uint32_t>& traversalStackScratch()
+	{
+		static thread_local std::vector<uint32_t> stack;
+		return stack;
+	}
+
+	// The exact arithmetic of distanceSquaredToAABB / AABB::collides / containsAABB, on raw
+	// floats. Pruning decisions must not move, or counters would.
+	inline float boxDistanceSquared(const float* lo, const float* hi, const glm::vec3& point)
+	{
+		float distanceSquared = 0.0f;
+		if (point.x < lo[0]) { const float d = lo[0] - point.x; distanceSquared += d * d; }
+		else if (point.x > hi[0]) { const float d = point.x - hi[0]; distanceSquared += d * d; }
+		if (point.y < lo[1]) { const float d = lo[1] - point.y; distanceSquared += d * d; }
+		else if (point.y > hi[1]) { const float d = point.y - hi[1]; distanceSquared += d * d; }
+		if (point.z < lo[2]) { const float d = lo[2] - point.z; distanceSquared += d * d; }
+		else if (point.z > hi[2]) { const float d = point.z - hi[2]; distanceSquared += d * d; }
+		return distanceSquared;
+	}
+
+	inline bool boxOverlaps(const float* lo, const float* hi, const glm::vec3& queryMin, const glm::vec3& queryMax)
+	{
+		return !(hi[0] < queryMin.x || lo[0] > queryMax.x ||
+				 hi[1] < queryMin.y || lo[1] > queryMax.y ||
+				 hi[2] < queryMin.z || lo[2] > queryMax.z);
+	}
+
+	inline bool boxInside(const float* lo, const float* hi, const glm::vec3& queryMin, const glm::vec3& queryMax)
+	{
+		return lo[0] >= queryMin.x && hi[0] <= queryMax.x &&
+			   lo[1] >= queryMin.y && hi[1] <= queryMax.y &&
+			   lo[2] >= queryMin.z && hi[2] <= queryMax.z;
+	}
 }
 
 PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& center, size_t k, QueryTelemetry telemetry) const
@@ -457,21 +677,24 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
 	best.clear();
 	knnPendingScratch().clear();
+	const size_t indexedPoints = _cold.empty() ? 0 : _cold.front()._subtreeCount;
 	// Clamped: k comes from a replayed trace and nothing bounds it against the cloud, so a
 	// pathological k must not turn a reserve into a multi-gigabyte allocation.
-	if (k > 0 && _root)
+	if (k > 0)
 	{
-		best.reserve(std::min<size_t>(k, _root->_subtreePointCount));
-		result._pointIndices.reserve(std::min<size_t>(k, _root->_subtreePointCount));
+		best.reserve(std::min<size_t>(k, indexedPoints));
+		result._pointIndices.reserve(std::min<size_t>(k, indexedPoints));
 	}
 
+	const bool full = telemetry == QueryTelemetry::Full;
+	const bool micro = !_microIndexes.empty();
 	const auto start = std::chrono::steady_clock::now();
-	if (_root && _cloud && k > 0 && _root->_subtreePointCount > 0)
+	if (_cloud && k > 0 && indexedPoints > 0)
 	{
-		if (telemetry == QueryTelemetry::Full)
-			knnSearch<true>(center, k, result);
+		if (full)
+			micro ? knnSearch<true, true>(center, k, result) : knnSearch<true, false>(center, k, result);
 		else
-			knnSearch<false>(center, k, result);
+			micro ? knnSearch<false, true>(center, k, result) : knnSearch<false, false>(center, k, result);
 
 		// The answer leaves the traversal in heap order, into storage reserved before the clock.
 		// That is where the timed region ends, as it does for the external baselines: Indexicon's
@@ -479,7 +702,6 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 		for (const auto& entry : best)
 			result._pointIndices.push_back(entry.second);
 	}
-
 	const double elapsedMs = elapsedMilliseconds(start);
 
 	// Deterministic (distance, pointIndex) order, which callers and tests rely on, established
@@ -503,20 +725,257 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 	return result;
 }
 
-// Best-first kNN over the node tree. Runs inside knnQuery's timed region; the caller has cleared
-// the scratch heaps and orders the output after the clock.
-template <bool Telemetry>
+// ---------------------------------------------------------------- traversals
+
+// Depth-first with an explicit stack. Each entered node tests all its children's boxes while
+// their group is in cache and pushes only the survivors, in reverse so they pop in child order
+// (the old recursion's order). Counter semantics are those of engine 2: a bounds test on a
+// non-empty node is a tested box, a node whose test passed is visited.
+template <bool Telemetry, bool Micro>
+void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) const
+{
+	const glm::vec3 queryMin = bounds.min();
+	const glm::vec3 queryMax = bounds.max();
+	const HotNode* hot = _hot.data();
+	const uint32_t* order = _pointOrder.data();
+	const float* xs = _orderedX.data();
+	const float* ys = _orderedY.data();
+	const float* zs = _orderedZ.data();
+	std::vector<size_t>& out = result._pointIndices;
+
+	if (!hot[0].isInternal() && hot[0].count() == 0)
+		return;
+	if constexpr (Telemetry)
+		++result._stats._testedBoxes;
+	if (!boxOverlaps(hot[0]._lo, hot[0]._hi, queryMin, queryMax))
+		return;
+
+	std::vector<uint32_t>& stack = traversalStackScratch();
+	stack.clear();
+	stack.push_back(0);
+	while (!stack.empty())
+	{
+		const uint32_t slot = stack.back();
+		stack.pop_back();
+		const HotNode& node = hot[slot];
+		if constexpr (Telemetry)
+			recordNodeVisit(slot, result._stats);
+
+		if (boxInside(node._lo, node._hi, queryMin, queryMax))
+		{
+			if constexpr (Telemetry)
+				recordFullyContainedNode(slot, result._stats);
+			appendSubtreePoints(slot, out);
+			continue;
+		}
+
+		if (!node.isInternal())
+		{
+			if constexpr (Micro)
+			{
+				const uint32_t microSlot = _cold[slot]._microSlot;
+				if (microSlot != NoSlot && _microIndexes[microSlot]->hasGrid())
+				{
+					rangeQueryMicroGrid<Telemetry>(slot, *_microIndexes[microSlot], bounds, result);
+					continue;
+				}
+			}
+			if constexpr (Telemetry)
+				recordTestedPoints(slot, node.count(), result._stats);
+			const uint32_t end = node._first + node.count();
+			for (uint32_t i = node._first; i < end; ++i)
+			{
+				const float x = xs[i];
+				const float y = ys[i];
+				const float z = zs[i];
+				if (x >= queryMin.x && x <= queryMax.x &&
+					y >= queryMin.y && y <= queryMax.y &&
+					z >= queryMin.z && z <= queryMax.z)
+				{
+					out.push_back(order[i]);
+				}
+			}
+			continue;
+		}
+
+		for (uint32_t c = node.count(); c-- > 0;)
+		{
+			const uint32_t childSlot = node._first + c;
+			const HotNode& child = hot[childSlot];
+			if (!child.isInternal() && child.count() == 0)
+				continue;
+			if constexpr (Telemetry)
+				++result._stats._testedBoxes;
+			if (boxOverlaps(child._lo, child._hi, queryMin, queryMax))
+				stack.push_back(childSlot);
+		}
+	}
+}
+
+template <bool Telemetry, bool Micro>
+void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) const
+{
+	const glm::vec3 queryMin = bounds.min();
+	const glm::vec3 queryMax = bounds.max();
+	const HotNode* hot = _hot.data();
+	const float* xs = _orderedX.data();
+	const float* ys = _orderedY.data();
+	const float* zs = _orderedZ.data();
+
+	if (!hot[0].isInternal() && hot[0].count() == 0)
+		return;
+	if constexpr (Telemetry)
+		++result._stats._testedBoxes;
+	if (!boxOverlaps(hot[0]._lo, hot[0]._hi, queryMin, queryMax))
+		return;
+
+	std::vector<uint32_t>& stack = traversalStackScratch();
+	stack.clear();
+	stack.push_back(0);
+	while (!stack.empty())
+	{
+		const uint32_t slot = stack.back();
+		stack.pop_back();
+		const HotNode& node = hot[slot];
+		if constexpr (Telemetry)
+			recordNodeVisit(slot, result._stats);
+
+		if (boxInside(node._lo, node._hi, queryMin, queryMax))
+		{
+			if constexpr (Telemetry)
+				recordFullyContainedNode(slot, result._stats);
+			result._count += _cold[slot]._subtreeCount;
+			continue;
+		}
+
+		if (!node.isInternal())
+		{
+			if constexpr (Micro)
+			{
+				const uint32_t microSlot = _cold[slot]._microSlot;
+				if (microSlot != NoSlot && _microIndexes[microSlot]->hasGrid())
+				{
+					countRangeMicroGrid<Telemetry>(slot, *_microIndexes[microSlot], bounds, result);
+					continue;
+				}
+			}
+			if constexpr (Telemetry)
+				recordTestedPoints(slot, node.count(), result._stats);
+			size_t contained = 0;
+			const uint32_t end = node._first + node.count();
+			for (uint32_t i = node._first; i < end; ++i)
+			{
+				const float x = xs[i];
+				const float y = ys[i];
+				const float z = zs[i];
+				if (x >= queryMin.x && x <= queryMax.x &&
+					y >= queryMin.y && y <= queryMax.y &&
+					z >= queryMin.z && z <= queryMax.z)
+				{
+					++contained;
+				}
+			}
+			result._count += contained;
+			continue;
+		}
+
+		for (uint32_t c = node.count(); c-- > 0;)
+		{
+			const uint32_t childSlot = node._first + c;
+			const HotNode& child = hot[childSlot];
+			if (!child.isInternal() && child.count() == 0)
+				continue;
+			if constexpr (Telemetry)
+				++result._stats._testedBoxes;
+			if (boxOverlaps(child._lo, child._hi, queryMin, queryMax))
+				stack.push_back(childSlot);
+		}
+	}
+}
+
+template <bool Telemetry, bool Micro>
+void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const
+{
+	const HotNode* hot = _hot.data();
+	const uint32_t* order = _pointOrder.data();
+	const float* xs = _orderedX.data();
+	const float* ys = _orderedY.data();
+	const float* zs = _orderedZ.data();
+	std::vector<size_t>& out = result._pointIndices;
+
+	if (!hot[0].isInternal() && hot[0].count() == 0)
+		return;
+	if constexpr (Telemetry)
+		++result._stats._testedBoxes;
+	if (boxDistanceSquared(hot[0]._lo, hot[0]._hi, center) > radiusSquared)
+		return;
+
+	std::vector<uint32_t>& stack = traversalStackScratch();
+	stack.clear();
+	stack.push_back(0);
+	while (!stack.empty())
+	{
+		const uint32_t slot = stack.back();
+		stack.pop_back();
+		const HotNode& node = hot[slot];
+		if constexpr (Telemetry)
+			recordNodeVisit(slot, result._stats);
+
+		if (!node.isInternal())
+		{
+			if constexpr (Micro)
+			{
+				const uint32_t microSlot = _cold[slot]._microSlot;
+				if (microSlot != NoSlot && _microIndexes[microSlot]->hasGrid())
+				{
+					radiusQueryMicroGrid<Telemetry>(slot, *_microIndexes[microSlot], center, radiusSquared, result);
+					continue;
+				}
+			}
+			if constexpr (Telemetry)
+				recordTestedPoints(slot, node.count(), result._stats);
+			const uint32_t end = node._first + node.count();
+			for (uint32_t i = node._first; i < end; ++i)
+			{
+				const float dx = xs[i] - center.x;
+				const float dy = ys[i] - center.y;
+				const float dz = zs[i] - center.z;
+				if (dx * dx + dy * dy + dz * dz <= radiusSquared)
+					out.push_back(order[i]);
+			}
+			continue;
+		}
+
+		for (uint32_t c = node.count(); c-- > 0;)
+		{
+			const uint32_t childSlot = node._first + c;
+			const HotNode& child = hot[childSlot];
+			if (!child.isInternal() && child.count() == 0)
+				continue;
+			if constexpr (Telemetry)
+				++result._stats._testedBoxes;
+			if (boxDistanceSquared(child._lo, child._hi, center) <= radiusSquared)
+				stack.push_back(childSlot);
+		}
+	}
+}
+
+// Best-first kNN, as before the pool: same heap order, same sequence tie-break, same pruning,
+// so the same nodes are entered in the same order.
+template <bool Telemetry, bool Micro>
 void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
 	std::vector<KnnNodeCandidate>& pending = knnPendingScratch();
-	std::vector<KnnMicroCandidate>& microPending = knnMicroPendingScratch();
+	const HotNode* hot = _hot.data();
+	const uint32_t* order = _pointOrder.data();
+	const float* xs = _orderedX.data();
+	const float* ys = _orderedY.data();
+	const float* zs = _orderedZ.data();
 
-	// `best` is a max-heap on (distance, pointIndex) once it is full, exactly as the
-	// std::priority_queue it replaces. Below k elements it is an unordered bucket: nothing
-	// reads front() until size() == k, and make_heap runs at the moment it fills.
-	const auto bestWorst = [&best]() -> const std::pair<float, size_t>& { return best.front(); };
-	const auto offerPoint = [&best, k](float distance, const uint32_t* order, size_t orderedIndex) {
+	// `best` is a max-heap on (distance, pointIndex) once it is full. Below k elements it is an
+	// unordered bucket: nothing reads front() until size() == k, and make_heap runs as it fills.
+	const auto offerPoint = [&best, k, order](float distance, uint32_t orderedIndex) {
 		if (best.size() < k)
 		{
 			best.emplace_back(distance, static_cast<size_t>(order[orderedIndex]));
@@ -526,9 +985,8 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 		}
 
 		const std::pair<float, size_t>& worst = best.front();
-		// Fast reject before touching _pointOrder. The identity is only needed to break an
-		// exact distance tie or to store an accepted point, so the common case - a candidate
-		// strictly worse than the current kth - never pays the extra memory stream.
+		// Fast reject before touching the identity array: only an exact distance tie or an
+		// accepted point needs it.
 		if (distance > worst.first)
 			return;
 
@@ -541,104 +999,108 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 		}
 	};
 
-	size_t sequence = 0;
+	uint32_t sequence = 0;
 	if constexpr (Telemetry)
 		++result._stats._testedBoxes;
-	pending.push_back({ distanceSquaredToAABB(_root->_tightBounds, center), sequence++, _root.get() });
+	pending.push_back({ boxDistanceSquared(hot[0]._lo, hot[0]._hi, center), sequence++, 0u });
 
 	while (!pending.empty())
 	{
 		std::pop_heap(pending.begin(), pending.end(), KnnNodeCandidateGreater{});
 		const KnnNodeCandidate candidate = pending.back();
 		pending.pop_back();
-		const Node* node = candidate._node;
-		if (!node || node->_subtreePointCount == 0)
-			continue;
 
-		// `pending` is a min-heap on node lower-bound distance, so a candidate that fails this
-		// test proves every remaining entry fails it too: their distances are all >= this one
-		// and the kth-best distance only shrinks. Draining the rest with `continue` cost an
-		// O(log n) sift-down per leftover node and, because recordNodeVisit used to run before
-		// the test, inflated the visited-node telemetry with nodes that were never examined.
-		if (best.size() == k && candidate._distance > bestWorst().first)
+		// `pending` is a min-heap on lower-bound distance and the kth-best only shrinks, so the
+		// first candidate that cannot improve the answer proves no remaining one can.
+		if (best.size() == k && candidate._distance > best.front().first)
 			break;
 
+		const uint32_t slot = candidate._slot;
+		const HotNode& node = hot[slot];
 		if constexpr (Telemetry)
-			recordNodeVisit(*node, result._stats);
+			recordNodeVisit(slot, result._stats);
 
-		if (node->isLeaf())
+		if (!node.isInternal())
 		{
-			if (node->_microIndex && node->_microIndex->hasKdTree())
+			if constexpr (Micro)
 			{
-				const LeafMicroIndex& micro = *node->_microIndex;
-				microPending.clear();
-				microPending.push_back({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
-
-				while (!microPending.empty())
+				const uint32_t microSlot = _cold[slot]._microSlot;
+				if (microSlot != NoSlot && _microIndexes[microSlot]->hasKdTree())
 				{
-					std::pop_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
-					const KnnMicroCandidate microCandidate = microPending.back();
-					microPending.pop_back();
-					if (best.size() == k && microCandidate._distance > bestWorst().first)
-						break;
+					const LeafMicroIndex& micro = *_microIndexes[microSlot];
+					std::vector<KnnMicroCandidate>& microPending = knnMicroPendingScratch();
+					microPending.clear();
+					microPending.push_back({ distanceSquaredToAABB(micro._kdNodes.front()._bounds, center), 0u });
 
-					const LeafMicroIndex::KdNode& microNode = micro._kdNodes[microCandidate._nodeIndex];
-					if (microNode.isLeaf())
+					while (!microPending.empty())
 					{
-						if constexpr (Telemetry)
-							recordTestedPoints(*node, microNode._count, result._stats);
-						const uint32_t microEnd = microNode._begin + microNode._count;
-						for (uint32_t i = microNode._begin; i < microEnd; ++i)
+						std::pop_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
+						const KnnMicroCandidate microCandidate = microPending.back();
+						microPending.pop_back();
+						if (best.size() == k && microCandidate._distance > best.front().first)
+							break;
+
+						const LeafMicroIndex::KdNode& microNode = micro._kdNodes[microCandidate._nodeIndex];
+						if (microNode.isLeaf())
 						{
-							const uint32_t orderedIndex = micro._kdOrder[i];
-							const float dx = _orderedX[orderedIndex] - center.x;
-							const float dy = _orderedY[orderedIndex] - center.y;
-							const float dz = _orderedZ[orderedIndex] - center.z;
-							offerPoint(dx * dx + dy * dy + dz * dz, _pointOrder.data(), orderedIndex);
+							if constexpr (Telemetry)
+								recordTestedPoints(slot, microNode._count, result._stats);
+							const uint32_t microEnd = microNode._begin + microNode._count;
+							for (uint32_t i = microNode._begin; i < microEnd; ++i)
+							{
+								const uint32_t orderedIndex = micro._kdOrder[i];
+								const float dx = xs[orderedIndex] - center.x;
+								const float dy = ys[orderedIndex] - center.y;
+								const float dz = zs[orderedIndex] - center.z;
+								offerPoint(dx * dx + dy * dy + dz * dz, orderedIndex);
+							}
+							continue;
 						}
-						continue;
-					}
 
-					for (const uint32_t childIndex : { microNode._left, microNode._right })
-					{
-						if (childIndex == std::numeric_limits<uint32_t>::max())
-							continue;
+						for (const uint32_t childIndex : { microNode._left, microNode._right })
+						{
+							if (childIndex == std::numeric_limits<uint32_t>::max())
+								continue;
 
-						const float childDistance = distanceSquaredToAABB(micro._kdNodes[childIndex]._bounds, center);
-						if (best.size() == k && childDistance > bestWorst().first)
-							continue;
-						microPending.push_back({ childDistance, childIndex });
-						std::push_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
+							const float childDistance = distanceSquaredToAABB(micro._kdNodes[childIndex]._bounds, center);
+							if (best.size() == k && childDistance > best.front().first)
+								continue;
+							microPending.push_back({ childDistance, childIndex });
+							std::push_heap(microPending.begin(), microPending.end(), KnnMicroCandidateGreater{});
+						}
 					}
+					continue;
 				}
-				continue;
 			}
 
 			if constexpr (Telemetry)
-				recordTestedPoints(*node, node->_pointCount, result._stats);
-			const size_t leafEnd = node->_pointOffset + node->_pointCount;
-			for (size_t orderedIndex = node->_pointOffset; orderedIndex < leafEnd; ++orderedIndex)
+				recordTestedPoints(slot, node.count(), result._stats);
+			const uint32_t end = node._first + node.count();
+			for (uint32_t i = node._first; i < end; ++i)
 			{
-				const float dx = _orderedX[orderedIndex] - center.x;
-				const float dy = _orderedY[orderedIndex] - center.y;
-				const float dz = _orderedZ[orderedIndex] - center.z;
-				offerPoint(dx * dx + dy * dy + dz * dz, _pointOrder.data(), orderedIndex);
+				const float dx = xs[i] - center.x;
+				const float dy = ys[i] - center.y;
+				const float dz = zs[i] - center.z;
+				offerPoint(dx * dx + dy * dy + dz * dz, i);
 			}
 			continue;
 		}
 
-		for (const std::unique_ptr<Node>& child : node->_children)
+		const uint32_t first = node._first;
+		const uint32_t count = node.count();
+		for (uint32_t c = 0; c < count; ++c)
 		{
-			if (!child || child->_subtreePointCount == 0)
+			const HotNode& child = hot[first + c];
+			if (!child.isInternal() && child.count() == 0)
 				continue;
 
 			if constexpr (Telemetry)
 				++result._stats._testedBoxes;
-			const float childDistance = distanceSquaredToAABB(child->_tightBounds, center);
-			if (best.size() == k && childDistance > bestWorst().first)
+			const float childDistance = boxDistanceSquared(child._lo, child._hi, center);
+			if (best.size() == k && childDistance > best.front().first)
 				continue;
 
-			pending.push_back({ childDistance, sequence++, child.get() });
+			pending.push_back({ childDistance, sequence++, first + c });
 			std::push_heap(pending.begin(), pending.end(), KnnNodeCandidateGreater{});
 		}
 	}
@@ -1240,25 +1702,6 @@ void PointSpatialIndex::routePointsToChildren(const Node& node, const SplitPlan&
 	}
 }
 
-void PointSpatialIndex::collectStats(const Node* node, Stats& stats) const
-{
-	if (!node)
-		return;
-
-	++stats._numNodes;
-	stats._maxDepth = std::max(stats._maxDepth, node->_depth);
-
-	if (node->_children.empty())
-	{
-		++stats._numLeaves;
-		stats._numPoints += node->_pointCount;
-		return;
-	}
-
-	for (const std::unique_ptr<Node>& child : node->_children)
-		collectStats(child.get(), stats);
-}
-
 namespace
 {
 	uint64_t avalanche64(uint64_t value)
@@ -1314,41 +1757,38 @@ namespace
 uint64_t PointSpatialIndex::structureDigest() const
 {
 	uint64_t digest = 0;
-	std::vector<const Node*> stack;
-	if (_root)
-		stack.push_back(_root.get());
+	std::vector<NodeView> stack;
+	if (const NodeView rootNode = root())
+		stack.push_back(rootNode);
 
 	while (!stack.empty())
 	{
-		const Node* node = stack.back();
+		const NodeView node = stack.back();
 		stack.pop_back();
 
 		uint64_t hash = 0;
-		foldDigest(hash, node->isLeaf() ? 1u : 0u);
-		foldDigest(hash, node->_depth);
-		foldDigest(hash, node->_schemaDepth);
-		foldDigest(hash, static_cast<uint64_t>(node->_type));
-		foldDigest(hash, stableStringHash(structureNameForNode(*node)));
-		foldDigest(hash, node->_children.size());
-		foldDigest(hash, node->_subtreePointCount);
-		foldDigest(hash, node->_microIndex ? 1u : 0u);
-		foldBounds(hash, node->_bounds);
-		foldBounds(hash, node->_tightBounds);
+		foldDigest(hash, node.isLeaf() ? 1u : 0u);
+		foldDigest(hash, node.depth());
+		foldDigest(hash, node.schemaDepth());
+		foldDigest(hash, static_cast<uint64_t>(node.type()));
+		foldDigest(hash, stableStringHash(structureNameFor(node.schemaDepth(), node.type())));
+		foldDigest(hash, node.childCount());
+		foldDigest(hash, node.subtreePointCount());
+		foldDigest(hash, node.microIndex() ? 1u : 0u);
+		foldBounds(hash, node.bounds());
+		foldBounds(hash, node.tightBounds());
 
-		if (node->isLeaf())
+		if (node.isLeaf())
 		{
 			uint64_t leafIds = 0;
-			for (size_t i = 0; i < node->_pointCount; ++i)
-				accumulateResultChecksum(leafIds, _pointOrder[node->_pointOffset + i]);
+			for (size_t i = 0; i < node.pointCount(); ++i)
+				accumulateResultChecksum(leafIds, _pointOrder[node.pointOffset() + i]);
 			foldDigest(hash, leafIds);
 		}
 
 		digest += hash;
-		for (const std::unique_ptr<Node>& child : node->_children)
-		{
-			if (child)
-				stack.push_back(child.get());
-		}
+		for (size_t c = 0; c < node.childCount(); ++c)
+			stack.push_back(node.child(c));
 	}
 
 	return digest;
@@ -1358,26 +1798,31 @@ uint64_t PointSpatialIndex::structureDigest() const
 // range among its children in child order, so a depth-first leaf walk visits exactly
 // [_pointOffset, _pointOffset + _pointCount) front to back. One widening copy replaces a
 // recursive descent that touched every node of the contained subtree.
-void PointSpatialIndex::appendSubtreePoints(const Node* node, std::vector<size_t>& pointIndices) const
+void PointSpatialIndex::appendSubtreePoints(uint32_t slot, std::vector<size_t>& pointIndices) const
 {
-	if (!node || node->_pointCount == 0)
+	const ColdNode& cold = _cold[slot];
+	if (cold._subtreeCount == 0)
 		return;
 
-	const auto first = _pointOrder.begin() + static_cast<std::ptrdiff_t>(node->_pointOffset);
-	pointIndices.insert(pointIndices.end(), first, first + static_cast<std::ptrdiff_t>(node->_pointCount));
+	const auto first = _pointOrder.begin() + static_cast<std::ptrdiff_t>(cold._subtreeOffset);
+	pointIndices.insert(pointIndices.end(), first, first + static_cast<std::ptrdiff_t>(cold._subtreeCount));
 }
 
-std::string PointSpatialIndex::structureNameForNode(const Node& node) const
+std::string PointSpatialIndex::structureNameFor(size_t schemaDepth, MultiDataStructure::DataStructureLevel type) const
 {
 	if (!_schema._levels.empty() && _schema.totalLevels() > 0)
 	{
-		const size_t schemaDepth = std::min(node._schemaDepth, _schema.totalLevels() - 1);
-		const SchemaLevelConfig& level = _schema.levelForDepth(schemaDepth);
+		const SchemaLevelConfig& level = _schema.levelForDepth(std::min(schemaDepth, _schema.totalLevels() - 1));
 		if (!level._typeName.empty())
 			return level._typeName;
 	}
 
-	return Config::dataStructureLevelName(node._type);
+	return Config::dataStructureLevelName(type);
+}
+
+std::string PointSpatialIndex::structureNameForNode(const Node& node) const
+{
+	return structureNameFor(node._schemaDepth, node._type);
 }
 
 // Resolves the node's structure name to a slot in the breakdown arrays, registering it on
@@ -1425,9 +1870,8 @@ void PointSpatialIndex::assignStructureIndexes(Node* node)
 }
 
 template <bool Telemetry>
-void PointSpatialIndex::rangeQueryMicroGrid(const Node& node, const AABB& bounds, QueryResult& result) const
+void PointSpatialIndex::rangeQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, QueryResult& result) const
 {
-	const LeafMicroIndex& micro = *node._microIndex;
 	const glm::uvec3 minCell = gridCoordinates(bounds.min(), micro._bounds, micro.gridResolution);
 	const glm::uvec3 maxCell = gridCoordinates(bounds.max(), micro._bounds, micro.gridResolution);
 	const glm::vec3 minBound = bounds.min();
@@ -1462,13 +1906,12 @@ void PointSpatialIndex::rangeQueryMicroGrid(const Node& node, const AABB& bounds
 	}
 
 	if constexpr (Telemetry)
-		recordTestedPoints(node, tested, result._stats);
+		recordTestedPoints(slot, tested, result._stats);
 }
 
 template <bool Telemetry>
-void PointSpatialIndex::countRangeMicroGrid(const Node& node, const AABB& bounds, CountResult& result) const
+void PointSpatialIndex::countRangeMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, CountResult& result) const
 {
-	const LeafMicroIndex& micro = *node._microIndex;
 	const glm::uvec3 minCell = gridCoordinates(bounds.min(), micro._bounds, micro.gridResolution);
 	const glm::uvec3 maxCell = gridCoordinates(bounds.max(), micro._bounds, micro.gridResolution);
 	const glm::vec3 minBound = bounds.min();
@@ -1504,14 +1947,13 @@ void PointSpatialIndex::countRangeMicroGrid(const Node& node, const AABB& bounds
 	}
 
 	if constexpr (Telemetry)
-		recordTestedPoints(node, tested, result._stats);
+		recordTestedPoints(slot, tested, result._stats);
 	result._count += contained;
 }
 
 template <bool Telemetry>
-void PointSpatialIndex::radiusQueryMicroGrid(const Node& node, const glm::vec3& center, float radiusSquared, QueryResult& result) const
+void PointSpatialIndex::radiusQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const glm::vec3& center, float radiusSquared, QueryResult& result) const
 {
-	const LeafMicroIndex& micro = *node._microIndex;
 	const float radius = std::sqrt(radiusSquared);
 	const AABB queryBounds(center - glm::vec3(radius), center + glm::vec3(radius));
 	const glm::uvec3 minCell = gridCoordinates(queryBounds.min(), micro._bounds, micro.gridResolution);
@@ -1546,158 +1988,5 @@ void PointSpatialIndex::radiusQueryMicroGrid(const Node& node, const glm::vec3& 
 	}
 
 	if constexpr (Telemetry)
-		recordTestedPoints(node, tested, result._stats);
-}
-
-template <bool Telemetry>
-void PointSpatialIndex::rangeQueryNode(const Node* node, const AABB& bounds, QueryResult& result) const
-{
-	if (!node || !_cloud)
-		return;
-
-	if (node->_subtreePointCount == 0)
-		return;
-	if constexpr (Telemetry)
-		++result._stats._testedBoxes;
-	if (!node->_tightBounds.collides(bounds))
-		return;
-	if constexpr (Telemetry)
-		recordNodeVisit(*node, result._stats);
-
-	if (containsAABB(bounds, node->_tightBounds))
-	{
-		if constexpr (Telemetry)
-			recordFullyContainedNode(*node, result._stats);
-		appendSubtreePoints(node, result._pointIndices);
-		return;
-	}
-
-	if (node->isLeaf())
-	{
-		if (node->_microIndex && node->_microIndex->hasGrid())
-		{
-			rangeQueryMicroGrid<Telemetry>(*node, bounds, result);
-			return;
-		}
-
-		if constexpr (Telemetry)
-			recordTestedPoints(*node, node->_pointCount, result._stats);
-		const glm::vec3 minBound = bounds.min();
-		const glm::vec3 maxBound = bounds.max();
-		for (size_t i = 0; i < node->_pointCount; ++i)
-		{
-			const size_t orderedIndex = node->_pointOffset + i;
-			const float x = _orderedX[orderedIndex];
-			const float y = _orderedY[orderedIndex];
-			const float z = _orderedZ[orderedIndex];
-			if (x >= minBound.x && x <= maxBound.x &&
-				y >= minBound.y && y <= maxBound.y &&
-				z >= minBound.z && z <= maxBound.z)
-			{
-				result._pointIndices.push_back(_pointOrder[orderedIndex]);
-			}
-		}
-		return;
-	}
-
-	for (const std::unique_ptr<Node>& child : node->_children)
-		rangeQueryNode<Telemetry>(child.get(), bounds, result);
-}
-
-template <bool Telemetry>
-void PointSpatialIndex::countRangeNode(const Node* node, const AABB& bounds, CountResult& result) const
-{
-	if (!node || !_cloud)
-		return;
-
-	if (node->_subtreePointCount == 0)
-		return;
-	if constexpr (Telemetry)
-		++result._stats._testedBoxes;
-	if (!node->_tightBounds.collides(bounds))
-		return;
-	if constexpr (Telemetry)
-		recordNodeVisit(*node, result._stats);
-
-	if (containsAABB(bounds, node->_tightBounds))
-	{
-		if constexpr (Telemetry)
-			recordFullyContainedNode(*node, result._stats);
-		result._count += node->_subtreePointCount;
-		return;
-	}
-
-	if (node->isLeaf())
-	{
-		if (node->_microIndex && node->_microIndex->hasGrid())
-		{
-			countRangeMicroGrid<Telemetry>(*node, bounds, result);
-			return;
-		}
-
-		if constexpr (Telemetry)
-			recordTestedPoints(*node, node->_pointCount, result._stats);
-		const glm::vec3 minBound = bounds.min();
-		const glm::vec3 maxBound = bounds.max();
-		size_t contained = 0;
-		for (size_t i = 0; i < node->_pointCount; ++i)
-		{
-			const size_t orderedIndex = node->_pointOffset + i;
-			const float x = _orderedX[orderedIndex];
-			const float y = _orderedY[orderedIndex];
-			const float z = _orderedZ[orderedIndex];
-			if (x >= minBound.x && x <= maxBound.x &&
-				y >= minBound.y && y <= maxBound.y &&
-				z >= minBound.z && z <= maxBound.z)
-			{
-				++contained;
-			}
-		}
-		result._count += contained;
-		return;
-	}
-
-	for (const std::unique_ptr<Node>& child : node->_children)
-		countRangeNode<Telemetry>(child.get(), bounds, result);
-}
-
-template <bool Telemetry>
-void PointSpatialIndex::radiusQueryNode(const Node* node, const glm::vec3& center, float radiusSquared, QueryResult& result) const
-{
-	if (!node || !_cloud)
-		return;
-
-	if (node->_subtreePointCount == 0)
-		return;
-	if constexpr (Telemetry)
-		++result._stats._testedBoxes;
-	if (distanceSquaredToAABB(node->_tightBounds, center) > radiusSquared)
-		return;
-	if constexpr (Telemetry)
-		recordNodeVisit(*node, result._stats);
-
-	if (node->isLeaf())
-	{
-		if (node->_microIndex && node->_microIndex->hasGrid())
-		{
-			radiusQueryMicroGrid<Telemetry>(*node, center, radiusSquared, result);
-			return;
-		}
-
-		if constexpr (Telemetry)
-			recordTestedPoints(*node, node->_pointCount, result._stats);
-		for (size_t i = 0; i < node->_pointCount; ++i)
-		{
-			const size_t orderedIndex = node->_pointOffset + i;
-			const float dx = _orderedX[orderedIndex] - center.x;
-			const float dy = _orderedY[orderedIndex] - center.y;
-			const float dz = _orderedZ[orderedIndex] - center.z;
-			if (dx * dx + dy * dy + dz * dz <= radiusSquared)
-				result._pointIndices.push_back(_pointOrder[orderedIndex]);
-		}
-		return;
-	}
-
-	for (const std::unique_ptr<Node>& child : node->_children)
-		radiusQueryNode<Telemetry>(child.get(), center, radiusSquared, result);
+		recordTestedPoints(slot, tested, result._stats);
 }

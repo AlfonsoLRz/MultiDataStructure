@@ -54,7 +54,7 @@ namespace Experiments
 		double	_latencyCiHighMs = 0.0;
 	};
 
-	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs);
-	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, const PointSpatialIndex::Node* root, double buildTimeMs, const SchemaConfig& schema);
+	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, PointSpatialIndex::NodeView root, double buildTimeMs);
+	BuildMetrics collectBuildMetrics(const PointSpatialIndex::Stats& stats, PointSpatialIndex::NodeView root, double buildTimeMs, const SchemaConfig& schema);
 	QueryMetrics summarizeQueryStats(const std::vector<PointSpatialIndex::QueryStats>& samples);
 }

@@ -1297,29 +1297,29 @@ struct ActiveStructureStats
 	std::string	_summary;
 };
 
-static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig& schema, const PointSpatialIndex::Node& node)
+static const SchemaLevelConfig* schemaLevelForNode(const SchemaConfig& schema, const PointSpatialIndex::NodeView& node)
 {
 	if (schema._levels.empty())
 		return nullptr;
 	const size_t totalLevels = std::max<size_t>(1, schema.totalLevels());
-	const size_t schemaDepth = std::min(node._schemaDepth, totalLevels - 1);
+	const size_t schemaDepth = std::min(node.schemaDepth(), totalLevels - 1);
 	return &schema.levelForDepth(schemaDepth);
 }
 
-static std::string activeTypeNameForNode(const SchemaConfig& schema, const PointSpatialIndex::Node& node)
+static std::string activeTypeNameForNode(const SchemaConfig& schema, const PointSpatialIndex::NodeView& node)
 {
 	const SchemaLevelConfig* level = schemaLevelForNode(schema, node);
 	if (level)
 		return schemaTypeShortName(*level);
 
 	SchemaLevelConfig fallback;
-	fallback._type = node._type;
-	fallback._typeName = Config::dataStructureLevelName(node._type);
+	fallback._type = node.type();
+	fallback._typeName = Config::dataStructureLevelName(node.type());
 	return schemaTypeShortName(fallback);
 }
 
 static void collectActiveStructureStatsRecursive(
-	const PointSpatialIndex::Node* node,
+	const PointSpatialIndex::NodeView& node,
 	const SchemaConfig& schema,
 	std::map<std::string, ActiveTypeAccumulator>& byType,
 	size_t& totalNodes,
@@ -1328,21 +1328,21 @@ static void collectActiveStructureStatsRecursive(
 	if (!node)
 		return;
 
-	const std::string typeName = activeTypeNameForNode(schema, *node);
+	const std::string typeName = activeTypeNameForNode(schema, node);
 	ActiveTypeAccumulator& accumulator = byType[typeName];
 	++accumulator._nodes;
 	++totalNodes;
-	if (node->isLeaf())
+	if (node.isLeaf())
 	{
-		accumulator._leafPoints += node->_pointCount;
-		totalLeafPoints += node->_pointCount;
+		accumulator._leafPoints += node.pointCount();
+		totalLeafPoints += node.pointCount();
 	}
 
-	for (const std::unique_ptr<PointSpatialIndex::Node>& child : node->_children)
-		collectActiveStructureStatsRecursive(child.get(), schema, byType, totalNodes, totalLeafPoints);
+	for (size_t c = 0; c < node.childCount(); ++c)
+		collectActiveStructureStatsRecursive(node.child(c), schema, byType, totalNodes, totalLeafPoints);
 }
 
-static ActiveStructureStats collectActiveStructureStats(const PointSpatialIndex::Node* root, const SchemaConfig& schema)
+static ActiveStructureStats collectActiveStructureStats(const PointSpatialIndex::NodeView& root, const SchemaConfig& schema)
 {
 	ActiveStructureStats stats;
 	if (!root)
@@ -1354,7 +1354,7 @@ static ActiveStructureStats collectActiveStructureStats(const PointSpatialIndex:
 	collectActiveStructureStatsRecursive(root, schema, byType, totalNodes, totalLeafPoints);
 
 	stats._activeStructureTypes = byType.size();
-	const std::string primaryType = schema._levels.empty() ? activeTypeNameForNode(schema, *root) : schemaTypeShortName(schema._levels.front());
+	const std::string primaryType = schema._levels.empty() ? activeTypeNameForNode(schema, root) : schemaTypeShortName(schema._levels.front());
 	size_t nonPrimaryNodes = 0;
 	size_t nonPrimaryLeafPoints = 0;
 
