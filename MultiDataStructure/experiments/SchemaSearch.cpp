@@ -3390,11 +3390,14 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 	{
 		std::vector<double> repeatMeanLatencies;
 		repeatMeanLatencies.reserve(repeats);
-		repeatMeanLatencies.push_back(result._metrics._averageLatencyMs);
 		// Repeat passes run with telemetry compiled out, so the repeat statistics time the
 		// traversal alone; the instrumented first pass above still supplies every counter the
 		// score and diagnostics read. Each repeat must reproduce that pass's results exactly,
 		// which turns every multi-pass measurement into a free engine self-check.
+		// The instrumented pass is NOT pooled into the repeat statistics (it was, briefly, in
+		// engine 2-6): it is a different measurement - counters on, cold caches - and mixing it
+		// in shifts the mean and inflates the confidence interval. latency_repeat_* = the
+		// uninstrumented passes only; avg_latency_ms stays the instrumented pass.
 		constexpr PointSpatialIndex::QueryTelemetry timed = PointSpatialIndex::QueryTelemetry::Off;
 		for (size_t r = 1; r < repeats; ++r)
 		{
