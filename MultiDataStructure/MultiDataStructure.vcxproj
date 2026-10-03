@@ -149,6 +149,10 @@
     <ClInclude Include="Ray.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="ui\OptimizerGui.h" />
+    <ClInclude Include="ui\GuiCommon.h" />
+    <ClInclude Include="ui\Charts.h" />
+    <ClInclude Include="ui\SearchFlow.h" />
+    <ClInclude Include="ui\Viewer3D.h" />
     <ClInclude Include="workloads\points\PointBenchmark.h" />
     <ClInclude Include="workloads\points\BIH.h" />
     <ClInclude Include="workloads\points\PointCloud.h" />
@@ -208,6 +212,10 @@
     <ClCompile Include="Ray.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="ui\OptimizerGui.cpp" />
+    <ClCompile Include="ui\GuiCommon.cpp" />
+    <ClCompile Include="ui\Charts.cpp" />
+    <ClCompile Include="ui\SearchFlow.cpp" />
+    <ClCompile Include="ui\Viewer3D.cpp" />
     <ClCompile Include="workloads\points\BIH.cpp" />
     <ClCompile Include="workloads\points\HGrid.cpp" />
     <ClCompile Include="workloads\points\PointBenchmark.cpp" />

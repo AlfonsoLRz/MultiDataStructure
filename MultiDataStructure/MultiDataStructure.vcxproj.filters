@@ -162,6 +162,18 @@
     <ClInclude Include="ui\OptimizerGui.h">
       <Filter>ui</Filter>
     </ClInclude>
+    <ClInclude Include="ui\GuiCommon.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\Charts.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\SearchFlow.h">
+      <Filter>ui</Filter>
+    </ClInclude>
+    <ClInclude Include="ui\Viewer3D.h">
+      <Filter>ui</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\tests\test_bih.cpp">
@@ -312,6 +324,18 @@
       <Filter>workloads\points</Filter>
     </ClCompile>
     <ClCompile Include="ui\OptimizerGui.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\GuiCommon.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\Charts.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\SearchFlow.cpp">
+      <Filter>ui</Filter>
+    </ClCompile>
+    <ClCompile Include="ui\Viewer3D.cpp">
       <Filter>ui</Filter>
     </ClCompile>
   </ItemGroup>

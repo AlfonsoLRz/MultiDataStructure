@@ -1,2752 +1,1433 @@
 #include "OptimizerGui.h"
 
+#include "Charts.h"
+#include "GuiCommon.h"
+#include "SearchFlow.h"
+#include "Viewer3D.h"
+#include "../AppConfig.h"
 #include "../core/Config.h"
-#include "../experiments/SchemaSearch.h"
-#include "../workloads/points/LBVH.h"
+#include "../experiments/QueryTrace.h"
+#include "../workloads/points/PointCloud.h"
 
-static constexpr size_t TextBufferSize = 512;
+#include "imgui_stdlib.h"
+#include <boost/json.hpp>
 
-struct SchemaEntry
+#include <set>
+
+namespace
 {
-	std::string	_label;
-	std::string	_path;
-	bool		_selected = true;
-};
+	enum class Step { Data, Workload, Search, Run, Results, Inspect };
+	constexpr const char* StepNames[] = { "1  Data", "2  Workload", "3  Search", "4  Run", "5  Results", "6  Inspect" };
 
-struct WorkloadEntry
-{
-	std::string	_label;
-	std::string	_path;
-};
+	const ImU32 ArmColors[] = { IM_COL32(140, 212, 184, 255), IM_COL32(242, 199, 82, 255), IM_COL32(150, 178, 255, 255), IM_COL32(255, 122, 140, 255) };
 
-struct BestResult
-{
-	std::string	_dataset;
-	std::string	_workload;
-	std::string	_schemaName;
-	std::string	_schemaPath;
-	double		_score = 0.0;
-	double		_averageLatencyMs = 0.0;
-	double		_buildTimeMs = 0.0;
-	double		_gpuBuildMs = 0.0;
-	double		_gpuQueryMs = 0.0;
-	uint64_t	_memoryBytes = 0;
-	size_t		_candidates = 0;
-	std::string	_backend;
-	std::string	_scoreMode = "unknown";
-	std::string	_scoreStage = "unknown";
-	bool		_scoreIsFinalLatency = false;
-	size_t		_effectiveQueries = 0;
-};
-
-struct LiveRankingEntry
-{
-	size_t		_order = 0;
-	std::string	_dataset;
-	std::string	_workload;
-	std::string	_schemaName;
-	std::string	_schemaPath;
-	std::string	_backend;
-	std::string	_cudaBuilder;
-	double		_score = 0.0;
-	double		_averageLatencyMs = 0.0;
-	double		_p95LatencyMs = 0.0;
-	double		_buildTimeMs = 0.0;
-	double		_gpuBuildMs = 0.0;
-	double		_gpuQueryMs = 0.0;
-	double		_averageVisitedNodes = 0.0;
-	double		_averageTestedPoints = 0.0;
-	uint64_t	_memoryBytes = 0;
-	std::string	_scoreMode = "latency";
-	std::string	_scoreStage = "final";
-	bool		_scoreIsFinalLatency = true;
-	size_t		_effectiveQueries = 0;
-};
-
-struct SchemaFileViewer
-{
-	bool		_open = false;
-	bool		_wrap = false;
-	std::string	_title = "Schema JSON";
-	std::string	_path;
-	std::string	_content;
-	std::string	_error;
-};
-
-struct PreviewBox
-{
-	glm::vec3 min = glm::vec3(0.0f);
-	glm::vec3 max = glm::vec3(0.0f);
-	std::string	_typeName;
-	size_t		_depth = 0;
-};
-
-struct PreviewPhase
-{
-	SchemaLevelConfig	_level;
-	std::string			_label;
-	size_t				_startDepth = 0;
-	size_t				_endDepth = 0;
-};
-
-struct StructurePreview
-{
-	bool	_open = false;
-	bool	_needsRebuild = false;
-	bool	_truncated = false;
-	bool	_showFullSchedule = false;
-	std::string	_title = "Structure Preview";
-	std::string	_path;
-	std::string	_schemaName;
-	std::string	_error;
-	std::vector<PreviewBox>	_boxes;
-	std::vector<PreviewPhase>	_phases;
-	int	_phaseIndex = 0;
-	int	_maxDepth = 2;
-	int	_maxBoxes = 2048;
-	float	_yaw = 0.68f;
-	float	_pitch = 0.42f;
-	float	_zoom = 3.2f;
-};
-
-struct GuiState
-{
-	std::array<char, TextBufferSize>	_inputPath{};
-	std::array<char, TextBufferSize>	_rankModelPath{};
-	std::array<char, TextBufferSize>	_csvPath{};
-	std::array<char, TextBufferSize>	_bestCsvPath{};
-	std::array<char, TextBufferSize>	_paretoCsvPath{};
-	std::array<char, TextBufferSize>	_explainReportPath{};
-	std::array<char, TextBufferSize>	_queryTracePath{};
-	std::array<char, TextBufferSize>	_generatedSchemaDir{};
-	std::array<char, TextBufferSize>	_autoConditionSchemaDir{};
-	std::array<char, TextBufferSize>	_selectorOutputPath{};
-
-	std::vector<SchemaEntry>	_schemas;
-	std::vector<WorkloadEntry>	_workloads;
-	int	_selectedWorkload = 0;
-
-	bool	_autoConditions = true;
-	bool	_includeSynthetic = false;
-	bool	_useBinaryCache = true;
-	bool	_rebuildBinaryCache = false;
-	bool	_generateSchemas = true;
-	bool	_generatedOnly = true;
-	bool	_generatedConditional = true;
-	bool	_generatedAdaptiveLeafCapacity = false;
-	bool	_queryMinimalPrimitives = true;
-	bool	_useRankModel = false;
-	// GA path with rungs + threshold refinement; default-on.
-	bool	_optimizeSchemas = true;
-	int		_evaluator = 0;
-	int		_cudaDevice = 0;
-	int		_cudaBuilder = 0;
-	int		_cudaKnnBackend = 0;
-	int		_cudaQueryBatch = 0;
-	int		_cudaMemoryBudgetMb = 0;
-	int		_liveRankingTopN = 10;
-	bool	_advancedEvaluatorOpen = false;
-	bool	_advancedScoringOpen = false;
-
-	int		_queryCount = 64;
-	int		_knnK = 16;
-	int		_querySeed = 1337;
-	int		_syntheticScale = 512;
-	int		_generatedCount = 256;
-	int		_benchmarkTopK = 32;
-	int		_generatedMinBlocks = 2;
-	int		_generatedMaxBlocks = 3;
-	int		_generatedMaxDepth = 12;
-	int		_generatedMinLeaf = 32;
-	int		_generatedMaxLeaf = 32768;
-	int		_generatedSeed = 1337;
-	int		_optimizerGenerations = 3;
-	int		_optimizerPopulation = 64;
-	int		_optimizerElites = 6;
-	int		_optimizerSeed = 1337;
-	int		_conditionProxyCandidates = 256;
-	int		_conditionProxyPoints = 262144;
-	int		_conditionProxyQueries = 8;
-	int		_conditionFinalTopK = 16;
-	int		_conditionConfirmTopK = 4;
-	float	_generatedConditionProbability = 0.5f;
-	float	_generatedAdaptiveLeafProbability = 0.25f;
-	float	_optimizerMutationRate = 0.65f;
-	float	_optimizerRandomFraction = 0.20f;
-	float	_scoreBuildWeight = 0.0f;
-	float	_scoreMemoryWeight = 0.0f;
-	float	_scoreImbalanceWeight = 0.0f;
-
-	// Score cache and parallel dispatch defaults.
-	bool					_scoreCacheEnabled = true;
-	std::array<char, 512>	_scoreCachePath{};
-	bool					_rebuildScoreCache = false;
-	int						_parallelDispatch = 1;
-	bool					_includeBaselineSchemas = true;
-
-	// Multi-fidelity rung schedule: visit-proxy, latency, then full-workload confirmation; default-on.
-	bool	_useRungSchedule = true;
-	int		_rungProxyQueries = 4;
-	int		_rungProxyAdvance = 32;
-	float	_rungProxyAlpha = 0.1f;
-	int		_rungFullQueries = 16;
-	int		_rungFullAdvance = 8;
-	int		_rungConfirmQueries = 64;
-	std::array<char, TextBufferSize> rungSurrogatePath{};
-	int	_rungSurrogatePool = 0;
-	int	_rungSurrogateTop = 0;
-
-	// Tune top-K conditional thresholds with a (1+lambda)-ES after the GA, then re-measure improvers; default-on.
-	bool	_refineThresholds = true;
-	int		_refineThresholdsTopK = 4;
-	int		_refineThresholdsEvals = 60;
-	float	_refineThresholdsSigma = 0.3f;
-	int		_refineThresholdsSeed = 1337;
-
-	// Re-measure top-K per (dataset, workload) over N seeds for a mean + 95% bootstrap CI; default-on.
-	bool	_confirmSeeds = true;
-	int		_confirmSeedsCount = 5;
-	int		_confirmTopK = 4;
-
-	// Diversity controls: crossover plus NSGA-II elite ranking; default-on.
-	float	_optimizerCrossoverRate = 0.4f;
-	bool	_optimizerUseNsga2 = true;
-	bool	_repairMutations = true;
-	int		_repairTopK = 4;
-	int		_repairPerCandidate = 2;
-
-	SchemaFileViewer	_fileViewer;
-	StructurePreview	_structurePreview;
-};
-
-struct RunSession
-{
-	std::thread	_worker;
-	std::atomic<bool>	_running = false;
-	std::atomic<bool>	_finished = false;
-	std::mutex	_mutex;
-	std::string	_status = "Idle";
-	std::string	_log;
-	std::string	_error;
-	std::vector<BestResult>	_bestResults;
-	std::vector<LiveRankingEntry>	_liveRanking;
-	size_t	_evaluatedCandidates = 0;
-	int	_exitCode = 0;
-};
-
-template <size_t N>
-static void setText(std::array<char, N>& buffer, const std::string& text)
-{
-	buffer.fill('\0');
-	const size_t count = std::min(text.size(), N - 1);
-	std::memcpy(buffer.data(), text.data(), count);
-}
-
-template <size_t N>
-static std::string textValue(const std::array<char, N>& buffer)
-{
-	return std::string(buffer.data());
-}
-
-static bool filesystemExists(const std::filesystem::path& value)
-{
-	if (value.empty())
-		return false;
-
-	std::error_code error;
-	return std::filesystem::exists(value, error);
-}
-
-static void addAncestorSearchRoots(std::vector<std::filesystem::path>& roots, std::filesystem::path start)
-{
-	if (start.empty())
-		return;
-
-	std::error_code error;
-	start = std::filesystem::absolute(start, error);
-	if (error)
-		return;
-
-	if (start.has_filename() && start.extension() == ".exe")
-		start = start.parent_path();
-
-	for (;;)
+	struct BenchmarkCell
 	{
-		const std::filesystem::path normalized = start.lexically_normal();
-		if (std::find(roots.begin(), roots.end(), normalized) == roots.end())
-			roots.push_back(normalized);
-
-		if (!start.has_parent_path() || start == start.parent_path())
-			break;
-
-		start = start.parent_path();
-	}
-}
-
-static std::filesystem::path executablePath()
-{
-#ifdef _WIN32
-	char* programPath = nullptr;
-	if (_get_pgmptr(&programPath) == 0 && programPath)
-		return std::filesystem::path(programPath);
-#endif
-	return {};
-}
-
-static std::vector<std::filesystem::path> searchRoots()
-{
-	std::vector<std::filesystem::path> roots;
-	addAncestorSearchRoots(roots, std::filesystem::current_path());
-	addAncestorSearchRoots(roots, executablePath());
-	return roots;
-}
-
-static std::filesystem::path projectRoot()
-{
-	for (const std::filesystem::path& root : searchRoots())
-	{
-		if (filesystemExists(root / "configs" / "schemas") && filesystemExists(root / "MultiDataStructure.sln"))
-			return root;
-	}
-
-	return {};
-}
-
-static std::string projectPath(const std::string& relativePath)
-{
-	const std::filesystem::path root = projectRoot();
-	if (root.empty())
-		return relativePath;
-	return (root / relativePath).lexically_normal().string();
-}
-
-static std::string resolvePath(const std::string& configuredPath)
-{
-	if (configuredPath.empty())
-		return configuredPath;
-
-	const std::filesystem::path path(configuredPath);
-	if (filesystemExists(path))
-		return path.lexically_normal().string();
-
-	if (path.is_absolute())
-		return configuredPath;
-
-	for (const std::filesystem::path& root : searchRoots())
-	{
-		const std::filesystem::path candidate = (root / path).lexically_normal();
-		if (filesystemExists(candidate))
-			return candidate.string();
-	}
-
-	return configuredPath;
-}
-
-static std::string schemaLabelFromPath(const std::string& path)
-{
-	std::filesystem::path schemaPath(path);
-	std::string stem = schemaPath.stem().string();
-	for (char& c : stem)
-	{
-		if (c == '_' || c == '-')
-			c = ' ';
-	}
-	return stem.empty() ? path : stem;
-}
-
-static std::vector<std::string> splitCsvLine(const std::string& line)
-{
-	std::vector<std::string> values;
-	std::string current;
-	bool quoted = false;
-
-	for (size_t i = 0; i < line.size(); ++i)
-	{
-		const char c = line[i];
-		if (quoted)
-		{
-			if (c == '"' && i + 1 < line.size() && line[i + 1] == '"')
-			{
-				current.push_back('"');
-				++i;
-			}
-			else if (c == '"')
-			{
-				quoted = false;
-			}
-			else
-			{
-				current.push_back(c);
-			}
-			continue;
-		}
-
-		if (c == '"')
-		{
-			quoted = true;
-		}
-		else if (c == ',')
-		{
-			values.push_back(current);
-			current.clear();
-		}
-		else
-		{
-			current.push_back(c);
-		}
-	}
-
-	values.push_back(current);
-	return values;
-}
-
-static size_t columnIndex(const std::vector<std::string>& header, const std::string& name)
-{
-	const auto found = std::find(header.begin(), header.end(), name);
-	if (found == header.end())
-		return std::numeric_limits<size_t>::max();
-	return static_cast<size_t>(std::distance(header.begin(), found));
-}
-
-static std::string csvValue(const std::vector<std::string>& row, size_t index)
-{
-	if (index == std::numeric_limits<size_t>::max() || index >= row.size())
-		return {};
-	return row[index];
-}
-
-static double parseDouble(const std::string& value)
-{
-	if (value.empty())
-		return 0.0;
-	try
-	{
-		return std::stod(value);
-	}
-	catch (...)
-	{
-		return 0.0;
-	}
-}
-
-static uint64_t parseUint64(const std::string& value)
-{
-	if (value.empty())
-		return 0;
-	try
-	{
-		return static_cast<uint64_t>(std::stoull(value));
-	}
-	catch (...)
-	{
-		return 0;
-	}
-}
-
-static std::string loadTextFile(const std::string& configuredPath, std::string& error)
-{
-	error.clear();
-	const std::string path = resolvePath(configuredPath);
-	std::ifstream input(path, std::ios::binary);
-	if (!input.is_open())
-	{
-		error = "Unable to open file: " + configuredPath;
-		return {};
-	}
-
-	std::ostringstream buffer;
-	buffer << input.rdbuf();
-	std::string content = buffer.str();
-	constexpr size_t MaxPreviewBytes = 4 * 1024 * 1024;
-	if (content.size() > MaxPreviewBytes)
-	{
-		content.resize(MaxPreviewBytes);
-		content += "\n\n... truncated ...";
-	}
-	return content;
-}
-
-static std::string normalizedStructureName(std::string value)
-{
-	value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
-		return std::isspace(c) || c == '_' || c == '-';
-	}), value.end());
-	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-		return static_cast<char>(std::tolower(c));
-	});
-	return value;
-}
-
-static bool isStructureName(const std::string& normalized, std::initializer_list<const char*> names)
-{
-	for (const char* name : names)
-	{
-		if (normalized == name)
-			return true;
-	}
-	return false;
-}
-
-static ImVec4 colorForStructureName(const std::string& typeName, float alpha = 1.0f)
-{
-	const std::string normalized = normalizedStructureName(typeName);
-	if (isStructureName(normalized, { "quadtree", "quadtreenode", "qt" }))
-		return ImVec4(0.38f, 0.86f, 0.58f, alpha);
-	if (isStructureName(normalized, { "kdtree", "kdtreenode", "kd" }))
-		return ImVec4(0.95f, 0.78f, 0.32f, alpha);
-	if (isStructureName(normalized, { "bih", "binaryintervalhierarchy", "intervalhierarchy" }))
-		return ImVec4(1.00f, 0.48f, 0.55f, alpha);
-	if (isStructureName(normalized, { "karrasoctree", "mortonoctree", "octreekarras", "octreemorton" }))
-		return ImVec4(0.42f, 0.72f, 1.00f, alpha);
-	if (isStructureName(normalized, { "octree", "octreenode", "ot" }))
-		return ImVec4(0.35f, 0.88f, 0.92f, alpha);
-	if (isStructureName(normalized, { "regulargrid", "uniformgrid", "grid", "grid3d" }))
-		return ImVec4(1.00f, 0.58f, 0.28f, alpha);
-	if (isStructureName(normalized, { "hgrid", "hierarchicalgrid", "hierarchicalgrid3d" }))
-		return ImVec4(0.78f, 0.64f, 1.00f, alpha);
-	if (isStructureName(normalized, { "bvh", "bvhnode" }))
-		return ImVec4(0.55f, 0.70f, 1.00f, alpha);
-	if (isStructureName(normalized, { "lbvh", "linearbvh" }))
-		return ImVec4(0.66f, 0.82f, 1.00f, alpha);
-	return ImVec4(0.78f, 0.82f, 0.88f, alpha);
-}
-
-static ImU32 packedColorForStructureName(const std::string& typeName, float alpha = 1.0f)
-{
-	return ImGui::ColorConvertFloat4ToU32(colorForStructureName(typeName, alpha));
-}
-
-static int longestAxis(const glm::vec3& extent)
-{
-	if (extent.x >= extent.y && extent.x >= extent.z)
-		return 0;
-	if (extent.y >= extent.z)
-		return 1;
-	return 2;
-}
-
-static std::string previewPhaseLabel(const SchemaLevelConfig& level, size_t startDepth, size_t endDepth)
-{
-	std::ostringstream output;
-	output << level._typeName << " d" << startDepth << "-d" << (endDepth == 0 ? 0 : endDepth - 1);
-	if (!level._condition.empty())
-		output << " conditional";
-	return output.str();
-}
-
-static std::vector<PreviewPhase> previewPhasesForSchema(const SchemaConfig& schema)
-{
-	std::vector<PreviewPhase> phases;
-	const size_t schemaMaxDepth = schema._buildPolicy._maxDepth > 0
-		? std::min(schema._buildPolicy._maxDepth, schema.totalLevels())
-		: schema.totalLevels();
-	size_t startDepth = 0;
-	for (const SchemaLevelConfig& level : schema._levels)
-	{
-		const size_t endDepth = startDepth + level._numLevels;
-		if (startDepth >= schemaMaxDepth)
-			break;
-
-		PreviewPhase phase;
-		phase._level = level;
-		phase._startDepth = startDepth;
-		phase._endDepth = std::min(endDepth, schemaMaxDepth);
-		phase._label = previewPhaseLabel(level, phase._startDepth, phase._endDepth);
-		phases.push_back(std::move(phase));
-		startDepth = endDepth;
-	}
-	return phases;
-}
-
-static void pushGridPreviewChildren(
-	const PreviewBox& parent,
-	size_t depth,
-	const std::string& typeName,
-	int cellsX,
-	int cellsY,
-	int cellsZ,
-	std::vector<PreviewBox>& children)
-{
-	const glm::vec3 extent = parent.max - parent.min;
-	for (int z = 0; z < cellsZ; ++z)
-	{
-		for (int y = 0; y < cellsY; ++y)
-		{
-			for (int x = 0; x < cellsX; ++x)
-			{
-				PreviewBox child;
-				child._typeName = typeName;
-				child._depth = depth;
-				child.min = glm::vec3(
-					parent.min.x + extent.x * (static_cast<float>(x) / static_cast<float>(cellsX)),
-					parent.min.y + extent.y * (static_cast<float>(y) / static_cast<float>(cellsY)),
-					parent.min.z + extent.z * (static_cast<float>(z) / static_cast<float>(cellsZ)));
-				child.max = glm::vec3(
-					parent.min.x + extent.x * (static_cast<float>(x + 1) / static_cast<float>(cellsX)),
-					parent.min.y + extent.y * (static_cast<float>(y + 1) / static_cast<float>(cellsY)),
-					parent.min.z + extent.z * (static_cast<float>(z + 1) / static_cast<float>(cellsZ)));
-				children.push_back(child);
-			}
-		}
-	}
-}
-
-static void pushGridPreviewChildren(
-	const PreviewBox& parent,
-	size_t depth,
-	const std::string& typeName,
-	const glm::uvec3& cells,
-	std::vector<PreviewBox>& children)
-{
-	pushGridPreviewChildren(
-		parent,
-		depth,
-		typeName,
-		static_cast<int>(cells.x),
-		static_cast<int>(cells.y),
-		static_cast<int>(cells.z),
-		children);
-}
-
-static std::vector<PreviewBox> previewChildrenForLevel(const PreviewBox& parent, const SchemaLevelConfig& level, size_t depth)
-{
-	std::vector<PreviewBox> children;
-	const std::string normalized = normalizedStructureName(level._typeName);
-	if (isStructureName(normalized, { "quadtree", "quadtreenode", "qt" }))
-	{
-		glm::uvec3 cells(2, 2, 2);
-		cells[longestAxis(parent.max - parent.min)] = 1;
-		pushGridPreviewChildren(parent, depth, level._typeName, cells, children);
-	}
-	else if (isStructureName(normalized, { "octree", "octreenode", "ot", "karrasoctree", "mortonoctree", "octreekarras", "octreemorton" }))
-	{
-		pushGridPreviewChildren(parent, depth, level._typeName, 2, 2, 2, children);
-	}
-	else if (isStructureName(normalized, { "regulargrid", "uniformgrid", "grid", "grid3d", "hgrid", "hierarchicalgrid", "hierarchicalgrid3d" }))
-	{
-		pushGridPreviewChildren(parent, depth, level._typeName, 3, 3, 3, children);
-	}
-	else
-	{
-		const glm::vec3 extent = parent.max - parent.min;
-		const int axis = longestAxis(extent);
-		const float splitValue = parent.min[axis] + extent[axis] * 0.5f;
-
-		PreviewBox left = parent;
-		PreviewBox right = parent;
-		left._typeName = level._typeName;
-		right._typeName = level._typeName;
-		left._depth = depth;
-		right._depth = depth;
-		left.max[axis] = splitValue;
-		right.min[axis] = splitValue;
-		children.push_back(left);
-		children.push_back(right);
-	}
-	return children;
-}
-
-static void rebuildStructurePreview(StructurePreview& preview)
-{
-	preview._error.clear();
-	preview._boxes.clear();
-	preview._phases.clear();
-	preview._truncated = false;
-	preview._needsRebuild = false;
-	preview._maxDepth = std::clamp(preview._maxDepth, 1, 9);
-	preview._maxBoxes = std::clamp(preview._maxBoxes, 64, 20000);
-
-	try
-	{
-		const SchemaConfig schema = Config::loadSchemaConfig(preview._path);
-		preview._schemaName = schema._name.empty() ? schemaLabelFromPath(preview._path) : schema._name;
-		preview._phases = previewPhasesForSchema(schema);
-		if (preview._phases.empty())
-			throw std::runtime_error("Schema has no previewable levels");
-		preview._phaseIndex = std::clamp(preview._phaseIndex, 0, static_cast<int>(preview._phases.size() - 1));
-		const size_t schemaMaxDepth = schema._buildPolicy._maxDepth > 0
-			? std::min(schema._buildPolicy._maxDepth, schema.totalLevels())
-			: schema.totalLevels();
-
-		PreviewBox root;
-		root.min = glm::vec3(-1.0f, -1.0f, -1.0f);
-		root.max = glm::vec3(1.0f, 1.0f, 1.0f);
-		root._typeName = preview._showFullSchedule ? "Bounds" : preview._phases[preview._phaseIndex]._level._typeName;
-		root._depth = 0;
-		preview._boxes.push_back(root);
-
-		std::vector<PreviewBox> frontier = { root };
-		if (preview._showFullSchedule)
-		{
-			const size_t targetDepth = std::min<size_t>(schemaMaxDepth, static_cast<size_t>(preview._maxDepth));
-			for (size_t depth = 0; depth < targetDepth && !frontier.empty(); ++depth)
-			{
-				const SchemaLevelConfig& level = schema.levelForDepth(depth);
-				std::vector<PreviewBox> next;
-				for (const PreviewBox& node : frontier)
-				{
-					std::vector<PreviewBox> children = previewChildrenForLevel(node, level, depth + 1);
-					for (PreviewBox& child : children)
-					{
-						if (preview._boxes.size() >= static_cast<size_t>(preview._maxBoxes))
-						{
-							preview._truncated = true;
-							break;
-						}
-						next.push_back(child);
-						preview._boxes.push_back(std::move(child));
-					}
-					if (preview._truncated)
-						break;
-				}
-				frontier = std::move(next);
-				if (preview._truncated)
-					break;
-			}
-		}
-		else
-		{
-			const PreviewPhase& phase = preview._phases[preview._phaseIndex];
-			const size_t phaseLevels = std::max<size_t>(1, phase._endDepth - phase._startDepth);
-			const size_t targetDepth = std::min<size_t>(phaseLevels, static_cast<size_t>(preview._maxDepth));
-			for (size_t depth = 0; depth < targetDepth && !frontier.empty(); ++depth)
-			{
-				std::vector<PreviewBox> next;
-				for (const PreviewBox& node : frontier)
-				{
-					std::vector<PreviewBox> children = previewChildrenForLevel(node, phase._level, depth + 1);
-					for (PreviewBox& child : children)
-					{
-						if (preview._boxes.size() >= static_cast<size_t>(preview._maxBoxes))
-						{
-							preview._truncated = true;
-							break;
-						}
-						next.push_back(child);
-						preview._boxes.push_back(std::move(child));
-					}
-					if (preview._truncated)
-						break;
-				}
-				frontier = std::move(next);
-				if (preview._truncated)
-					break;
-			}
-		}
-	}
-	catch (const std::exception& exception)
-	{
-		preview._error = exception.what();
-	}
-}
-
-static void openSchemaFile(GuiState& state, const std::string& path)
-{
-	state._fileViewer._open = true;
-	state._fileViewer._path = resolvePath(path);
-	state._fileViewer._title = schemaLabelFromPath(path);
-	state._fileViewer._content = loadTextFile(path, state._fileViewer._error);
-}
-
-static void openStructurePreview(GuiState& state, const std::string& path)
-{
-	const std::string resolved = resolvePath(path);
-	if (state._structurePreview._path != resolved)
-	{
-		state._structurePreview._phaseIndex = 0;
-		state._structurePreview._maxDepth = 2;
-		state._structurePreview._showFullSchedule = false;
-	}
-	state._structurePreview._open = true;
-	state._structurePreview._path = resolved;
-	state._structurePreview._title = schemaLabelFromPath(path);
-	state._structurePreview._needsRebuild = true;
-	rebuildStructurePreview(state._structurePreview);
-}
-
-static void drawSchemaActions(GuiState& state, const std::string& path)
-{
-	const bool hasPath = !path.empty();
-	ImGui::BeginDisabled(!hasPath);
-	if (ImGui::SmallButton("JSON"))
-		openSchemaFile(state, path);
-	ImGui::SameLine();
-	if (ImGui::SmallButton("Boxes"))
-		openStructurePreview(state, path);
-	ImGui::EndDisabled();
-}
-
-static std::vector<BestResult> loadBestResults(const std::string& bestCsvPath)
-{
-	std::vector<BestResult> results;
-	std::ifstream input(bestCsvPath);
-	if (!input.is_open())
-		return results;
-
-	std::string headerLine;
-	if (!std::getline(input, headerLine))
-		return results;
-
-	const std::vector<std::string> header = splitCsvLine(headerLine);
-	const size_t datasetIndex = columnIndex(header, "dataset_name");
-	const size_t workloadIndex = columnIndex(header, "workload_name");
-	const size_t schemaNameIndex = columnIndex(header, "best_schema_name");
-	const size_t schemaPathIndex = columnIndex(header, "best_schema_path");
-	const size_t scoreIndex = columnIndex(header, "best_score");
-	const size_t latencyIndex = columnIndex(header, "best_avg_latency_ms");
-	const size_t buildIndex = columnIndex(header, "best_build_time_ms");
-	const size_t memoryIndex = columnIndex(header, "best_memory_estimate_bytes");
-	const size_t candidateIndex = columnIndex(header, "num_candidates");
-	const size_t backendIndex = columnIndex(header, "backend");
-	const size_t gpuBuildIndex = columnIndex(header, "gpu_build_ms");
-	const size_t gpuQueryIndex = columnIndex(header, "gpu_query_ms");
-	const size_t scoreModeIndex = columnIndex(header, "score_mode");
-	const size_t scoreStageIndex = columnIndex(header, "score_stage");
-	const size_t finalLatencyIndex = columnIndex(header, "score_is_final_latency");
-	const size_t effectiveQueriesIndex = columnIndex(header, "effective_queries");
-
-	std::string rowLine;
-	while (std::getline(input, rowLine))
-	{
-		if (rowLine.empty())
-			continue;
-
-		const std::vector<std::string> row = splitCsvLine(rowLine);
-		BestResult result;
-		result._dataset = csvValue(row, datasetIndex);
-		result._workload = csvValue(row, workloadIndex);
-		result._schemaName = csvValue(row, schemaNameIndex);
-		result._schemaPath = csvValue(row, schemaPathIndex);
-		result._score = parseDouble(csvValue(row, scoreIndex));
-		result._averageLatencyMs = parseDouble(csvValue(row, latencyIndex));
-		result._buildTimeMs = parseDouble(csvValue(row, buildIndex));
-		result._gpuBuildMs = parseDouble(csvValue(row, gpuBuildIndex));
-		result._gpuQueryMs = parseDouble(csvValue(row, gpuQueryIndex));
-		result._memoryBytes = parseUint64(csvValue(row, memoryIndex));
-		result._candidates = static_cast<size_t>(parseUint64(csvValue(row, candidateIndex)));
-		result._backend = csvValue(row, backendIndex);
-		result._scoreMode = csvValue(row, scoreModeIndex);
-		if (result._scoreMode.empty())
-			result._scoreMode = "unknown";
-		result._scoreStage = csvValue(row, scoreStageIndex);
-		if (result._scoreStage.empty())
-			result._scoreStage = "unknown";
-		result._scoreIsFinalLatency = parseUint64(csvValue(row, finalLatencyIndex)) != 0;
-		result._effectiveQueries = static_cast<size_t>(parseUint64(csvValue(row, effectiveQueriesIndex)));
-		results.push_back(std::move(result));
-	}
-
-	return results;
-}
-
-static LiveRankingEntry makeLiveRankingEntry(const Experiments::SchemaSearchRecord& record, size_t order)
-{
-	LiveRankingEntry entry;
-	entry._order = order;
-	entry._dataset = record._datasetName;
-	entry._workload = record._workloadName;
-	entry._schemaName = record._schemaName;
-	entry._schemaPath = record._schemaPath;
-	entry._backend = record._backend;
-	entry._cudaBuilder = record._cudaBuilder;
-	entry._score = record._score;
-	entry._averageLatencyMs = record._queryMetrics._averageLatencyMs;
-	entry._p95LatencyMs = record._queryMetrics._p95LatencyMs;
-	entry._buildTimeMs = record._buildMetrics._buildTimeMs;
-	entry._gpuBuildMs = record._gpuBuildMs;
-	entry._gpuQueryMs = record._gpuQueryMs;
-	entry._averageVisitedNodes = record._queryMetrics._averageVisitedNodes;
-	entry._averageTestedPoints = record._queryMetrics._averageTestedPoints;
-	entry._memoryBytes = static_cast<uint64_t>(record._buildMetrics._memoryEstimateBytes);
-	entry._scoreMode = record._scoreMode;
-	entry._scoreStage = record._scoreStage;
-	entry._scoreIsFinalLatency = record._scoreIsFinalLatency;
-	entry._effectiveQueries = record._queryMetrics._totalQueries;
-	return entry;
-}
-
-static bool sameLiveCandidate(const LiveRankingEntry& entry, const Experiments::SchemaSearchRecord& record)
-{
-	return entry._dataset == record._datasetName &&
-		entry._workload == record._workloadName &&
-		entry._schemaName == record._schemaName &&
-		entry._schemaPath == record._schemaPath;
-}
-
-static void sortAndTrimLiveRanking(std::vector<LiveRankingEntry>& ranking)
-{
-	std::sort(ranking.begin(), ranking.end(), [](const LiveRankingEntry& left, const LiveRankingEntry& right) {
-		if (left._score != right._score)
-			return left._score < right._score;
-		return left._order < right._order;
-	});
-
-	constexpr size_t MaxLiveRankingRows = 128;
-	if (ranking.size() > MaxLiveRankingRows)
-		ranking.resize(MaxLiveRankingRows);
-}
-
-static void updateLiveRanking(RunSession& session, const Experiments::SchemaSearchRecord& record)
-{
-	std::lock_guard<std::mutex> lock(session._mutex);
-	const size_t order = ++session._evaluatedCandidates;
-	const auto existing = std::find_if(session._liveRanking.begin(), session._liveRanking.end(), [&record](const LiveRankingEntry& entry) {
-		return sameLiveCandidate(entry, record);
-	});
-
-	if (existing == session._liveRanking.end())
-	{
-		session._liveRanking.push_back(makeLiveRankingEntry(record, order));
-	}
-	else if (record._score < existing->_score)
-	{
-		*existing = makeLiveRankingEntry(record, order);
-	}
-
-	sortAndTrimLiveRanking(session._liveRanking);
-}
-
-class SessionStreamBuffer : public std::streambuf
-{
-public:
-	explicit SessionStreamBuffer(RunSession& session)
-		: _session(session)
-	{
-	}
-
-protected:
-	int overflow(int value) override
-	{
-		if (value == traits_type::eof())
-			return traits_type::not_eof(value);
-
-		const char c = traits_type::to_char_type(value);
-		std::lock_guard<std::mutex> lock(_session._mutex);
-		_session._log.push_back(c);
-		return value;
-	}
-
-	std::streamsize xsputn(const char* text, std::streamsize count) override
-	{
-		std::lock_guard<std::mutex> lock(_session._mutex);
-		_session._log.append(text, static_cast<size_t>(count));
-		return count;
-	}
-
-private:
-	RunSession&	_session;
-};
-
-class ScopedStreamCapture
-{
-public:
-	explicit ScopedStreamCapture(RunSession& session)
-		: _buffer(session),
-		  _oldOut(std::cout.rdbuf(&_buffer)),
-		  _oldErr(std::cerr.rdbuf(&_buffer))
-	{
-	}
-
-	~ScopedStreamCapture()
-	{
-		std::cout.rdbuf(_oldOut);
-		std::cerr.rdbuf(_oldErr);
-	}
-
-private:
-	SessionStreamBuffer	_buffer;
-	std::streambuf*		_oldOut = nullptr;
-	std::streambuf*		_oldErr = nullptr;
-};
-
-static std::vector<SchemaEntry> discoverSchemas()
-{
-	const std::vector<std::string> preferred = {
-		"configs/schemas/quadtree.json",
-		"configs/schemas/octree.json",
-		"configs/schemas/kdtree.json",
-		"configs/schemas/bvh.json",
-		"configs/schemas/quadtree_octree.json",
-		"configs/schemas/octree_kdtree.json",
-		"configs/schemas/urban_hybrid.json",
-		"configs/schemas/adaptive_quadtree_octree.json",
+		std::string	_name;
+		std::string	_cloud;
+		std::string	_trace;
+		size_t		_points = 0;
 	};
 
-	std::vector<SchemaEntry> entries;
-	for (const std::string& path : preferred)
+	struct TraceSummary
 	{
-		const std::string resolved = resolvePath(path);
-		if (!filesystemExists(resolved))
-			continue;
-
-		SchemaEntry entry;
-		entry._label = schemaLabelFromPath(path);
-		entry._path = resolved;
-		entry._selected = path.find("adaptive") == std::string::npos;
-		entries.push_back(std::move(entry));
-	}
-
-	std::error_code error;
-	const std::filesystem::path schemaDir(resolvePath("configs/schemas"));
-	if (std::filesystem::exists(schemaDir, error))
-	{
-		for (const std::filesystem::directory_entry& file : std::filesystem::directory_iterator(schemaDir, error))
-		{
-			if (error || !file.is_regular_file() || file.path().extension() != ".json")
-				continue;
-
-			const std::string path = file.path().lexically_normal().string();
-			const auto existing = std::find_if(entries.begin(), entries.end(), [&path](const SchemaEntry& entry) {
-				return entry._path == path || std::filesystem::path(entry._path).lexically_normal() == std::filesystem::path(path).lexically_normal();
-			});
-			if (existing != entries.end())
-				continue;
-
-			SchemaEntry entry;
-			entry._label = schemaLabelFromPath(path);
-			entry._path = path;
-			entry._selected = false;
-			entries.push_back(std::move(entry));
-		}
-	}
-
-	return entries;
-}
-
-static std::vector<WorkloadEntry> discoverWorkloads()
-{
-	const std::vector<std::string> preferred = {
-		"configs/workloads/volume_small_medium.json",
-		"configs/workloads/mixed.json",
-		"configs/workloads/range_heavy.json",
-		"configs/workloads/knn_heavy.json",
+		std::string	_path;
+		size_t		_total = 0;
+		std::map<std::string, size_t>	_byKind;
+		std::string	_error;
 	};
 
-	std::vector<WorkloadEntry> entries;
-	for (const std::string& path : preferred)
+	// Everything the Inspect step owns: a loaded cloud, an index built on it, the GPU-side scene,
+	// and the last query probed against it. Loading and building run on a worker thread.
+	struct Inspect
 	{
-		const std::string resolved = resolvePath(path);
-		if (!filesystemExists(resolved))
-			continue;
+		std::string	_schemaPath;
+		std::string	_cloudPath;
+		std::shared_ptr<PointCloud>			_cloud;
+		std::shared_ptr<PointSpatialIndex>	_index;
+		SchemaConfig	_schema;
+		std::thread		_worker;
+		std::atomic<bool>	_busy{ false };
+		std::atomic<bool>	_ready{ false };
+		std::mutex		_mutex;
+		std::string		_status;
+		double			_loadMs = 0.0;
+		double			_buildMs = 0.0;
+		PointSpatialIndex::Stats	_stats;
 
-		WorkloadEntry entry;
-		entry._label = schemaLabelFromPath(path);
-		entry._path = resolved;
-		entries.push_back(std::move(entry));
-	}
+		Viewer::Renderer		_renderer;
+		Viewer::Camera			_camera;
+		Viewer::SceneBuilder	_builder;
+		bool		_sceneDirty = false;
+		bool		_overlayDirty = false;
+		float		_sceneRadius = 1.0f;
+		float		_pointSize = 2.0f;
+		size_t		_boxesShown = 0;
 
-	return entries;
-}
+		Viewer::QueryKind	_queryKind = Viewer::QueryKind::Radius;
+		float		_radius = 0.5f;
+		int			_k = 16;
+		float		_halfExtent = 1.0f;
+		glm::vec3	_center = glm::vec3(0.0f);
+		int			_traceQuery = 0;
+		std::vector<Experiments::TraceQuery>	_trace;
+		std::string	_tracePath;
+		Viewer::QueryOverlay	_overlay;
+		uint64_t	_seed = 1;
 
-static int workloadIndexForToken(const GuiState& state, const std::string& token)
-{
-	for (size_t i = 0; i < state._workloads.size(); ++i)
-	{
-		const std::string haystack = state._workloads[i]._path + "|" + state._workloads[i]._label;
-		if (haystack.find(token) != std::string::npos)
-			return static_cast<int>(i);
-	}
-	return -1;
-}
-
-static void applyPublicationDefaults(GuiState& state)
-{
-	state._autoConditions = true;
-	state._includeSynthetic = false;
-	state._useBinaryCache = true;
-	state._rebuildBinaryCache = false;
-	state._generateSchemas = true;
-	state._generatedOnly = true;
-	state._generatedConditional = true;
-	state._generatedAdaptiveLeafCapacity = false;
-	state._useRankModel = false;
-	// Reset to struct defaults: GA, rung schedule, and threshold refinement on.
-	state._optimizeSchemas = true;
-	state._useRungSchedule = true;
-	state._refineThresholds = true;
-	state._repairMutations = true;
-	state._repairTopK = 4;
-	state._repairPerCandidate = 2;
-	state._evaluator = 1;
-	state._cudaDevice = 0;
-	state._cudaBuilder = 8;
-	state._cudaKnnBackend = 0;
-	state._cudaQueryBatch = 0;
-	state._cudaMemoryBudgetMb = 0;
-	state._queryCount = 64;
-	state._knnK = 16;
-	state._querySeed = 1337;
-	state._generatedCount = 256;
-	state._benchmarkTopK = 32;
-	state._generatedMinBlocks = 2;
-	state._generatedMaxBlocks = 3;
-	state._generatedMaxDepth = 12;
-	state._generatedMinLeaf = 32;
-	state._generatedMaxLeaf = 32768;
-	state._generatedSeed = 1337;
-	state._generatedConditionProbability = 0.75f;
-	state._generatedAdaptiveLeafProbability = 0.25f;
-	state._conditionProxyCandidates = 256;
-	state._conditionProxyPoints = 262144;
-	state._conditionProxyQueries = 8;
-	state._conditionFinalTopK = 16;
-	state._conditionConfirmTopK = 4;
-	state._scoreBuildWeight = 0.0f;
-	state._scoreMemoryWeight = 0.0f;
-	state._scoreImbalanceWeight = 0.0f;
-	const int volumeIndex = workloadIndexForToken(state, "volume_small_medium");
-	if (volumeIndex >= 0)
-		state._selectedWorkload = volumeIndex;
-}
-
-static void initializeState(GuiState& state)
-{
-	setText(state._inputPath, "C:/Datasets/points/Alhambra_100M.las");
-	const std::string rankModel = resolvePath("models/schema_selector.json");
-	setText(state._rankModelPath, rankModel);
-	setText(state._csvPath, projectPath("results/gui_schema_search.csv"));
-	setText(state._bestCsvPath, projectPath("results/gui_schema_search_best.csv"));
-	setText(state._paretoCsvPath, projectPath("results/gui_schema_search_pareto.csv"));
-	setText(state._explainReportPath, projectPath("results/gui_schema_explain.md"));
-	setText(state._queryTracePath, "");
-	setText(state._generatedSchemaDir, projectPath("results/generated_schemas"));
-	setText(state._autoConditionSchemaDir, projectPath("results/auto_conditions"));
-	setText(state._selectorOutputPath, projectPath("models/local_schema_selector.json"));
-	setText(state._scoreCachePath, projectPath("results/gui_score_cache.jsonl"));
-	state._schemas = discoverSchemas();
-	state._workloads = discoverWorkloads();
-	applyPublicationDefaults(state);
-}
-
-static void applyTheme()
-{
-	ImGui::StyleColorsDark();
-	ImGuiStyle& style = ImGui::GetStyle();
-	style.WindowRounding = 0.0f;
-	style.ChildRounding = 6.0f;
-	style.FrameRounding = 4.0f;
-	style.PopupRounding = 6.0f;
-	style.ScrollbarRounding = 4.0f;
-	style.GrabRounding = 4.0f;
-	style.WindowBorderSize = 0.0f;
-	style.ChildBorderSize = 1.0f;
-	style.FrameBorderSize = 0.0f;
-	style.ItemSpacing = ImVec2(10.0f, 8.0f);
-	style.FramePadding = ImVec2(10.0f, 6.0f);
-
-	ImVec4* colors = style.Colors;
-	colors[ImGuiCol_WindowBg] = ImVec4(0.055f, 0.064f, 0.075f, 1.0f);
-	colors[ImGuiCol_ChildBg] = ImVec4(0.080f, 0.092f, 0.108f, 1.0f);
-	colors[ImGuiCol_Border] = ImVec4(0.180f, 0.205f, 0.235f, 1.0f);
-	colors[ImGuiCol_FrameBg] = ImVec4(0.120f, 0.135f, 0.158f, 1.0f);
-	colors[ImGuiCol_FrameBgHovered] = ImVec4(0.170f, 0.195f, 0.225f, 1.0f);
-	colors[ImGuiCol_FrameBgActive] = ImVec4(0.210f, 0.245f, 0.285f, 1.0f);
-	colors[ImGuiCol_Header] = ImVec4(0.160f, 0.230f, 0.245f, 1.0f);
-	colors[ImGuiCol_HeaderHovered] = ImVec4(0.200f, 0.300f, 0.320f, 1.0f);
-	colors[ImGuiCol_HeaderActive] = ImVec4(0.245f, 0.370f, 0.385f, 1.0f);
-	colors[ImGuiCol_Button] = ImVec4(0.170f, 0.315f, 0.330f, 1.0f);
-	colors[ImGuiCol_ButtonHovered] = ImVec4(0.220f, 0.405f, 0.420f, 1.0f);
-	colors[ImGuiCol_ButtonActive] = ImVec4(0.270f, 0.480f, 0.500f, 1.0f);
-	colors[ImGuiCol_CheckMark] = ImVec4(0.550f, 0.830f, 0.720f, 1.0f);
-	colors[ImGuiCol_SliderGrab] = ImVec4(0.550f, 0.830f, 0.720f, 1.0f);
-	colors[ImGuiCol_SliderGrabActive] = ImVec4(0.680f, 0.920f, 0.820f, 1.0f);
-	colors[ImGuiCol_Tab] = ImVec4(0.110f, 0.130f, 0.150f, 1.0f);
-	colors[ImGuiCol_TabHovered] = ImVec4(0.200f, 0.300f, 0.320f, 1.0f);
-	colors[ImGuiCol_TabActive] = ImVec4(0.155f, 0.205f, 0.220f, 1.0f);
-}
-
-static void drawSectionTitle(const char* label)
-{
-	ImGui::Spacing();
-	ImGui::TextUnformatted(label);
-	ImGui::Separator();
-}
-
-static void drawHelpMarker(const char* description)
-{
-	ImGui::SameLine();
-	ImGui::TextDisabled("?");
-	if (ImGui::IsItemHovered())
-	{
-		ImGui::BeginTooltip();
-		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
-		ImGui::TextUnformatted(description);
-		ImGui::PopTextWrapPos();
-		ImGui::EndTooltip();
-	}
-}
-
-static void drawPathInput(const char* label, std::array<char, TextBufferSize>& value, const char* help = nullptr)
-{
-	ImGui::PushID(label);
-	ImGui::AlignTextToFramePadding();
-	ImGui::TextUnformatted(label);
-	if (help)
-		drawHelpMarker(help);
-	ImGui::SameLine(150.0f);
-	ImGui::SetNextItemWidth(-1.0f);
-	ImGui::InputText("##value", value.data(), value.size());
-	ImGui::PopID();
-}
-
-static void clampState(GuiState& state)
-{
-	state._queryCount = std::max(1, state._queryCount);
-	state._knnK = std::max(1, state._knnK);
-	state._syntheticScale = std::max(1, state._syntheticScale);
-	state._generatedCount = std::max(0, state._generatedCount);
-	state._benchmarkTopK = std::max(0, state._benchmarkTopK);
-	state._generatedMinBlocks = std::max(1, state._generatedMinBlocks);
-	state._generatedMaxBlocks = std::max(state._generatedMinBlocks, state._generatedMaxBlocks);
-	state._generatedMaxDepth = std::max(state._generatedMinBlocks, state._generatedMaxDepth);
-	state._generatedMinLeaf = std::max(1, state._generatedMinLeaf);
-	state._generatedMaxLeaf = std::max(state._generatedMinLeaf, state._generatedMaxLeaf);
-	state._optimizerGenerations = std::max(0, state._optimizerGenerations);
-	state._optimizerPopulation = std::max(1, state._optimizerPopulation);
-	state._optimizerElites = std::max(1, state._optimizerElites);
-	state._evaluator = std::clamp(state._evaluator, 0, 1);
-	state._cudaDevice = std::max(0, state._cudaDevice);
-	state._cudaBuilder = std::clamp(state._cudaBuilder, 0, 8);
-	state._cudaKnnBackend = std::clamp(state._cudaKnnBackend, 0, 2);
-	state._cudaQueryBatch = std::max(0, state._cudaQueryBatch);
-	state._cudaMemoryBudgetMb = std::max(0, state._cudaMemoryBudgetMb);
-	state._liveRankingTopN = std::clamp(state._liveRankingTopN, 1, 100);
-	state._conditionProxyCandidates = std::max(1, state._conditionProxyCandidates);
-	state._conditionProxyPoints = std::max(1, state._conditionProxyPoints);
-	state._conditionProxyQueries = std::max(1, state._conditionProxyQueries);
-	state._conditionFinalTopK = std::max(1, state._conditionFinalTopK);
-	state._conditionConfirmTopK = std::max(1, std::min(state._conditionConfirmTopK, state._conditionFinalTopK));
-	state._generatedConditionProbability = std::clamp(state._generatedConditionProbability, 0.0f, 1.0f);
-	state._generatedAdaptiveLeafProbability = std::clamp(state._generatedAdaptiveLeafProbability, 0.0f, 1.0f);
-	state._optimizerMutationRate = std::clamp(state._optimizerMutationRate, 0.0f, 1.0f);
-	state._optimizerRandomFraction = std::clamp(state._optimizerRandomFraction, 0.0f, 1.0f);
-	state._repairTopK = std::max(1, state._repairTopK);
-	state._repairPerCandidate = std::max(1, state._repairPerCandidate);
-	state._scoreBuildWeight = std::max(0.0f, state._scoreBuildWeight);
-	state._scoreMemoryWeight = std::max(0.0f, state._scoreMemoryWeight);
-	state._scoreImbalanceWeight = std::max(0.0f, state._scoreImbalanceWeight);
-	if (state._selectedWorkload < 0 || state._selectedWorkload >= static_cast<int>(state._workloads.size()))
-		state._selectedWorkload = 0;
-}
-
-static std::optional<std::string> buildSearchOptions(const GuiState& state, Experiments::SchemaSearchOptions& options)
-{
-	options = Experiments::SchemaSearchOptions();
-	options._pauseAtEnd = false;
-	options._useBinaryCache = state._useBinaryCache;
-	options._rebuildBinaryCache = state._rebuildBinaryCache;
-	options._includeSyntheticDatasets = state._includeSynthetic;
-	options._syntheticScale = static_cast<size_t>(state._syntheticScale);
-	options._queryCountOverride = static_cast<size_t>(state._queryCount);
-	options._knnKOverride = static_cast<size_t>(state._knnK);
-	options._querySeed = static_cast<uint32_t>(state._querySeed);
-	options._querySeedOverride = true;
-	options._csvPath = textValue(state._csvPath);
-	options._bestCsvPath = textValue(state._bestCsvPath);
-	options._paretoCsvPath = textValue(state._paretoCsvPath);
-	options._explainReportPath = textValue(state._explainReportPath);
-	options._queryTracePath = textValue(state._queryTracePath);
-
-	const std::string inputPath = resolvePath(textValue(state._inputPath));
-	if (!inputPath.empty())
-		options._inputPaths.push_back(inputPath);
-
-	if (options._inputPaths.empty() && !options._includeSyntheticDatasets)
-		return "Select a point cloud input or enable synthetic datasets.";
-
-	if (state._workloads.empty())
-		return "No workload profiles were found under configs/workloads.";
-
-	options._workloadPaths.push_back(state._workloads[static_cast<size_t>(state._selectedWorkload)]._path);
-
-	if (!state._generatedOnly)
-	{
-		for (const SchemaEntry& entry : state._schemas)
+		~Inspect()
 		{
-			if (entry._selected)
-				options._schemaPaths.push_back(entry._path);
+			if (_worker.joinable())
+				_worker.join();
 		}
-	}
-	options._includeConfiguredSchemas = !state._generatedOnly;
+	};
 
-	if (state._generateSchemas)
+	struct App
 	{
-		options._generation._count = static_cast<size_t>(state._generatedCount);
-		options._generation._minBlocks = static_cast<size_t>(state._generatedMinBlocks);
-		options._generation._maxBlocks = static_cast<size_t>(state._generatedMaxBlocks);
-		options._generation._maxDepth = static_cast<size_t>(state._generatedMaxDepth);
-		options._generation._minLeafCapacity = static_cast<size_t>(state._generatedMinLeaf);
-		options._generation._maxLeafCapacity = static_cast<size_t>(state._generatedMaxLeaf);
-		options._generation._conditionalLevels = state._generatedConditional;
-		options._generation._conditionalProbability = static_cast<double>(state._generatedConditionProbability);
-		options._generation._adaptiveLeafCapacity = state._generatedAdaptiveLeafCapacity && state._evaluator == 0;
-		options._generation._adaptiveLeafProbability = static_cast<double>(state._generatedAdaptiveLeafProbability);
-		options._generation._seed = static_cast<uint32_t>(state._generatedSeed);
-		options._generation._outputDirectory = textValue(state._generatedSchemaDir);
-		options._generation._primitiveProfile = state._queryMinimalPrimitives
-			? std::string("query_minimal_cpu")
-			: (state._evaluator == 1 ? std::string("cuda_query_full") : std::string("all"));
-	}
+		SearchFlow::Settings	_settings;
+		SearchFlow::Session		_session;
+		Step		_step = Step::Data;
+		Inspect		_inspect;
+		std::vector<BenchmarkCell>	_cells;
+		std::vector<std::string>	_workloads;
+		std::vector<std::string>	_schemaChoices;
+		TraceSummary	_traceSummary;
+		std::string		_loadedResultsDir;
+		std::vector<SearchFlow::ResultRow>	_shownResults;
+		std::vector<SearchFlow::ResultRow>	_shownValidation;
+		int			_selectedResult = -1;
+		std::string	_logCopy;
+		std::vector<size_t>	_logLines;
+		bool		_autoScroll = true;
+		std::string	_notice;
+	};
 
-	if (state._generatedOnly && options._generation._count == 0)
-		return "Generated-only search needs a generated schema count greater than zero.";
-
-	if (!state._generatedOnly && options._schemaPaths.empty() && options._generation._count == 0)
-		return "Select at least one fixed schema or enable generated schemas.";
-
-	options._autoConditions._enabled = state._autoConditions;
-	options._autoConditions._proxyCandidateCount = static_cast<size_t>(state._conditionProxyCandidates);
-	options._autoConditions._proxyPointCap = static_cast<size_t>(state._conditionProxyPoints);
-	options._autoConditions._proxyQueryCount = static_cast<size_t>(state._conditionProxyQueries);
-	options._autoConditions._finalTopK = static_cast<size_t>(state._conditionFinalTopK);
-	options._autoConditions._confirmationTopK = static_cast<size_t>(state._conditionConfirmTopK);
-	options._autoConditions._outputDirectory = textValue(state._autoConditionSchemaDir);
-	options._autoConditions._selectorOutputPath = textValue(state._selectorOutputPath);
-	if (options._autoConditions._enabled)
+	std::filesystem::path settingsFile()
 	{
-		options._generation._conditionalLevels = true;
-		options._generation._conditionalProbability = std::max(options._generation._conditionalProbability, 0.75);
-		if (!state._generateSchemas && options._schemaPaths.empty())
-			return "Auto-condition tuning needs generated schemas or at least one selected fixed schema.";
+		return Gui::executableDirectory() / "mds_gui_settings.json";
 	}
 
-	options._benchmarkTopK = static_cast<size_t>(state._benchmarkTopK);
-	if (state._useRankModel)
-		options._rankModelPath = resolvePath(textValue(state._rankModelPath));
+	// ------------------------------------------------------------ settings persistence
 
-	options._weights._lambdaBuild = state._scoreBuildWeight;
-	options._weights._lambdaMemory = state._scoreMemoryWeight;
-	options._weights._lambdaImbalance = state._scoreImbalanceWeight;
-	options._scoreWeightsOverride =
-		options._weights._lambdaBuild > 0.0 ||
-		options._weights._lambdaMemory > 0.0 ||
-		options._weights._lambdaImbalance > 0.0;
-	if (state._scoreCacheEnabled)
+	void saveSettings(const SearchFlow::Settings& s)
 	{
-		options._scoreCachePath = textValue(state._scoreCachePath);
-		options._rebuildScoreCache = state._rebuildScoreCache;
-	}
-	else
-	{
-		options._scoreCachePath.clear();
-	}
-	options._parallelDispatch = std::max(1, state._parallelDispatch);
-	options._includeBaselineSchemas = state._includeBaselineSchemas;
-	options._evolution._enabled = state._optimizeSchemas;
-	options._evolution._generations = static_cast<size_t>(state._optimizerGenerations);
-	options._evolution._populationSize = static_cast<size_t>(state._optimizerPopulation);
-	options._evolution._eliteCount = static_cast<size_t>(state._optimizerElites);
-	options._evolution._seed = static_cast<uint32_t>(state._optimizerSeed);
-	options._evolution._mutationRate = static_cast<double>(state._optimizerMutationRate);
-	options._evolution._randomImmigrationRate = static_cast<double>(state._optimizerRandomFraction);
-	options._evolution._crossoverRate = static_cast<double>(state._optimizerCrossoverRate);
-	options._evolution._useNsga2Ranking = state._optimizerUseNsga2;
-	options._evolution._repairMutations = state._optimizeSchemas && state._repairMutations;
-	options._evolution._repairTopK = static_cast<size_t>(std::max(1, state._repairTopK));
-	options._evolution._repairPerCandidate = static_cast<size_t>(std::max(1, state._repairPerCandidate));
-
-	if (state._optimizeSchemas && state._useRungSchedule)
-	{
-		Experiments::RungSpec proxy;
-		proxy._name = "proxy";
-		proxy._queryCountOverride = static_cast<size_t>(std::max(1, state._rungProxyQueries));
-		proxy._useVisitProxy = true;
-		proxy._visitProxyAlpha = static_cast<double>(state._rungProxyAlpha);
-		proxy._advanceTopK = static_cast<size_t>(std::max(1, state._rungProxyAdvance));
-
-		Experiments::RungSpec full;
-		full._name = "full";
-		full._queryCountOverride = static_cast<size_t>(std::max(1, state._rungFullQueries));
-		full._useVisitProxy = false;
-		full._advanceTopK = static_cast<size_t>(std::max(1, state._rungFullAdvance));
-
-		Experiments::RungSpec confirm;
-		confirm._name = "confirm";
-		confirm._queryCountOverride = static_cast<size_t>(std::max(1, state._rungConfirmQueries));
-		confirm._useVisitProxy = false;
-		confirm._advanceTopK = 0;
-
-		options._evolution._rungSchedule._rungs = { proxy, full, confirm };
-		options._evolution._rungSchedule._surrogateModelPath = resolvePath(textValue(state.rungSurrogatePath));
-		options._evolution._rungSchedule._surrogateCandidatePool = static_cast<size_t>(std::max(0, state._rungSurrogatePool));
-		options._evolution._rungSchedule._surrogateProposalsPerStep = static_cast<size_t>(std::max(0, state._rungSurrogateTop));
-	}
-	else
-	{
-		options._evolution._rungSchedule = Experiments::RungSchedule{};
+		boost::json::object o;
+		o["input"] = s._inputPath;
+		boost::json::array recent;
+		for (const std::string& r : s._recentInputs)
+			recent.push_back(boost::json::value(r));
+		o["recent"] = recent;
+		o["use_trace"] = s._useTrace;
+		o["trace"] = s._tracePath;
+		o["workload"] = s._workloadPath;
+		o["queries"] = s._queries;
+		o["knn_k"] = s._knnK;
+		o["query_seed"] = s._querySeed;
+		o["strategy"] = static_cast<int>(s._strategy);
+		o["budget"] = static_cast<int>(s._budget);
+		o["generated"] = s._generatedCount;
+		o["generations"] = s._generations;
+		o["population"] = s._population;
+		o["parallel"] = s._parallel;
+		o["cuda"] = s._useCuda;
+		o["validate"] = s._validateHeldOut;
+		std::ofstream out(settingsFile());
+		out << boost::json::serialize(o);
 	}
 
-	if (state._optimizeSchemas && state._refineThresholds)
+	void loadSettings(SearchFlow::Settings& s)
 	{
-		options._evolution._refineThresholds = true;
-		options._evolution._refineThresholdsTopK = static_cast<size_t>(std::max(1, state._refineThresholdsTopK));
-		options._evolution._refineThresholdsEvaluations = static_cast<size_t>(std::max(1, state._refineThresholdsEvals));
-		options._evolution._refineThresholdsSigma0 = static_cast<double>(state._refineThresholdsSigma);
-		options._evolution._refineThresholdsSeed = static_cast<uint32_t>(state._refineThresholdsSeed);
-	}
-	else
-	{
-		options._evolution._refineThresholds = false;
-	}
-
-	if (state._confirmSeeds && state._confirmSeedsCount >= 2)
-	{
-		options._confirmSeeds = static_cast<size_t>(state._confirmSeedsCount);
-		options._confirmTopK = static_cast<size_t>(std::max(1, state._confirmTopK));
-	}
-	else
-	{
-		options._confirmSeeds = 0;
-	}
-	options._evaluator = state._evaluator == 1 ? "cuda" : "cpu";
-	options._cuda._device = state._cudaDevice;
-	if (state._cudaBuilder == 1)
-		options._cuda._builder = "kdtree";
-	else if (state._cudaBuilder == 2)
-		options._cuda._builder = "bih";
-	else if (state._cudaBuilder == 3)
-		options._cuda._builder = "octree";
-	else if (state._cudaBuilder == 4)
-		options._cuda._builder = "karras_octree";
-	else if (state._cudaBuilder == 5)
-		options._cuda._builder = "quadtree";
-	else if (state._cudaBuilder == 6)
-		options._cuda._builder = "regular_grid";
-	else if (state._cudaBuilder == 7)
-		options._cuda._builder = "hgrid";
-	else if (state._cudaBuilder == 8)
-		options._cuda._builder = "mixed";
-	else
-		options._cuda._builder = "lbvh";
-	static const char* knnBackends[] = { "auto", "gpu_tree_knn", "gpu_bruteforce_knn" };
-	options._cuda._knnBackend = knnBackends[state._cudaKnnBackend];
-	options._cuda._queryBatchSize = static_cast<size_t>(state._cudaQueryBatch);
-	options._cuda._memoryBudgetMb = static_cast<size_t>(state._cudaMemoryBudgetMb);
-	return std::nullopt;
-}
-
-static void startRun(RunSession& session, const GuiState& state)
-{
-	if (session._running)
-		return;
-
-	if (session._worker.joinable())
-		session._worker.join();
-
-	Experiments::SchemaSearchOptions options;
-	const std::optional<std::string> validation = buildSearchOptions(state, options);
-
-	{
-		std::lock_guard<std::mutex> lock(session._mutex);
-		session._error.clear();
-		session._log = "Starting optimization...\n";
-		session._bestResults.clear();
-		session._liveRanking.clear();
-		session._evaluatedCandidates = 0;
-		session._exitCode = 0;
-		if (validation.has_value())
-		{
-			session._status = "Ready";
-			session._error = validation.value();
+		std::ifstream in(settingsFile());
+		if (!in)
 			return;
+		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		boost::system::error_code error;
+		const boost::json::value parsed = boost::json::parse(text, error);
+		if (error || !parsed.is_object())
+			return;
+		const boost::json::object& o = parsed.as_object();
+		const auto str = [&](const char* key, std::string& target) {
+			if (const auto* v = o.if_contains(key); v && v->is_string()) target = std::string(v->as_string());
+		};
+		const auto num = [&](const char* key, int& target) {
+			if (const auto* v = o.if_contains(key); v && v->is_int64()) target = static_cast<int>(v->as_int64());
+		};
+		const auto flag = [&](const char* key, bool& target) {
+			if (const auto* v = o.if_contains(key); v && v->is_bool()) target = v->as_bool();
+		};
+		str("input", s._inputPath);
+		if (const auto* v = o.if_contains("recent"); v && v->is_array())
+		{
+			s._recentInputs.clear();
+			for (const auto& r : v->as_array())
+				if (r.is_string())
+					s._recentInputs.push_back(std::string(r.as_string()));
 		}
-		session._status = "Running";
+		flag("use_trace", s._useTrace);
+		str("trace", s._tracePath);
+		str("workload", s._workloadPath);
+		num("queries", s._queries);
+		num("knn_k", s._knnK);
+		num("query_seed", s._querySeed);
+		int strategy = static_cast<int>(s._strategy), budget = static_cast<int>(s._budget);
+		num("strategy", strategy);
+		num("budget", budget);
+		s._strategy = static_cast<SearchFlow::Strategy>(std::clamp(strategy, 0, 3));
+		s._budget = static_cast<SearchFlow::Budget>(std::clamp(budget, 0, 3));
+		num("generated", s._generatedCount);
+		num("generations", s._generations);
+		num("population", s._population);
+		num("parallel", s._parallel);
+		flag("cuda", s._useCuda);
+		flag("validate", s._validateHeldOut);
 	}
 
-	options.progressCallback = [&session](const Experiments::SchemaSearchRecord& record) {
-		updateLiveRanking(session, record);
-	};
+	// ------------------------------------------------------------ discovery
 
-	const std::string bestCsvPath = options._bestCsvPath;
-	session._running = true;
-	session._finished = false;
-	session._worker = std::thread([&session, options, bestCsvPath]() {
-		int code = 1;
-		std::string errorText;
-		std::vector<BestResult> bestResults;
-
-		try
-		{
-			ScopedStreamCapture capture(session);
-			code = Experiments::runSchemaSearch(options);
-			bestResults = loadBestResults(bestCsvPath);
-		}
-		catch (const std::exception& exception)
-		{
-			errorText = exception.what();
-		}
-		catch (...)
-		{
-			errorText = "Unknown optimization error.";
-		}
-
-		{
-			std::lock_guard<std::mutex> lock(session._mutex);
-			session._exitCode = code;
-			session._error = std::move(errorText);
-			session._bestResults = std::move(bestResults);
-			session._status = session._error.empty() && code == 0 ? "Complete" : "Failed";
-		}
-		session._running = false;
-		session._finished = true;
-	});
-}
-
-static void drawPublicationPanel(GuiState& state)
-{
-	drawSectionTitle("Quick start");
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.68f, 0.78f, 1.0f));
-	ImGui::TextWrapped("Apply the recommended setup, choose your point cloud under \"1. Inputs\", then press \"Start tuning\" on the right.");
-	ImGui::PopStyleColor();
-
-	if (ImGui::Button("Apply recommended setup", ImVec2(-1.0f, 30.0f)))
-		applyPublicationDefaults(state);
-	drawHelpMarker("CUDA/Mixed, one real cloud, volume workload, generated conditional schemas, staged auto-condition tuning, and query-only score.");
-
-	// Budget summary stays visible so the recommended run's cost is clear without expanding anything.
-	if (state._autoConditions)
+	std::vector<BenchmarkCell> discoverCells()
 	{
-		ImGui::Text("Budget: %d proxy candidates, %d proxy queries, top %d -> %d",
-			state._conditionProxyCandidates,
-			state._conditionProxyQueries,
-			state._conditionFinalTopK,
-			state._conditionConfirmTopK);
-	}
-	else
-	{
-		ImGui::Text("Budget: %d generated candidates, top-k %d",
-			state._generatedCount,
-			state._benchmarkTopK);
+		std::vector<BenchmarkCell> cells;
+		std::ifstream in(Gui::resolvePath("configs/datasets/curated_cells.json"));
+		if (!in)
+			return cells;
+		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		boost::system::error_code error;
+		const boost::json::value parsed = boost::json::parse(text, error);
+		if (error || !parsed.is_object() || !parsed.as_object().contains("cells"))
+			return cells;
+		for (const auto& value : parsed.as_object().at("cells").as_array())
+		{
+			const boost::json::object& c = value.as_object();
+			BenchmarkCell cell;
+			cell._name = std::string(c.at("cell").as_string());
+			cell._cloud = std::string(c.at("mdspc_path").as_string());
+			cell._trace = Gui::resolvePath(std::string(c.at("trace_dir").as_string()) + "/pipeline_trace_opt.csv");
+			cell._points = c.contains("points") ? static_cast<size_t>(c.at("points").to_number<double>()) : 0;
+			if (Gui::fileExists(cell._cloud))
+				cells.push_back(std::move(cell));
+		}
+		return cells;
 	}
 
-	// Toggles tucked away; open only to deviate from the recommended setup.
-	if (ImGui::CollapsingHeader("Fine-tune recommended setup"))
+	std::vector<std::string> listJson(const std::string& relativeDir)
 	{
-		if (ImGui::Checkbox("Per-cloud auto conditions", &state._autoConditions) && state._autoConditions)
+		std::vector<std::string> paths;
+		std::error_code error;
+		const std::filesystem::path dir(Gui::resolvePath(relativeDir));
+		for (const auto& entry : std::filesystem::directory_iterator(dir, error))
 		{
-			state._generatedConditional = true;
-			state._useRankModel = false;
+			if (entry.is_regular_file() && entry.path().extension() == ".json")
+				paths.push_back(entry.path().lexically_normal().string());
 		}
-		drawHelpMarker("Estimates cheap point-cloud/node domains, tunes numeric condition thresholds, and writes a reusable measured selector.");
-		ImGui::SameLine();
-		bool realCloudOnly = !state._includeSynthetic;
-		if (ImGui::Checkbox("Real cloud only", &realCloudOnly))
-			state._includeSynthetic = !realCloudOnly;
-		drawHelpMarker("Keeps the run specialized to the selected cloud instead of mixing in synthetic validation clouds.");
+		std::sort(paths.begin(), paths.end());
+		return paths;
+	}
 
-		bool cudaMixed = state._evaluator == 1 && state._cudaBuilder == 8 && state._cudaDevice == 0;
-		if (ImGui::Checkbox("CUDA Mixed device 0", &cudaMixed))
+	TraceSummary summarizeTrace(const std::string& path)
+	{
+		TraceSummary summary;
+		summary._path = path;
+		std::ifstream in(path);
+		if (!in)
 		{
-			if (cudaMixed)
+			summary._error = "cannot open";
+			return summary;
+		}
+		std::string line;
+		std::getline(in, line);
+		const std::vector<std::string> header = Gui::splitCsvLine(line);
+		const auto kindColumn = std::find(header.begin(), header.end(), "query_type");
+		if (kindColumn == header.end())
+		{
+			summary._error = "no query_type column";
+			return summary;
+		}
+		const size_t column = static_cast<size_t>(kindColumn - header.begin());
+		while (std::getline(in, line))
+		{
+			const std::vector<std::string> cells = Gui::splitCsvLine(line);
+			if (column < cells.size())
 			{
-				state._evaluator = 1;
-				state._cudaDevice = 0;
-				state._cudaBuilder = 8;
-			}
-			else
-			{
-				state._evaluator = 0;
-			}
-		}
-		drawHelpMarker("Uses the schema-aware mixed CUDA builder on device 0. Schema-search still falls back to CPU if CUDA is unavailable.");
-		ImGui::SameLine();
-		const int volumeIndex = workloadIndexForToken(state, "volume_small_medium");
-		bool volumeWorkload = volumeIndex >= 0 && state._selectedWorkload == volumeIndex;
-		ImGui::BeginDisabled(volumeIndex < 0);
-		if (ImGui::Checkbox("Volume workload", &volumeWorkload) && volumeWorkload)
-			state._selectedWorkload = volumeIndex;
-		ImGui::EndDisabled();
-		drawHelpMarker("Uses the small/medium 3D volume workload, avoiding KNN in the default tuning path.");
-
-		if (ImGui::Checkbox("Generated-only candidates", &state._generatedOnly))
-			state._generateSchemas = state._generateSchemas || state._generatedOnly;
-		drawHelpMarker("Focuses the measured search on generated schema variants instead of fixed baselines.");
-		ImGui::SameLine();
-		if (ImGui::Checkbox("Conditional generated blocks", &state._generatedConditional) && state._autoConditions)
-			state._generatedConditional = true;
-		drawHelpMarker("Keeps local node predicates in the generated schema space.");
-	}
-}
-
-static void drawDatasetPanel(GuiState& state)
-{
-	drawSectionTitle("Point Cloud");
-	drawPathInput("Point cloud", state._inputPath, "Point cloud to optimize against. With synthetic datasets disabled, the selected best schema is overfit to this one cloud and workload.");
-	ImGui::Checkbox("Use binary cache", &state._useBinaryCache);
-	drawHelpMarker("Loads and writes the .mdspc cache beside the source point cloud. This speeds repeated runs but does not change the measured query workload.");
-	ImGui::SameLine();
-	ImGui::Checkbox("Rebuild cache", &state._rebuildBinaryCache);
-	drawHelpMarker("Forces a fresh read from the source point cloud and replaces the .mdspc cache. Useful after the input file changes or if the cache looks stale.");
-	ImGui::Checkbox("Include synthetic datasets", &state._includeSynthetic);
-	drawHelpMarker("Adds built-in synthetic point clouds to the search. Keep this off when you want the optimizer to specialize to your current point cloud only.");
-	if (state._includeSynthetic)
-	{
-		ImGui::InputInt("Synthetic scale", &state._syntheticScale);
-		drawHelpMarker("Point count scale for each synthetic dataset. Larger values make synthetic validation more realistic and slower.");
-	}
-
-	drawSectionTitle("Workload");
-	if (!state._workloads.empty())
-	{
-		const char* preview = state._workloads[static_cast<size_t>(state._selectedWorkload)]._label.c_str();
-		if (ImGui::BeginCombo("Profile", preview))
-		{
-			for (size_t i = 0; i < state._workloads.size(); ++i)
-			{
-				const bool selected = static_cast<int>(i) == state._selectedWorkload;
-				if (ImGui::Selectable(state._workloads[i]._label.c_str(), selected))
-					state._selectedWorkload = static_cast<int>(i);
-				if (selected)
-					ImGui::SetItemDefaultFocus();
-			}
-			ImGui::EndCombo();
-		}
-		drawHelpMarker("Defines the query mix and query volume/radius scales used during measured search. This is a major part of what the selected schema is optimized for.");
-	}
-	else
-	{
-		ImGui::TextUnformatted("No workload profiles found.");
-	}
-	ImGui::InputInt("Queries", &state._queryCount);
-	drawHelpMarker("Number of generated measured queries for the workload. More queries reduce noise but increase optimization time.");
-	const bool knnWorkload = !state._workloads.empty() &&
-		state._workloads[static_cast<size_t>(state._selectedWorkload)]._path.find("knn") != std::string::npos;
-	if (knnWorkload)
-	{
-		ImGui::InputInt("KNN k", &state._knnK);
-		drawHelpMarker("Neighbor count for KNN queries. Larger k usually increases KNN cost and can favor different structures.");
-	}
-	ImGui::InputInt("Query seed", &state._querySeed);
-	drawHelpMarker("Random seed for generated query centers and boxes. Keep fixed for comparable runs; change it to test robustness.");
-}
-
-static void drawSchemaPanel(GuiState& state)
-{
-	drawSectionTitle("Search Space");
-	ImGui::Checkbox("Generate schemas", &state._generateSchemas);
-	drawHelpMarker("Samples new multi-DS JSON candidates from the configured bounds, then benchmarks them. This expands beyond the fixed schema list.");
-	ImGui::SameLine();
-	if (ImGui::Checkbox("Conditional blocks", &state._generatedConditional) && state._autoConditions)
-		state._generatedConditional = true;
-	drawHelpMarker("Allows later schema blocks to activate only for local node conditions such as point count, density, or height ratio. This is the current branch-adaptive multi-DS mechanism.");
-	ImGui::SameLine();
-	const bool cpuAdaptiveLeafSupported = state._evaluator == 0;
-	ImGui::BeginDisabled(!cpuAdaptiveLeafSupported);
-	ImGui::Checkbox("Adaptive leaf capacity", &state._generatedAdaptiveLeafCapacity);
-	ImGui::EndDisabled();
-	drawHelpMarker("CPU-only generated rule that scales leaf capacity per node using density, height-ratio, anisotropy, and query-mix factors. CUDA runs leave this off until GPU support exists.");
-	ImGui::SameLine();
-	ImGui::Checkbox("Generated only", &state._generatedOnly);
-	drawHelpMarker("Ignores checked fixed schemas and searches only generated candidates. Turn this off to compare generated candidates against known baselines.");
-	ImGui::Checkbox("Query-minimal primitives", &state._queryMinimalPrimitives);
-	drawHelpMarker("Default publication search space for CPU discovery: generated schemas use QuadTree, Octree, KDTree, and BVH only. CUDA-only aliases such as KarrasOctree, LBVH, BIH, RegularGrid, and HGrid stay available for explicit CUDA/full runs.");
-
-	if (state._autoConditions)
-	{
-		drawSectionTitle("Auto-Condition Budget");
-		ImGui::InputInt("Proxy candidates", &state._conditionProxyCandidates);
-		drawHelpMarker("Number of domain-aware candidate schemas screened on the downsampled proxy cloud.");
-		ImGui::InputInt("Proxy points", &state._conditionProxyPoints);
-		drawHelpMarker("Point cap for the proxy stage. The full cloud is still used for shortlist and confirmation stages.");
-		ImGui::InputInt("Proxy queries", &state._conditionProxyQueries);
-		drawHelpMarker("Prepared workload query count for the first cheap stage.");
-		ImGui::InputInt("Shortlist top-k", &state._conditionFinalTopK);
-		drawHelpMarker("Candidates promoted from proxy screening to a full-cloud short run.");
-		ImGui::InputInt("Confirm top-k", &state._conditionConfirmTopK);
-		drawHelpMarker("Candidates promoted from the short full-cloud run to final confirmation with the requested query count.");
-		drawPathInput("Tuned schemas", state._autoConditionSchemaDir, "Directory for the final numeric tuned schema JSON files.");
-		drawPathInput("Selector", state._selectorOutputPath, "Measured selector artifact used by later --schema auto runs.");
-	}
-	else
-	{
-		ImGui::InputInt("Generated count", &state._generatedCount);
-		drawHelpMarker("Number of candidate JSON schemas to sample. More candidates explores more of the space and takes longer.");
-		ImGui::InputInt("Benchmark top-k", &state._benchmarkTopK);
-		drawHelpMarker("If a rank model is enabled, benchmark only the model's top-k candidates. 0 means benchmark every candidate and rely only on measured results.");
-	}
-
-	drawPathInput("Generated dir", state._generatedSchemaDir, "Directory where generated schema JSON files are written. The best result table points back to one of these files when a generated candidate wins.");
-
-	if (ImGui::CollapsingHeader("Baseline schemas"))
-	{
-		if (ImGui::Button("Select all"))
-		{
-			for (SchemaEntry& entry : state._schemas)
-				entry._selected = true;
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Clear"))
-		{
-			for (SchemaEntry& entry : state._schemas)
-				entry._selected = false;
-		}
-
-		if (ImGui::BeginTable("schemas", 4, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
-		{
-			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 32.0f);
-			ImGui::TableSetupColumn("Schema", ImGuiTableColumnFlags_WidthStretch, 0.32f);
-			ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0.58f);
-			ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
-			ImGui::TableHeadersRow();
-			for (size_t i = 0; i < state._schemas.size(); ++i)
-			{
-				SchemaEntry& entry = state._schemas[i];
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				ImGui::PushID(static_cast<int>(i));
-				ImGui::BeginDisabled(state._generatedOnly);
-				ImGui::Checkbox("##selected", &entry._selected);
-				ImGui::EndDisabled();
-				ImGui::TableSetColumnIndex(1);
-				ImGui::TextUnformatted(entry._label.c_str());
-				ImGui::TableSetColumnIndex(2);
-				ImGui::TextUnformatted(entry._path.c_str());
-				ImGui::TableSetColumnIndex(3);
-				drawSchemaActions(state, entry._path);
-				ImGui::PopID();
-			}
-			ImGui::EndTable();
-		}
-	}
-
-	if (ImGui::CollapsingHeader("Advanced generated bounds"))
-	{
-		ImGui::InputInt("Min blocks", &state._generatedMinBlocks);
-		drawHelpMarker("Minimum number of structure blocks in generated schemas. Keep this at 2 for nested/mixed discovery; pure baselines are still included separately as controls.");
-		ImGui::InputInt("Max blocks", &state._generatedMaxBlocks);
-		drawHelpMarker("Maximum number of nested structure blocks per generated schema, for example quadtree then octree then kdtree.");
-		ImGui::InputInt("Max depth", &state._generatedMaxDepth);
-		drawHelpMarker("Maximum total tree depth across generated blocks. Larger depth can improve pruning but increases build cost and memory risk.");
-		ImGui::InputInt("Min leaf", &state._generatedMinLeaf);
-		drawHelpMarker("Smallest generated leaf capacity. Lower values produce deeper/finer trees and usually test fewer points per leaf.");
-		ImGui::InputInt("Max leaf", &state._generatedMaxLeaf);
-		drawHelpMarker("Largest generated leaf capacity. Higher values produce coarser leaves and can reduce memory/build cost while increasing per-leaf point tests.");
-		ImGui::InputInt("Generated seed", &state._generatedSeed);
-		drawHelpMarker("Random seed for schema sampling. Keep fixed for repeatability; change it to explore a different batch of candidates.");
-		ImGui::SliderFloat("Condition probability", &state._generatedConditionProbability, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Probability that a generated block gets a local activation condition. Higher values make more branch-adaptive schemas.");
-		ImGui::BeginDisabled(!cpuAdaptiveLeafSupported);
-		ImGui::SliderFloat("Adaptive leaf probability", &state._generatedAdaptiveLeafProbability, 0.0f, 1.0f, "%.2f");
-		ImGui::EndDisabled();
-		drawHelpMarker("Probability that a generated level gets per-node adaptive leaf capacity. Applies only to CPU schema discovery.");
-		bool allPrimitiveVariants = !state._queryMinimalPrimitives;
-		if (ImGui::Checkbox("All CUDA primitive variants", &allPrimitiveVariants))
-			state._queryMinimalPrimitives = !allPrimitiveVariants;
-		drawHelpMarker("Expands generated schemas to include CUDA-native aliases and CPU-compatible variants. Use this for CUDA confirmation sweeps or exhaustive research, not for the default CPU discovery pass.");
-	}
-
-	if (ImGui::CollapsingHeader("Evolutionary optimizer"))
-	{
-		ImGui::Checkbox("Optimize iteratively", &state._optimizeSchemas);
-		drawHelpMarker("Runs evolutionary mutation search after the initial fixed/generated population. Selection is driven by measured C++ benchmark scores, not gradients.");
-		ImGui::InputInt("Generations", &state._optimizerGenerations);
-		drawHelpMarker("Number of mutation rounds after the initial population is measured. 0 evaluates only the initial population.");
-		ImGui::InputInt("Population", &state._optimizerPopulation);
-		drawHelpMarker("Number of new candidates evaluated per generation. Larger populations explore more schemas and take longer.");
-		ImGui::InputInt("Elites", &state._optimizerElites);
-		drawHelpMarker("Best measured candidates used as parents for the next generation. Too few can get stuck; too many makes search less focused.");
-		ImGui::InputInt("Optimizer seed", &state._optimizerSeed);
-		drawHelpMarker("Seed for parent choice and mutations. Keep fixed for repeatability; change it for a different search trajectory.");
-		ImGui::SliderFloat("Mutation rate", &state._optimizerMutationRate, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Probability of applying extra edits to a child schema. Higher values make larger jumps in topology/depth/leaf/condition space.");
-		ImGui::SliderFloat("Random fraction", &state._optimizerRandomFraction, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Fraction of each generation filled with fresh random candidates instead of mutations. This preserves exploration.");
-		ImGui::SliderFloat("Crossover rate", &state._optimizerCrossoverRate, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Probability that a child is built by splicing two elite parents' level lists instead of mutating one. Reaches topology combinations neither parent had; 0 disables crossover (pre-B4 behavior).");
-		ImGui::Checkbox("NSGA-II elite ranking", &state._optimizerUseNsga2);
-		drawHelpMarker("Rank elites by non-dominated-sort + crowding distance over (latency, build, memory, imbalance). Preserves diversity across the Pareto front instead of collapsing it to a scalar score winner.");
-		ImGui::Checkbox("Repair mutations", &state._repairMutations);
-		drawHelpMarker("Creates targeted children from measured bottlenecks: high leaf occupancy tightens leaves/depth, high tested-points adds local indexing, high visited-nodes coarsens the root, and high full-containment prefers coarse grid/quadtree shapes.");
-		ImGui::BeginDisabled(!state._repairMutations);
-		ImGui::InputInt("Repair top-K", &state._repairTopK);
-		drawHelpMarker("Number of measured archive parents to diagnose each generation.");
-		ImGui::InputInt("Repairs/parent", &state._repairPerCandidate);
-		drawHelpMarker("Maximum targeted repair children created from each diagnosed parent before normal mutation fills the remaining population.");
-		ImGui::EndDisabled();
-
-		ImGui::Separator();
-		ImGui::Checkbox("Multi-fidelity rungs", &state._useRungSchedule);
-		drawHelpMarker("Successive halving: each batch is first scored cheaply with the visit-count surrogate, then the top survivors are re-measured with wall-clock latency at increasing query counts. Lets the optimizer touch more candidates for the same wall-clock.");
-		ImGui::BeginDisabled(!state._useRungSchedule);
-		ImGui::InputInt("R0 proxy queries", &state._rungProxyQueries);
-		drawHelpMarker("Query count for the cheap proxy rung. 4 is plenty since the proxy uses deterministic visit/test counters, not noisy timings.");
-		ImGui::InputInt("R0 proxy advance top-K", &state._rungProxyAdvance);
-		drawHelpMarker("Number of candidates promoted from the proxy rung to the latency rung. Typically a quarter of the population.");
-		ImGui::SliderFloat("R0 proxy alpha", &state._rungProxyAlpha, 0.0f, 1.0f, "%.2f");
-		drawHelpMarker("Weight applied to averageTestedPoints in the proxy score (visitedNodes + alpha * testedPoints). Raise it to penalise schemas that touch many points per visited node.");
-		ImGui::InputInt("R1 full queries", &state._rungFullQueries);
-		drawHelpMarker("Query count for the mid-fidelity latency rung. 16 keeps measurement cheap while still discriminating real winners.");
-		ImGui::InputInt("R1 full advance top-K", &state._rungFullAdvance);
-		drawHelpMarker("Number of candidates promoted from the latency rung to the confirmation rung. 4-8 is a normal publication setting.");
-		ImGui::InputInt("R2 confirm queries", &state._rungConfirmQueries);
-		drawHelpMarker("Query count for the confirmation rung. The optimizer only writes records from this final rung to the CSV.");
-		drawPathInput("Surrogate model", state.rungSurrogatePath, "Optional. Path to an exported linear/ONNX selector JSON. When set, between rungs the surrogate proposes top-K candidates from a random pool, injected as extra immigrants.");
-		ImGui::InputInt("Surrogate pool", &state._rungSurrogatePool);
-		drawHelpMarker("Number of fresh genomes sampled per generation and scored by the surrogate. 0 disables the acquisition step.");
-		ImGui::InputInt("Surrogate top-K", &state._rungSurrogateTop);
-		drawHelpMarker("Number of surrogate-ranked candidates injected as additional immigrants each generation. Cheap to raise; the proxy rung filters them anyway.");
-		ImGui::EndDisabled();
-
-		ImGui::Separator();
-		ImGui::Checkbox("Refine thresholds (CMA-style ES)", &state._refineThresholds);
-		drawHelpMarker("After the GA finishes, the top-K archive entries with conditional levels get their numeric thresholds tuned by a (1+lambda)-ES under the visit-proxy. Survivors that improved are re-measured at full fidelity.");
-		ImGui::BeginDisabled(!state._refineThresholds);
-		ImGui::InputInt("Refine top-K", &state._refineThresholdsTopK);
-		drawHelpMarker("Number of GA archive survivors that get their thresholds refined. 4 is a normal publication setting.");
-		ImGui::InputInt("Refine evals/cand", &state._refineThresholdsEvals);
-		drawHelpMarker("Total evaluation budget per refined candidate. 40-80 is the regime where the (1+lambda)-ES converges without overspending.");
-		ImGui::SliderFloat("Refine sigma0", &state._refineThresholdsSigma, 0.01f, 0.8f, "%.2f");
-		drawHelpMarker("Initial step size in normalised [0,1] threshold space. 0.3 is a good default; larger values explore wider, smaller values polish.");
-		ImGui::InputInt("Refine seed", &state._refineThresholdsSeed);
-		drawHelpMarker("RNG seed for the refiner. Different seeds produce different threshold trajectories.");
-		ImGui::EndDisabled();
-
-		ImGui::Separator();
-		ImGui::Checkbox("Multi-seed confirmation", &state._confirmSeeds);
-		drawHelpMarker("After the main run, the top-K per (dataset, workload) is re-measured with N distinct query seeds. Records pick up a seed-averaged mean and 95% bootstrap CI on avg latency, p95 latency, and GPU build time; the Pareto step uses the mean so noise can't fake a win.");
-		ImGui::BeginDisabled(!state._confirmSeeds);
-		ImGui::InputInt("Confirm seeds", &state._confirmSeedsCount);
-		drawHelpMarker("Number of distinct query seeds to draw. 5 is the publication default; lower it for quick iteration, raise it for tighter CIs.");
-		ImGui::InputInt("Confirm top-K", &state._confirmTopK);
-		drawHelpMarker("Number of top-by-score candidates per (dataset, workload) to re-measure. 4 keeps the extra cost bounded while still covering the Pareto front entries in most setups.");
-		ImGui::EndDisabled();
-	}
-}
-
-static void drawScoringPanel(GuiState& state)
-{
-	drawSectionTitle("Evaluator");
-	const char* evaluators[] = { "CPU", "CUDA" };
-	ImGui::Combo("Backend", &state._evaluator, evaluators, IM_ARRAYSIZE(evaluators));
-	drawHelpMarker("Chooses where measured schema fitness runs. CUDA builds the selected GPU structure and measures range/count/radius/KNN queries there.");
-	if (state._evaluator == 1)
-	{
-		std::string cudaError;
-		const bool cudaAvailable = PointGpu::LBVH::isAvailable(&cudaError);
-		if (cudaAvailable)
-		{
-			ImGui::Text("CUDA devices: %d", PointGpu::LBVH::deviceCount());
-		}
-		else
-		{
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
-			ImGui::TextWrapped("CUDA unavailable: %s", cudaError.c_str());
-			ImGui::PopStyleColor();
-		}
-
-		const char* builders[] = { "LBVH", "KDTree", "BIH", "Octree", "KarrasOctree", "QuadTree", "RegularGrid", "HGrid", "Mixed" };
-		ImGui::Text("CUDA: device %d, %s", state._cudaDevice, builders[state._cudaBuilder]);
-		if (ImGui::CollapsingHeader("Advanced CUDA"))
-		{
-			ImGui::InputInt("CUDA device", &state._cudaDevice);
-			drawHelpMarker("GPU id passed to cudaSetDevice. Use 0 unless you have several CUDA GPUs.");
-			ImGui::Combo("Structure", &state._cudaBuilder, builders, IM_ARRAYSIZE(builders));
-			drawHelpMarker("LBVH, KDTree, BIH, Octree, KarrasOctree, QuadTree, RegularGrid, HGrid, and MixedTree schemas are implemented. KarrasOctree uses Morton sorting and prefix child ranges; BIH is a binary interval hierarchy with tight child bounds; standalone HGrid builds several RegularGrid levels and chooses one per query; Mixed follows the schema's per-depth structure schedule, including RegularGrid and HGrid grid split levels.");
-			const char* knnBackends[] = { "Auto", "Tree KNN", "Bruteforce scan" };
-			ImGui::Combo("KNN backend", &state._cudaKnnBackend, knnBackends, IM_ARRAYSIZE(knnBackends));
-			drawHelpMarker("Auto uses exact KDTree/BIH tree KNN for k<=16 and brute-force GPU scan elsewhere. Tree KNN returns hit IDs for diagnostics and tests.");
-			ImGui::InputInt("Query batch", &state._cudaQueryBatch);
-			drawHelpMarker("Number of CUDA queries uploaded/launched per batch. 0 runs the whole generated workload as one batch.");
-			ImGui::InputInt("Memory budget MB", &state._cudaMemoryBudgetMb);
-			drawHelpMarker("Optional guardrail that rejects CUDA builds whose point buffers, sorted arrays, nodes, and sort scratch exceed this budget.");
-		}
-	}
-
-	drawSectionTitle("Surrogate");
-	if (state._autoConditions)
-		ImGui::TextDisabled("Bypassed while per-cloud auto-condition tuning is enabled.");
-	ImGui::BeginDisabled(state._autoConditions);
-	ImGui::Checkbox("Use rank model", &state._useRankModel);
-	drawHelpMarker("Uses the exported JSON/ONNX selector only to rank/prune candidates before benchmarking. The final best schema still comes from measured C++ timings.");
-	drawPathInput("Rank model", state._rankModelPath, "Path to a selector wrapper JSON, usually models/schema_selector.json or models/schema_selector_onnx.json.");
-	ImGui::EndDisabled();
-
-	drawSectionTitle("Score Weights");
-	if (state._optimizeSchemas && state._useRungSchedule)
-		ImGui::TextDisabled("GA proxy rungs only promote candidates; CSV/best tables use the final latency rung.");
-	else if (state._scoreBuildWeight == 0.0f && state._scoreMemoryWeight == 0.0f && state._scoreImbalanceWeight == 0.0f)
-		ImGui::TextDisabled("Score is query latency only.");
-	ImGui::Text("Build %.4f, memory %.4f, imbalance %.4f",
-		state._scoreBuildWeight,
-		state._scoreMemoryWeight,
-		state._scoreImbalanceWeight);
-	if (ImGui::CollapsingHeader("Advanced scoring"))
-	{
-		ImGui::InputFloat("Build", &state._scoreBuildWeight, 0.001f, 0.01f, "%.4f");
-		drawHelpMarker("Adds build time into the score. Keep at 0 if you only care about saved/reused structures and query speed.");
-		ImGui::InputFloat("Memory", &state._scoreMemoryWeight, 0.001f, 0.01f, "%.4f");
-		drawHelpMarker("Adds a memory penalty. Increase this if two schemas have similar query time but one is much larger.");
-		ImGui::InputFloat("Imbalance", &state._scoreImbalanceWeight, 0.001f, 0.01f, "%.4f");
-		drawHelpMarker("Adds a penalty for uneven leaf occupancy. Increase this if winners have pathological leaves or unstable query behavior.");
-	}
-
-	drawSectionTitle("Outputs");
-	drawPathInput("CSV", state._csvPath, "Full measured result table, with one row per dataset/workload/schema candidate.");
-	drawPathInput("Best CSV", state._bestCsvPath, "Compact winner table. This is what the GUI reads back to populate Best Results.");
-	drawPathInput("Pareto CSV", state._paretoCsvPath, "Non-dominated front over (avg latency, build time, memory, imbalance) per (dataset, workload). Empty path disables.");
-	drawPathInput("Explain report", state._explainReportPath, "Markdown explanation report with schema chain, active-structure fractions, query-family behavior against baselines, and repair-style diagnosis. Empty path disables.");
-	drawPathInput("Query trace", state._queryTracePath, "Optional per-query CSV trace. Leave empty for normal runs; enable for noisy/outlier audits. Score-cache hits are bypassed while tracing.");
-
-	drawSectionTitle("Speed-ups");
-	ImGui::TextWrapped(
-		"Auto-conditions runs three stages: proxy (256 candidates on a tiny downsampled cloud, "
-		"ranked by deterministic visit-counts), shortlist (top 16 rebuilt on the full cloud with "
-		"a short query set), confirmation (top 4 with the full query set). The score cache "
-		"survives all stages and across runs, so a re-run after a crash or interruption resumes "
-		"where it left off.");
-	ImGui::Checkbox("Persistent score cache", &state._scoreCacheEnabled);
-	drawHelpMarker("Memoises (schema, cloud, workload) -> measured score. If you abort a run mid-shortlist, the next run skips everything already measured. Designed for safe restarts on stalled candidates like deep hgrid configs.");
-	if (state._scoreCacheEnabled)
-	{
-		drawPathInput("Cache JSONL", state._scoreCachePath, "Append-only JSONL file. Delete it (or tick rebuild) to invalidate.");
-		ImGui::Checkbox("Rebuild cache this run", &state._rebuildScoreCache);
-		drawHelpMarker("Deletes the cache file before this run so every candidate is measured fresh.");
-	}
-	ImGui::SliderInt("Parallel CPU workers", &state._parallelDispatch, 1, 32);
-	drawHelpMarker("Honored only when the evaluator is CPU. Parallelises the evolutionary GA loop AND the auto-condition proxy/shortlist/confirmation loops. The CUDA path stays serial: GPU state and the per-builder build cache are not thread-safe.");
-	if (state._evaluator == 1 && state._parallelDispatch > 1)
-		ImGui::TextDisabled("(currently using CUDA: workers are ignored)");
-
-	ImGui::Checkbox("Include baseline data structures", &state._includeBaselineSchemas);
-	drawHelpMarker("Adds canonical single-block controls. CPU discovery uses only distinct query families (QuadTree, Octree, KDTree, BVH); CUDA/full runs also include LBVH, KarrasOctree, RegularGrid, HGrid, and BIH.");
-}
-
-static bool isCudaResult(const std::string& backend)
-{
-	return backend == "cuda" || backend == "gpu";
-}
-
-static void drawResultsTable(const std::vector<BestResult>& results, GuiState& state)
-{
-	if (results.empty())
-	{
-		ImGui::TextUnformatted("No completed results yet.");
-		return;
-	}
-
-	if (ImGui::BeginTable("best-results", 13, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
-	{
-		ImGui::TableSetupColumn("Dataset");
-		ImGui::TableSetupColumn("Workload");
-		ImGui::TableSetupColumn("Best schema");
-		ImGui::TableSetupColumn("Backend", ImGuiTableColumnFlags_WidthFixed, 76.0f);
-		ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 92.0f);
-		ImGui::TableSetupColumn("Score", ImGuiTableColumnFlags_WidthFixed, 78.0f);
-		ImGui::TableSetupColumn("Avg ms", ImGuiTableColumnFlags_WidthFixed, 78.0f);
-		ImGui::TableSetupColumn("Build ms", ImGuiTableColumnFlags_WidthFixed, 84.0f);
-		ImGui::TableSetupColumn("GPU build", ImGuiTableColumnFlags_WidthFixed, 84.0f);
-		ImGui::TableSetupColumn("GPU query", ImGuiTableColumnFlags_WidthFixed, 84.0f);
-		ImGui::TableSetupColumn("Memory MB", ImGuiTableColumnFlags_WidthFixed, 92.0f);
-		ImGui::TableSetupColumn("Candidates", ImGuiTableColumnFlags_WidthFixed, 92.0f);
-		ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
-		ImGui::TableHeadersRow();
-
-		for (size_t i = 0; i < results.size(); ++i)
-		{
-			const BestResult& result = results[i];
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextUnformatted(result._dataset.c_str());
-			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted(result._workload.c_str());
-			ImGui::TableSetColumnIndex(2);
-			ImGui::TextUnformatted(result._schemaName.c_str());
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", result._schemaPath.c_str());
-			ImGui::TableSetColumnIndex(3);
-			ImGui::TextUnformatted(result._backend.empty() ? "cpu" : result._backend.c_str());
-			ImGui::TableSetColumnIndex(4);
-			ImGui::Text("%s/%s", result._scoreMode.c_str(), result._scoreStage.c_str());
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s score, %zu effective queries%s",
-					result._scoreMode.c_str(),
-					result._effectiveQueries,
-					result._scoreIsFinalLatency ? ", final latency" : ", not final latency");
-			ImGui::TableSetColumnIndex(5);
-			ImGui::Text("%.3f", result._score);
-			ImGui::TableSetColumnIndex(6);
-			ImGui::Text("%.3f", result._averageLatencyMs);
-			ImGui::TableSetColumnIndex(7);
-			ImGui::Text("%.1f", result._buildTimeMs);
-			ImGui::TableSetColumnIndex(8);
-			if (isCudaResult(result._backend))
-				ImGui::Text("%.1f", result._gpuBuildMs);
-			else
-				ImGui::TextUnformatted("-");
-			ImGui::TableSetColumnIndex(9);
-			if (isCudaResult(result._backend))
-				ImGui::Text("%.1f", result._gpuQueryMs);
-			else
-				ImGui::TextUnformatted("-");
-			ImGui::TableSetColumnIndex(10);
-			ImGui::Text("%.1f", static_cast<double>(result._memoryBytes) / (1024.0 * 1024.0));
-			ImGui::TableSetColumnIndex(11);
-			ImGui::Text("%zu", result._candidates);
-			ImGui::TableSetColumnIndex(12);
-			ImGui::PushID(static_cast<int>(i));
-			drawSchemaActions(state, result._schemaPath);
-			ImGui::PopID();
-		}
-
-		ImGui::EndTable();
-	}
-}
-
-// Lineage classification parsed from the generator's schema naming convention.
-enum class LineageOperator
-{
-	Baseline = 0,
-	Generated = 1,
-	Mutation = 2,
-	Crossover = 3,
-	Refined = 4,
-	Other = 5,
-};
-
-struct LineageInfo
-{
-	LineageOperator	_op = LineageOperator::Other;
-	int				_generation = 0;   // -1 = not part of a generation (e.g. refiner inner loop)
-};
-
-static const char* lineageOperatorLabel(LineageOperator op)
-{
-	switch (op)
-	{
-	case LineageOperator::Baseline: return "baseline";
-	case LineageOperator::Generated: return "generated";
-	case LineageOperator::Mutation: return "mutation";
-	case LineageOperator::Crossover: return "crossover";
-	case LineageOperator::Refined: return "refined";
-	default: return "other";
-	}
-}
-
-static ImU32 lineageOperatorColor(LineageOperator op)
-{
-	switch (op)
-	{
-	case LineageOperator::Baseline:  return IM_COL32(150, 150, 150, 255);
-	case LineageOperator::Generated: return IM_COL32(120, 160, 200, 255);
-	case LineageOperator::Mutation:  return IM_COL32(120, 200, 130, 255);
-	case LineageOperator::Crossover: return IM_COL32(200, 140, 200, 255);
-	case LineageOperator::Refined:   return IM_COL32(220, 180, 100, 255);
-	default: return IM_COL32(180, 180, 180, 255);
-	}
-}
-
-static bool schemaNameStartsWith(const std::string& schemaName, const char* prefix)
-{
-	const size_t len = std::strlen(prefix);
-	return schemaName.size() >= len && schemaName.compare(0, len, prefix) == 0;
-}
-
-// Extract the generation index from a `..._g<N>_...` pattern. Returns -1 if absent.
-static int extractGenerationIndex(const std::string& schemaName, const char* prefix)
-{
-	const size_t prefixLen = std::strlen(prefix);
-	if (schemaName.size() <= prefixLen)
-		return -1;
-	size_t cursor = prefixLen;
-	int value = 0;
-	bool any = false;
-	while (cursor < schemaName.size() && std::isdigit(static_cast<unsigned char>(schemaName[cursor])))
-	{
-		value = value * 10 + (schemaName[cursor] - '0');
-		++cursor;
-		any = true;
-	}
-	return any ? value : -1;
-}
-
-static LineageInfo parseLineage(const std::string& schemaName)
-{
-	LineageInfo info;
-	if (schemaNameStartsWith(schemaName, "evolved_g"))
-	{
-		info._op = LineageOperator::Mutation;
-		info._generation = std::max(1, extractGenerationIndex(schemaName, "evolved_g"));
-	}
-	else if (schemaNameStartsWith(schemaName, "xover_g"))
-	{
-		info._op = LineageOperator::Crossover;
-		info._generation = std::max(1, extractGenerationIndex(schemaName, "xover_g"));
-	}
-	else if (schemaNameStartsWith(schemaName, "refined_g"))
-	{
-		info._op = LineageOperator::Refined;
-		info._generation = -1;   // threshold-refiner runs post-GA
-	}
-	else if (schemaNameStartsWith(schemaName, "generated_"))
-	{
-		info._op = LineageOperator::Generated;
-		info._generation = 0;
-	}
-	else if (schemaName.find("_default") != std::string::npos)
-	{
-		info._op = LineageOperator::Baseline;
-		info._generation = 0;
-	}
-	else
-	{
-		info._op = LineageOperator::Other;
-		info._generation = 0;
-	}
-	return info;
-}
-
-// Per-generation rollup of the live ranking: operator counts and best candidate.
-struct GenerationBucket
-{
-	int		_generation = -1;
-	size_t	_total = 0;
-	std::array<size_t, 6> operatorCounts{};   // indexed by LineageOperator
-	const LiveRankingEntry*	_best = nullptr;
-	LineageOperator			_bestOp = LineageOperator::Other;
-};
-
-static std::vector<GenerationBucket> bucketByGeneration(const std::vector<LiveRankingEntry>& ranking)
-{
-	std::map<int, GenerationBucket> buckets;
-	for (const LiveRankingEntry& entry : ranking)
-	{
-		const LineageInfo info = parseLineage(entry._schemaName);
-		GenerationBucket& bucket = buckets[info._generation];
-		bucket._generation = info._generation;
-		++bucket._total;
-		++bucket.operatorCounts[static_cast<size_t>(info._op)];
-		if (!bucket._best || entry._score < bucket._best->_score)
-		{
-			bucket._best = &entry;
-			bucket._bestOp = info._op;
-		}
-	}
-	std::vector<GenerationBucket> out;
-	out.reserve(buckets.size());
-	for (auto& [gen, bucket] : buckets)
-		out.push_back(std::move(bucket));
-	std::sort(out.begin(), out.end(), [](const GenerationBucket& a, const GenerationBucket& b) {
-		// Refiner candidates (-1) go last; otherwise ascending generation index.
-		if (a._generation == -1 && b._generation != -1) return false;
-		if (b._generation == -1 && a._generation != -1) return true;
-		return a._generation < b._generation;
-	});
-	return out;
-}
-
-// GA-progress panel: one row per generation with operator breakdown and best schema, parsed from schema names.
-static void drawGenerationSummary(const std::vector<LiveRankingEntry>& ranking)
-{
-	if (ranking.empty())
-	{
-		ImGui::TextUnformatted("Generation summary will appear after the first candidate finishes.");
-		return;
-	}
-	const std::vector<GenerationBucket> buckets = bucketByGeneration(ranking);
-	if (buckets.empty())
-		return;
-
-	// Track global-best across all generations so we can mark the row with a star.
-	const LiveRankingEntry* globalBest = nullptr;
-	for (const GenerationBucket& bucket : buckets)
-	{
-		if (bucket._best && (!globalBest || bucket._best->_score < globalBest->_score))
-			globalBest = bucket._best;
-	}
-
-	if (ImGui::BeginTable("ga-generation-summary", 6,
-		ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
-	{
-		ImGui::TableSetupColumn("Gen", ImGuiTableColumnFlags_WidthFixed, 48.0f);
-		ImGui::TableSetupColumn("Population", ImGuiTableColumnFlags_WidthFixed, 88.0f);
-		ImGui::TableSetupColumn("Mix");
-		ImGui::TableSetupColumn("Gen best", ImGuiTableColumnFlags_WidthFixed, 96.0f);
-		ImGui::TableSetupColumn("Best so far", ImGuiTableColumnFlags_WidthFixed, 96.0f);
-		ImGui::TableSetupColumn("Best-of-gen schema");
-		ImGui::TableHeadersRow();
-
-		// Cumulative best so far; excludes the post-GA refiner bucket from the running min.
-		double cumulativeBest = std::numeric_limits<double>::infinity();
-
-		for (const GenerationBucket& bucket : buckets)
-		{
-			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			if (bucket._generation == -1)
-				ImGui::TextUnformatted("refine");
-			else if (bucket._generation == 0)
-				ImGui::TextUnformatted("init");
-			else
-				ImGui::Text("g%d", bucket._generation);
-
-			ImGui::TableNextColumn();
-			ImGui::Text("%zu", bucket._total);
-
-			ImGui::TableNextColumn();
-			// Inline operator counts colored by LineageOperator, only non-zero ones.
-			bool firstChip = true;
-			for (size_t opIdx = 0; opIdx < bucket.operatorCounts.size(); ++opIdx)
-			{
-				const size_t count = bucket.operatorCounts[opIdx];
-				if (count == 0)
-					continue;
-				if (!firstChip)
-					ImGui::SameLine();
-				firstChip = false;
-				const ImU32 color = lineageOperatorColor(static_cast<LineageOperator>(opIdx));
-				ImGui::PushStyleColor(ImGuiCol_Text, color);
-				ImGui::Text("%s %zu",
-					lineageOperatorLabel(static_cast<LineageOperator>(opIdx)),
-					count);
-				ImGui::PopStyleColor();
-			}
-
-			// Gen best: this generation's children; noisy and not expected to decrease monotonically.
-			ImGui::TableNextColumn();
-			if (bucket._best)
-			{
-				const bool isGlobal = (bucket._best == globalBest);
-				if (isGlobal)
-				{
-					ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 220, 120, 255));
-					ImGui::Text("* %.4f", bucket._best->_score);
-					ImGui::PopStyleColor();
-				}
-				else
-				{
-					ImGui::Text("%.4f", bucket._best->_score);
-				}
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("Best score among candidates first produced in this generation.\nNoisy — most children score worse than their elite parents; the optimizer improves when occasional children beat the elite.");
-			}
-			else
-			{
-				ImGui::TextUnformatted("--");
-			}
-
-			// Best so far: cumulative running min excluding the refiner bucket; monotonically non-increasing.
-			ImGui::TableNextColumn();
-			if (bucket._generation != -1 && bucket._best)
-			{
-				cumulativeBest = std::min(cumulativeBest, bucket._best->_score);
-				ImGui::Text("%.4f", cumulativeBest);
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("Running min across this and all prior generations.\nThis is the metric that should be monotonically non-increasing.");
-			}
-			else if (bucket._generation == -1 && bucket._best)
-			{
-				// Show the refiner's own best, separated from the cumulative GA trace.
-				const double refinedDelta = cumulativeBest - bucket._best->_score;
-				ImGui::Text("%.4f", bucket._best->_score);
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("Threshold refiner's best (post-GA).\nDelta vs. cumulative GA best: %+.4f",
-						-refinedDelta);
-			}
-			else
-			{
-				ImGui::TextUnformatted("--");
-			}
-
-			ImGui::TableNextColumn();
-			if (bucket._best)
-			{
-				ImGui::PushStyleColor(ImGuiCol_Text, lineageOperatorColor(bucket._bestOp));
-				ImGui::TextUnformatted(bucket._best->_schemaName.c_str());
-				ImGui::PopStyleColor();
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("Operator: %s\nLatency: %.4f ms\nBuild: %.4f ms",
-						lineageOperatorLabel(bucket._bestOp),
-						bucket._best->_averageLatencyMs,
-						bucket._best->_buildTimeMs);
+				++summary._byKind[cells[column]];
+				++summary._total;
 			}
 		}
-		ImGui::EndTable();
+		return summary;
 	}
 
-	// Cumulative best progress trace; if it flattens across generations the GA is stuck.
-	if (buckets.size() >= 2)
+	std::string stemOf(const std::string& path)
+	{
+		return std::filesystem::path(path).filename().string();
+	}
+
+	void rememberInput(SearchFlow::Settings& s)
+	{
+		if (s._inputPath.empty())
+			return;
+		auto& recent = s._recentInputs;
+		recent.erase(std::remove(recent.begin(), recent.end(), s._inputPath), recent.end());
+		recent.insert(recent.begin(), s._inputPath);
+		if (recent.size() > 8)
+			recent.resize(8);
+	}
+
+	bool nextButton(const char* label)
 	{
 		ImGui::Spacing();
-		ImGui::TextDisabled("Cumulative best (monotone — what to actually watch):");
-		std::string trace;
-		double running = std::numeric_limits<double>::infinity();
-		for (size_t i = 0; i < buckets.size(); ++i)
-		{
-			if (buckets[i]._generation == -1 || !buckets[i]._best)
-				continue;
-			running = std::min(running, buckets[i]._best->_score);
-			if (!trace.empty())
-				trace += " -> ";
-			char prefix[16];
-			if (buckets[i]._generation == 0)
-				std::snprintf(prefix, sizeof(prefix), "init");
-			else
-				std::snprintf(prefix, sizeof(prefix), "g%d", buckets[i]._generation);
-			char score[32];
-			std::snprintf(score, sizeof(score), "%.4f", running);
-			trace += std::string(prefix) + ":" + score;
-		}
-		// Append refiner bucket separately so its delta is visible without polluting the trace.
-		for (const GenerationBucket& bucket : buckets)
-		{
-			if (bucket._generation == -1 && bucket._best)
-			{
-				char score[32];
-				std::snprintf(score, sizeof(score), "%.4f", bucket._best->_score);
-				trace += "  +  ref:" + std::string(score);
-			}
-		}
-		ImGui::TextWrapped("%s", trace.c_str());
-	}
-}
-
-static void drawLiveRankingTable(const std::vector<LiveRankingEntry>& ranking, size_t evaluatedCandidates, int topN, GuiState& state)
-{
-	ImGui::Text("Measured candidates: %zu", evaluatedCandidates);
-	if (ranking.empty())
-	{
-		ImGui::TextUnformatted("Live ranking will appear after the first candidate finishes.");
-		return;
-	}
-
-	if (ImGui::BeginTable("live-ranking", 13, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp))
-	{
-		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 34.0f);
-		ImGui::TableSetupColumn("Schema");
-		ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 92.0f);
-		ImGui::TableSetupColumn("Score", ImGuiTableColumnFlags_WidthFixed, 78.0f);
-		ImGui::TableSetupColumn("Avg", ImGuiTableColumnFlags_WidthFixed, 66.0f);
-		ImGui::TableSetupColumn("P95", ImGuiTableColumnFlags_WidthFixed, 66.0f);
-		ImGui::TableSetupColumn("Tested", ImGuiTableColumnFlags_WidthFixed, 78.0f);
-		ImGui::TableSetupColumn("Visited", ImGuiTableColumnFlags_WidthFixed, 76.0f);
-		ImGui::TableSetupColumn("Build", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-		ImGui::TableSetupColumn("GPU build", ImGuiTableColumnFlags_WidthFixed, 84.0f);
-		ImGui::TableSetupColumn("GPU query", ImGuiTableColumnFlags_WidthFixed, 84.0f);
-		ImGui::TableSetupColumn("Backend", ImGuiTableColumnFlags_WidthFixed, 88.0f);
-		ImGui::TableSetupColumn("View", ImGuiTableColumnFlags_WidthFixed, 116.0f);
-		ImGui::TableHeadersRow();
-
-		const size_t rowCount = std::min<size_t>(ranking.size(), static_cast<size_t>(std::max(1, topN)));
-		for (size_t i = 0; i < rowCount; ++i)
-		{
-			const LiveRankingEntry& entry = ranking[i];
-			ImGui::TableNextRow();
-			const bool highlight = i < 3;
-			if (highlight)
-			{
-				const ImU32 color = i == 0
-					? IM_COL32(68, 122, 105, 72)
-					: i == 1
-						? IM_COL32(84, 96, 122, 54)
-						: IM_COL32(122, 104, 72, 44);
-				ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, color);
-			}
-
-			ImGui::TableSetColumnIndex(0);
-			ImGui::Text("%zu", i + 1);
-			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted(entry._schemaName.c_str());
-			if (ImGui::IsItemHovered())
-			{
-				ImGui::SetTooltip(
-					"%s\n%s / %s\norder #%zu",
-					entry._schemaPath.c_str(),
-					entry._dataset.c_str(),
-					entry._workload.c_str(),
-					entry._order);
-			}
-			ImGui::TableSetColumnIndex(2);
-			ImGui::Text("%s/%s", entry._scoreMode.c_str(), entry._scoreStage.c_str());
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s score, %zu effective queries%s",
-					entry._scoreMode.c_str(),
-					entry._effectiveQueries,
-					entry._scoreIsFinalLatency ? ", final latency" : ", not final latency");
-			ImGui::TableSetColumnIndex(3);
-			ImGui::Text("%.4f", entry._score);
-			ImGui::TableSetColumnIndex(4);
-			ImGui::Text("%.3f", entry._averageLatencyMs);
-			ImGui::TableSetColumnIndex(5);
-			ImGui::Text("%.3f", entry._p95LatencyMs);
-			ImGui::TableSetColumnIndex(6);
-			ImGui::Text("%.0f", entry._averageTestedPoints);
-			ImGui::TableSetColumnIndex(7);
-			ImGui::Text("%.1f", entry._averageVisitedNodes);
-			ImGui::TableSetColumnIndex(8);
-			ImGui::Text("%.1f", entry._buildTimeMs);
-			ImGui::TableSetColumnIndex(9);
-			if (isCudaResult(entry._backend))
-				ImGui::Text("%.1f", entry._gpuBuildMs);
-			else
-				ImGui::TextUnformatted("-");
-			ImGui::TableSetColumnIndex(10);
-			if (isCudaResult(entry._backend))
-				ImGui::Text("%.1f", entry._gpuQueryMs);
-			else
-				ImGui::TextUnformatted("-");
-			ImGui::TableSetColumnIndex(11);
-			if (!entry._cudaBuilder.empty())
-				ImGui::Text("%s/%s", entry._backend.c_str(), entry._cudaBuilder.c_str());
-			else
-				ImGui::TextUnformatted(entry._backend.empty() ? "cpu" : entry._backend.c_str());
-			ImGui::TableSetColumnIndex(12);
-			ImGui::PushID(static_cast<int>(i));
-			drawSchemaActions(state, entry._schemaPath);
-			ImGui::PopID();
-		}
-
-		ImGui::EndTable();
-	}
-}
-
-static void drawRunPanel(GuiState& state, RunSession& session)
-{
-	std::string status;
-	std::string error;
-	std::string log;
-	std::vector<BestResult> results;
-	std::vector<LiveRankingEntry> liveRanking;
-	size_t evaluatedCandidates = 0;
-	{
-		std::lock_guard<std::mutex> lock(session._mutex);
-		status = session._status;
-		error = session._error;
-		log = session._log;
-		results = session._bestResults;
-		liveRanking = session._liveRanking;
-		evaluatedCandidates = session._evaluatedCandidates;
-	}
-
-	drawSectionTitle("4. Run");
-	const bool canStart = !session._running;
-	ImGui::BeginDisabled(!canStart);
-	if (ImGui::Button("Start tuning", ImVec2(180.0f, 34.0f)))
-		startRun(session, state);
-	ImGui::EndDisabled();
-	ImGui::SameLine();
-	ImGui::Text("Status: %s", status.c_str());
-	if (session._running)
-		ImGui::ProgressBar(-1.0f * static_cast<float>(ImGui::GetTime()), ImVec2(-1.0f, 0.0f));
-
-	if (!error.empty())
-	{
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
-		ImGui::TextWrapped("%s", error.c_str());
-		ImGui::PopStyleColor();
-	}
-
-	drawSectionTitle("Live Ranking");
-	ImGui::SetNextItemWidth(96.0f);
-	ImGui::InputInt("Top N", &state._liveRankingTopN);
-	drawHelpMarker("Number of live leaderboard rows to display. The run still measures every candidate and writes every row to CSV.");
-	drawLiveRankingTable(liveRanking, evaluatedCandidates, state._liveRankingTopN, state);
-
-	drawSectionTitle("Generations");
-	drawHelpMarker("Per-generation rollup parsed from schema names. Shows population size, the mix of operators (baseline/generated/mutation/crossover/refined) that contributed, and the best-of-generation candidate. The global-best row is marked with *. Works on any optimizer run (GA, auto-conditions, or both) since the data comes from live ranking entries.");
-	drawGenerationSummary(liveRanking);
-
-	drawSectionTitle("Best Results");
-	drawResultsTable(results, state);
-
-	drawSectionTitle("Log");
-	ImGui::BeginChild("log", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
-	if (log.empty())
-		ImGui::TextUnformatted("The run log will appear here.");
-	else
-		ImGui::TextUnformatted(log.c_str());
-	ImGui::EndChild();
-}
-
-static ImVec2 projectPreviewPoint(const glm::vec3& point, const ImVec2& origin, const ImVec2& size, const StructurePreview& preview)
-{
-	const float yawCos = std::cos(preview._yaw);
-	const float yawSin = std::sin(preview._yaw);
-	const float pitchCos = std::cos(preview._pitch);
-	const float pitchSin = std::sin(preview._pitch);
-
-	const float x0 = yawCos * point.x + yawSin * point.z;
-	const float z0 = -yawSin * point.x + yawCos * point.z;
-	const float y1 = pitchCos * point.y - pitchSin * z0;
-	const float z1 = pitchSin * point.y + pitchCos * z0;
-	const float perspective = preview._zoom / std::max(0.25f, preview._zoom + z1);
-	const float scale = std::min(size.x, size.y) * 0.34f * perspective;
-	return ImVec2(origin.x + size.x * 0.5f + x0 * scale, origin.y + size.y * 0.52f - y1 * scale);
-}
-
-static void drawPreviewBox(ImDrawList* drawList, const PreviewBox& box, const ImVec2& origin, const ImVec2& size, const StructurePreview& preview)
-{
-	const glm::vec3 corners[8] = {
-		{ box.min.x, box.min.y, box.min.z },
-		{ box.max.x, box.min.y, box.min.z },
-		{ box.max.x, box.max.y, box.min.z },
-		{ box.min.x, box.max.y, box.min.z },
-		{ box.min.x, box.min.y, box.max.z },
-		{ box.max.x, box.min.y, box.max.z },
-		{ box.max.x, box.max.y, box.max.z },
-		{ box.min.x, box.max.y, box.max.z },
-	};
-	constexpr int edges[12][2] = {
-		{ 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
-		{ 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
-		{ 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 },
-	};
-
-	const bool rootBounds = box._depth == 0 && preview._showFullSchedule;
-	const float alpha = rootBounds ? 0.30f : std::clamp(0.92f - static_cast<float>(box._depth) * 0.06f, 0.35f, 0.92f);
-	const float thickness = box._depth == 0 ? 1.6f : 1.0f;
-	const ImU32 color = rootBounds
-		? IM_COL32(174, 184, 196, 120)
-		: packedColorForStructureName(box._typeName, alpha);
-
-	for (const auto& edge : edges)
-	{
-		const ImVec2 a = projectPreviewPoint(corners[edge[0]], origin, size, preview);
-		const ImVec2 b = projectPreviewPoint(corners[edge[1]], origin, size, preview);
-		drawList->AddLine(a, b, color, thickness);
-	}
-}
-
-static void drawPreviewLegend()
-{
-	const struct
-	{
-		const char* label;
-		const char* typeName;
-	} entries[] = {
-		{ "QuadTree", "QuadTree" },
-		{ "KDTree", "KDTree" },
-		{ "BIH", "BIH" },
-		{ "Octree", "Octree" },
-		{ "KarrasOctree", "KarrasOctree" },
-		{ "BVH", "BVH" },
-		{ "LBVH", "LBVH" },
-		{ "RegularGrid", "RegularGrid" },
-		{ "HGrid", "HGrid" },
-	};
-
-	for (const auto& entry : entries)
-	{
-		const ImVec4 color = colorForStructureName(entry.typeName);
-		ImGui::TextColored(color, "%s", entry.label);
-		ImGui::SameLine();
-	}
-	ImGui::NewLine();
-}
-
-static void drawSchemaFileViewerWindow(GuiState& state)
-{
-	SchemaFileViewer& viewer = state._fileViewer;
-	if (!viewer._open)
-		return;
-
-	const ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 72.0f, viewport->WorkPos.y + 72.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSize(ImVec2(720.0f, 560.0f), ImGuiCond_FirstUseEver);
-	if (ImGui::Begin("Schema JSON", &viewer._open, ImGuiWindowFlags_HorizontalScrollbar))
-	{
-		ImGui::TextUnformatted(viewer._title.c_str());
-		if (!viewer._path.empty())
-		{
-			ImGui::TextDisabled("%s", viewer._path.c_str());
-			if (ImGui::Button("Reload"))
-				viewer._content = loadTextFile(viewer._path, viewer._error);
-			ImGui::SameLine();
-			if (ImGui::Button("Preview boxes"))
-				openStructurePreview(state, viewer._path);
-			ImGui::SameLine();
-			ImGui::Checkbox("Wrap", &viewer._wrap);
-		}
-		if (!viewer._error.empty())
-		{
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
-			ImGui::TextWrapped("%s", viewer._error.c_str());
-			ImGui::PopStyleColor();
-		}
-
 		ImGui::Separator();
-		ImGui::BeginChild("schema-json-content", ImVec2(0.0f, 0.0f), true, viewer._wrap ? 0 : ImGuiWindowFlags_HorizontalScrollbar);
-		if (viewer._wrap)
-			ImGui::TextWrapped("%s", viewer._content.c_str());
-		else
-			ImGui::TextUnformatted(viewer._content.c_str());
-		ImGui::EndChild();
+		ImGui::Spacing();
+		return ImGui::Button(label, ImVec2(220.0f, 34.0f));
 	}
-	ImGui::End();
-}
 
-static void drawStructurePreviewWindow(GuiState& state, bool optimizerRunning)
-{
-	StructurePreview& preview = state._structurePreview;
-	if (!preview._open)
-		return;
-
-	if (preview._needsRebuild)
-		rebuildStructurePreview(preview);
-
-	const ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 620.0f, viewport->WorkPos.y + 96.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSize(ImVec2(760.0f, 560.0f), ImGuiCond_FirstUseEver);
-	if (ImGui::Begin("Structure Preview", &preview._open))
+	void sectionTitle(const char* title)
 	{
-		ImGui::TextUnformatted(preview._title.c_str());
-		if (!preview._schemaName.empty())
-		{
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", preview._schemaName.c_str());
-		}
-		if (!preview._path.empty())
-			ImGui::TextDisabled("%s", preview._path.c_str());
+		ImGui::Spacing();
+		ImGui::TextUnformatted(title);
+		ImGui::Separator();
+	}
 
-		if (ImGui::Checkbox("Full schedule", &preview._showFullSchedule))
-			preview._needsRebuild = true;
+	// ------------------------------------------------------------ step 1: data
+
+	void drawDataStep(App& app)
+	{
+		SearchFlow::Settings& s = app._settings;
+		sectionTitle("Point cloud");
+		Gui::hint("The cloud the index will be built on. LAS, binary or ASCII PLY, XYZ and CSV are read directly; "
+				  "a .mdspc cache next to a file (or the .mdspc itself) loads much faster.");
+
+		ImGui::SetNextItemWidth(-110.0f);
+		ImGui::InputText("##input", &s._inputPath);
 		ImGui::SameLine();
-		drawHelpMarker("Focused mode shows one schema block at a time. Full schedule shows the old cumulative expansion and is mainly useful for simple fixed schemas.");
-
-		if (!preview._showFullSchedule && !preview._phases.empty())
+		if (ImGui::Button("Browse...", ImVec2(100.0f, 0.0f)))
 		{
-			ImGui::SetNextItemWidth(260.0f);
-			const int phaseCount = static_cast<int>(preview._phases.size());
-			preview._phaseIndex = std::clamp(preview._phaseIndex, 0, phaseCount - 1);
-			const char* currentPhase = preview._phases[preview._phaseIndex]._label.c_str();
-			if (ImGui::BeginCombo("Block", currentPhase))
+			const std::string picked = Gui::openFileDialog("Point clouds\0*.las;*.ply;*.xyz;*.csv;*.mdspc\0All files\0*.*\0", s._inputPath);
+			if (!picked.empty())
+				s._inputPath = picked;
+		}
+
+		if (!s._inputPath.empty())
+		{
+			std::error_code error;
+			if (Gui::fileExists(s._inputPath))
 			{
-				for (int i = 0; i < phaseCount; ++i)
+				const double bytes = static_cast<double>(std::filesystem::file_size(s._inputPath, error));
+				const bool cached = std::filesystem::path(s._inputPath).extension() == ".mdspc" || Gui::fileExists(s._inputPath + ".mdspc");
+				ImGui::TextColored(ImVec4(0.55f, 0.83f, 0.72f, 1.0f), "Found, %s%s", Gui::formatBytes(bytes).c_str(),
+								   cached ? " - binary cache available" : " - first load will create a binary cache");
+			}
+			else
+				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.45f, 1.0f), "File not found.");
+		}
+
+		if (!s._recentInputs.empty())
+		{
+			ImGui::Spacing();
+			ImGui::TextDisabled("Recent");
+			for (const std::string& recent : s._recentInputs)
+			{
+				if (ImGui::Selectable(recent.c_str(), recent == s._inputPath))
+					s._inputPath = recent;
+			}
+		}
+
+		if (!app._cells.empty())
+		{
+			ImGui::Spacing();
+			sectionTitle("Curated benchmark");
+			Gui::hint("Cells of the curated multi-scale benchmark that are present on this machine. Picking one also selects "
+					  "its recorded query trace, so the search can be validated on held-out queries.");
+			static ImGuiTextFilter filter;
+			filter.Draw("Filter cells", 220.0f);
+			ImGui::BeginChild("cells", ImVec2(0.0f, 220.0f), ImGuiChildFlags_Borders);
+			for (const BenchmarkCell& cell : app._cells)
+			{
+				if (!filter.PassFilter(cell._name.c_str()))
+					continue;
+				const bool selected = cell._cloud == s._inputPath;
+				const std::string label = cell._name + "   (" + Gui::formatCount(static_cast<double>(cell._points)) + " points)";
+				if (ImGui::Selectable(label.c_str(), selected))
 				{
-					const bool selected = i == preview._phaseIndex;
-					if (ImGui::Selectable(preview._phases[i]._label.c_str(), selected))
+					s._inputPath = cell._cloud;
+					if (Gui::fileExists(cell._trace))
 					{
-						preview._phaseIndex = i;
-						preview._needsRebuild = true;
+						s._useTrace = true;
+						s._tracePath = cell._trace;
 					}
-					if (selected)
-						ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndChild();
+		}
+
+		if (nextButton("Next: workload  >"))
+		{
+			rememberInput(s);
+			app._step = Step::Workload;
+		}
+	}
+
+	// ------------------------------------------------------------ step 2: workload
+
+	void drawWorkloadStep(App& app)
+	{
+		SearchFlow::Settings& s = app._settings;
+		sectionTitle("Queries the index must answer");
+		Gui::hint("The search tunes the index for a workload. A recorded trace of the application's own queries is the "
+				  "faithful choice; synthetic profiles are for exploring without one.");
+
+		if (ImGui::RadioButton("Replay a recorded query trace (recommended)", s._useTrace))
+			s._useTrace = true;
+		if (ImGui::RadioButton("Generate synthetic queries from a profile", !s._useTrace))
+			s._useTrace = false;
+		ImGui::Spacing();
+
+		if (s._useTrace)
+		{
+			ImGui::SetNextItemWidth(-110.0f);
+			ImGui::InputText("##trace", &s._tracePath);
+			ImGui::SameLine();
+			if (ImGui::Button("Browse...##trace", ImVec2(100.0f, 0.0f)))
+			{
+				const std::string picked = Gui::openFileDialog("Query traces\0*.csv\0All files\0*.*\0", s._tracePath);
+				if (!picked.empty())
+					s._tracePath = picked;
+			}
+			if (app._traceSummary._path != s._tracePath && Gui::fileExists(s._tracePath))
+				app._traceSummary = summarizeTrace(s._tracePath);
+			if (Gui::fileExists(s._tracePath) && app._traceSummary._error.empty())
+			{
+				std::string kinds;
+				for (const auto& [kind, count] : app._traceSummary._byKind)
+					kinds += (kinds.empty() ? "" : ", ") + Gui::formatCount(static_cast<double>(count)) + " " + kind;
+				ImGui::TextColored(ImVec4(0.55f, 0.83f, 0.72f, 1.0f), "%s queries: %s",
+								   Gui::formatCount(static_cast<double>(app._traceSummary._total)).c_str(), kinds.c_str());
+				const std::string heldOut = SearchFlow::heldOutTraceFor(s._tracePath);
+				if (!heldOut.empty())
+					ImGui::TextDisabled("Held-out half found (%s): winners will be re-measured on it.", stemOf(heldOut).c_str());
+				else
+					ImGui::TextDisabled("No held-out half (*_test.csv) next to this trace; results will not be validated on unseen queries.");
+			}
+			else if (!s._tracePath.empty())
+				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.45f, 1.0f), "Trace not found or unreadable.");
+		}
+		else
+		{
+			if (ImGui::BeginCombo("Profile", stemOf(s._workloadPath).c_str()))
+			{
+				for (const std::string& path : app._workloads)
+				{
+					if (ImGui::Selectable(stemOf(path).c_str(), path == s._workloadPath))
+						s._workloadPath = path;
 				}
 				ImGui::EndCombo();
 			}
-			ImGui::SameLine();
+			ImGui::SliderInt("kNN k", &s._knnK, 1, 64);
+			ImGui::InputInt("Query seed", &s._querySeed);
 		}
 
-		ImGui::SetNextItemWidth(92.0f);
-		if (ImGui::InputInt(preview._showFullSchedule ? "Global depth" : "Local levels", &preview._maxDepth))
-			preview._needsRebuild = true;
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(110.0f);
-		if (ImGui::InputInt("Box cap", &preview._maxBoxes))
-			preview._needsRebuild = true;
-		ImGui::SameLine();
-		if (ImGui::Button("Reload"))
-			preview._needsRebuild = true;
-		ImGui::SameLine();
-		drawHelpMarker("This preview renders normalized boxes only. It does not load or rebuild the point cloud, so it stays outside the optimizer worker.");
+		ImGui::SliderInt("Queries per evaluation", &s._queries, 100, 10000, "%d", ImGuiSliderFlags_Logarithmic);
+		Gui::helpMarker("How many queries time each candidate. A trace larger than this is subsampled with an even stride, "
+						"so the mixture of query kinds is kept. More queries = more reliable rankings, slower search.");
 
-		if (optimizerRunning)
+		if (nextButton("Next: search  >"))
+			app._step = Step::Search;
+	}
+
+	// ------------------------------------------------------------ step 3: search
+
+	void drawSearchStep(App& app)
+	{
+		SearchFlow::Settings& s = app._settings;
+		sectionTitle("How to search");
+
+		const auto strategy = [&](SearchFlow::Strategy value, const char* label, const char* help) {
+			if (ImGui::RadioButton(label, s._strategy == value))
+				s._strategy = value;
+			ImGui::Indent(28.0f);
+			Gui::hint(help);
+			ImGui::Unindent(28.0f);
+		};
+		strategy(SearchFlow::Strategy::Recommended, "Search, and compare against tuned single structures (recommended)",
+				 "A genetic search over nested schemas, plus every single structure (octree, kd-tree, quadtree, BVH, BIH, "
+				 "grids) tuned over depth and leaf size. You see whether nesting actually beats the best single structure. "
+				 "This is the protocol the evaluation reports.");
+		strategy(SearchFlow::Strategy::GeneticOnly, "Genetic search only", "Faster; no single-structure comparison.");
+		strategy(SearchFlow::Strategy::TunedSinglesOnly, "Tuned single structures only", "No search: the best of the tuned single-structure grid.");
+		strategy(SearchFlow::Strategy::FixedSchemas, "Measure schemas I choose", "No search: time a hand-picked list of schema files.");
+
+		if (s._strategy == SearchFlow::Strategy::FixedSchemas)
 		{
-			ImGui::SameLine();
-			ImGui::TextDisabled("optimizer running");
+			ImGui::BeginChild("fixed", ImVec2(0.0f, 180.0f), ImGuiChildFlags_Borders);
+			for (const std::string& path : app._schemaChoices)
+			{
+				bool selected = std::find(s._fixedSchemas.begin(), s._fixedSchemas.end(), path) != s._fixedSchemas.end();
+				if (ImGui::Checkbox(stemOf(path).c_str(), &selected))
+				{
+					if (selected)
+						s._fixedSchemas.push_back(path);
+					else
+						s._fixedSchemas.erase(std::remove(s._fixedSchemas.begin(), s._fixedSchemas.end(), path), s._fixedSchemas.end());
+				}
+			}
+			ImGui::EndChild();
 		}
 
-		if (!preview._error.empty())
+		if (s._strategy == SearchFlow::Strategy::Recommended || s._strategy == SearchFlow::Strategy::GeneticOnly)
 		{
-			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
-			ImGui::TextWrapped("%s", preview._error.c_str());
+			ImGui::Spacing();
+			sectionTitle("Search budget");
+			const char* budgets[] = { "Quick", "Standard", "Thorough", "Custom" };
+			int budget = static_cast<int>(s._budget);
+			for (int i = 0; i < 4; ++i)
+			{
+				if (i)
+					ImGui::SameLine();
+				if (ImGui::RadioButton(budgets[i], budget == i))
+				{
+					s._budget = static_cast<SearchFlow::Budget>(i);
+					s.applyBudget();
+				}
+			}
+			ImGui::BeginDisabled(s._budget != SearchFlow::Budget::Custom);
+			ImGui::SliderInt("Initial candidates", &s._generatedCount, 8, 256);
+			ImGui::SliderInt("Generations", &s._generations, 1, 10);
+			ImGui::SliderInt("Population", &s._population, 4, 64);
+			ImGui::EndDisabled();
+			Gui::hint("Larger clouds need larger budgets: at 100M points the original budget was the binding constraint. "
+					  "Standard matches the benchmark at 50-100M; Quick is for a first look.");
+		}
+
+		ImGui::Spacing();
+		sectionTitle("Execution");
+		const int threads = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+		ImGui::SliderInt("Parallel candidates", &s._parallel, 1, threads);
+		Gui::helpMarker("Candidates evaluated concurrently. Each builds its own index, so memory grows with this. "
+						"Timing noise grows too; the held-out validation re-measures winners alone.");
+		ImGui::Checkbox("Use the GPU evaluator (experimental)", &s._useCuda);
+		Gui::helpMarker("The CPU evaluator is the measured, comparable path. Schemas the GPU cannot build fall back to the CPU, "
+						"so a GPU ranking can mix backends.");
+		ImGui::BeginDisabled(!s._useTrace || SearchFlow::heldOutTraceFor(s._tracePath).empty());
+		ImGui::Checkbox("Validate winners on the held-out half of the trace", &s._validateHeldOut);
+		ImGui::EndDisabled();
+		ImGui::SetNextItemWidth(-110.0f);
+		ImGui::InputTextWithHint("##outdir", "output folder (default: results/gui/<cloud>_<time>)", &s._outputDir);
+		ImGui::SameLine();
+		if (ImGui::Button("Choose...", ImVec2(100.0f, 0.0f)))
+		{
+			const std::string picked = Gui::selectFolderDialog(s._outputDir);
+			if (!picked.empty())
+				s._outputDir = picked;
+		}
+
+		// What will run, and the exact commands.
+		ImGui::Spacing();
+		sectionTitle("What will run");
+		SearchFlow::Settings preview = s;
+		if (preview._outputDir.empty())
+			preview._outputDir = "<output folder>";
+		std::string error;
+		const std::vector<SearchFlow::Arm> arms = SearchFlow::planArms(preview, &error);
+		if (!error.empty())
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.45f, 1.0f), "%s", error.c_str());
+		std::string commands;
+		for (size_t i = 0; i < arms.size(); ++i)
+		{
+			ImGui::BulletText("%s", arms[i]._label.c_str());
+			commands += SearchFlow::commandLine(arms[i]) + "\n";
+		}
+		if (!arms.empty() && s._validateHeldOut && s._useTrace && !SearchFlow::heldOutTraceFor(s._tracePath).empty())
+			ImGui::BulletText("Held-out validation of the winners (added when the search finishes)");
+		ImGui::BeginDisabled(arms.empty());
+		if (ImGui::Button("Copy command line"))
+			Gui::copyToClipboard(commands);
+		ImGui::EndDisabled();
+		Gui::helpMarker("The exact CLI commands this run executes, so a GUI run can be reproduced or scripted.");
+
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
+		ImGui::BeginDisabled(arms.empty() || app._session._running);
+		if (ImGui::Button("Start search", ImVec2(220.0f, 38.0f)))
+		{
+			rememberInput(s);
+			saveSettings(s);
+			app._session.start(s);
+			app._shownResults.clear();
+			app._shownValidation.clear();
+			app._loadedResultsDir.clear();
+			app._step = Step::Run;
+		}
+		ImGui::EndDisabled();
+	}
+
+	// ------------------------------------------------------------ step 4: run
+
+	void drawLog(App& app)
+	{
+		{
+			std::lock_guard<std::mutex> lock(app._session._mutex);
+			if (app._session._log.size() != app._logCopy.size())
+				app._logCopy = app._session._log;
+		}
+		app._logLines.clear();
+		app._logLines.push_back(0);
+		for (size_t i = 0; i < app._logCopy.size(); ++i)
+			if (app._logCopy[i] == '\n')
+				app._logLines.push_back(i + 1);
+
+		ImGui::Checkbox("Follow", &app._autoScroll);
+		ImGui::BeginChild("log", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(app._logLines.size()));
+		while (clipper.Step())
+		{
+			for (int line = clipper.DisplayStart; line < clipper.DisplayEnd; ++line)
+			{
+				const size_t begin = app._logLines[static_cast<size_t>(line)];
+				const size_t end = static_cast<size_t>(line) + 1 < app._logLines.size() ? app._logLines[static_cast<size_t>(line) + 1] : app._logCopy.size();
+				ImGui::TextUnformatted(app._logCopy.data() + begin, app._logCopy.data() + end);
+			}
+		}
+		if (app._autoScroll && app._session._running)
+			ImGui::SetScrollHereY(1.0f);
+		ImGui::EndChild();
+	}
+
+	void drawRunStep(App& app)
+	{
+		SearchFlow::Session& session = app._session;
+		std::string status, error, stageLabel;
+		size_t currentArm = 0, armCount = 0, stageIndex = 0, stageTotal = 0;
+		std::vector<SearchFlow::LiveRecord> live;
+		std::vector<std::string> armLabels;
+		double elapsed = 0.0;
+		{
+			std::lock_guard<std::mutex> lock(session._mutex);
+			status = session._status;
+			error = session._error;
+			currentArm = session._currentArm;
+			armCount = session._arms.size();
+			for (const SearchFlow::Arm& arm : session._arms)
+				armLabels.push_back(arm._label);
+			stageLabel = session._stage._label;
+			stageIndex = session._stage._index;
+			stageTotal = session._stage._total;
+			live = session._live;
+			elapsed = session._elapsedSeconds;
+		}
+
+		sectionTitle("Run");
+		if (armCount == 0)
+		{
+			Gui::hint("Nothing has run yet. Configure the search in step 3 and press Start.");
+			return;
+		}
+		ImGui::Text("%s   |   step %zu of %zu   |   %zu evaluations   |   %.0f s", status.c_str(),
+					std::min(currentArm + 1, armCount), armCount, live.size(), elapsed);
+		if (session._running)
+		{
+			const float fraction = stageTotal > 0 ? static_cast<float>(stageIndex) / static_cast<float>(stageTotal) : -1.0f * static_cast<float>(ImGui::GetTime());
+			const std::string overlay = stageLabel + (stageTotal > 0 ? " " + std::to_string(stageIndex) + "/" + std::to_string(stageTotal) : std::string());
+			ImGui::ProgressBar(fraction, ImVec2(-120.0f, 0.0f), overlay.c_str());
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", ImVec2(110.0f, 0.0f)))
+				session.cancel();
+		}
+		else if (status == "Complete")
+		{
+			if (ImGui::Button("See results  >", ImVec2(220.0f, 30.0f)))
+				app._step = Step::Results;
+		}
+		if (!error.empty())
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.45f, 1.0f), "%s", error.c_str());
+
+		// Convergence: every measured candidate, and the running best, per step of the run.
+		std::vector<Charts::Series> series;
+		std::vector<std::vector<const SearchFlow::LiveRecord*>> seriesRecords;
+		for (size_t arm = 0; arm < armCount; ++arm)
+		{
+			std::vector<const SearchFlow::LiveRecord*> records;
+			Charts::Series points, best;
+			points._label = arm < armLabels.size() ? armLabels[arm] : "";
+			points._line = false;
+			points._color = ArmColors[arm % 4];
+			best._step = true;
+			best._color = ArmColors[arm % 4];
+			double running = std::numeric_limits<double>::max();
+			for (const SearchFlow::LiveRecord& record : live)
+			{
+				if (record._arm != arm || !(record._latencyMs > 0.0))
+					continue;
+				points._x.push_back(static_cast<double>(record._order));
+				points._y.push_back(record._latencyMs * 1000.0);
+				records.push_back(&record);
+				running = std::min(running, record._latencyMs * 1000.0);
+				best._x.push_back(static_cast<double>(record._order));
+				best._y.push_back(running);
+			}
+			if (!points._x.empty())
+			{
+				series.push_back(points);
+				seriesRecords.push_back(records);
+				series.push_back(best);
+				seriesRecords.push_back(records);
+			}
+		}
+		Charts::PlotOptions options;
+		options._xLabel = "evaluation";
+		options._yLabel = "mean query latency (us, log)";
+		options._logY = true;
+		Charts::plot("convergence", series, options, nullptr, [&](int si, int pi) {
+			const std::vector<const SearchFlow::LiveRecord*>& records = seriesRecords[static_cast<size_t>(si)];
+			if (pi < 0 || static_cast<size_t>(pi) >= records.size())
+				return std::string();
+			const SearchFlow::LiveRecord* record = records[static_cast<size_t>(pi)];
+			return record->_schemaName + "\n" + Gui::formatMs(record->_latencyMs) + " per query, build " + Gui::formatMs(record->_buildMs);
+		});
+
+		// Live leaderboard.
+		std::vector<const SearchFlow::LiveRecord*> ranked;
+		for (const SearchFlow::LiveRecord& record : live)
+			if (record._latencyMs > 0.0)
+				ranked.push_back(&record);
+		std::sort(ranked.begin(), ranked.end(), [](const auto* a, const auto* b) { return a->_latencyMs < b->_latencyMs; });
+		std::set<std::string> seen;
+		if (ImGui::BeginTable("leaders", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+			ImGui::TableSetupColumn("Schema");
+			ImGui::TableSetupColumn("Latency", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+			ImGui::TableSetupColumn("Build", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+			ImGui::TableSetupColumn("Step", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+			ImGui::TableHeadersRow();
+			int shown = 0;
+			for (const SearchFlow::LiveRecord* record : ranked)
+			{
+				if (shown >= 10 || !seen.insert(record->_schemaName).second)
+					continue;
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("%d", ++shown);
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(record->_schemaName.c_str());
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(Gui::formatMs(record->_latencyMs).c_str());
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(Gui::formatMs(record->_buildMs).c_str());
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(record->_arm < armLabels.size() ? armLabels[record->_arm].c_str() : "");
+			}
+			ImGui::EndTable();
+		}
+		ImGui::Spacing();
+		drawLog(app);
+	}
+
+	// ------------------------------------------------------------ step 5: results
+
+	void loadResultsFolder(App& app, const std::string& folder)
+	{
+		app._shownResults.clear();
+		app._shownValidation.clear();
+		const struct { const char* file; const char* label; } known[] = {
+			{ "ga.csv", "Genetic search" }, { "singles.csv", "Tuned single structures" }, { "fixed.csv", "Selected schemas" } };
+		for (const auto& entry : known)
+		{
+			SearchFlow::Arm arm;
+			arm._label = entry.label;
+			arm._csvPath = (std::filesystem::path(folder) / entry.file).string();
+			if (Gui::fileExists(arm._csvPath))
+			{
+				const std::vector<SearchFlow::ResultRow> rows = SearchFlow::loadResults(arm);
+				app._shownResults.insert(app._shownResults.end(), rows.begin(), rows.end());
+			}
+		}
+		SearchFlow::Arm heldOut;
+		heldOut._label = "Held-out validation";
+		heldOut._csvPath = (std::filesystem::path(folder) / "heldout.csv").string();
+		if (Gui::fileExists(heldOut._csvPath))
+			app._shownValidation = SearchFlow::loadResults(heldOut);
+		app._loadedResultsDir = folder;
+		app._selectedResult = -1;
+	}
+
+	const SearchFlow::ResultRow* bestOf(const std::vector<SearchFlow::ResultRow>& rows, const std::string& arm)
+	{
+		const SearchFlow::ResultRow* best = nullptr;
+		for (const SearchFlow::ResultRow& row : rows)
+			if (row._arm == arm && (!best || row._latencyMs < best->_latencyMs))
+				best = &row;
+		return best;
+	}
+
+	void drawSchemaTree(const std::string& path)
+	{
+		static std::string cachedPath;
+		static SchemaConfig cachedSchema;
+		static std::string cachedError;
+		if (path != cachedPath)
+		{
+			cachedPath = path;
+			cachedError.clear();
+			try { cachedSchema = Config::loadSchemaConfig(path); }
+			catch (const std::exception& exception) { cachedSchema = SchemaConfig(); cachedError = exception.what(); }
+		}
+		if (!cachedError.empty())
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.45f, 1.0f), "%s", cachedError.c_str());
+			return;
+		}
+		try
+		{
+			const SchemaConfig& schema = cachedSchema;
+			size_t depth = 0;
+			for (const SchemaLevelConfig& level : schema._levels)
+			{
+				const ImVec4 color = Gui::structureColor(level._typeName);
+				ImGui::Indent(static_cast<float>(std::min<size_t>(depth, 6)) * 14.0f);
+				ImGui::TextColored(color, "%s", level._typeName.c_str());
+				ImGui::SameLine();
+				ImGui::TextDisabled("levels %zu-%zu, leaf <= %zu%s%s", depth, depth + level._numLevels - 1, level._leafCapacity,
+									level._axisPolicy.empty() ? "" : (", " + level._axisPolicy).c_str(),
+									level._condition.empty() ? "" : ", conditional");
+				ImGui::Unindent(static_cast<float>(std::min<size_t>(depth, 6)) * 14.0f);
+				depth += level._numLevels;
+			}
+		}
+		catch (const std::exception& exception)
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.45f, 1.0f), "%s", exception.what());
+		}
+	}
+
+	void openInInspect(App& app, const std::string& schemaPath)
+	{
+		app._inspect._schemaPath = schemaPath;
+		app._step = Step::Inspect;
+	}
+
+	void drawResultsStep(App& app)
+	{
+		if (!app._session._running)
+		{
+			std::lock_guard<std::mutex> lock(app._session._mutex);
+			if (!app._session._results.empty() && app._loadedResultsDir.empty() && app._shownResults.empty())
+			{
+				app._shownResults = app._session._results;
+				app._shownValidation = app._session._validation;
+			}
+		}
+
+		sectionTitle("Results");
+		if (ImGui::Button("Open a results folder..."))
+		{
+			const std::string folder = Gui::selectFolderDialog();
+			if (!folder.empty())
+				loadResultsFolder(app, folder);
+		}
+		Gui::helpMarker("Any folder holding ga.csv / singles.csv / heldout.csv, from the GUI or the CLI.");
+		if (!app._loadedResultsDir.empty())
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", app._loadedResultsDir.c_str());
+		}
+		if (app._shownResults.empty())
+		{
+			Gui::hint("No results yet: run a search (steps 1-4) or open a results folder.");
+			return;
+		}
+
+		// The headline: does the searched schema beat the best single structure?
+		const SearchFlow::ResultRow* searched = bestOf(app._shownResults, "Genetic search");
+		const SearchFlow::ResultRow* single = bestOf(app._shownResults, "Tuned single structures");
+		const auto verdict = [](const SearchFlow::ResultRow* a, const SearchFlow::ResultRow* b, const char* where) {
+			if (!a || !b)
+				return;
+			const double speedup = b->_latencyMs / a->_latencyMs;
+			ImGui::Text("%s: searched %s at %s vs best single %s at %s  ->  ", where, a->_schemaName.c_str(),
+						Gui::formatMs(a->_latencyMs).c_str(), b->_schemaName.c_str(), Gui::formatMs(b->_latencyMs).c_str());
+			ImGui::SameLine();
+			ImGui::TextColored(speedup >= 1.0 ? ImVec4(0.55f, 0.83f, 0.72f, 1.0f) : ImVec4(1.0f, 0.62f, 0.45f, 1.0f),
+							   speedup >= 1.0 ? "%.2fx faster" : "%.2fx slower", speedup >= 1.0 ? speedup : 1.0 / speedup);
+		};
+		ImGui::BeginChild("verdict", ImVec2(0.0f, app._shownValidation.empty() ? 50.0f : 110.0f), ImGuiChildFlags_Borders);
+		verdict(searched, single, "Search queries");
+		if (!app._shownValidation.empty())
+		{
+			// Held-out rows are keyed by schema name; pair the two arms' winners again there.
+			const SearchFlow::ResultRow* searchedHeld = nullptr;
+			const SearchFlow::ResultRow* singleHeld = nullptr;
+			for (const SearchFlow::ResultRow& row : app._shownValidation)
+			{
+				if (searched && row._schemaName == searched->_schemaName) searchedHeld = &row;
+				if (single && row._schemaName == single->_schemaName) singleHeld = &row;
+			}
+			verdict(searchedHeld, singleHeld, "Held-out queries");
+			Gui::hint("Held-out queries were never seen by the search: this is the number to trust.");
+		}
+		ImGui::EndChild();
+
+		// Latency vs build scatter, one colour per step.
+		std::vector<Charts::Series> series;
+		std::vector<std::string> arms;
+		for (const SearchFlow::ResultRow& row : app._shownResults)
+			if (std::find(arms.begin(), arms.end(), row._arm) == arms.end())
+				arms.push_back(row._arm);
+		std::vector<std::vector<const SearchFlow::ResultRow*>> rowsBySeries;
+		for (size_t a = 0; a < arms.size(); ++a)
+		{
+			Charts::Series s;
+			s._label = arms[a];
+			s._line = false;
+			s._color = ArmColors[a % 4];
+			rowsBySeries.emplace_back();
+			for (const SearchFlow::ResultRow& row : app._shownResults)
+			{
+				if (row._arm != arms[a])
+					continue;
+				s._x.push_back(row._buildMs / 1000.0);
+				s._y.push_back(row._latencyMs * 1000.0);
+				rowsBySeries.back().push_back(&row);
+			}
+			series.push_back(std::move(s));
+		}
+		Charts::PlotOptions options;
+		options._xLabel = "build time (s)";
+		options._yLabel = "mean query latency (us, log)";
+		options._logY = true;
+		options._height = 240.0f;
+		Charts::plot("tradeoff", series, options, nullptr, [&](int si, int pi) {
+			const SearchFlow::ResultRow* row = rowsBySeries[static_cast<size_t>(si)][static_cast<size_t>(pi)];
+			return row->_schemaName + "\n" + Gui::formatMs(row->_latencyMs) + " per query, build " + Gui::formatMs(row->_buildMs);
+		});
+
+		// Full table.
+		const ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+			ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp;
+		if (ImGui::BeginTable("results", 7, flags, ImVec2(0.0f, 260.0f)))
+		{
+			ImGui::TableSetupScrollFreeze(0, 1);
+			ImGui::TableSetupColumn("Schema", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("Step");
+			ImGui::TableSetupColumn("Latency", ImGuiTableColumnFlags_DefaultSort);
+			ImGui::TableSetupColumn("Build");
+			ImGui::TableSetupColumn("Memory");
+			ImGui::TableSetupColumn("Nodes/query");
+			ImGui::TableSetupColumn("Points/query");
+			ImGui::TableHeadersRow();
+			if (ImGuiTableSortSpecs* sort = ImGui::TableGetSortSpecs(); sort && sort->SpecsDirty && sort->SpecsCount > 0)
+			{
+				const ImGuiTableColumnSortSpecs spec = sort->Specs[0];
+				std::sort(app._shownResults.begin(), app._shownResults.end(), [spec](const SearchFlow::ResultRow& a, const SearchFlow::ResultRow& b) {
+					double x = 0.0, y = 0.0;
+					switch (spec.ColumnIndex)
+					{
+					case 0: return spec.SortDirection == ImGuiSortDirection_Ascending ? a._schemaName < b._schemaName : a._schemaName > b._schemaName;
+					case 1: return spec.SortDirection == ImGuiSortDirection_Ascending ? a._arm < b._arm : a._arm > b._arm;
+					case 2: x = a._latencyMs; y = b._latencyMs; break;
+					case 3: x = a._buildMs; y = b._buildMs; break;
+					case 4: x = a._memoryBytes; y = b._memoryBytes; break;
+					case 5: x = a._visited; y = b._visited; break;
+					default: x = a._tested; y = b._tested; break;
+					}
+					return spec.SortDirection == ImGuiSortDirection_Ascending ? x < y : x > y;
+				});
+				sort->SpecsDirty = false;
+				app._selectedResult = -1;
+			}
+			for (size_t i = 0; i < app._shownResults.size(); ++i)
+			{
+				const SearchFlow::ResultRow& row = app._shownResults[i];
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				if (ImGui::Selectable((row._schemaName + "##" + std::to_string(i)).c_str(), app._selectedResult == static_cast<int>(i), ImGuiSelectableFlags_SpanAllColumns))
+					app._selectedResult = static_cast<int>(i);
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(row._arm.c_str());
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(Gui::formatMs(row._latencyMs).c_str());
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(Gui::formatMs(row._buildMs).c_str());
+				ImGui::TableNextColumn(); ImGui::TextUnformatted(Gui::formatBytes(row._memoryBytes).c_str());
+				ImGui::TableNextColumn(); ImGui::Text("%.1f", row._visited);
+				ImGui::TableNextColumn(); ImGui::Text("%.1f", row._tested);
+			}
+			ImGui::EndTable();
+		}
+
+		if (app._selectedResult >= 0 && app._selectedResult < static_cast<int>(app._shownResults.size()))
+		{
+			const SearchFlow::ResultRow& row = app._shownResults[static_cast<size_t>(app._selectedResult)];
+			ImGui::Spacing();
+			ImGui::Text("%s", row._schemaName.c_str());
+			ImGui::SameLine();
+			if (ImGui::Button("Inspect in 3D  >"))
+				openInInspect(app, row._schemaPath);
+			ImGui::SameLine();
+			if (ImGui::Button("Copy schema path"))
+				Gui::copyToClipboard(row._schemaPath);
+			drawSchemaTree(row._schemaPath);
+		}
+	}
+
+	// ------------------------------------------------------------ step 6: inspect
+
+	void startInspectBuild(App& app)
+	{
+		Inspect& in = app._inspect;
+		if (in._busy || in._schemaPath.empty() || !Gui::fileExists(app._settings._inputPath))
+			return;
+		if (in._worker.joinable())
+			in._worker.join();
+		in._busy = true;
+		in._ready = false;
+		const std::string cloudPath = app._settings._inputPath;
+		const std::string schemaPath = in._schemaPath;
+		std::shared_ptr<PointCloud> reuse = (in._cloudPath == cloudPath) ? in._cloud : nullptr;
+		in._worker = std::thread([&in, cloudPath, schemaPath, reuse]() {
+			try
+			{
+				std::shared_ptr<PointCloud> cloud = reuse;
+				double loadMs = 0.0;
+				if (!cloud)
+				{
+					{ std::lock_guard<std::mutex> lock(in._mutex); in._status = "Loading cloud..."; }
+					const auto t0 = std::chrono::steady_clock::now();
+					cloud = std::make_shared<PointCloud>(PointCloud::load(cloudPath));
+					loadMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+				}
+				{ std::lock_guard<std::mutex> lock(in._mutex); in._status = "Building index..."; }
+				SchemaConfig schema = Config::loadSchemaConfig(schemaPath);
+				auto index = std::make_shared<PointSpatialIndex>();
+				const auto t1 = std::chrono::steady_clock::now();
+				index->build(*cloud, schema);
+				const double buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
+				std::lock_guard<std::mutex> lock(in._mutex);
+				in._cloud = cloud;
+				in._cloudPath = cloudPath;
+				in._index = index;
+				in._schema = schema;
+				if (loadMs > 0.0)
+					in._loadMs = loadMs;
+				in._buildMs = buildMs;
+				in._stats = index->stats();
+				in._status = "Ready";
+				in._ready = true;
+			}
+			catch (const std::exception& exception)
+			{
+				std::lock_guard<std::mutex> lock(in._mutex);
+				in._status = std::string("Failed: ") + exception.what();
+			}
+			in._busy = false;
+		});
+	}
+
+	void frameCamera(Inspect& in)
+	{
+		const AABB bounds = in._cloud->bounds();
+		in._camera._target = bounds.center();
+		in._sceneRadius = std::max(glm::length(bounds.size()) * 0.5f, 1e-3f);
+		in._camera._distance = in._sceneRadius * 2.2f;
+		in._radius = in._sceneRadius * 0.01f;
+		in._halfExtent = in._sceneRadius * 0.02f;
+	}
+
+	void pickRandomCenter(Inspect& in)
+	{
+		if (!in._cloud || in._cloud->empty())
+			return;
+		in._seed = in._seed * 6364136223846793005ull + 1442695040888963407ull;
+		in._center = in._cloud->points()[(in._seed >> 33) % in._cloud->size()].position;
+	}
+
+	void drawInspectStep(App& app)
+	{
+		Inspect& in = app._inspect;
+		if (in._ready.exchange(false))
+		{
+			// Fresh index: rebuild the scene and frame it.
+			frameCamera(in);
+			pickRandomCenter(in);
+			in._sceneDirty = true;
+			in._overlay = Viewer::QueryOverlay();
+			in._overlayDirty = true;
+		}
+
+		const float controlsWidth = 340.0f;
+		ImGui::BeginChild("inspect-controls", ImVec2(controlsWidth, 0.0f), ImGuiChildFlags_Borders);
+		sectionTitle("Index");
+		ImGui::TextWrapped("Cloud: %s", stemOf(app._settings._inputPath).c_str());
+		ImGui::SetNextItemWidth(-80.0f);
+		ImGui::InputText("##schema", &in._schemaPath);
+		ImGui::SameLine();
+		if (ImGui::Button("File..."))
+		{
+			const std::string picked = Gui::openFileDialog("Schemas\0*.json\0", in._schemaPath);
+			if (!picked.empty())
+				in._schemaPath = picked;
+		}
+		if (ImGui::BeginCombo("##presets", "or pick a shipped schema"))
+		{
+			for (const std::string& path : app._schemaChoices)
+				if (ImGui::Selectable(stemOf(path).c_str()))
+					in._schemaPath = path;
+			ImGui::EndCombo();
+		}
+		ImGui::BeginDisabled(in._busy || in._schemaPath.empty());
+		if (ImGui::Button(in._busy ? "Working..." : "Build and show", ImVec2(-1.0f, 30.0f)))
+			startInspectBuild(app);
+		ImGui::EndDisabled();
+		{
+			std::lock_guard<std::mutex> lock(in._mutex);
+			if (!in._status.empty())
+				ImGui::TextDisabled("%s", in._status.c_str());
+		}
+
+		if (in._index)
+		{
+			ImGui::Text("%s nodes, %s leaves, depth %zu", Gui::formatCount(static_cast<double>(in._stats._numNodes)).c_str(),
+						Gui::formatCount(static_cast<double>(in._stats._numLeaves)).c_str(), in._stats._maxDepth);
+			ImGui::Text("Build %s, memory %s", Gui::formatMs(in._buildMs).c_str(), Gui::formatBytes(static_cast<double>(in._index->memoryFootprintBytes())).c_str());
+			drawSchemaTree(in._schemaPath);
+
+			ImGui::Spacing();
+			sectionTitle("Display");
+			int pointMode = static_cast<int>(in._builder._pointColoring);
+			if (ImGui::Combo("Points", &pointMode, "Height\0Owning structure\0"))
+			{
+				in._builder._pointColoring = static_cast<Viewer::PointColoring>(pointMode);
+				in._sceneDirty = true;
+			}
+			int boxMode = static_cast<int>(in._builder._boxColoring);
+			if (ImGui::Combo("Boxes", &boxMode, "Structure\0Depth\0"))
+			{
+				in._builder._boxColoring = static_cast<Viewer::BoxColoring>(boxMode);
+				in._sceneDirty = true;
+			}
+			const int maxDepth = static_cast<int>(in._stats._maxDepth);
+			in._sceneDirty |= ImGui::SliderInt("From depth", &in._builder._minDepth, 0, maxDepth);
+			in._sceneDirty |= ImGui::SliderInt("To depth", &in._builder._maxDepth, 0, maxDepth);
+			in._sceneDirty |= ImGui::Checkbox("Leaves only", &in._builder._leavesOnly);
+			int maxBoxes = static_cast<int>(in._builder._maxBoxes);
+			if (ImGui::SliderInt("Box budget", &maxBoxes, 0, 200000, "%d", ImGuiSliderFlags_Logarithmic))
+			{
+				in._builder._maxBoxes = static_cast<size_t>(maxBoxes);
+				in._sceneDirty = true;
+			}
+			ImGui::SliderFloat("Point size", &in._pointSize, 1.0f, 6.0f);
+			ImGui::TextDisabled("%zu boxes shown", in._boxesShown);
+
+			// Legend: structures present, coloured as drawn.
+			for (const std::string& name : in._index->structureBreakdownNames())
+			{
+				ImGui::ColorButton(("##" + name).c_str(), Gui::structureColor(name), ImGuiColorEditFlags_NoTooltip, ImVec2(12.0f, 12.0f));
+				ImGui::SameLine();
+				ImGui::TextUnformatted(name.c_str());
+			}
+
+			ImGui::Spacing();
+			sectionTitle("Probe a query");
+			int kind = static_cast<int>(in._queryKind);
+			ImGui::RadioButton("Radius", &kind, 0); ImGui::SameLine();
+			ImGui::RadioButton("kNN", &kind, 1); ImGui::SameLine();
+			ImGui::RadioButton("Box", &kind, 2);
+			in._queryKind = static_cast<Viewer::QueryKind>(kind);
+			if (in._queryKind == Viewer::QueryKind::Radius)
+				ImGui::SliderFloat("Radius", &in._radius, in._sceneRadius * 1e-4f, in._sceneRadius * 0.2f, "%.4f", ImGuiSliderFlags_Logarithmic);
+			else if (in._queryKind == Viewer::QueryKind::Knn)
+				ImGui::SliderInt("k", &in._k, 1, 256);
+			else
+				ImGui::SliderFloat("Half extent", &in._halfExtent, in._sceneRadius * 1e-4f, in._sceneRadius * 0.2f, "%.4f", ImGuiSliderFlags_Logarithmic);
+			if (ImGui::Button("Random point"))
+				pickRandomCenter(in);
+
+			// Replay a query from the selected trace (world coordinates -> cloud frame).
+			if (app._settings._useTrace && Gui::fileExists(app._settings._tracePath))
+			{
+				if (in._tracePath != app._settings._tracePath)
+				{
+					try { in._trace = Experiments::loadQueryTrace(app._settings._tracePath); }
+					catch (...) { in._trace.clear(); }
+					in._tracePath = app._settings._tracePath;
+				}
+				if (!in._trace.empty())
+				{
+					if (ImGui::SliderInt("Trace query #", &in._traceQuery, 0, static_cast<int>(in._trace.size()) - 1))
+					{
+						const Experiments::TraceQuery& q = in._trace[static_cast<size_t>(in._traceQuery)];
+						in._center = in._cloud->toLocalPosition(q._center);
+						if (q._kind == Experiments::TraceQuery::Kind::Knn) { in._queryKind = Viewer::QueryKind::Knn; in._k = static_cast<int>(q._k); }
+						else if (q._kind == Experiments::TraceQuery::Kind::Radius) { in._queryKind = Viewer::QueryKind::Radius; in._radius = q._radius; }
+						in._overlayDirty = true;
+					}
+				}
+			}
+			if (ImGui::Button("Run query", ImVec2(-1.0f, 28.0f)))
+				in._overlayDirty = true;
+			ImGui::BeginDisabled(!in._overlay._valid);
+			if (ImGui::Button("Focus on query", ImVec2(-1.0f, 0.0f)))
+			{
+				// Frame the region the query touched: its radius, k-th distance or box.
+				const float reach = in._overlay._kind == Viewer::QueryKind::Range
+					? glm::length(in._overlay._box.size()) * 0.5f
+					: (in._overlay._kind == Viewer::QueryKind::Knn ? static_cast<float>(in._overlay._kthDistance) : in._overlay._radius);
+				in._camera._target = in._overlay._center;
+				in._camera._distance = std::max(reach * 6.0f, in._sceneRadius * 1e-3f);
+			}
+			ImGui::EndDisabled();
+
+			if (in._overlay._valid)
+			{
+				const PointSpatialIndex::QueryStats& st = in._overlay._stats;
+				ImGui::Text("%zu returned, %zu nodes entered, %zu points tested", st._returnedPoints, st._visitedNodes, st._testedPoints);
+				ImGui::Text("%s for this query (instrumented)", Gui::formatMs(st._elapsedMs).c_str());
+				std::vector<Charts::Bar> bars;
+				for (const auto& [name, count] : st._breakdown.namedCounts(st._breakdown._visitedByStructure))
+					bars.push_back({ name, static_cast<double>(count), ImGui::ColorConvertFloat4ToU32(Gui::structureColor(name)) });
+				if (!bars.empty())
+				{
+					ImGui::TextDisabled("Nodes entered, by structure");
+					Charts::bars("entered", bars, "nodes");
+				}
+			}
+		}
+		ImGui::EndChild();
+
+		ImGui::SameLine();
+		ImGui::BeginChild("inspect-view", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+		if (!in._index || !in._cloud)
+		{
+			Gui::hint("Pick a schema (from Results, a file or the presets) and press \"Build and show\". "
+					  "The index is built on the cloud chosen in step 1.");
+			ImGui::EndChild();
+			return;
+		}
+
+		if (in._sceneDirty)
+		{
+			in._renderer.setPoints(in._builder.points(*in._cloud, *in._index));
+			in._renderer.setBoxes(in._builder.boxes(*in._index, &in._boxesShown));
+			in._sceneDirty = false;
+		}
+		if (in._overlayDirty)
+		{
+			in._overlay = Viewer::runQuery(*in._index, in._queryKind, in._center, in._radius, static_cast<size_t>(in._k), glm::vec3(in._halfExtent));
+			std::vector<Viewer::ColoredVertex> points, lines;
+			Viewer::overlayGeometry(*in._cloud, *in._index, in._overlay, points, lines);
+			in._renderer.setHighlights(points, lines);
+			in._overlayDirty = false;
+		}
+
+		const ImVec2 size = ImGui::GetContentRegionAvail();
+		const unsigned int texture = in._renderer.render(static_cast<int>(size.x), static_cast<int>(size.y), in._camera, in._sceneRadius, in._pointSize);
+		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(texture)), size, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
+		if (ImGui::IsItemHovered())
+		{
+			ImGuiIO& io = ImGui::GetIO();
+			if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+			{
+				in._camera._yaw -= io.MouseDelta.x * 0.008f;
+				in._camera._pitch = std::clamp(in._camera._pitch + io.MouseDelta.y * 0.008f, -1.55f, 1.55f);
+			}
+			if (ImGui::IsMouseDragging(ImGuiMouseButton_Right))
+			{
+				const glm::mat4 view = in._camera.view();
+				const glm::vec3 right(view[0][0], view[1][0], view[2][0]);
+				const glm::vec3 up(view[0][1], view[1][1], view[2][1]);
+				const float scale = in._camera._distance * 0.0015f;
+				in._camera._target += (-io.MouseDelta.x * right + io.MouseDelta.y * up) * scale;
+			}
+			if (io.MouseWheel != 0.0f)
+				in._camera._distance = std::max(in._sceneRadius * 1e-4f, in._camera._distance * std::pow(0.88f, io.MouseWheel));
+		}
+		ImGui::GetWindowDrawList()->AddText(ImVec2(origin.x + 10.0f, origin.y + 8.0f), IM_COL32(170, 178, 190, 255),
+											"left drag: orbit   right drag: pan   wheel: zoom   |   red: returned points   magenta: entered leaves");
+		ImGui::EndChild();
+	}
+
+
+	// ------------------------------------------------------------ capture mode
+	//
+	// MDS_GUI_CAPTURE=<dir> renders every step once into an offscreen framebuffer, writes
+	// <dir>/step<N>.png and exits. It exists so the interface can be checked (and documented)
+	// without a visible desktop: a locked or remote session has no screen to grab.
+	// MDS_GUI_CAPTURE_SCHEMA=<schema.json> also builds that schema in the Inspect step and probes
+	// one query; MDS_GUI_CAPTURE_RESULTS=<folder> loads a results folder into the Results step.
+
+	uint32_t crc32(const uint8_t* data, size_t size)
+	{
+		uint32_t crc = 0xFFFFFFFFu;
+		for (size_t i = 0; i < size; ++i)
+		{
+			crc ^= data[i];
+			for (int k = 0; k < 8; ++k)
+				crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+		}
+		return ~crc;
+	}
+
+	void appendBigEndian(std::vector<uint8_t>& out, uint32_t value)
+	{
+		for (int shift = 24; shift >= 0; shift -= 8)
+			out.push_back(static_cast<uint8_t>(value >> shift));
+	}
+
+	// Minimal PNG: RGBA8, zlib "stored" (uncompressed) blocks. Large files, no dependency.
+	bool writePng(const std::string& path, int width, int height, const std::vector<uint8_t>& rgbaTopDown)
+	{
+		std::vector<uint8_t> raw;
+		raw.reserve(static_cast<size_t>(height) * (static_cast<size_t>(width) * 4 + 1));
+		for (int y = 0; y < height; ++y)
+		{
+			raw.push_back(0);
+			const auto row = rgbaTopDown.begin() + static_cast<ptrdiff_t>(y) * width * 4;
+			raw.insert(raw.end(), row, row + static_cast<ptrdiff_t>(width) * 4);
+		}
+		std::vector<uint8_t> z = { 0x78, 0x01 };
+		uint32_t a = 1, b = 0;
+		for (const uint8_t byte : raw)
+		{
+			a = (a + byte) % 65521u;
+			b = (b + a) % 65521u;
+		}
+		size_t offset = 0;
+		do
+		{
+			const size_t block = std::min<size_t>(65535, raw.size() - offset);
+			const bool last = offset + block >= raw.size();
+			z.push_back(last ? 1 : 0);
+			z.push_back(static_cast<uint8_t>(block & 0xFF));
+			z.push_back(static_cast<uint8_t>(block >> 8));
+			z.push_back(static_cast<uint8_t>(~block & 0xFF));
+			z.push_back(static_cast<uint8_t>((~block >> 8) & 0xFF));
+			z.insert(z.end(), raw.begin() + static_cast<ptrdiff_t>(offset), raw.begin() + static_cast<ptrdiff_t>(offset + block));
+			offset += block;
+		} while (offset < raw.size());
+		appendBigEndian(z, (b << 16) | a);
+
+		std::ofstream out(path, std::ios::binary);
+		if (!out)
+			return false;
+		const uint8_t signature[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+		out.write(reinterpret_cast<const char*>(signature), 8);
+		const auto chunk = [&out](const char* type, const std::vector<uint8_t>& data) {
+			std::vector<uint8_t> bytes;
+			appendBigEndian(bytes, static_cast<uint32_t>(data.size()));
+			std::vector<uint8_t> typed(type, type + 4);
+			typed.insert(typed.end(), data.begin(), data.end());
+			bytes.insert(bytes.end(), typed.begin(), typed.end());
+			appendBigEndian(bytes, crc32(typed.data(), typed.size()));
+			out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+		};
+		std::vector<uint8_t> header;
+		appendBigEndian(header, static_cast<uint32_t>(width));
+		appendBigEndian(header, static_cast<uint32_t>(height));
+		header.insert(header.end(), { 8, 6, 0, 0, 0 });
+		chunk("IHDR", header);
+		chunk("IDAT", z);
+		chunk("IEND", {});
+		return static_cast<bool>(out);
+	}
+
+	struct Capture
+	{
+		std::string	_dir;
+		std::string	_schema;
+		int			_step = 0;
+		int			_frames = 0;
+		double		_waitStart = 0.0;
+		unsigned int	_fbo = 0, _texture = 0;
+		int			_width = 0, _height = 0;
+
+		bool active() const { return !_dir.empty(); }
+
+		void target(int width, int height)
+		{
+			if (_fbo && width == _width && height == _height)
+				return;
+			if (!_fbo)
+			{
+				glGenFramebuffers(1, &_fbo);
+				glGenTextures(1, &_texture);
+			}
+			glBindTexture(GL_TEXTURE_2D, _texture);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+			glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _texture, 0);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			_width = width;
+			_height = height;
+		}
+
+		~Capture()
+		{
+			if (_fbo) glDeleteFramebuffers(1, &_fbo);
+			if (_texture) glDeleteTextures(1, &_texture);
+		}
+	};
+
+	// ------------------------------------------------------------ shell
+
+	bool stepDone(const App& app, Step step)
+	{
+		const SearchFlow::Settings& s = app._settings;
+		switch (step)
+		{
+		case Step::Data: return Gui::fileExists(s._inputPath);
+		case Step::Workload: return s._useTrace ? Gui::fileExists(s._tracePath) : Gui::fileExists(Gui::resolvePath(s._workloadPath));
+		case Step::Search: return true;
+		case Step::Run: return !app._session._running && !app._session._results.empty();
+		case Step::Results: return !app._shownResults.empty();
+		case Step::Inspect: return app._inspect._index != nullptr;
+		}
+		return false;
+	}
+
+	void drawInterface(App& app)
+	{
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(viewport->WorkPos);
+		ImGui::SetNextWindowSize(viewport->WorkSize);
+		ImGui::Begin("MultiDataStructure", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+					 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+		ImGui::TextUnformatted("MultiDataStructure");
+		ImGui::SameLine();
+		ImGui::TextDisabled("workload-tuned spatial indexes for point clouds");
+		if (app._session._running)
+		{
+			ImGui::SameLine(ImGui::GetWindowWidth() - 330.0f);
+			std::lock_guard<std::mutex> lock(app._session._mutex);
+			ImGui::TextColored(ImVec4(0.95f, 0.78f, 0.32f, 1.0f), "running: %s (%.0f s)", app._session._status.c_str(), app._session._elapsedSeconds);
+		}
+		ImGui::Separator();
+
+		ImGui::BeginChild("steps", ImVec2(190.0f, 0.0f), ImGuiChildFlags_Borders);
+		for (int i = 0; i < 6; ++i)
+		{
+			const Step step = static_cast<Step>(i);
+			const bool done = stepDone(app, step);
+			ImGui::PushStyleColor(ImGuiCol_Text, done ? ImVec4(0.55f, 0.83f, 0.72f, 1.0f) : ImVec4(0.80f, 0.84f, 0.90f, 1.0f));
+			if (ImGui::Selectable((std::string(done ? "* " : "  ") + StepNames[i]).c_str(), app._step == step, 0, ImVec2(0.0f, 30.0f)))
+				app._step = step;
 			ImGui::PopStyleColor();
 		}
+		ImGui::Spacing();
+		Gui::hint("Steps 1-3 describe the run, 4 runs it, 5 compares the outcome, 6 shows any index in 3D. "
+				  "Settings are remembered between sessions.");
+		ImGui::EndChild();
+		ImGui::SameLine();
 
-		if (!preview._showFullSchedule && !preview._phases.empty())
+		ImGui::BeginChild("main", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders,
+						  app._step == Step::Inspect ? ImGuiWindowFlags_NoScrollbar : 0);
+		switch (app._step)
 		{
-			const PreviewPhase& phase = preview._phases[preview._phaseIndex];
-			ImGui::Text("Focused block: %s, schema depths %zu-%zu",
-				phase._level._typeName.c_str(),
-				phase._startDepth,
-				phase._endDepth == 0 ? 0 : phase._endDepth - 1);
+		case Step::Data: drawDataStep(app); break;
+		case Step::Workload: drawWorkloadStep(app); break;
+		case Step::Search: drawSearchStep(app); break;
+		case Step::Run: drawRunStep(app); break;
+		case Step::Results: drawResultsStep(app); break;
+		case Step::Inspect: drawInspectStep(app); break;
 		}
-		ImGui::Text("Boxes: %zu%s", preview._boxes.size(), preview._truncated ? " (capped)" : "");
-		drawPreviewLegend();
-
-		const ImVec2 canvasSize = ImVec2(
-			std::max(320.0f, ImGui::GetContentRegionAvail().x),
-			std::max(280.0f, ImGui::GetContentRegionAvail().y));
-		const ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
-		ImGui::InvisibleButton("structure-preview-canvas", canvasSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-		const bool hovered = ImGui::IsItemHovered();
-		const bool active = ImGui::IsItemActive();
-		ImGuiIO& io = ImGui::GetIO();
-		if (active && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-		{
-			preview._yaw += io.MouseDelta.x * 0.008f;
-			preview._pitch = std::clamp(preview._pitch + io.MouseDelta.y * 0.008f, -1.25f, 1.25f);
-		}
-		if (hovered && io.MouseWheel != 0.0f)
-			preview._zoom = std::clamp(preview._zoom - io.MouseWheel * 0.18f, 1.4f, 8.0f);
-
-		ImDrawList* drawList = ImGui::GetWindowDrawList();
-		drawList->AddRectFilled(canvasOrigin, ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y), IM_COL32(12, 15, 18, 255));
-		drawList->AddRect(canvasOrigin, ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y), IM_COL32(55, 64, 75, 255));
-		drawList->PushClipRect(canvasOrigin, ImVec2(canvasOrigin.x + canvasSize.x, canvasOrigin.y + canvasSize.y), true);
-		for (const PreviewBox& box : preview._boxes)
-			drawPreviewBox(drawList, box, canvasOrigin, canvasSize, preview);
-		drawList->PopClipRect();
+		ImGui::EndChild();
+		ImGui::End();
 	}
-	ImGui::End();
 }
 
-static void drawInterface(GuiState& state, RunSession& session)
-{
-	clampState(state);
-
-	const ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(viewport->WorkPos);
-	ImGui::SetNextWindowSize(viewport->WorkSize);
-
-	const ImGuiWindowFlags flags =
-		ImGuiWindowFlags_NoDecoration |
-		ImGuiWindowFlags_NoMove |
-		ImGuiWindowFlags_NoSavedSettings |
-		ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-	ImGui::Begin("MultiDataStructure Optimizer", nullptr, flags);
-	ImGui::TextUnformatted("MultiDataStructure Optimizer");
-	ImGui::SameLine();
-	ImGui::TextDisabled("measured schema search");
-	ImGui::SameLine();
-	ImGui::TextDisabled("|  steps 1-3 configure on the left, step 4 runs on the right");
-	ImGui::Separator();
-
-	const float leftWidth = std::max(360.0f, ImGui::GetContentRegionAvail().x * 0.36f);
-	ImGui::BeginChild("left-panel", ImVec2(leftWidth, 0.0f), true);
-	drawPublicationPanel(state);
-	if (ImGui::BeginTabBar("configuration-tabs"))
-	{
-		if (ImGui::BeginTabItem("1. Inputs"))
-		{
-			drawDatasetPanel(state);
-			ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("2. Search"))
-		{
-			drawSchemaPanel(state);
-			ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("3. Advanced"))
-		{
-			drawScoringPanel(state);
-			ImGui::EndTabItem();
-		}
-		ImGui::EndTabBar();
-	}
-	ImGui::EndChild();
-
-	ImGui::SameLine();
-	ImGui::BeginChild("right-panel", ImVec2(0.0f, 0.0f), true);
-	drawRunPanel(state, session);
-	ImGui::EndChild();
-	ImGui::End();
-
-	drawSchemaFileViewerWindow(state);
-	drawStructurePreviewWindow(state, session._running);
-}
-
-int OptimizerGui::run()
+int OptimizerGui::run(const AppConfig* config)
 {
 	if (!glfwInit())
 		throw std::runtime_error("Unable to initialize GLFW.");
@@ -2754,20 +1435,16 @@ int OptimizerGui::run()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	GLFWwindow* window = glfwCreateWindow(1440, 900, "MultiDataStructure Optimizer", nullptr, nullptr);
+	GLFWwindow* window = glfwCreateWindow(1500, 940, "MultiDataStructure", nullptr, nullptr);
 	if (!window)
 	{
 		glfwTerminate();
-		throw std::runtime_error("Unable to create optimizer window.");
+		throw std::runtime_error("Unable to create the window.");
 	}
-
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
-
 	glewExperimental = GL_TRUE;
-	const GLenum glewStatus = glewInit();
-	if (glewStatus != GLEW_OK)
+	if (glewInit() != GLEW_OK)
 	{
 		glfwDestroyWindow(window);
 		glfwTerminate();
@@ -2776,49 +1453,104 @@ int OptimizerGui::run()
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-	io.IniFilename = nullptr;
-	applyTheme();
-
+	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	ImGui::GetIO().IniFilename = nullptr;
+	Gui::applyTheme();
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
-	GuiState state;
-	initializeState(state);
-	RunSession session;
-
-	while (!glfwWindowShouldClose(window))
 	{
-		glfwPollEvents();
-		if (glfwWindowShouldClose(window) && session._running)
+		App app;
+		loadSettings(app._settings);
+		if (config)
 		{
-			glfwSetWindowShouldClose(window, GLFW_FALSE);
-			std::lock_guard<std::mutex> lock(session._mutex);
-			session._status = "Running; close after completion";
+			const auto& search = config->_schemaSearchOptions;
+			if (!search._inputPaths.empty() && !search._inputPaths.front().empty())
+				app._settings._inputPath = search._inputPaths.front();
+			if (!search._inputTracePath.empty())
+			{
+				app._settings._useTrace = true;
+				app._settings._tracePath = search._inputTracePath;
+			}
+		}
+		app._cells = discoverCells();
+		app._workloads = listJson("configs/workloads");
+		app._schemaChoices = listJson("configs/schemas");
+		for (const std::string& extra : listJson("configs/schemas/equivalence_set"))
+			app._schemaChoices.push_back(extra);
+
+		Capture capture;
+		if (const char* dir = std::getenv("MDS_GUI_CAPTURE"))
+		{
+			capture._dir = dir;
+			std::filesystem::create_directories(capture._dir);
+			if (const char* schema = std::getenv("MDS_GUI_CAPTURE_SCHEMA"))
+				capture._schema = schema;
+			if (const char* results = std::getenv("MDS_GUI_CAPTURE_RESULTS"))
+				loadResultsFolder(app, results);
 		}
 
-		if (session._finished.exchange(false) && session._worker.joinable())
-			session._worker.join();
+		while (!glfwWindowShouldClose(window))
+		{
+			glfwPollEvents();
+			app._session.poll();
 
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
-		drawInterface(state, session);
-		ImGui::Render();
+			if (capture.active())
+			{
+				app._step = static_cast<Step>(capture._step);
+				if (app._step == Step::Inspect && !capture._schema.empty() && !app._inspect._index && !app._inspect._busy)
+				{
+					app._inspect._schemaPath = capture._schema;
+					startInspectBuild(app);
+					capture._waitStart = ImGui::GetTime();
+				}
+			}
 
-		int displayWidth = 0;
-		int displayHeight = 0;
-		glfwGetFramebufferSize(window, &displayWidth, &displayHeight);
-		glViewport(0, 0, displayWidth, displayHeight);
-		glClearColor(0.055f, 0.064f, 0.075f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glfwSwapBuffers(window);
+			ImGui_ImplOpenGL3_NewFrame();
+			ImGui_ImplGlfw_NewFrame();
+			ImGui::NewFrame();
+			drawInterface(app);
+			ImGui::Render();
+
+			int width = 0, height = 0;
+			glfwGetFramebufferSize(window, &width, &height);
+			if (capture.active() && width > 0 && height > 0)
+			{
+				// Wait for the Inspect build (bounded), then let the layout settle a few frames.
+				const bool waiting = app._step == Step::Inspect && (app._inspect._busy || app._inspect._ready) &&
+					ImGui::GetTime() - capture._waitStart < 300.0;
+				if (!waiting && ++capture._frames >= 8)
+				{
+					capture.target(width, height);
+					glBindFramebuffer(GL_FRAMEBUFFER, capture._fbo);
+					glViewport(0, 0, width, height);
+					glClearColor(0.055f, 0.064f, 0.075f, 1.0f);
+					glClear(GL_COLOR_BUFFER_BIT);
+					ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+					std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+					glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+					glBindFramebuffer(GL_FRAMEBUFFER, 0);
+					std::vector<uint8_t> flipped(pixels.size());
+					for (int y = 0; y < height; ++y)
+						std::memcpy(&flipped[static_cast<size_t>(y) * width * 4], &pixels[static_cast<size_t>(height - 1 - y) * width * 4], static_cast<size_t>(width) * 4);
+					writePng(capture._dir + "/step" + std::to_string(capture._step + 1) + ".png", width, height, flipped);
+					capture._frames = 0;
+					if (++capture._step >= 6)
+						glfwSetWindowShouldClose(window, GLFW_TRUE);
+				}
+			}
+
+			glViewport(0, 0, width, height);
+			glClearColor(0.055f, 0.064f, 0.075f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			glfwSwapBuffers(window);
+		}
+
+		// Closing the window is allowed mid-run: the search is cancelled and joined first.
+		saveSettings(app._settings);
+		app._session.cancel();
 	}
-
-	if (session._worker.joinable())
-		session._worker.join();
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
