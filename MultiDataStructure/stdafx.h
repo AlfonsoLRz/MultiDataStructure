@@ -47,9 +47,12 @@
 #include <unordered_set>
 #include <vector>
 
+// MDS_HEADLESS (Linux CLI build, see CMakeLists.txt) skips GL, GLFW, ImGui, ImGuizmo and SOIL2.
+#ifndef MDS_HEADLESS
 // IMPORTANTE: El include de GLEW debe estar siempre ANTES de el de GLFW
 #include "GL/glew.h"								
 #include "GLFW/glfw3.h"
+#endif
 #include "glm/glm.hpp"
 #include "glm/gtc/constants.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -57,6 +60,7 @@
 #include "glm/gtc/epsilon.hpp"   
 #include "glm/gtx/norm.hpp"
 
+#ifndef MDS_HEADLESS
 // Gui
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -65,6 +69,7 @@
 
 // Textures
 #include "SOIL2/SOIL2.h"
+#endif
 
 // Cuda
 #include "cooperative_groups.h"
