@@ -1,15 +1,16 @@
 {
   "name": "karras_octree_default",
+  "_comment": "maxDepth raised 8 -> 16 on 2026-08-16, the same defect kdtree_default had and for the same reason: the depth cap, not leafCapacity, was deciding when to stop. Measured at 25M with the old cap this schema tested 241,909 points per query on Cathedral and 310,712 on GaliciaForest while visiting only ~43 and ~18 nodes - leaves of roughly 5,600 points against a requested capacity of 32. Uniform clouds hid it (69-717 tested) because 8 levels of 8-way split resolve evenly-spread points; scenes with high density dynamic range (TLS scans are ~186x p99/p50, versus ~6x aerial) or large empty extents (the Galicia archipelago spans 43 km) need more levels to reach the same occupancy. Empty nodes are pruned and single children collapsed, so the extra depth costs nodes only where points actually are.",
   "levels": [
     {
       "type": "KarrasOctree",
-      "numLevels": 8,
+      "numLevels": 16,
       "leafCapacity": 32,
       "minPointsToSplit": 8
     }
   ],
   "buildPolicy": {
-    "maxDepth": 8,
+    "maxDepth": 16,
     "leafCapacity": 32,
     "minPointsToSplit": 8,
     "collapseSingleChild": true,

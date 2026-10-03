@@ -1,16 +1,17 @@
 {
   "name": "bvh_default",
+  "_comment": "maxDepth raised 12 -> 22 on 2026-08-16, same defect as kdtree_default: a BINARY structure capped at depth 12 has at most 2^12 = 4096 leaves regardless of point count, so leafCapacity never bound above ~131k points and this default was measured as a depth cap rather than as a BVH. At 22 levels (4.2M leaves) leafCapacity binds through the whole searched ladder (1M-100M).",
   "levels": [
     {
       "type": "BVH",
-      "numLevels": 12,
+      "numLevels": 22,
       "leafCapacity": 32,
       "minPointsToSplit": 8,
       "axisPolicy": "center_longest_axis"
     }
   ],
   "buildPolicy": {
-    "maxDepth": 12,
+    "maxDepth": 22,
     "leafCapacity": 32,
     "minPointsToSplit": 8,
     "collapseSingleChild": true,
@@ -18,4 +19,3 @@
     "allowOverlapDuplication": false
   }
 }
-

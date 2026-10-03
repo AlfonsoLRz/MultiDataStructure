@@ -1,16 +1,17 @@
 {
   "name": "kdtree_default",
+  "_comment": "maxDepth raised 12 -> 22 on 2026-08-16. A binary tree capped at depth 12 has at most 2^12 = 4096 leaves NO MATTER how many points it holds, so leafCapacity never bound above ~131k points and this schema was benchmarked as a depth cap rather than as a kd-tree. Measured at 25M it held 6103 points per leaf and tested 8164 points per query, against the octree default's 210 - which is where most of the reported gap to the Indexicon baseline came from. At 22 levels (4.2M leaves) leafCapacity binds through the whole searched ladder (1M-100M); above 250M it degrades gracefully instead of collapsing. Tuned singles were never affected, they already carry proper depths.",
   "levels": [
     {
       "type": "KDTree",
-      "numLevels": 12,
+      "numLevels": 22,
       "leafCapacity": 32,
       "minPointsToSplit": 8,
       "axisPolicy": "median_longest_axis"
     }
   ],
   "buildPolicy": {
-    "maxDepth": 12,
+    "maxDepth": 22,
     "leafCapacity": 32,
     "minPointsToSplit": 8,
     "collapseSingleChild": true,

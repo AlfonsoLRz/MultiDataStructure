@@ -58,7 +58,14 @@ namespace BaselineTests
 		const SchemaConfig octree = loadSchema("octree");
 		expect(octree._name == "octree_default", "octree schema name parsed");
 		expect(octree._levels.size() == 1, "octree schema has one level block");
-		expect(octree.totalLevels() == 8, "octree schema total levels parsed");
+		// Asserted against the file's own level block rather than a literal. This used to read
+		// `== 8` and broke the moment octree_default's depth was retuned (12 -> 16 on 2026-08-16,
+		// to stop the depth cap overriding leafCapacity on high-dynamic-range scans). What the
+		// parser owes us is that totalLevels() aggregates the level blocks, which is scale-free;
+		// how deep the shipped default happens to be is a tuning decision and not this test's
+		// business.
+		expect(octree.totalLevels() == octree._levels[0]._numLevels,
+			   "octree schema total levels parsed");
 		expect(octree._levels[0]._type == MultiDataStructure::DataStructureLevel::OctreeNode, "octree type parsed");
 		expect(octree._levels[0]._primitiveKind == SchemaPrimitiveKind::Octree, "octree primitive kind parsed");
 		expect(octree._levels[0]._cpuFallbackType == MultiDataStructure::DataStructureLevel::OctreeNode, "octree CPU fallback parsed");
@@ -93,7 +100,12 @@ namespace BaselineTests
 
 		const SchemaConfig hybrid = loadSchema("quadtree_octree");
 		expect(hybrid._levels.size() == 2, "hybrid schema has two level blocks");
-		expect(hybrid.totalLevels() == 8, "hybrid total levels parsed");
+		// The property under test is that totalLevels() SUMS the blocks, which is what makes a
+		// nested schema's depth well defined. Stated as the sum so retuning either block cannot
+		// turn a parser test into a false alarm.
+		expect(hybrid.totalLevels() == hybrid._levels[0]._numLevels + hybrid._levels[1]._numLevels,
+			   "hybrid total levels parsed");
+		expect(hybrid.totalLevels() > hybrid._levels[0]._numLevels, "hybrid depth spans both blocks");
 
 		const std::vector<MultiDataStructure::LevelConfig> legacyLevels = hybrid.toLevelConfigs();
 		expect(legacyLevels.size() == 2, "hybrid converts to legacy level configs");
