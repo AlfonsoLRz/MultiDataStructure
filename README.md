@@ -14,6 +14,26 @@ It is a computer-graphics / spatial-data-structures contribution — in the line
 - CUDA Toolkit for GPU point evaluators.
 - vcpkg packages used by the Visual Studio project, including Boost.JSON, GLFW, GLEW, and ImGui.
 - Python is optional for helper scripts under `scripts/`.
+- Linux (headless CLI, no GUI): `CMakeLists.txt`, see [docs/linux_build.md](docs/linux_build.md).
+
+## GUI
+
+Run the executable with no arguments (or `--gui`, optionally with `--input <cloud> --input-trace <trace.csv>`
+to pre-fill). The window walks through six steps:
+
+1. **Data**: pick a point cloud, or one click on a curated benchmark cell (also selects its query trace).
+2. **Workload**: replay a recorded query trace (recommended) or generate synthetic queries.
+3. **Search**: one choice of strategy. The recommended one runs the genetic search *and* the tuned
+   single structures, so you see whether nesting beats the best single structure; a budget preset;
+   "Copy command line" gives the exact CLI commands, because the GUI runs exactly those.
+4. **Run**: stage progress, Cancel, convergence chart, live leaderboard, log.
+5. **Results**: searched vs best single (on held-out queries when the trace has a `_test` half),
+   latency/build scatter, sortable table, schema structure. Can also open any results folder.
+6. **Inspect**: builds any schema on the cloud and draws the real index nodes in 3D, coloured by
+   structure; probe a radius/kNN/box query (or replay one from the trace) to see the nodes it
+   entered and the points it returned.
+
+Settings persist in `mds_gui_settings.json` next to the executable.
 
 ## Run Tests
 
@@ -45,7 +65,7 @@ Current schema names include `QuadTree`, `Octree`, `KarrasOctree`, `KDTree`, `BI
 
 ## Known Limitations
 
-- CUDA KNN is labeled `bruteforce_gpu_scan`: it scans the GPU point buffer and should not be reported as tree-accelerated KNN traversal.
+- The CUDA `knn_backend` column reports the kernel that ran: `gpu_bruteforce_knn` (MixedTree, the default builder, scans the GPU point buffer) is not tree-accelerated traversal; `gpu_tree_knn` (KDTree/BIH builders, k <= 16) is.
 - CUDA MixedTree supports bbox-anisotropy conditions but has no GPU implementation of occupancy-entropy conditions or adaptive leaf capacity. In schema search these CPU-native features no longer drop the candidate: the evaluator falls back to the CPU index for that schema (its row reads `backend=cpu`, `gpu_support_status=cpu_fallback`). Unsupported CUDA KDTree/BIH split policies similarly fall back with `gpu_support_status=unsupported_policy`; direct CUDA APIs still reject unsupported schemas.
 - The built-in LAS reader does not read LAZ.
 - The triangle/ray-tracing prototype (3D rendering, scene, mesh, and the vendored `tinybvh`/`progressbar` libraries) has been removed. The legacy `MultiDataStructure` meta-structure (and its `KdTree`/`Octree`/`QuadTree`/`Bvh` node types) is retained only because the point-cloud schema layer reuses its `DataStructureLevel`/`LevelConfig` types and two unit tests still cover it; the maintained path is point-cloud benchmarking and schema search.
