@@ -1726,10 +1726,42 @@ static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::Sc
 		level._axisPolicy = "median_longest_axis";
 }
 
+// Levels a block needs to resolve any cloud down to its leaf capacity: the depths the default
+// single-structure schemas carry (configs/schemas/*.json). Grid blocks keep the depth they were
+// given; their fan-out is set per level and the defaults use 1-4 levels.
+static size_t openEndedDepth(const SchemaLevelConfig& level)
+{
+	if (isRegularGridLevelName(level._typeName) || isHGridLevelName(level._typeName))
+		return level._numLevels;
+	switch (level._type)
+	{
+	case MultiDataStructure::KDTreeNode:
+	case MultiDataStructure::BvhNode:
+		return 22;
+	default:
+		return 16;
+	}
+}
+
+// Depth of every block but the last, the part of the schema the search actually chooses.
+static size_t prefixDepth(const SchemaConfig& schema)
+{
+	return schema._levels.empty() ? 0 : schema.totalLevels() - schema._levels.back()._numLevels;
+}
+
+// The shape every generated, mutated, crossed-over and repaired schema is put in:
+//   - the LAST block is open-ended (openEndedDepth levels), so the tree's depth is decided by
+//     leafCapacity and the data, never by the genome. Until 2026-10 the whole schema was capped
+//     at _maxDepth (12) levels, which left 25M+ clouds with leaves of thousands of points and
+//     made every nested candidate lose to an uncapped single (testing.md 2f).
+//   - _maxDepth bounds the PREFIX blocks only.
+//   - one leaf capacity for all blocks, the last block's. A block stops splitting a node at its
+//     own leafCapacity and that node becomes a leaf, it is not handed to the next block, so a
+//     larger capacity on an upper block only ever produced oversized leaves.
 static void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments::SchemaGenerationOptions& options)
 {
-	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
-	const size_t maxBlocks = std::max<size_t>(1, std::min(options._maxBlocks, maxDepth));
+	const size_t maxPrefixDepth = std::max<size_t>(1, options._maxDepth);
+	const size_t maxBlocks = std::max<size_t>(1, std::min(options._maxBlocks, maxPrefixDepth + 1));
 	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
 	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
 
@@ -1742,11 +1774,12 @@ static void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments
 	while (schema._levels.size() > maxBlocks)
 		schema._levels.pop_back();
 
+	const size_t leafCapacity = clampPowerOfTwo(schema._levels.back()._leafCapacity, minLeaf, maxLeaf);
 	for (size_t i = 0; i < schema._levels.size(); ++i)
 	{
 		SchemaLevelConfig& level = schema._levels[i];
 		level._numLevels = std::max<size_t>(1, level._numLevels);
-		level._leafCapacity = clampPowerOfTwo(level._leafCapacity, minLeaf, maxLeaf);
+		level._leafCapacity = leafCapacity;
 		level._minPrimitivesToSplit = std::clamp(level._minPrimitivesToSplit, static_cast<size_t>(2), std::max<size_t>(2, level._leafCapacity));
 		refreshLevelTypeName(level, options);
 		normalizeAdaptiveLeafCapacity(level);
@@ -1754,31 +1787,21 @@ static void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments
 			level._condition = {};
 	}
 
-	while (schema.totalLevels() > maxDepth && !schema._levels.empty())
+	// Trim the prefix from its deepest block up; every prefix block keeps at least one level, and
+	// maxBlocks <= maxPrefixDepth + 1 guarantees that fits.
+	while (prefixDepth(schema) > maxPrefixDepth)
 	{
-		auto reducible = std::find_if(schema._levels.rbegin(), schema._levels.rend(), [](const SchemaLevelConfig& level) {
+		auto reducible = std::find_if(schema._levels.rbegin() + 1, schema._levels.rend(), [](const SchemaLevelConfig& level) {
 			return level._numLevels > 1;
 		});
-		if (reducible != schema._levels.rend())
-		{
-			--reducible->_numLevels;
-			continue;
-		}
-
-		if (schema._levels.size() > 1)
-			schema._levels.pop_back();
-		else
+		if (reducible == schema._levels.rend())
 			break;
+		--reducible->_numLevels;
 	}
+	schema._levels.back()._numLevels = openEndedDepth(schema._levels.back());
 
-	if (schema._levels.empty())
-	{
-		std::mt19937 fallbackRng(options._seed);
-		schema._levels.push_back(randomLevelConfig(fallbackRng, options));
-	}
-
-	schema._buildPolicy._maxDepth = std::min(maxDepth, schema.totalLevels());
-	schema._buildPolicy._leafCapacity = schema._levels.front()._leafCapacity;
+	schema._buildPolicy._maxDepth = schema.totalLevels();
+	schema._buildPolicy._leafCapacity = leafCapacity;
 	schema._buildPolicy._minPrimitivesToSplit = std::max<size_t>(2, schema._buildPolicy._leafCapacity / 4);
 	schema._buildPolicy._collapseSingleChild = true;
 	schema._buildPolicy._removeEmptyNodes = true;
@@ -2036,20 +2059,27 @@ static SchemaConfig mutateSchemaConfig(
 			break;
 		case 1:
 		{
+			// Only prefix depths are genes; the last block is open-ended (normalizeSchemaForGeneration).
+			if (schema._levels.size() < 2)
+				break;
+			std::uniform_int_distribution<size_t> prefixDistribution(0, schema._levels.size() - 2);
+			SchemaLevelConfig& prefix = levelIndex + 1 < schema._levels.size() ? level : schema._levels[prefixDistribution(rng)];
 			std::bernoulli_distribution grow(0.5);
-			if (grow(rng) && schema.totalLevels() < maxDepth)
-				++level._numLevels;
-			else if (level._numLevels > 1)
-				--level._numLevels;
+			if (grow(rng) && prefixDepth(schema) < maxDepth)
+				++prefix._numLevels;
+			else if (prefix._numLevels > 1)
+				--prefix._numLevels;
 			break;
 		}
 		case 2:
 		{
+			// One leaf capacity per schema, carried by the last block.
+			SchemaLevelConfig& leaf = schema._levels.back();
 			std::bernoulli_distribution grow(0.5);
-			level._leafCapacity = grow(rng)
-				? clampPowerOfTwo(level._leafCapacity * 2, minLeaf, maxLeaf)
-				: clampPowerOfTwo(std::max<size_t>(1, level._leafCapacity / 2), minLeaf, maxLeaf);
-			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
+			leaf._leafCapacity = grow(rng)
+				? clampPowerOfTwo(leaf._leafCapacity * 2, minLeaf, maxLeaf)
+				: clampPowerOfTwo(std::max<size_t>(1, leaf._leafCapacity / 2), minLeaf, maxLeaf);
+			leaf._minPrimitivesToSplit = std::max<size_t>(2, leaf._leafCapacity / 4);
 			break;
 		}
 		case 3:
@@ -2064,7 +2094,7 @@ static SchemaConfig mutateSchemaConfig(
 				mutateLevelCondition(level, rng, options, domain);
 			break;
 		case 5:
-			if (schema._levels.size() < maxBlocks && schema.totalLevels() < maxDepth)
+			if (schema._levels.size() < maxBlocks && prefixDepth(schema) < maxDepth)
 			{
 				const auto insertAt = schema._levels.begin() + static_cast<std::ptrdiff_t>(levelIndex + 1);
 				schema._levels.insert(insertAt, randomLevelConfig(rng, options, level._type));
@@ -2292,7 +2322,7 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 	const Experiments::SchemaRepairDiagnostics diagnostics = diagnoseRepairInternal(candidate, measuredRecords);
 	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
 	const size_t maxBlocks = std::max<size_t>(1, std::min(options._maxBlocks, maxDepth));
-	const bool canAppendBlock = candidate._config._levels.size() < maxBlocks && candidate._config.totalLevels() < maxDepth;
+	const bool canAppendBlock = candidate._config._levels.size() < maxBlocks && prefixDepth(candidate._config) < maxDepth;
 	std::unordered_set<std::string> seen;
 	seen.insert(schemaSignature(candidate._config));
 	std::mt19937 rng(seed);
@@ -2303,9 +2333,8 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 	{
 		SchemaConfig repaired = candidate._config;
 		SchemaLevelConfig& leafLevel = repaired._levels[repairTargetLeafLevel(repaired)];
+		// The last block is open-ended, so a smaller leaf is the whole repair: depth follows.
 		tightenLeafCapacity(leafLevel, options);
-		if (repaired.totalLevels() < maxDepth)
-			++leafLevel._numLevels;
 		addRepairMutation(mutations, std::move(repaired), diagnostics._highLeafOccupancy
 			? "high_leaf_occupancy"
 			: "tested_points_leaf_tighten", options, seen);
@@ -2321,7 +2350,7 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 				? SchemaPrimitiveKind::BVH
 				: SchemaPrimitiveKind::KDTree,
 			options);
-		micro._numLevels = std::min<size_t>(3, maxDepth - repaired.totalLevels());
+		micro._numLevels = 3;  // becomes the open-ended tail; the old tail joins the depth-capped prefix
 		micro._leafCapacity = std::max<size_t>(options._minLeafCapacity, repaired._levels.back()._leafCapacity / 2);
 		micro._leafCapacity = clampPowerOfTwo(micro._leafCapacity, std::max<size_t>(1, options._minLeafCapacity), std::max<size_t>(1, options._maxLeafCapacity));
 		micro._minPrimitivesToSplit = std::max<size_t>(2, micro._leafCapacity / 4);
@@ -2339,7 +2368,7 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 			assignRepairPrimitive(root, SchemaPrimitiveKind::QuadTree, options);
 		else
 			assignRepairPrimitive(root, SchemaPrimitiveKind::Octree, options);
-		loosenLeafCapacity(root, options);
+		loosenLeafCapacity(repaired._levels.back(), options);  // the schema's one leaf capacity
 		if (root._numLevels > 1)
 			--root._numLevels;
 		addRepairMutation(mutations, std::move(repaired), "visited_nodes_coarsen_root", options, seen);
@@ -2357,7 +2386,7 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 			assignRepairPrimitive(root, SchemaPrimitiveKind::QuadTree, options);
 		else
 			assignRepairPrimitive(root, SchemaPrimitiveKind::Octree, options);
-		loosenLeafCapacity(root, options);
+		loosenLeafCapacity(repaired._levels.back(), options);  // the schema's one leaf capacity
 		addRepairMutation(mutations, std::move(repaired), "full_containment_coarse_grid", options, seen);
 		if (maybeStop()) return mutations;
 	}
@@ -2391,7 +2420,7 @@ static std::vector<RepairSchemaMutation> generateRepairSchemaMutations(
 		if (diagnostics._testedPerVisited > 8.0)
 			tightenLeafCapacity(leafLevel, options);
 		else
-			loosenLeafCapacity(repaired._levels.front(), options);
+			loosenLeafCapacity(repaired._levels.back(), options);
 		addRepairMutation(mutations, std::move(repaired), "balanced_leaf_probe", options, seen);
 	}
 
@@ -2473,6 +2502,61 @@ static std::vector<Experiments::SchemaCandidate> loadSchemas(const std::vector<s
 	return schemas;
 }
 
+// Deterministic two-block grid the random candidates are added to: a prefix structure for a few
+// levels (quadtree 3/6/9, octree 2/4/6, kd 6/12), then a different structure open-ended to the
+// leaf, at leaf 32 and 128, plus each tail on its own. In the 2026-10 diagnostic
+// (scripts/nest_diagnostic.py) this grid alone matched or beat the best uncapped single on 15
+// cells (quadtree -> octree winning on street/campus scans), where random seeds mostly drew
+// unusable genomes, so the GA starts from it.
+static std::vector<Experiments::SchemaCandidate> twoBlockSeedCandidates(const Experiments::SchemaGenerationOptions& options)
+{
+	using Level = MultiDataStructure::DataStructureLevel;
+	const auto block = [&](Level type, size_t depth, size_t leaf) {
+		SchemaLevelConfig level;
+		level._type = type;
+		level._typeName = Config::dataStructureLevelName(type);
+		level._axisPolicy = type == Level::QuadTreeNode ? "xy" : type == Level::KDTreeNode ? "median_longest_axis" : "";
+		level._numLevels = depth;
+		level._leafCapacity = leaf;
+		level._minPrimitivesToSplit = 8;
+		return level;
+	};
+	const std::vector<std::pair<Level, std::vector<size_t>>> prefixes = {
+		{ Level::QuadTreeNode, { 3, 6, 9 } }, { Level::OctreeNode, { 2, 4, 6 } }, { Level::KDTreeNode, { 6, 12 } } };
+	const std::vector<Level> tails = { Level::QuadTreeNode, Level::OctreeNode, Level::KDTreeNode };
+
+	std::vector<SchemaConfig> grid;
+	for (size_t leaf : { size_t(32), size_t(128) })
+	{
+		for (Level tail : tails)
+		{
+			SchemaConfig single;
+			single._levels.push_back(block(tail, 1, leaf));
+			grid.push_back(single);
+		}
+		for (const auto& [prefix, depths] : prefixes)
+			for (size_t depth : depths)
+				for (Level tail : tails)
+				{
+					if (tail == prefix)
+						continue;
+					SchemaConfig nested;
+					nested._levels = { block(prefix, depth, leaf), block(tail, 1, leaf) };
+					grid.push_back(nested);
+				}
+	}
+
+	std::unordered_set<std::string> seen;
+	std::vector<Experiments::SchemaCandidate> candidates;
+	for (SchemaConfig& schema : grid)
+	{
+		normalizeSchemaForGeneration(schema, options);
+		if (seen.insert(schemaSignature(schema)).second)
+			candidates.push_back(materializeGeneratedSchema(std::move(schema), "generated", options._outputDirectory));
+	}
+	return candidates;
+}
+
 static void appendGeneratedSchemas(
 	std::vector<Experiments::SchemaCandidate>& schemas,
 	const Experiments::SchemaGenerationOptions& options,
@@ -2480,6 +2564,13 @@ static void appendGeneratedSchemas(
 {
 	if (options._count == 0)
 		return;
+
+	if (options._twoBlockSeeds)
+	{
+		std::vector<Experiments::SchemaCandidate> seeds = twoBlockSeedCandidates(options);
+		std::cout << "  two-block seed grid: " << seeds.size() << " schemas\n";
+		schemas.insert(schemas.end(), std::make_move_iterator(seeds.begin()), std::make_move_iterator(seeds.end()));
+	}
 
 	// Pass the per-cloud condition domain so the generator calibrates conditional thresholds to actual cloud statistics instead of generic fallbacks that never fire.
 	std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(options, domain);
@@ -7332,8 +7423,8 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 {
 	if (options._count == 0)
 		return {};
-	const size_t maxDepth = std::max<size_t>(1, options._maxDepth);
-	const size_t maxBlocks = std::min(std::max<size_t>(1, options._maxBlocks), maxDepth);
+	const size_t maxPrefixDepth = std::max<size_t>(1, options._maxDepth);
+	const size_t maxBlocks = std::min(std::max<size_t>(1, options._maxBlocks), maxPrefixDepth + 1);
 	const size_t minBlocks = std::min(std::max<size_t>(1, options._minBlocks), maxBlocks);
 	const size_t minLeaf = std::max<size_t>(1, std::min(options._minLeafCapacity, options._maxLeafCapacity));
 	const size_t maxLeaf = std::max(minLeaf, options._maxLeafCapacity);
@@ -7353,26 +7444,27 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 		const size_t numBlocks = blockDistribution(rng);
 
 		SchemaConfig schema;
-		schema._buildPolicy._maxDepth = maxDepth;
 		schema._buildPolicy._leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
 		schema._buildPolicy._minPrimitivesToSplit = std::max<size_t>(2, schema._buildPolicy._leafCapacity / 4);
 		schema._buildPolicy._collapseSingleChild = true;
 		schema._buildPolicy._removeEmptyNodes = true;
 		schema._buildPolicy._allowOverlapDuplication = false;
 
-		size_t remainingDepth = maxDepth;
+		// Prefix blocks draw their depths from maxPrefixDepth; the last block's depth is set
+		// open-ended by normalizeSchemaForGeneration, so its draw here is a placeholder.
+		size_t remainingDepth = maxPrefixDepth;
 		std::optional<MultiDataStructure::DataStructureLevel> previousType;
 		for (size_t block = 0; block < numBlocks; ++block)
 		{
-			const size_t remainingBlocks = numBlocks - block - 1;
-			const size_t maxLevelForBlock = remainingDepth - remainingBlocks;
+			const size_t remainingPrefixBlocks = block + 1 < numBlocks ? numBlocks - block - 2 : 0;
+			const size_t maxLevelForBlock = std::max<size_t>(1, remainingDepth - std::min(remainingDepth, remainingPrefixBlocks));
 			std::uniform_int_distribution<size_t> levelDistribution(1, maxLevelForBlock);
 
 			SchemaLevelConfig level;
 			level._type = randomStructureType(rng, previousType);
 			level._typeName = randomTypeNameForBase(level._type, rng, options);
-			level._numLevels = levelDistribution(rng);
-			level._leafCapacity = randomPowerOfTwo(rng, minLeaf, maxLeaf);
+			level._numLevels = block + 1 < numBlocks ? levelDistribution(rng) : 1;
+			level._leafCapacity = schema._buildPolicy._leafCapacity;
 			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
 			level._axisPolicy = sampleAxisPolicy(rng, level._type, options._gpuNativeAxisPolicy);
 			maybeAssignAdaptiveLeafCapacity(level, rng, options);
@@ -7381,13 +7473,14 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 
 			schema._levels.push_back(level);
 			previousType = level._type;
-			remainingDepth -= level._numLevels;
+			if (block + 1 < numBlocks)
+				remainingDepth -= level._numLevels;
 		}
 
 		if (schema._levels.empty())
 			continue;
 
-		schema._buildPolicy._maxDepth = std::min(maxDepth, schema.totalLevels());
+		normalizeSchemaForGeneration(schema, options);
 		const std::string signature = schemaSignature(schema);
 		if (!seen.insert(signature).second)
 			continue;

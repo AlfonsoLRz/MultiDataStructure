@@ -448,6 +448,7 @@ Generated schema search:
 --generated-max-depth <n>
 --generated-min-leaf <n>
 --generated-max-leaf <n>
+--no-seed-grid
 --generated-conditional
 --generated-condition-probability <value>
 --generated-adaptive-leaf-capacity

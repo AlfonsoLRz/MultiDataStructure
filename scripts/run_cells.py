@@ -3,7 +3,8 @@
 Per cell of a cell config (scripts/make_cell_config.py):
   search cells    GA arm and tuned-singles arm on the trace's _opt half, then a held-out TEST
                   re-measure on the _test half: the two winners, every default single structure
-                  and the hand-designed nested schemas, 5 timing repeats.
+                  and the hand-designed nested schemas, 5 timing repeats in each of --test-runs
+                  separate processes (schema order rotated), merged into <cell>_test.csv.
   transfer cells  no search; the TEST re-measure uses the winners of the largest searched cell
                   of the same scene (the donor), as the PowerShell battery does.
 
@@ -45,8 +46,17 @@ def remap_trace_dir(trace_dir, cell_name, trace_root):
     return str(Path(trace_root, cell_name)) if trace_root else trace_dir
 
 
-def best_schema_path(csv_path):
-    """Winner of an arm CSV: lowest score among final-latency rows whose schema file exists."""
+def schema_blocks(path):
+    """Number of blocks (levels entries) of a schema file; 0 if unreadable."""
+    try:
+        return len(json.loads((Path(path) if Path(path).is_absolute() else REPO / path).read_text())["levels"])
+    except (OSError, ValueError, KeyError):
+        return 0
+
+
+def best_schema_path(csv_path, nested_only=False):
+    """Winner of an arm CSV: lowest score among final-latency rows whose schema file exists.
+    nested_only: the best schema with two or more blocks."""
     if not Path(csv_path).exists():
         return None
     with open(csv_path, newline="") as handle:
@@ -58,8 +68,43 @@ def best_schema_path(csv_path):
         path = (row.get("schema_path") or "").replace("\\", "/")
         # Relative schema paths are relative to the repo, where the executable runs.
         if path and (Path(path) if Path(path).is_absolute() else REPO / path).exists():
-            return path
+            if not nested_only or schema_blocks(path) > 1:
+                return path
     return None
+
+
+def merge_runs(run_csvs, out_csv):
+    """Concatenate per-process TEST CSVs, tagging rows with test_run; readers take the median."""
+    rows, fields = [], None
+    for k, path in enumerate(run_csvs):
+        with open(path, newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fields = fields or list(reader.fieldnames) + ["test_run"]
+            rows += [dict(row, test_run=k) for row in reader]
+    if not rows:
+        return
+    with open(out_csv, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def launch(argv, cpu=-1, numa_node=-1, **popen_args):
+    """Start a measurement process pinned to one core (cpu >= 0) at high priority.
+
+    Unpinned, the workstation's hybrid CPU let a run land on an efficiency core: the same schema
+    then differed by up to 1.44x between held-out runs. Linux binds memory to numa_node too."""
+    prefix = []
+    if platform.system() != "Windows" and cpu >= 0:
+        prefix = (["numactl", f"--physcpubind={cpu}", f"--membind={numa_node}"] if numa_node >= 0
+                  else ["taskset", "-c", str(cpu)])
+    process = subprocess.Popen(prefix + argv, **popen_args)
+    if platform.system() == "Windows" and cpu >= 0:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetProcessAffinityMask(int(process._handle), 1 << cpu)
+        kernel32.SetPriorityClass(int(process._handle), 0x80)  # HIGH_PRIORITY_CLASS
+    return process
 
 
 class Battery:
@@ -76,7 +121,7 @@ class Battery:
     def run(self, title, argv):
         print(f"\n########## {title}  [{time.strftime('%H:%M:%S')}] ##########", flush=True)
         started = time.time()
-        code = subprocess.call([self.args.exe] + argv, cwd=REPO)
+        code = launch([self.args.exe] + argv, self.args.cpu, self.args.numa_node, cwd=REPO).wait()
         print(f"########## {title} done in {(time.time() - started) / 60:.1f} min (exit {code}) ##########", flush=True)
         if code != 0:
             self.failed.append(f"{title} (exit {code})")
@@ -126,22 +171,37 @@ class Battery:
                 return
 
         if searched:
-            winners = [w for w in (best_schema_path(ga_csv), best_schema_path(singles_csv)) if w]
+            # The GA's best nested schema goes to TEST even when its overall winner is a single,
+            # so every searched cell answers "best nested vs best single" on held-out queries.
+            winners = [w for w in (best_schema_path(ga_csv), best_schema_path(ga_csv, nested_only=True),
+                                   best_schema_path(singles_csv)) if w]
         else:
             winners = self.donor_winners(cell, cells)
         winners = list(dict.fromkeys(winners))
         Path(test_csv).unlink(missing_ok=True)
-        schemas = ";".join(winners + self.defaults + HAND_NESTED)
-        self.run(f"{name} TEST re-measure", ["--flat-search"] + self.common(cloud, test, queries) + [
-            "--schemas", schemas, "--generate-schemas", "0", "--no-baselines",
-            "--measure-repeats", "5", "--csv", test_csv])
+        # Several processes, not just more repeats: the same schema measured 2.7 and 3.6 us in two
+        # processes at 100M (memory placement), which repeats inside one process cannot see. The
+        # order is rotated so no schema always pays for running first.
+        order = winners + self.defaults + HAND_NESTED
+        runs = []
+        for k in range(self.args.test_runs):
+            shift = k * len(order) // self.args.test_runs
+            run_csv = str(self.out / f"{name}_test_r{k}.csv")
+            Path(run_csv).unlink(missing_ok=True)
+            if self.run(f"{name} TEST re-measure {k + 1}/{self.args.test_runs}", ["--flat-search"] + self.common(cloud, test, queries) + [
+                    "--schemas", ";".join(order[shift:] + order[:shift]), "--generate-schemas", "0", "--no-baselines",
+                    "--measure-repeats", "5", "--csv", run_csv]):
+                runs.append(run_csv)
+        merge_runs(runs, test_csv)
 
     def donor_winners(self, cell, cells):
         donors = sorted((c for c in cells if c["scene"] == cell["scene"] and
                          (c["arm"] == "search" or c["cell"] in self.args.search_transfer) and c["cell"] != cell["cell"]),
                         key=lambda c: c["points"], reverse=True)
         for donor in donors:
-            winners = [w for w in (best_schema_path(str(self.out / f"{donor['cell']}_{arm}.csv")) for arm in ("ga", "singles")) if w]
+            arms = [str(self.out / f"{donor['cell']}_{arm}.csv") for arm in ("ga", "singles")]
+            winners = [w for w in (best_schema_path(arms[0]), best_schema_path(arms[0], nested_only=True),
+                                   best_schema_path(arms[1])) if w]
             if winners:
                 print(f"{cell['cell']}: transferring winners from {donor['cell']}")
                 return winners
@@ -158,7 +218,12 @@ def main():
     parser.add_argument("--exe", default=str(default_exe))
     parser.add_argument("--data-root", default="")
     parser.add_argument("--trace-root", default="")
-    parser.add_argument("--parallel", type=int, default=8)
+    # 1: time candidates one at a time. Eight at a time roughly doubled the GA's latencies and made
+    # its ranking noisy enough to pick the wrong winner (testing.md 2e).
+    parser.add_argument("--parallel", type=int, default=1)
+    parser.add_argument("--test-runs", type=int, default=3, help="separate processes for the held-out re-measure")
+    parser.add_argument("--cpu", type=int, default=-1, help="pin every run to this core (workstation: 4, a P-core)")
+    parser.add_argument("--numa-node", type=int, default=-1, help="Linux: bind memory to this NUMA node")
     parser.add_argument("--tier-c-queries", type=int, default=0, help="query count for tier C cells (config: 300-600)")
     parser.add_argument("--search-transfer", default="", help="comma list of transfer cells to SEARCH instead")
     parser.add_argument("--test-only", action="store_true", help="only the held-out re-measure, reusing arm CSVs")

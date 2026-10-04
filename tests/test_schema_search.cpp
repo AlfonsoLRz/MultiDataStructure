@@ -195,8 +195,8 @@ namespace BaselineTests
 			expect(repaired.size() == 2, "repair generator emits bounded targeted candidates");
 			expect(repaired[0]._config._levels[0]._leafCapacity < parent._config._levels[0]._leafCapacity,
 				"high-occupancy repair reduces leaf capacity");
-			expect(repaired[0]._config._levels[0]._numLevels > parent._config._levels[0]._numLevels,
-				"high-occupancy repair increases depth when budget allows");
+			expect(repaired[0]._config._levels[0]._numLevels == 16,
+				"the last block of a repaired schema is open-ended (octree: 16 levels)");
 			expect(repaired[1]._config._levels.size() > parent._config._levels.size(),
 				"tested-point repair appends a local micro-index block");
 			expect(!repaired[1]._config._levels.back()._condition.empty(),
@@ -243,6 +243,40 @@ namespace BaselineTests
 				"visited-node repair switches flat root to quadtree");
 			expect(repaired[0]._config._levels[0]._leafCapacity > parent._config._levels[0]._leafCapacity,
 				"visited-node repair coarsens root leaves");
+		}
+
+		// Generated schemas: the last block is open-ended, only the prefix is depth-capped, and all
+		// blocks share one leaf capacity. A total-depth cap of 12 is what made every searched
+		// nested schema lose to an uncapped single at 25M+ (testing.md 2f).
+		{
+			Experiments::SchemaGenerationOptions generation;
+			generation._count = 64;
+			generation._maxDepth = 6;
+			generation._outputDirectory.clear();
+			generation._primitiveProfile = "query_minimal_cpu";
+			const std::vector<Experiments::SchemaCandidate> generated = Experiments::generateSchemaCandidates(generation);
+			expect(generated.size() == 64, "generator fills the requested count");
+
+			bool tailOpen = true, prefixCapped = true, oneLeaf = true, leafInRange = true, nested = false;
+			for (const Experiments::SchemaCandidate& candidate : generated)
+			{
+				const SchemaConfig& schema = candidate._config;
+				const SchemaLevelConfig& tail = schema._levels.back();
+				const bool binary = tail._type == MultiDataStructure::DataStructureLevel::KDTreeNode ||
+					tail._type == MultiDataStructure::DataStructureLevel::BvhNode;
+				tailOpen = tailOpen && tail._numLevels == (binary ? 22u : 16u);
+				prefixCapped = prefixCapped && schema.totalLevels() - tail._numLevels <= 6 &&
+					schema._buildPolicy._maxDepth == schema.totalLevels();
+				for (const SchemaLevelConfig& level : schema._levels)
+					oneLeaf = oneLeaf && level._leafCapacity == tail._leafCapacity;
+				leafInRange = leafInRange && tail._leafCapacity >= 16 && tail._leafCapacity <= 512;
+				nested = nested || schema._levels.size() > 1;
+			}
+			expect(tailOpen, "generated last block is open-ended (16 levels, 22 for binary splits)");
+			expect(prefixCapped, "only the prefix blocks are depth-capped");
+			expect(oneLeaf, "all blocks of a generated schema share one leaf capacity");
+			expect(leafInRange, "generated leaf capacities stay within 16..512");
+			expect(nested, "the generator still produces nested schemas");
 		}
 
 		std::vector<Experiments::SchemaSearchRecord> records(3);
@@ -302,7 +336,8 @@ namespace BaselineTests
 		for (const Experiments::SchemaCandidate& candidate : generated)
 		{
 			expect(candidate._generated, "schema generator marks generated candidates");
-			expect(candidate._config.totalLevels() <= generation._maxDepth, "schema generator respects max depth");
+			expect(candidate._config.totalLevels() - candidate._config._levels.back()._numLevels <= generation._maxDepth,
+				"schema generator caps the prefix depth (the last block is open-ended)");
 			expect(!candidate._config._levels.empty(), "schema generator creates non-empty level schedules");
 			expect(candidate._path.rfind("generated:", 0) == 0, "schema generator uses generated pseudo path");
 		}

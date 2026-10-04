@@ -1,5 +1,6 @@
 {
   "name": "quadtree_octree",
+  "_comment": "Last block uncapped on 2026-10-04 (was 4 levels, maxDepth 8): with the total depth capped, this schema could not resolve 25M+ clouds to its leaf capacity (DomFountain 100M: p99 leaf ~900k points, 286 us/query) and was a strawman for nesting. The last block now runs until leafCapacity binds, as the default singles do (testing.md 2f). Equivalence goldens captured before this date hold the capped version under this name.",
   "levels": [
     {
       "type": "QuadTree",
@@ -9,13 +10,13 @@
     },
     {
       "type": "Octree",
-      "numLevels": 4,
+      "numLevels": 16,
       "leafCapacity": 32,
       "minPointsToSplit": 8
     }
   ],
   "buildPolicy": {
-    "maxDepth": 8,
+    "maxDepth": 20,
     "leafCapacity": 32,
     "minPointsToSplit": 8,
     "collapseSingleChild": true,
@@ -23,4 +24,3 @@
     "allowOverlapDuplication": false
   }
 }
-

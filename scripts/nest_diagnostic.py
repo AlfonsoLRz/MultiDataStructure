@@ -13,10 +13,15 @@ comparison the search should have made, per cell of a battery folder:
 
 Everything is timed serially on one pinned core on the trace's _opt half; the two best nested and
 two best singles by opt latency, the GA winner and the controls then go to a held-out re-measure on
-_test (5 repeats). Selection never sees _test.
+_test (5 repeats), repeated in --test-runs separate processes with the order rotated, because at
+100M+ the same schema can differ by ~30% between processes. Selection never sees _test.
 
     python scripts/nest_diagnostic.py --cells toronto_5M,toronto_50M
     python scripts/nest_diagnostic.py --report
+    python3 scripts/nest_diagnostic.py --exe ../build/MultiDataStructure --cpu 20 --numa-node 1 \\
+        --data-root /home2/alfonsolr/mds/data --trace-root /home2/alfonsolr/mds/traces/curated \\
+        --matrix /home2/alfonsolr/mds/results/matrix_e6 --out /home2/alfonsolr/mds/results/nest_diag \\
+        --queries 3000 --cells sanandreas_250M
 """
 import argparse
 import csv
@@ -31,7 +36,7 @@ from statistics import median
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-from run_cells import best_schema_path  # noqa: E402
+from run_cells import best_schema_path, launch, remap_cloud, remap_trace_dir  # noqa: E402
 
 TYPES = {"qt": ("QuadTree", 16, {"axisPolicy": "xy"}), "ot": ("Octree", 16, {}),
          "kd": ("KDTree", 22, {"axisPolicy": "median_longest_axis"})}
@@ -64,25 +69,32 @@ def repo_path(p):
     return Path(p) if Path(p).is_absolute() else REPO / p
 
 
-def run(exe, argv, log, cpu):
+def run(args, argv, log):
     with open(log, "a") as handle:
-        p = subprocess.Popen([exe] + argv, cwd=REPO, stdout=handle, stderr=subprocess.STDOUT)
-        if platform.system() == "Windows" and cpu >= 0:
-            import ctypes
-            k32 = ctypes.windll.kernel32
-            k32.SetProcessAffinityMask(int(p._handle), 1 << cpu)
-            k32.SetPriorityClass(int(p._handle), 0x80)  # HIGH_PRIORITY_CLASS
-        return p.wait()
+        return launch([args.exe] + argv, args.cpu, args.numa_node, cwd=REPO, stdout=handle, stderr=subprocess.STDOUT).wait()
 
 
-def latencies(path):
-    out = {}
-    with open(path, encoding="utf-8-sig") as handle:
-        for r in csv.DictReader(handle):
-            out.setdefault(r["schema_name"], dict(
-                ms=float(r["latency_repeat_mean_ms"]) * 1000, lo=float(r["latency_repeat_ci_low_ms"]) * 1000,
-                hi=float(r["latency_repeat_ci_high_ms"]) * 1000, path=r["schema_path"]))
-    return out
+def latencies(*paths):
+    """Per schema: the median over runs of each run's repeat mean, and the widest CI over runs."""
+    runs = {}
+    for path in paths:
+        if not Path(path).exists():
+            continue
+        with open(path, encoding="utf-8-sig") as handle:
+            seen = set()
+            for r in csv.DictReader(handle):
+                if r["schema_name"] in seen:
+                    continue
+                seen.add(r["schema_name"])
+                runs.setdefault(r["schema_name"], []).append(dict(
+                    ms=float(r["latency_repeat_mean_ms"]) * 1000, lo=float(r["latency_repeat_ci_low_ms"]) * 1000,
+                    hi=float(r["latency_repeat_ci_high_ms"]) * 1000, path=r["schema_path"]))
+    return {n: dict(ms=median(x["ms"] for x in v), lo=min(x["lo"] for x in v), hi=max(x["hi"] for x in v),
+                    path=v[0]["path"], runs=len(v)) for n, v in runs.items()}
+
+
+def test_files(d):
+    return sorted(d.glob("test_r*.csv")) or [d / "test.csv"]
 
 
 def is_single(name):
@@ -121,24 +133,30 @@ def run_cell(args, cell):
         paths.append(str(out / f"{n}.json"))
 
     controls = [tuned] + [f"configs/schemas/{x}.json" for x in ("quadtree", "kdtree", "octree")]
-    common = ["--mode", "schema-search", "--input", cell["mdspc_path"], "--no-synthetic",
-              "--workloads", "configs/workloads/pipeline_replay.json", "--queries", str(cell["queries"]),
+    cloud = remap_cloud(cell["mdspc_path"], args.data_root)
+    common = ["--mode", "schema-search", "--input", cloud, "--no-synthetic",
+              "--workloads", "configs/workloads/pipeline_replay.json", "--queries", str(args.queries or cell["queries"]),
               "--evaluator", "cpu", "--benchmark-top", "0", "--no-score-cache", "--no-pause",
               "--flat-search", "--generate-schemas", "0", "--no-baselines"]
-    trace = cell["trace_dir"]
-    for half, schemas, repeats in (("opt", controls + paths, 3), ("test", None, 5)):
+    trace = remap_trace_dir(cell["trace_dir"], name, args.trace_root)
+    for stale in [out / "opt.csv", out / "test.csv"] + list(out.glob("test_r*.csv")):
+        stale.unlink(missing_ok=True)
+    steps = [("opt", "opt.csv", 3)] + [("test", f"test_r{k}.csv", 5) for k in range(args.test_runs)]
+    schemas = controls + paths
+    for k, (half, csv_name, repeats) in enumerate(steps):
         if half == "test":
-            opt = latencies(out / "opt.csv")
-            nested = sorted((v["ms"], v["path"]) for n, v in opt.items() if n.startswith("nd_"))
-            singles = sorted((v["ms"], v["path"]) for n, v in opt.items() if is_single(n))
-            schemas = list(dict.fromkeys([p for _, p in nested[:2]] + [p for _, p in singles[:2]] + [tuned] +
-                                         ([ga, str(out / "nd_ga_uncapped.json")] if ga else []) + controls[1:]))
-        (out / f"{half}.csv").unlink(missing_ok=True)
+            if k == 1:
+                opt = latencies(out / "opt.csv")
+                nested = sorted((v["ms"], v["path"]) for n, v in opt.items() if n.startswith("nd_"))
+                singles = sorted((v["ms"], v["path"]) for n, v in opt.items() if is_single(n))
+                schemas = list(dict.fromkeys([p for _, p in nested[:2]] + [p for _, p in singles[:2]] + [tuned] +
+                                             ([ga, str(out / "nd_ga_uncapped.json")] if ga else []) + controls[1:]))
+            else:
+                schemas = schemas[1:] + schemas[:1]  # rotate, so no schema always runs first
         started = time.time()
-        code = run(args.exe, common + ["--input-trace", f"{trace}/pipeline_trace_{half}.csv", "--schemas", ";".join(schemas),
-                                       "--measure-repeats", str(repeats), "--csv", str(out / f"{half}.csv")],
-                   out / "log.txt", args.cpu)
-        print(f"{name}: {half} {len(schemas)} schemas, exit {code}, {time.time() - started:.0f} s", flush=True)
+        code = run(args, common + ["--input-trace", f"{trace}/pipeline_trace_{half}.csv", "--schemas", ";".join(schemas),
+                                   "--measure-repeats", str(repeats), "--csv", str(out / csv_name)], out / "log.txt")
+        print(f"{name}: {csv_name} {len(schemas)} schemas, exit {code}, {time.time() - started:.0f} s", flush=True)
         if code != 0:
             return
 
@@ -146,9 +164,9 @@ def run_cell(args, cell):
 def report(args):
     ratios, ga_ratios = [], []
     for d in sorted(Path(args.out).iterdir()):
-        if not (d / "test.csv").exists():
+        if not any(f.exists() for f in test_files(d)):
             continue
-        opt, test = latencies(d / "opt.csv"), latencies(d / "test.csv")
+        opt, test = latencies(d / "opt.csv"), latencies(*test_files(d))
         nested = min((n for n in test if n.startswith("nd_") and n != "nd_ga_uncapped"), key=lambda n: opt[n]["ms"])
         single = min((n for n in test if is_single(n)), key=lambda n: opt[n]["ms"])
         a, b = test[nested], test[single]
@@ -173,7 +191,12 @@ def main():
     parser.add_argument("--out", default="D:/MDS_ab/nest_diag")
     default_exe = REPO / ("x64/Release/MultiDataStructure.exe" if platform.system() == "Windows" else "../build/MultiDataStructure")
     parser.add_argument("--exe", default=str(default_exe))
-    parser.add_argument("--cpu", type=int, default=4, help="core to pin to (Windows); -1 = no pinning")
+    parser.add_argument("--cpu", type=int, default=4, help="core to pin to; -1 = no pinning")
+    parser.add_argument("--numa-node", type=int, default=-1, help="Linux: bind memory to this NUMA node (numactl)")
+    parser.add_argument("--data-root", default="", help="see run_cells.py")
+    parser.add_argument("--trace-root", default="", help="see run_cells.py")
+    parser.add_argument("--queries", type=int, default=0, help="override the cell's query count")
+    parser.add_argument("--test-runs", type=int, default=3, help="separate held-out processes, order rotated")
     parser.add_argument("--report", action="store_true")
     args = parser.parse_args()
     if args.report:

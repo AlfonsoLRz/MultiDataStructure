@@ -347,6 +347,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._schemaSearchOptions._generation._maxLeafCapacity = static_cast<size_t>(std::stoull(argv[++i]));
 		}
+		else if (arg == "--no-seed-grid")
+		{
+			config._schemaSearchOptions._generation._twoBlockSeeds = false;
+		}
 		else if (arg == "--generated-conditional")
 		{
 			config._schemaSearchOptions._generation._conditionalLevels = true;
@@ -798,9 +802,10 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --benchmark-top <count>     Benchmark only top-k generated/static schemas after surrogate ranking\n"
 		<< "  --generated-min-blocks <n>  Min nested blocks for generated schemas; deep search sets 2\n"
 		<< "  --generated-max-blocks <n>  Max nested blocks for generated schemas\n"
-		<< "  --generated-max-depth <n>   Max total generated schema depth\n"
-		<< "  --generated-min-leaf <n>    Min generated leaf capacity\n"
-		<< "  --generated-max-leaf <n>    Max generated leaf capacity\n"
+		<< "  --generated-max-depth <n>   Max depth of the prefix blocks (default 12); the last block is open-ended\n"
+		<< "  --generated-min-leaf <n>    Min generated leaf capacity (default 16)\n"
+		<< "  --generated-max-leaf <n>    Max generated leaf capacity (default 512)\n"
+		<< "  --no-seed-grid              Do not prepend the two-block seed grid to generated schemas\n"
 		<< "  --generated-conditional     Add local node predicates to sampled nested blocks\n"
 		<< "  --generated-condition-probability <v> Probability for generated conditional blocks\n"
 		<< "  --generated-adaptive-leaf-capacity Add per-node adaptive leaf-capacity rules to generated CPU schemas\n"

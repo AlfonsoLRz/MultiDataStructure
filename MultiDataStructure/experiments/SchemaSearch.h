@@ -25,9 +25,15 @@ namespace Experiments
 		size_t		_count = 0;
 		size_t		_minBlocks = 1;
 		size_t		_maxBlocks = 3;
+		// Depth budget of the PREFIX blocks; the last block is always open-ended, so the tree
+		// grows until leafCapacity binds (normalizeSchemaForGeneration).
 		size_t		_maxDepth = 12;
-		size_t		_minLeafCapacity = 32;
-		size_t		_maxLeafCapacity = 32768;
+		// One leaf capacity per schema. Above ~512 points a leaf scan costs more than the nodes
+		// it saves for in-memory queries; 32768 was the old ceiling and most draws were unusable.
+		size_t		_minLeafCapacity = 16;
+		size_t		_maxLeafCapacity = 512;
+		// Prepend the deterministic two-block grid to the generated candidates (--no-seed-grid).
+		bool		_twoBlockSeeds = true;
 		bool		_conditionalLevels = false;
 		double		_conditionalProbability = 0.35;
 		bool		_adaptiveLeafCapacity = false;

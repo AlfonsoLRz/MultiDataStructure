@@ -52,13 +52,15 @@ def latency(row: dict) -> float | None:
 
 
 def cell_rows(path: Path) -> list[tuple[str, float]]:
-    rows = []
+    """One (schema, latency) per schema. A TEST CSV merged from several processes
+    (run_cells.py --test-runs) has a row per schema per process; the median is the latency."""
+    by_schema: dict[str, list[float]] = {}
     with path.open(encoding="utf-8-sig") as handle:
         for row in csv.DictReader(handle):
             name, ms = row.get("schema_name", ""), latency(row)
             if name and ms is not None and ms > 0:
-                rows.append((name, ms))
-    return rows
+                by_schema.setdefault(name, []).append(ms)
+    return [(name, statistics.median(values)) for name, values in by_schema.items()]
 
 
 def best(rows, predicate):
