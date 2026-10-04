@@ -22,6 +22,7 @@ Examples:
 import argparse
 import csv
 import json
+import statistics
 import os
 import platform
 import subprocess
@@ -152,6 +153,9 @@ class Battery:
         if cell["tier"] == "C" and self.args.tier_c_queries:
             queries = self.args.tier_c_queries
         ga_csv, singles_csv, test_csv = (str(self.out / f"{name}_{arm}.csv") for arm in ("ga", "singles", "test"))
+        # Rank candidates on telemetry-off passes (the score reads them when repeats >= 2), each
+        # timed for at least 30 ms; pass 0 alone - instrumented, cold - ranked them until e7.
+        timed = ["--measure-repeats", "3", "--min-timed-ms", "30"]
 
         if searched and not self.args.test_only:
             for stale in (ga_csv, singles_csv):
@@ -159,46 +163,134 @@ class Battery:
             gen, generations, population = cell["gen_schemas"], cell["generations"], cell["population"]
             if gen == 0:  # a transfer cell promoted to search: use the largest searched budget
                 gen, generations, population = 32, 3, 20
-            ok_ga = self.run(f"{name} GA (opt)", self.common(cloud, opt, queries) + [
+            ok_ga = self.run(f"{name} GA (opt)", self.common(cloud, opt, queries) + timed + [
                 "--generate-schemas", str(gen), "--optimizer-generations", str(generations),
                 "--optimizer-population", str(population), "--parallel", str(self.args.parallel),
                 "--generated-schema-dir", str(self.out / "generated_schemas"),
                 "--optimizer-output-dir", str(self.out / "best_schemas" / f"{name}_ga"), "--csv", ga_csv])
-            ok_singles = self.run(f"{name} tuned singles (opt)", ["--flat-search"] + self.common(cloud, opt, queries) + [
+            ok_singles = self.run(f"{name} tuned singles (opt)", ["--flat-search"] + self.common(cloud, opt, queries) + timed + [
                 "--schemas", self.tuned, "--generate-schemas", "0", "--no-baselines", "--csv", singles_csv])
             if not (ok_ga or ok_singles):
                 print(f"{name}: all search arms failed - refusing the TEST re-measure")
                 return
 
         if searched:
-            # The GA's best nested schema goes to TEST even when its overall winner is a single,
-            # so every searched cell answers "best nested vs best single" on held-out queries.
-            winners = [w for w in (best_schema_path(ga_csv), best_schema_path(ga_csv, nested_only=True),
-                                   best_schema_path(singles_csv)) if w]
+            pick = self.confirm(name, cloud, opt, queries, ga_csv, singles_csv)
+            winners = [pick.get("pick"), pick.get("best_nested"), pick.get("best_single"),
+                       best_schema_path(ga_csv), best_schema_path(singles_csv)]
         else:
             winners = self.donor_winners(cell, cells)
-        winners = list(dict.fromkeys(winners))
+            (self.out / f"{name}_pick.json").write_text(json.dumps(self.donor_pick or {}, indent=2))
+        winners = list(dict.fromkeys(w for w in winners if w))
+
+        # Held-out: one sequential run for the structure metrics and the far-off schemas, then the
+        # contenders (within 2x of the best) timed interleaved in --test-runs processes.
         Path(test_csv).unlink(missing_ok=True)
-        # Several processes, not just more repeats: the same schema measured 2.7 and 3.6 us in two
-        # processes at 100M (memory placement), which repeats inside one process cannot see. The
-        # order is rotated so no schema always pays for running first.
         order = winners + self.defaults + HAND_NESTED
+        if not self.run(f"{name} TEST structure", ["--flat-search"] + self.common(cloud, test, queries) + [
+                "--schemas", ";".join(order), "--generate-schemas", "0", "--no-baselines",
+                "--measure-repeats", "3", "--csv", test_csv]):
+            return
+        latency = {}
+        with open(test_csv, newline="", encoding="utf-8-sig") as handle:
+            for row in csv.DictReader(handle):
+                latency.setdefault(row["schema_path"].replace("\\", "/"), float(row["latency_repeat_mean_ms"] or row["avg_latency_ms"]))
+        best = min(latency.values())
+        contenders = list(dict.fromkeys([w for w in winners if w in latency] +
+                                        sorted((p for p in latency if latency[p] <= 2.0 * best), key=latency.get)))
+        contenders = contenders[:self.args.max_interleave]
+        self.interleaved(f"{name} TEST timing", cloud, test, queries, contenders, str(self.out / f"{name}_test_timing.csv"))
+
+    def interleaved(self, title, cloud, trace, queries, schemas, out_csv):
+        """engine-check --interleave over `schemas` in --test-runs processes, order rotated; merged."""
         runs = []
         for k in range(self.args.test_runs):
-            shift = k * len(order) // self.args.test_runs
-            run_csv = str(self.out / f"{name}_test_r{k}.csv")
+            shift = k * len(schemas) // self.args.test_runs
+            run_csv = f"{out_csv[:-4]}_r{k}.csv"
             Path(run_csv).unlink(missing_ok=True)
-            if self.run(f"{name} TEST re-measure {k + 1}/{self.args.test_runs}", ["--flat-search"] + self.common(cloud, test, queries) + [
-                    "--schemas", ";".join(order[shift:] + order[:shift]), "--generate-schemas", "0", "--no-baselines",
-                    "--measure-repeats", "5", "--csv", run_csv]):
+            if self.run(f"{title} {k + 1}/{self.args.test_runs}", [
+                    "--mode", "engine-check", "--input", cloud, "--input-trace", trace, "--queries", str(queries),
+                    "--schemas", ";".join(schemas[shift:] + schemas[:shift]), "--warmup", "1", "--measure-repeats", "10",
+                    "--interleave", "--summary-csv", run_csv, "--no-pause"]):
                 runs.append(run_csv)
-        merge_runs(runs, test_csv)
+        Path(out_csv).unlink(missing_ok=True)
+        merge_runs(runs, out_csv)
+        return out_csv
+
+    def confirm(self, name, cloud, trace, queries, ga_csv, singles_csv):
+        """Re-time the top nested and single finalists interleaved on the opt half; safe pick.
+
+        The GA ranks candidates one at a time, each in its own few milliseconds of a shared
+        machine, so its top few are within noise of each other: in e7 a nested schema that looked
+        3% better on the opt half lost on held-out queries in 9 of 16 losses. Here the finalists
+        are timed side by side, and a nested schema is adopted only if it beats the best single by
+        --nested-margin in the median over processes AND in every process; otherwise the single
+        is the pick. Schemas that build the same tree (equal structure digest) count as one, the
+        one with fewer blocks."""
+        rows = []
+        for path in (ga_csv, singles_csv):
+            if Path(path).exists():
+                with open(path, newline="", encoding="utf-8-sig") as handle:
+                    all_rows = list(csv.DictReader(handle))
+                final = [r for r in all_rows if r.get("score_is_final_latency") == "1"] or all_rows
+                rows += final
+        candidates = {}
+        for row in sorted(rows, key=lambda r: float(r.get("score") or "inf")):
+            path = (row.get("schema_path") or "").replace("\\", "/")
+            if path and path not in candidates and (Path(path) if Path(path).is_absolute() else REPO / path).exists():
+                candidates[path] = dict(blocks=schema_blocks(path), digest=row.get("structure_digest", ""))
+        # One candidate per tree: a single beats any nested schema with its digest (fewer blocks),
+        # otherwise the best-ranked holder of a digest stands for it.
+        single_digests = {c["digest"] for c in candidates.values() if c["blocks"] == 1 and c["digest"]}
+        seen, nested, singles = set(), [], []
+        for path, c in candidates.items():
+            if c["digest"] and (c["digest"] in seen or (c["blocks"] > 1 and c["digest"] in single_digests)):
+                continue
+            seen.add(c["digest"])
+            (nested if c["blocks"] > 1 else singles).append(path)
+        nested, singles = nested[:3], singles[:3]
+        result = dict(nested_finalists=nested, single_finalists=singles)
+        if not singles:
+            result.update(pick=nested[0] if nested else None, adopted="nested" if nested else None)
+        elif not nested:
+            result.update(pick=singles[0], best_single=singles[0], adopted="single")
+        else:
+            out_csv = self.interleaved(f"{name} confirm (opt)", cloud, trace, queries, nested + singles,
+                                       str(self.out / f"{name}_confirm.csv"))
+            per_run = {}
+            if Path(out_csv).exists():
+                with open(out_csv, newline="", encoding="utf-8-sig") as handle:
+                    for row in csv.DictReader(handle):
+                        per_run.setdefault(row["test_run"], {})[row["schema_path"].replace("\\", "/")] = float(row["all_mean_ms"])
+            runs = [r for r in per_run.values() if all(p in r for p in nested + singles)]
+            if not runs:
+                result.update(pick=singles[0], best_single=singles[0], best_nested=nested[0], adopted="single (confirm failed)")
+            else:
+                med = lambda p: statistics.median(r[p] for r in runs)
+                best_nested, best_single = min(nested, key=med), min(singles, key=med)
+                ratios = [r[best_nested] / r[best_single] for r in runs]
+                ratio = statistics.median(ratios)
+                adopt = ratio <= 1.0 - self.args.nested_margin and max(ratios) < 1.0
+                result.update(best_nested=best_nested, best_single=best_single, ratio_runs=ratios, ratio=ratio,
+                              pick=best_nested if adopt else best_single, adopted="nested" if adopt else "single")
+        (self.out / f"{name}_pick.json").write_text(json.dumps(result, indent=2))
+        print(f"{name}: pick {result.get('adopted')} {result.get('pick')} (nested/single {result.get('ratio', float('nan')):.3f})", flush=True)
+        return result
 
     def donor_winners(self, cell, cells):
+        self.donor_pick = None
         donors = sorted((c for c in cells if c["scene"] == cell["scene"] and
                          (c["arm"] == "search" or c["cell"] in self.args.search_transfer) and c["cell"] != cell["cell"]),
                         key=lambda c: c["points"], reverse=True)
         for donor in donors:
+            pick_json = self.out / f"{donor['cell']}_pick.json"
+            if pick_json.exists():
+                pick = json.loads(pick_json.read_text())
+                self.donor_pick = dict(pick, donor=donor["cell"])
+                winners = [w for w in (pick.get("pick"), pick.get("best_nested"), pick.get("best_single")) if w]
+                if winners:
+                    print(f"{cell['cell']}: transferring the safe pick and finalists of {donor['cell']}")
+                    return winners
             arms = [str(self.out / f"{donor['cell']}_{arm}.csv") for arm in ("ga", "singles")]
             winners = [w for w in (best_schema_path(arms[0]), best_schema_path(arms[0], nested_only=True),
                                    best_schema_path(arms[1])) if w]
@@ -221,7 +313,11 @@ def main():
     # 1: time candidates one at a time. Eight at a time roughly doubled the GA's latencies and made
     # its ranking noisy enough to pick the wrong winner (testing.md 2e).
     parser.add_argument("--parallel", type=int, default=1)
-    parser.add_argument("--test-runs", type=int, default=3, help="separate processes for the held-out re-measure")
+    parser.add_argument("--test-runs", type=int, default=3, help="separate processes for each interleaved timing step")
+    parser.add_argument("--nested-margin", type=float, default=0.03,
+                        help="a nested finalist must beat the best single by this fraction to be the pick")
+    parser.add_argument("--max-interleave", type=int, default=8,
+                        help="most schemas timed side by side (each holds a full index in memory)")
     parser.add_argument("--cpu", type=int, default=-1, help="pin every run to this core (workstation: 4, a P-core)")
     parser.add_argument("--numa-node", type=int, default=-1, help="Linux: bind memory to this NUMA node")
     parser.add_argument("--tier-c-queries", type=int, default=0, help="query count for tier C cells (config: 300-600)")

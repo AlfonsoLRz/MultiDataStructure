@@ -1954,7 +1954,7 @@ namespace
 	}
 }
 
-uint64_t PointSpatialIndex::structureDigest() const
+uint64_t PointSpatialIndex::structureDigest(bool geometryOnly) const
 {
 	uint64_t digest = 0;
 	std::vector<NodeView> stack;
@@ -1969,9 +1969,12 @@ uint64_t PointSpatialIndex::structureDigest() const
 		uint64_t hash = 0;
 		foldDigest(hash, node.isLeaf() ? 1u : 0u);
 		foldDigest(hash, node.depth());
-		foldDigest(hash, node.schemaDepth());
-		foldDigest(hash, static_cast<uint64_t>(node.type()));
-		foldDigest(hash, stableStringHash(structureNameFor(node.schemaDepth(), node.type())));
+		if (!geometryOnly)
+		{
+			foldDigest(hash, node.schemaDepth());
+			foldDigest(hash, static_cast<uint64_t>(node.type()));
+			foldDigest(hash, stableStringHash(structureNameFor(node.schemaDepth(), node.type())));
+		}
 		foldDigest(hash, node.childCount());
 		foldDigest(hash, node.subtreePointCount());
 		foldDigest(hash, node.microIndex() ? 1u : 0u);

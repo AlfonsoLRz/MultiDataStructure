@@ -245,7 +245,10 @@ public:
 	// structure name, plus each leaf's point-identity set. Two builds with equal digests are the
 	// same tree, which is what lets a storage rewrite prove it changed layout and nothing else.
 	// Walks the whole index; not for timed paths.
-	uint64_t structureDigest() const;
+	// geometryOnly leaves out each node's type, structure name and schema depth, so two schemas
+	// that build the same tree under different labels (qt9 -> ot16 whose octree level never
+	// splits, against a plain qt16) get the same digest.
+	uint64_t structureDigest(bool geometryOnly = false) const;
 	// Names for the per-structure breakdown slots, in slot order. Readers zip this against
 	// QueryBreakdown's arrays to recover the old name:count pairs.
 	const std::vector<std::string>& structureBreakdownNames() const

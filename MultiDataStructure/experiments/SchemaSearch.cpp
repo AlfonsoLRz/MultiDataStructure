@@ -3420,7 +3420,7 @@ static void fillLatencyReliability(Experiments::QueryMetrics& metrics, const std
 	metrics._latencyCiHighMs = ciHigh;
 }
 
-static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index, size_t repeats = 1)
+static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t knnK, const PointSpatialIndex& index, size_t repeats = 1, double minTimedMs = 0.0)
 {
 	WorkloadRun result;
 	if (prepared._cpuQueries.empty())
@@ -3481,6 +3481,11 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 	{
 		std::vector<double> repeatMeanLatencies;
 		repeatMeanLatencies.reserve(repeats);
+		// A pass of 3000 queries at ~2 us is ~6 ms, short enough that one slow stretch of the
+		// core (an SMT co-runner, a frequency dip) decides a pass. --min-timed-ms keeps adding
+		// timed passes until the timed total reaches it (at most 64 passes).
+		constexpr size_t maxTimedPasses = 64;
+		double timedTotalMs = 0.0;
 		// Repeat passes run with telemetry compiled out, so the repeat statistics time the
 		// traversal alone; the instrumented first pass above still supplies every counter the
 		// score and diagnostics read. Each repeat must reproduce that pass's results exactly,
@@ -3490,7 +3495,7 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 		// in shifts the mean and inflates the confidence interval. latency_repeat_* = the
 		// uninstrumented passes only; avg_latency_ms stays the instrumented pass.
 		constexpr PointSpatialIndex::QueryTelemetry timed = PointSpatialIndex::QueryTelemetry::Off;
-		for (size_t r = 1; r < repeats; ++r)
+		for (size_t r = 1; r < repeats || (timedTotalMs < minTimedMs && r <= maxTimedPasses); ++r)
 		{
 			double totalMs = 0.0;
 			for (size_t q = 0; q < prepared._cpuQueries.size(); ++q)
@@ -3513,6 +3518,7 @@ static WorkloadRun runWorkloadProfile(const PreparedWorkload& prepared, size_t k
 				totalMs += stats._elapsedMs;
 			}
 			repeatMeanLatencies.push_back(totalMs / static_cast<double>(prepared._cpuQueries.size()));
+			timedTotalMs += totalMs;
 		}
 		fillLatencyReliability(result._metrics, repeatMeanLatencies);
 	}
@@ -3645,6 +3651,7 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	double gpuBuildMs = 0.0;
 	size_t gpuMemoryBytes = 0;
 	ActiveStructureStats activeStats;
+	uint64_t structureDigest = 0;
 	const SchemaConfig effectiveConfig = effectiveSchemaForEvaluation(schema, options);
 	const std::string gpuSupportStatus = gpuSupportStatusForSchema(effectiveConfig, options);
 
@@ -3778,7 +3785,8 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 
 		buildMetrics = Experiments::collectBuildMetrics(index.stats(), index.root(), elapsedMilliseconds(buildBegin, buildEnd), effectiveConfig);
 		activeStats = collectActiveStructureStats(index.root(), effectiveConfig);
-		workloadRun = runWorkloadProfile(preparedWorkload, workload._knnK, index, options._measurementRepeats);
+		structureDigest = index.structureDigest(true);
+		workloadRun = runWorkloadProfile(preparedWorkload, workload._knnK, index, options._measurementRepeats, options._minTimedMs);
 	}
 
 	appendSchemaQueryTrace(
@@ -3805,6 +3813,7 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidate(
 	record._schemaName = effectiveConfig._name;
 	record._schemaPath = schema._path;
 	record._buildMetrics = buildMetrics;
+	record._structureDigest = structureDigest;
 	record._queryMetrics = workloadRun._metrics;
 	record._rangeMetrics = workloadRun._rangeMetrics;
 	record._countRangeMetrics = workloadRun._countRangeMetrics;
@@ -3899,7 +3908,9 @@ static Experiments::SchemaSearchRecord benchmarkSchemaCandidateCached(
 			workload,
 			backendName,
 			cudaBuilder,
-			effectiveScoreWeights(workload, options));
+			effectiveScoreWeights(workload, options),
+			// The score now reads the timed passes, so how they were taken is part of the key.
+			"rep=" + std::to_string(options._measurementRepeats) + "|mt=" + std::to_string(options._minTimedMs));
 
 		Experiments::SchemaSearchRecord cached;
 		cached._datasetName = dataset._name;
@@ -4085,7 +4096,16 @@ static void writeSearchHeader(std::ostream& output)
 		<< "gpu_build_mean_ms,gpu_build_ci_low_ms,gpu_build_ci_high_ms,"
 		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
 		<< "measurement_repeats,latency_repeat_mean_ms,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
-		<< "estimated_query_cost\n";
+		<< "estimated_query_cost,structure_digest\n";
+}
+
+static std::string digestText(uint64_t digest)
+{
+	if (digest == 0)
+		return {};
+	char text[17];
+	std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(digest));
+	return text;
 }
 
 static void writeSearchRows(const std::string& csvPath, const std::vector<Experiments::SchemaSearchRecord>& records)
@@ -4230,7 +4250,7 @@ static void writeSearchRows(const std::string& csvPath, const std::vector<Experi
 			<< record._queryMetrics._latencyCiLowMs << ','
 			<< record._queryMetrics._latencyCiHighMs << ','
 			<< (record._rankingConfident ? 1 : 0) << ','
-			<< record._estimatedQueryCost << '\n';
+			<< record._estimatedQueryCost << ',' << digestText(record._structureDigest) << '\n';
 	}
 }
 
@@ -4272,7 +4292,7 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 		<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
 		<< "measurement_repeats,latency_repeat_mean_ms,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
-		<< "estimated_query_cost\n";
+		<< "estimated_query_cost,structure_digest\n";
 	output << std::fixed << std::setprecision(6);
 	for (const Experiments::SchemaSearchRecord& record : bestRecords)
 	{
@@ -4382,7 +4402,7 @@ static void writeBestRows(const std::string& csvPath, const std::vector<Experime
 			<< record._queryMetrics._latencyCiLowMs << ','
 			<< record._queryMetrics._latencyCiHighMs << ','
 			<< (record._rankingConfident ? 1 : 0) << ','
-			<< record._estimatedQueryCost << '\n';
+			<< record._estimatedQueryCost << ',' << digestText(record._structureDigest) << '\n';
 	}
 }
 
@@ -4410,7 +4430,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 		<< "lambda_latency,lambda_build,lambda_memory,lambda_imbalance,"
 		<< "score_objective,score_mode,score_stage,score_is_final_latency,effective_queries,score_uses_visit_proxy,visit_proxy_alpha,"
 		<< "measurement_repeats,latency_repeat_mean_ms,latency_stddev_ms,latency_cv,latency_repeat_ci_low_ms,latency_repeat_ci_high_ms,ranking_confident,"
-		<< "estimated_query_cost\n";
+		<< "estimated_query_cost,structure_digest\n";
 	output << std::fixed << std::setprecision(6);
 	for (const Experiments::SchemaSearchRecord& record : front)
 	{
@@ -4478,7 +4498,7 @@ static void writeParetoRows(const std::string& csvPath, const std::vector<Experi
 			<< record._queryMetrics._latencyCiLowMs << ','
 			<< record._queryMetrics._latencyCiHighMs << ','
 			<< (record._rankingConfident ? 1 : 0) << ','
-			<< record._estimatedQueryCost << '\n';
+			<< record._estimatedQueryCost << ',' << digestText(record._structureDigest) << '\n';
 	}
 }
 
@@ -5082,7 +5102,7 @@ static CandidateObjectives objectivesOf(const EvaluatedCandidate& evaluation)
 		// Seed-averaged mean when multi-seed confirmation ran, else the single-seed estimate; mirrors selectParetoRecords so optimizer and CSV agree on "latency".
 		const double latency = record._confirmSeedsUsed > 0
 			? record._latencyMean
-			: record._queryMetrics._averageLatencyMs;
+			: Experiments::selectionLatencyMs(record._queryMetrics);
 		const double memoryMb = static_cast<double>(record._buildMetrics._memoryEstimateBytes) / (1024.0 * 1024.0);
 		const double imbalance = record._buildMetrics._averageLeafOccupancy > 0.0
 			? static_cast<double>(record._buildMetrics._maxLeafOccupancy) / record._buildMetrics._averageLeafOccupancy
@@ -7776,6 +7796,11 @@ Experiments::SchemaCandidate Experiments::materializeSchemaCandidate(
 	return ::materializeGeneratedSchema(std::move(schema), namePrefix, outputDirectory);
 }
 
+double Experiments::selectionLatencyMs(const QueryMetrics& metrics)
+{
+	return metrics._latencyMeanMs > 0.0 ? metrics._latencyMeanMs : metrics._averageLatencyMs;
+}
+
 double Experiments::computeSchemaSearchScore(
 	const BuildMetrics& buildMetrics,
 	const QueryMetrics& queryMetrics,
@@ -7790,7 +7815,7 @@ double Experiments::computeSchemaSearchScore(
 
 	const double primary = weights._useVisitProxy
 		? queryMetrics._averageVisitedNodes + weights._visitProxyAlpha * queryMetrics._averageTestedPoints
-		: weights._lambdaLatency * queryMetrics._averageLatencyMs;
+		: weights._lambdaLatency * Experiments::selectionLatencyMs(queryMetrics);
 
 	return primary +
 		weights._lambdaBuild * buildMetrics._buildTimeMs +
@@ -7817,7 +7842,7 @@ static double bestSelectionScore(const Experiments::SchemaSearchRecord& record)
 
 	const double primary = record._confirmSeedsUsed > 0 && record._latencyMean > 0.0
 		? record._latencyMean
-		: record._queryMetrics._averageLatencyMs;
+		: Experiments::selectionLatencyMs(record._queryMetrics);
 	const double buildMs = record._confirmSeedsUsed > 0 && record._gpuBuildMean > 0.0
 		? record._gpuBuildMean
 		: record._buildMetrics._buildTimeMs;

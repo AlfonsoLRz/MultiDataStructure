@@ -257,6 +257,9 @@ namespace Experiments
 		size_t	_leafMicroIndexThreshold = 512;
 		// >= 2 re-times each candidate's batch N times and records latency mean/stddev/CV/95% CI (timing noise).
 		size_t	_measurementRepeats = 1;
+		// Keep adding telemetry-off passes until their total reaches this (0 = exactly
+		// _measurementRepeats - 1 timed passes). --min-timed-ms.
+		double	_minTimedMs = 0.0;
 		// Sidecar CSV for the proxy/latency correlation report; empty = stdout only.
 		std::string	_proxyCorrelationCsvPath;
 		// With --benchmark-top and no rank model, keep the K cheapest candidates by the zero-build estimate.
@@ -323,6 +326,9 @@ namespace Experiments
 		std::string			_activeStructureSummary;
 		std::string			_bestBaselineSchema;
 		double				_bestBaselineScore = 0.0;
+		// PointSpatialIndex::structureDigest(geometryOnly) of the CPU build; 0 when no CPU index
+		// was built (CUDA, score-cache hit). Equal digests = the same tree, whatever the schema says.
+		uint64_t			_structureDigest = 0;
 		double				_relativeSpeedupVsBaseline = 0.0;
 		// Pareto-front rank by avgLatencyMs among non-dominated peers; -1 = not on the front.
 		int	_paretoRank = -1;
@@ -392,6 +398,12 @@ namespace Experiments
 		size_t maxCandidates,
 		uint32_t seed,
 		const std::string& outputDirectory);
+	// Latency the search ranks and selects on: the mean of the telemetry-off timed passes when
+	// any ran (--measure-repeats >= 2), else the instrumented first pass. Ranking on the
+	// instrumented, cold pass while the held-out comparison reports timed passes made the two
+	// disagree (testing.md 2h).
+	double selectionLatencyMs(const QueryMetrics& metrics);
+
 	double computeSchemaSearchScore(
 		const BuildMetrics& buildMetrics,
 		const QueryMetrics& queryMetrics,

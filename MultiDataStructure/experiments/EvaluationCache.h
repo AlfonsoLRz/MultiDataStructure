@@ -69,5 +69,6 @@ namespace Experiments
 		const WorkloadProfile& workload,
 		const std::string& evaluatorBackend,
 		const std::string& cudaBuilder,
-		const ScoreWeights& weights);
+		const ScoreWeights& weights,
+		const std::string& measurementTag = {});
 }

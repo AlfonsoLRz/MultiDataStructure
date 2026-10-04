@@ -35,6 +35,9 @@ namespace Experiments
 		bool						_useBinaryCache = true;
 		bool						_enableLeafMicroIndexes = false;
 		size_t						_leafMicroIndexThreshold = 512;
+		// Build every schema first and rotate one pass per schema (--interleave), so a slow stretch
+		// of a shared machine hits all schemas instead of whichever one it coincided with.
+		bool						_interleave = false;
 	};
 
 	int runEngineCheck(const EngineCheckOptions& options);

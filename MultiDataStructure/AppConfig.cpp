@@ -657,6 +657,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._engineSummaryCsvPath = argv[++i];
 		}
+		else if (arg == "--interleave")
+		{
+			config._engineInterleave = true;
+		}
 		else if (arg == "--warmup" && i + 1 < argc)
 		{
 			config._engineWarmupPasses = static_cast<size_t>(std::stoull(argv[++i]));
@@ -675,6 +679,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--measure-repeats" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._measurementRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
+		}
+		else if (arg == "--min-timed-ms" && i + 1 < argc)
+		{
+			config._schemaSearchOptions._minTimedMs = std::max(0.0, std::stod(argv[++i]));
 		}
 		else if (arg == "--proxy-correlation-csv" && i + 1 < argc)
 		{
@@ -882,12 +890,15 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --confirm-top <k>           Number of top candidates per (dataset, workload) to re-measure, default 4\n"
 		<< "  --measure-repeats <n>       Re-time each candidate's query batch N times (same queries) and record\n"
 		<< "                              latency mean/stddev/CV/95% CI on queryMetrics. 1 disables (default).\n"
+		<< "                              With N >= 2 the search ranks candidates on these timed passes.\n"
+		<< "  --min-timed-ms <ms>         With --measure-repeats >= 2: add timed passes until they total this\n"
 		<< "  --mode engine-check         Build each --schema(s) on --input and replay one fixed query set\n"
 		<< "                              (--input-trace, else a seeded generator over every query kind):\n"
 		<< "                              per-query checksums/counters and per-type latency, for engine A/B work\n"
 		<< "  --query-csv <path>          engine-check: per-query rows (checksum, counters, structure digest)\n"
 		<< "  --summary-csv <path>        engine-check: one appended row per schema (build, per-type latency)\n"
 		<< "  --warmup <n>                engine-check: untimed passes before the --measure-repeats timed ones (default 1)\n"
+		<< "  --interleave                engine-check: build every schema first, then rotate one pass per schema\n"
 		<< "  --build-repeats <n>         engine-check: builds per schema, for build-time statistics (default 1)\n"
 		<< "  --timed-telemetry off|full  engine-check: counters during timed passes (default off; pass 0 is always full)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
@@ -926,6 +937,7 @@ Experiments::EngineCheckOptions AppConfig::engineCheckOptions() const
 	options._warmupPasses = _engineWarmupPasses;
 	options._timedPasses = _schemaSearchOptions._measurementRepeats;
 	options._buildRepeats = _engineBuildRepeats;
+	options._interleave = _engineInterleave;
 	options._timedTelemetryFull = _engineTimedTelemetryFull;
 	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	options._enableLeafMicroIndexes = _schemaSearchOptions._enableLeafMicroIndexes;

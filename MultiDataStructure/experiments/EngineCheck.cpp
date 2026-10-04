@@ -183,6 +183,186 @@ namespace
 	}
 }
 
+namespace
+{
+	// One schema under measurement: its index, the per-query record of the instrumented pass and
+	// the timed latency gathered so far.
+	struct Measured
+	{
+		std::string							_schemaPath;
+		std::string							_schemaName;
+		std::unique_ptr<PointSpatialIndex>	_index;
+		std::vector<double>					_buildMs;
+		PointSpatialIndex::Stats			_stats;
+		uint64_t							_digest = 0;
+		std::vector<QueryRecord>			_records;
+		std::array<double, 4>				_latencySum{};
+		std::array<size_t, 4>				_latencyCount{};
+		// Mean latency over all queries of each timed pass, in pass order.
+		std::vector<double>					_passMeansMs;
+		size_t								_passMismatches = 0;
+	};
+
+	Measured buildMeasured(const std::string& schemaPath, const PointCloud& cloud, const Experiments::EngineCheckOptions& options, size_t queryCount)
+	{
+		SchemaConfig schema = Config::loadSchemaConfig(schemaPath);
+		if (options._enableLeafMicroIndexes)
+		{
+			schema._buildPolicy._enableLeafMicroIndexes = true;
+			schema._buildPolicy._leafMicroIndexThreshold = options._leafMicroIndexThreshold;
+		}
+
+		Measured measured;
+		measured._schemaPath = schemaPath;
+		measured._schemaName = schema._name.empty() ? std::filesystem::path(schemaPath).stem().string() : schema._name;
+		// Rebuilt from scratch per repeat (the index holds atomics, so it is not reassignable).
+		for (size_t b = 0; b < std::max<size_t>(1, options._buildRepeats); ++b)
+		{
+			measured._index.reset();
+			measured._index = std::make_unique<PointSpatialIndex>();
+			const auto start = std::chrono::steady_clock::now();
+			measured._index->build(cloud, schema);
+			measured._buildMs.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+		}
+		measured._stats = measured._index->stats();
+		measured._digest = measured._index->structureDigest();
+		measured._records.resize(queryCount);
+		return measured;
+	}
+
+	void runPass(Measured& measured, const std::vector<CheckQuery>& queries, size_t pass, const Experiments::EngineCheckOptions& options,
+				 bool warmSweep = false)
+	{
+		const PointSpatialIndex& index = *measured._index;
+		const bool timed = pass >= options._warmupPasses;
+		// Interleaved, the previous turn belonged to another schema, so its data filled the caches.
+		// An untimed sweep first puts this schema back in the warm state a sequential measurement
+		// times; without it interleaving measured a colder regime (kdtree/qt16 2.7 vs 3.1).
+		if (timed && warmSweep)
+			for (const CheckQuery& query : queries)
+				runQuery(index, query, PointSpatialIndex::QueryTelemetry::Off);
+		// Pass 0 is always instrumented, since the per-query counters come from it; timed passes
+		// run uninstrumented unless --timed-telemetry full asks otherwise.
+		const PointSpatialIndex::QueryTelemetry telemetry = (pass == 0 || !timed || options._timedTelemetryFull)
+			? PointSpatialIndex::QueryTelemetry::Full
+			: PointSpatialIndex::QueryTelemetry::Off;
+		double passMs = 0.0;
+		for (size_t q = 0; q < queries.size(); ++q)
+		{
+			const PointSpatialIndex::QueryStats queryStats = runQuery(index, queries[q], telemetry);
+			QueryRecord& record = measured._records[q];
+			if (pass == 0)
+			{
+				record._returned = queryStats._returnedPoints;
+				record._checksum = queryStats._resultChecksum;
+				record._visited = queryStats._visitedNodes;
+				record._testedBoxes = queryStats._testedBoxes;
+				record._tested = queryStats._testedPoints;
+				record._fullyContained = queryStats._fullyContainedNodes;
+			}
+			else if (record._checksum != queryStats._resultChecksum || record._returned != queryStats._returnedPoints)
+			{
+				++measured._passMismatches;
+			}
+
+			if (timed)
+			{
+				const size_t slot = static_cast<size_t>(queries[q]._kind);
+				measured._latencySum[slot] += queryStats._elapsedMs;
+				++measured._latencyCount[slot];
+				passMs += queryStats._elapsedMs;
+			}
+		}
+		if (timed && !queries.empty())
+			measured._passMeansMs.push_back(passMs / static_cast<double>(queries.size()));
+	}
+
+	struct Outputs
+	{
+		std::ofstream	_queryCsv;
+		std::ofstream	_summaryCsv;
+	};
+
+	// Writes one schema's rows and console line; false if its passes disagreed.
+	bool report(const Measured& measured, const std::vector<CheckQuery>& queries, const PointCloud& cloud,
+				const Experiments::EngineCheckOptions& options, Outputs& outputs)
+	{
+		const PointSpatialIndex::Stats& stats = measured._stats;
+		double visited = 0.0, testedBoxes = 0.0, tested = 0.0, returned = 0.0;
+		uint64_t querySetChecksum = 0;
+		for (size_t q = 0; q < queries.size(); ++q)
+		{
+			const QueryRecord& record = measured._records[q];
+			visited += static_cast<double>(record._visited);
+			testedBoxes += static_cast<double>(record._testedBoxes);
+			tested += static_cast<double>(record._tested);
+			returned += static_cast<double>(record._returned);
+			// Folded with the query position so a result moving between queries still registers.
+			querySetChecksum += (record._checksum ^ (static_cast<uint64_t>(q) * 0x9E3779B97F4A7C15ull)) + record._returned;
+			if (outputs._queryCsv)
+			{
+				outputs._queryCsv << csvField(measured._schemaName) << ',' << measured._digest << ',' << stats._numNodes << ','
+								  << stats._numLeaves << ',' << stats._maxDepth << ',' << q << ',' << kindName(queries[q]._kind) << ','
+								  << queries[q]._k << ',' << record._returned << ',' << record._checksum << ',' << record._visited << ','
+								  << record._testedBoxes << ',' << record._tested << ',' << record._fullyContained << '\n';
+			}
+		}
+
+		const auto& sum = measured._latencySum;
+		const auto& count = measured._latencyCount;
+		const auto mean = [](double total, size_t n) { return n ? total / static_cast<double>(n) : 0.0; };
+		const double allSum = sum[0] + sum[1] + sum[2] + sum[3];
+		const size_t allCount = count[0] + count[1] + count[2] + count[3];
+		const double queryCount = std::max<double>(1.0, static_cast<double>(queries.size()));
+		const double buildMean = std::accumulate(measured._buildMs.begin(), measured._buildMs.end(), 0.0) / static_cast<double>(measured._buildMs.size());
+		const double buildMin = *std::min_element(measured._buildMs.begin(), measured._buildMs.end());
+		std::vector<double> passMeans = measured._passMeansMs;
+		std::sort(passMeans.begin(), passMeans.end());
+		const double passMedian = passMeans.empty() ? 0.0 : passMeans[passMeans.size() / 2];
+		const double passMin = passMeans.empty() ? 0.0 : passMeans.front();
+
+		std::cout << "  " << measured._schemaName << ": build " << std::fixed << std::setprecision(1) << buildMean << " ms, "
+				  << stats._numNodes << " nodes, digest " << measured._digest << std::setprecision(6)
+				  << " | radius " << mean(sum[2], count[2]) * 1000.0 << " us"
+				  << " | knn " << mean(sum[3], count[3]) * 1000.0 << " us"
+				  << " | range " << mean(sum[0], count[0]) * 1000.0 << " us"
+				  << " | all " << mean(allSum, allCount) * 1000.0 << " us (pass median " << passMedian * 1000.0 << ")"
+				  << (measured._passMismatches ? " | PASS MISMATCHES: " + std::to_string(measured._passMismatches) : std::string()) << '\n';
+		std::cout.unsetf(std::ios::floatfield);
+
+		if (outputs._summaryCsv)
+		{
+			std::ostringstream passList;
+			passList << std::setprecision(10);
+			for (size_t i = 0; i < measured._passMeansMs.size(); ++i)
+				passList << (i ? ";" : "") << measured._passMeansMs[i];
+			outputs._summaryCsv << std::setprecision(10)
+								<< PointSpatialIndex::EngineVersion << ',' << csvField(options._inputPath) << ',' << cloud.size() << ','
+								<< csvField(measured._schemaName) << ',' << csvField(measured._schemaPath) << ','
+								<< (options._inputTracePath.empty() ? "generated" : csvField(options._inputTracePath)) << ','
+								<< queries.size() << ',' << options._warmupPasses << ',' << options._timedPasses << ','
+								<< buildMean << ',' << buildMin << ',' << stats._numNodes << ',' << stats._numLeaves << ','
+								<< stats._maxDepth << ',' << measured._digest << ','
+								<< count[0] / options._timedPasses << ',' << mean(sum[0], count[0]) << ','
+								<< count[1] / options._timedPasses << ',' << mean(sum[1], count[1]) << ','
+								<< count[2] / options._timedPasses << ',' << mean(sum[2], count[2]) << ','
+								<< count[3] / options._timedPasses << ',' << mean(sum[3], count[3]) << ','
+								<< mean(allSum, allCount) << ',' << visited / queryCount << ',' << tested / queryCount << ','
+								<< returned / queryCount << ',' << querySetChecksum << ',' << measured._passMismatches << ','
+								<< (options._timedTelemetryFull ? "full" : "off") << ',' << testedBoxes / queryCount << ','
+								<< (options._interleave ? 1 : 0) << ',' << passMedian << ',' << passMin << ',' << passList.str() << '\n';
+			outputs._summaryCsv.flush();
+		}
+
+		if (measured._passMismatches)
+		{
+			std::cerr << "engine-check: " << measured._schemaName << " returned different results across passes\n";
+			return false;
+		}
+		return true;
+	}
+}
+
 int Experiments::runEngineCheck(const EngineCheckOptions& options)
 {
 	if (options._inputPath.empty())
@@ -203,163 +383,68 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 	std::cout << "engine-check: engine " << PointSpatialIndex::EngineVersion
 			  << ", " << cloud.size() << " points, " << queries.size() << " queries ("
 			  << (options._inputTracePath.empty() ? "generated" : "trace") << "), "
-			  << options._warmupPasses << " warm-up + " << options._timedPasses << " timed passes\n";
+			  << options._warmupPasses << " warm-up + " << options._timedPasses << " timed passes"
+			  << (options._interleave ? ", interleaved across schemas" : "") << '\n';
 
-	std::ofstream queryCsv;
+	Outputs outputs;
 	if (!options._queryCsvPath.empty())
 	{
 		std::filesystem::create_directories(std::filesystem::absolute(options._queryCsvPath).parent_path());
-		queryCsv.open(options._queryCsvPath);
-		if (!queryCsv)
+		outputs._queryCsv.open(options._queryCsvPath);
+		if (!outputs._queryCsv)
 			throw std::runtime_error("cannot write " + options._queryCsvPath);
-		queryCsv << "schema_name,structure_digest,num_nodes,num_leaves,max_depth,query_id,query_type,k,"
-				 << "returned_points,result_checksum,visited_nodes,tested_boxes,tested_points,fully_contained_nodes\n";
+		outputs._queryCsv << "schema_name,structure_digest,num_nodes,num_leaves,max_depth,query_id,query_type,k,"
+						  << "returned_points,result_checksum,visited_nodes,tested_boxes,tested_points,fully_contained_nodes\n";
 	}
 
-	std::ofstream summaryCsv;
 	if (!options._summaryCsvPath.empty())
 	{
 		std::filesystem::create_directories(std::filesystem::absolute(options._summaryCsvPath).parent_path());
 		const bool exists = std::filesystem::exists(options._summaryCsvPath);
-		summaryCsv.open(options._summaryCsvPath, std::ios::app);
-		if (!summaryCsv)
+		outputs._summaryCsv.open(options._summaryCsvPath, std::ios::app);
+		if (!outputs._summaryCsv)
 			throw std::runtime_error("cannot write " + options._summaryCsvPath);
 		if (!exists)
 		{
-			summaryCsv << "engine_version,cloud,points,schema_name,schema_path,query_source,queries,warmup_passes,timed_passes,"
-					   << "build_ms_mean,build_ms_min,num_nodes,num_leaves,max_depth,structure_digest,"
-					   << "range_queries,range_mean_ms,count_queries,count_mean_ms,radius_queries,radius_mean_ms,"
-					   << "knn_queries,knn_mean_ms,all_mean_ms,mean_visited_nodes,mean_tested_points,"
-					   << "mean_returned_points,query_set_checksum,pass_checksum_mismatches,timed_telemetry,mean_tested_boxes\n";
+			outputs._summaryCsv << "engine_version,cloud,points,schema_name,schema_path,query_source,queries,warmup_passes,timed_passes,"
+								<< "build_ms_mean,build_ms_min,num_nodes,num_leaves,max_depth,structure_digest,"
+								<< "range_queries,range_mean_ms,count_queries,count_mean_ms,radius_queries,radius_mean_ms,"
+								<< "knn_queries,knn_mean_ms,all_mean_ms,mean_visited_nodes,mean_tested_points,"
+								<< "mean_returned_points,query_set_checksum,pass_checksum_mismatches,timed_telemetry,mean_tested_boxes,"
+								<< "interleaved,pass_median_ms,pass_min_ms,pass_means_ms\n";
 		}
 	}
 
-	for (const std::string& schemaPath : options._schemaPaths)
+	const size_t totalPasses = options._warmupPasses + options._timedPasses;
+	if (!options._interleave)
 	{
-		SchemaConfig schema = Config::loadSchemaConfig(schemaPath);
-		if (options._enableLeafMicroIndexes)
+		for (const std::string& schemaPath : options._schemaPaths)
 		{
-			schema._buildPolicy._enableLeafMicroIndexes = true;
-			schema._buildPolicy._leafMicroIndexThreshold = options._leafMicroIndexThreshold;
+			Measured measured = buildMeasured(schemaPath, cloud, options, queries.size());
+			for (size_t pass = 0; pass < totalPasses; ++pass)
+				runPass(measured, queries, pass, options);
+			if (!report(measured, queries, cloud, options, outputs))
+				return 2;
 		}
-
-		// Rebuilt from scratch per repeat (the index holds atomics, so it is not reassignable).
-		std::unique_ptr<PointSpatialIndex> built;
-		std::vector<double> buildMs;
-		for (size_t b = 0; b < std::max<size_t>(1, options._buildRepeats); ++b)
-		{
-			built.reset();
-			built = std::make_unique<PointSpatialIndex>();
-			const auto start = std::chrono::steady_clock::now();
-			built->build(cloud, schema);
-			buildMs.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
-		}
-		const PointSpatialIndex& index = *built;
-		const PointSpatialIndex::Stats stats = index.stats();
-		const uint64_t digest = index.structureDigest();
-
-		std::vector<QueryRecord> records(queries.size());
-		std::array<double, 4> latencySum{};
-		std::array<size_t, 4> latencyCount{};
-		size_t passMismatches = 0;
-		const size_t totalPasses = options._warmupPasses + options._timedPasses;
-		for (size_t pass = 0; pass < totalPasses; ++pass)
-		{
-			for (size_t q = 0; q < queries.size(); ++q)
-			{
-				// Pass 0 is always instrumented, since the per-query counters come from it; timed
-				// passes run uninstrumented unless --timed-telemetry full asks otherwise.
-				const bool timed = pass >= options._warmupPasses;
-				const PointSpatialIndex::QueryTelemetry telemetry = (pass == 0 || !timed || options._timedTelemetryFull)
-					? PointSpatialIndex::QueryTelemetry::Full
-					: PointSpatialIndex::QueryTelemetry::Off;
-				const PointSpatialIndex::QueryStats queryStats = runQuery(index, queries[q], telemetry);
-				QueryRecord& record = records[q];
-				if (pass == 0)
-				{
-					record._returned = queryStats._returnedPoints;
-					record._checksum = queryStats._resultChecksum;
-					record._visited = queryStats._visitedNodes;
-					record._testedBoxes = queryStats._testedBoxes;
-					record._tested = queryStats._testedPoints;
-					record._fullyContained = queryStats._fullyContainedNodes;
-				}
-				else if (record._checksum != queryStats._resultChecksum || record._returned != queryStats._returnedPoints)
-				{
-					++passMismatches;
-				}
-
-				if (timed)
-				{
-					const size_t slot = static_cast<size_t>(queries[q]._kind);
-					latencySum[slot] += queryStats._elapsedMs;
-					++latencyCount[slot];
-				}
-			}
-		}
-
-		const std::string schemaName = schema._name.empty() ? std::filesystem::path(schemaPath).stem().string() : schema._name;
-		double visited = 0.0, testedBoxes = 0.0, tested = 0.0, returned = 0.0;
-		uint64_t querySetChecksum = 0;
-		for (size_t q = 0; q < queries.size(); ++q)
-		{
-			const QueryRecord& record = records[q];
-			visited += static_cast<double>(record._visited);
-			testedBoxes += static_cast<double>(record._testedBoxes);
-			tested += static_cast<double>(record._tested);
-			returned += static_cast<double>(record._returned);
-			// Folded with the query position so a result moving between queries still registers.
-			querySetChecksum += (record._checksum ^ (static_cast<uint64_t>(q) * 0x9E3779B97F4A7C15ull)) + record._returned;
-			if (queryCsv)
-			{
-				queryCsv << csvField(schemaName) << ',' << digest << ',' << stats._numNodes << ',' << stats._numLeaves << ','
-						 << stats._maxDepth << ',' << q << ',' << kindName(queries[q]._kind) << ',' << queries[q]._k << ','
-						 << record._returned << ',' << record._checksum << ',' << record._visited << ','
-						 << record._testedBoxes << ',' << record._tested << ',' << record._fullyContained << '\n';
-			}
-		}
-
-		const auto mean = [](double sum, size_t count) { return count ? sum / static_cast<double>(count) : 0.0; };
-		const double allSum = latencySum[0] + latencySum[1] + latencySum[2] + latencySum[3];
-		const size_t allCount = latencyCount[0] + latencyCount[1] + latencyCount[2] + latencyCount[3];
-		const double queryCount = std::max<double>(1.0, static_cast<double>(queries.size()));
-		const double buildMean = std::accumulate(buildMs.begin(), buildMs.end(), 0.0) / static_cast<double>(buildMs.size());
-		const double buildMin = *std::min_element(buildMs.begin(), buildMs.end());
-
-		std::cout << "  " << schemaName << ": build " << std::fixed << std::setprecision(1) << buildMean << " ms, "
-				  << stats._numNodes << " nodes, digest " << digest << std::setprecision(6)
-				  << " | radius " << mean(latencySum[2], latencyCount[2]) * 1000.0 << " us"
-				  << " | knn " << mean(latencySum[3], latencyCount[3]) * 1000.0 << " us"
-				  << " | range " << mean(latencySum[0], latencyCount[0]) * 1000.0 << " us"
-				  << " | all " << mean(allSum, allCount) * 1000.0 << " us"
-				  << (passMismatches ? " | PASS MISMATCHES: " + std::to_string(passMismatches) : std::string()) << '\n';
-		std::cout.unsetf(std::ios::floatfield);
-
-		if (summaryCsv)
-		{
-			summaryCsv << std::setprecision(10)
-					   << PointSpatialIndex::EngineVersion << ',' << csvField(options._inputPath) << ',' << cloud.size() << ','
-					   << csvField(schemaName) << ',' << csvField(schemaPath) << ','
-					   << (options._inputTracePath.empty() ? "generated" : csvField(options._inputTracePath)) << ','
-					   << queries.size() << ',' << options._warmupPasses << ',' << options._timedPasses << ','
-					   << buildMean << ',' << buildMin << ',' << stats._numNodes << ',' << stats._numLeaves << ','
-					   << stats._maxDepth << ',' << digest << ','
-					   << latencyCount[0] / options._timedPasses << ',' << mean(latencySum[0], latencyCount[0]) << ','
-					   << latencyCount[1] / options._timedPasses << ',' << mean(latencySum[1], latencyCount[1]) << ','
-					   << latencyCount[2] / options._timedPasses << ',' << mean(latencySum[2], latencyCount[2]) << ','
-					   << latencyCount[3] / options._timedPasses << ',' << mean(latencySum[3], latencyCount[3]) << ','
-					   << mean(allSum, allCount) << ',' << visited / queryCount << ',' << tested / queryCount << ','
-					   << returned / queryCount << ',' << querySetChecksum << ',' << passMismatches << ','
-					   << (options._timedTelemetryFull ? "full" : "off") << ',' << testedBoxes / queryCount << '\n';
-			summaryCsv.flush();
-		}
-
-		if (passMismatches)
-		{
-			std::cerr << "engine-check: " << schemaName << " returned different results across passes\n";
-			return 2;
-		}
+		return 0;
 	}
 
-	return 0;
+	// Interleaved: every index is built first, then each pass runs one sweep of the query set per
+	// schema, starting one schema later each pass. On a shared machine a slow stretch of the core
+	// (another job on the SMT sibling, a frequency dip) lasts longer than one schema's whole
+	// sequential measurement and made identical trees time up to 1.5x apart (testing.md 2h);
+	// interleaved, the stretch is spread over every schema and their ratios survive it.
+	std::vector<Measured> all;
+	all.reserve(options._schemaPaths.size());
+	for (const std::string& schemaPath : options._schemaPaths)
+		all.push_back(buildMeasured(schemaPath, cloud, options, queries.size()));
+	for (size_t pass = 0; pass < totalPasses; ++pass)
+		for (size_t i = 0; i < all.size(); ++i)
+			runPass(all[(i + pass) % all.size()], queries, pass, options, true);
+
+	int status = 0;
+	for (const Measured& measured : all)
+		if (!report(measured, queries, cloud, options, outputs))
+			status = 2;
+	return status;
 }

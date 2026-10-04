@@ -455,7 +455,8 @@ namespace Experiments
 		const WorkloadProfile& workload,
 		const std::string& evaluatorBackend,
 		const std::string& cudaBuilder,
-		const ScoreWeights& weights)
+		const ScoreWeights& weights,
+		const std::string& measurementTag)
 	{
 		EvaluationCacheKey key;
 		key._schemaSignature = schemaSignature;
@@ -512,6 +513,8 @@ namespace Experiments
 		evaluatorText << "|vp=" << (weights._useVisitProxy ? "1" : "0");
 		if (weights._useVisitProxy)
 			evaluatorText << "@" << formatDouble(weights._visitProxyAlpha, 6);
+		if (!measurementTag.empty())
+			evaluatorText << "|" << measurementTag;
 		key._evaluatorFingerprint = hex64(fnv1aString(evaluatorText.str()));
 
 		return key;
