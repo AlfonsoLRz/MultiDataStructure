@@ -351,10 +351,19 @@ the per-cell best (69 cells):
 | bvh_default / lbvh_default | 2.77 | 1.57 | 24.2 | 285 |
 | best default per cell (oracle) | 1.10 | 1.08 | 1.26 | 1.36 |
 
-Open question being tested: whether the GA's parallel timing (8 candidates timed concurrently,
-singles timed serially) hides searched wins - serial-GA rerun of 8 cells at 25M in
-`results/eval_traces/matrix_e6_serial`. And the 250M-1B ladder on the server, where August's
-nested advantage was largest (1B: 1.40x).
+**Serial-GA diagnostic (8 cells at 25M, `results/eval_traces/matrix_e6_serial`, `--parallel 1`).**
+Timing candidates 8 at a time makes the GA's selection noisier (aneto 0.73 -> 1.04, sanandreas
+0.75 -> 0.95 once timed serially), but even serial the searched winner is at parity with the best
+single: single/searched 0.77-1.07, median ~1.0. The "nested" winners that do win are a deep single
+structure with a one-level tail (`ot11l32_qt1l32`, `qt11l32_ot1l32`) or a single deeper than the
+tuned grid reaches (`qt12l64`). **Prefer `--parallel 1` (or a serial re-rank of the top
+candidates) when the search's ranking is the result.**
+
+**Server, 100M-500M so far (`results/eval_traces/matrix_e6_makinon2`, held out):** SanAndreas -
+`quadtree_default` best at 100M/250M/500M, searched nested 1.12-1.22x slower. Waikato - at 250M and
+500M the GA's `evolved_g3_i15_qt12l32` (a single quadtree, deeper than the tuned grid's qt10) wins
+by 6-15% over quadtree_default, CIs overlapping. Same pattern: the search's value at scale is
+off-grid single tuning, not nesting. 1B and GaliciaForest still running.
 
 ## 3. Pending experiments (exact commands)
 
