@@ -415,6 +415,32 @@ search: an open-ended last block, one leaf capacity per schema (or upper blocks 
 range ~16-512, uncapped hand-nested and tuned-grid (qt/ot) schemas, serial timing for the ranking;
 the two-block grid above (~45 candidates, 30 s at 5M, 4 min at 50M) is itself a strong seed.
 
+### 2g. Battery e7 — the search with the 2f fixes (started 2026-10-04, `5b4f9dc`)
+
+What changed in the search (`normalizeSchemaForGeneration`, `twoBlockSeedCandidates`):
+- the last block of every generated/mutated/crossed/repaired schema is open-ended (16 levels for
+  quad/oct, 22 for binary splits); `--generated-max-depth` (12) now caps the prefix only;
+- one leaf capacity per schema, drawn from 16..512 (was per block, 32..32768);
+- the GA's initial population gets the deterministic two-block grid of 2f (38 schemas) on top of
+  the random ones (`--no-seed-grid` turns it off);
+- hand-nested baselines and the tuned grid gained uncapped versions (`octree_kdtree` 4+22,
+  `quadtree_octree` 4+16; `tuned_{qt16,ot16,kd22}l{64,128}`). Equivalence goldens captured before
+  this hold the capped hand-nested schemas under the same names (config change, not engine);
+- `run_cells.py`: `--parallel 1` by default; `--cpu`/`--numa-node` pin every run (the workstation's
+  hybrid CPU let unpinned runs land on E-cores: up to 1.44x between runs of one schema; pinned
+  median 1.06x); TEST is 3 separate processes with rotated order, merged into `<cell>_test.csv`
+  (readers take the per-schema median); TEST also gets the GA's best NESTED schema, so every cell
+  answers nested vs single on held-out queries.
+
+Where it runs:
+- workstation, 63 cells 1M-50M, core 4: `results/eval_traces/matrix_e7`, log `D:\MDS_ab\battery_pc_e7.log`
+- makinon2 (`src_e7`, `build_e7`), `results/matrix_e7`, `run_battery_e7_streams.sh`: stream a
+  (core 2, node 0) the nine 100M searches incl. the six workstation 100M scenes, then SanAndreas
+  500M/1B; stream b (core 20, node 1) the three 250M searches, then GaliciaForest/Waikato 500M/1B.
+  So <=50M is measured on the workstation and >=100M on the server; never mix them in one table.
+- makinon2 also runs `scripts/nest_diagnostic.py` on the three 250M cells (core 35, node 1),
+  `results/nest_diag`.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
