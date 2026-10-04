@@ -365,6 +365,56 @@ candidates) when the search's ranking is the result.**
 by 6-15% over quadtree_default, CIs overlapping. Same pattern: the search's value at scale is
 off-grid single tuning, not nesting. 1B and GaliciaForest still running.
 
+**Superseded by 2f: the nested schemas were depth-capped, so this was not a fair test of nesting.**
+
+### 2f. 2026-10-04 — every searched schema was capped at 12 levels
+
+`SchemaGenerationOptions::_maxDepth = 12` (`SchemaSearch.h`) caps the TOTAL depth of every
+generated, mutated and crossed-over schema, and `buildPolicy.maxDepth` = the sum of the level
+depths. That is the defect `d72c117` fixed for the default singles, never applied to the search
+space. A nested kd schema can have at most 4096 leaves whatever the cloud size.
+
+Evidence from `matrix_e6` (held-out rows): every nested GA winner sits at max depth 11-12 with p99
+leaves of 200-2000 points against a requested 32-128, testing 2-4x more points per query than the
+tuned single; the GA's winners keep pushing against the ceiling (`ot12`, `qt12`, `qt11l32_ot1`).
+Of the 4456 distinct schemas the GA evaluated, 69% hit the cap with p99 leaves > 4x capacity and 60%
+had a block with leafCapacity >= 2048 (the generator samples 32..32768, and an upper block's
+leafCapacity ends the branch, it does not hand off to the next block). The hand-nested baselines
+are capped at 8/10 levels (DomFountain 100M: 286 us, p99 leaf ~900k points). Server rows
+(250M-1B) show the same: searched winners at depth 12, quadtree_default at 14-16. No cloud feature
+predicts the old GA-vs-tuned outcome (|Spearman rho| <= 0.2 for size, planarity, density CV,
+aspect, query mix), consistent with a handicapped search rather than a shape effect.
+
+**Diagnostic, `scripts/nest_diagnostic.py` (15 cells, `D:\MDS_ab\nest_diag`).** Two-block schemas
+(prefix qt 3/6/9, ot 2/4/6 or kd 6/12 levels, then a tail that runs until leafCapacity binds)
+against uncapped singles (qt16, ot16, kd22 at the same leaves) plus the tuned winner and defaults.
+All serial on one pinned core; best nested and best single picked on `_opt`, compared on `_test`.
+
+| cell | best nested | best single (by opt) | nested/single | old GA winner/single |
+|---|---|---|---|---|
+| toronto_5M | qt6 -> ot, leaf 128 | qt16 l128 | **0.85** (CI-separated) | 1.25 |
+| aneto_5M | qt9 -> ot, leaf 128 | qt16 l128 | **0.62** (0.82 vs best default) | 0.69 |
+| toronto_50M | qt6 -> ot, leaf 128 | qt16 l128 | **0.91** (CI-separated) | 1.18 |
+| ottobrunncampus_50M | qt3 -> ot, leaf 128 | ot16 l128 | **0.85** (CI-separated) | 1.15 |
+| alhambra_50M | ot6 -> kd, leaf 128 | tuned kd19l128 | 0.81 (CIs overlap) | 1.10 |
+| cathedral_25M, neugasse_5M, museum_1M | | | 0.96-0.98 | 1.06-1.32 |
+| galiciaforest_es05_5M, alhambra_1M, domfountain_100M* | | | 1.01-1.03 | 1.17-1.48 |
+| sanandreas_25M, waikato_hamilton_25M, lille_1M, solarplantation_25M | | | 1.06-1.09 | 1.08-1.45 |
+
+Geomean nested/single 0.943 (median 0.98, range 0.62-1.09); the old capped GA winners against the
+same singles: 1.19. \*DomFountain 100M first measured 1.87 for `qt6_kd` alone (5.07 us, same tested
+points as on opt); a re-run in another order put all four finalists at 3.57-3.67 us, a tie. At
+100M run-to-run drift reached ~30% for identical schemas, so 100M+ comparisons need interleaved
+repeats, not one run per schema.
+
+Reading: nesting wins where the cloud changes character with scale - 2.5D at large scale, 3D
+detail at small scale (street MLS/TLS with facades, a campus, terrain with vegetation): a
+quadtree over the plan, then an octree. Purely aerial clouds (SanAndreas, Waikato, SolarPlantation)
+are 2.5D at every scale, so qt -> ot equals a quadtree and it ties. Nothing loses. To fix in the
+search: an open-ended last block, one leaf capacity per schema (or upper blocks hand off), leaf
+range ~16-512, uncapped hand-nested and tuned-grid (qt/ot) schemas, serial timing for the ranking;
+the two-block grid above (~45 candidates, 30 s at 5M, 4 min at 50M) is itself a strong seed.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
