@@ -119,6 +119,8 @@ static std::string normalizeAxisPolicy(std::string value)
 		return "round_robin";
 	if (value == "centerlongestaxis")
 		return "center_longest_axis";
+	if (value == "slidingmidpoint" || value == "midpoint")
+		return "sliding_midpoint";
 	return value;
 }
 
@@ -150,7 +152,8 @@ static void normalizeLevelAxisPolicy(SchemaLevelConfig& level)
 			level._axisPolicy = "median_longest_axis";
 		if (level._axisPolicy == "median_longest_axis" ||
 			level._axisPolicy == "round_robin" ||
-			level._axisPolicy == "center_longest_axis")
+			level._axisPolicy == "center_longest_axis" ||
+			level._axisPolicy == "sliding_midpoint")
 			return;
 
 		throw std::runtime_error("Unsupported KDTree/BIH axisPolicy: " + level._axisPolicy);
@@ -244,6 +247,20 @@ static SchemaLevelConfig parseLevel(const boost::json::object& object)
 	level._minPrimitivesToSplit = asSize(object, "minPrimitivesToSplit", level._minPrimitivesToSplit);
 	level._axisPolicy = asString(object, "axisPolicy", level._axisPolicy);
 	normalizeLevelAxisPolicy(level);
+	// "cell" (default): octree/quadtree split at the centre of the node's cell; "tight": at the
+	// centre of the bounds of the points the node holds.
+	const std::string splitAt = asString(object, "splitAt", "cell");
+	if (splitAt == "tight")
+		level._tightCenter = true;
+	else if (splitAt != "cell")
+		throw std::runtime_error("Unsupported splitAt: " + splitAt + " (use cell or tight)");
+	level._fanout = asSize(object, "fanout", level._fanout);
+	if (level._primitiveKind == SchemaPrimitiveKind::STR && level._fanout != 0 &&
+		level._fanout != 8 && level._fanout != 27 && level._fanout != 64)
+		throw std::runtime_error("STR fanout must be 8, 27 or 64");
+	if (level._tightCenter && level._type != MultiDataStructure::DataStructureLevel::OctreeNode &&
+		level._type != MultiDataStructure::DataStructureLevel::QuadTreeNode)
+		throw std::runtime_error("splitAt tight applies to Octree and QuadTree levels only");
 	if (const boost::json::value* conditionValue = object.if_contains("condition"))
 	{
 		if (!conditionValue->is_object())
@@ -421,6 +438,8 @@ SchemaPrimitiveKind Config::parseSchemaPrimitiveKind(const std::string& value)
 		return SchemaPrimitiveKind::LBVH;
 	if (normalized == "mixed" || normalized == "mixedtree")
 		return SchemaPrimitiveKind::Mixed;
+	if (normalized == "str" || normalized == "strtree" || normalized == "sorttilerecursive")
+		return SchemaPrimitiveKind::STR;
 
 	throw std::runtime_error("Unsupported spatial structure type: " + value);
 }
@@ -449,6 +468,8 @@ std::string Config::schemaPrimitiveKindName(SchemaPrimitiveKind kind)
 		return "HGrid";
 	case SchemaPrimitiveKind::Mixed:
 		return "Mixed";
+	case SchemaPrimitiveKind::STR:
+		return "STR";
 	default:
 		return "Octree";
 	}

@@ -1,0 +1,20 @@
+{
+  "name": "tuned_ot16l128tc",
+  "levels": [
+    {
+      "type": "Octree",
+      "numLevels": 16,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "splitAt": "tight"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 16,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

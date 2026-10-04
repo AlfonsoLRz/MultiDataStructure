@@ -31,6 +31,8 @@ static size_t expectedFanoutForNode(const PointSpatialIndex::NodeView& node, con
 			return 27;
 		case SchemaPrimitiveKind::HGrid:
 			return 64;
+		case SchemaPrimitiveKind::STR:
+			return level->_fanout ? level->_fanout : 27;
 		case SchemaPrimitiveKind::KDTree:
 		case SchemaPrimitiveKind::BVH:
 		case SchemaPrimitiveKind::BIH:

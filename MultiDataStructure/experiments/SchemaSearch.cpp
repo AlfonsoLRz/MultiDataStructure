@@ -816,8 +816,21 @@ static bool isHGridLevelName(const std::string& typeName)
 	return normalized == "hgrid" || normalized == "hierarchicalgrid" || normalized == "hierarchicalgrid3d";
 }
 
+static bool isStrLevelName(const std::string& typeName)
+{
+	const std::string normalized = normalizedLevelTypeName(typeName);
+	return normalized == "str" || normalized == "strtree" || normalized == "sorttilerecursive";
+}
+
+static size_t strFanout(const SchemaLevelConfig& level)
+{
+	return level._fanout ? level._fanout : 27;
+}
+
 static std::string schemaTypeShortName(const SchemaLevelConfig& level)
 {
+	if (isStrLevelName(level._typeName))
+		return "str" + std::to_string(strFanout(level)) + "f";
 	if (isBIHLevelName(level._typeName))
 		return "bih";
 	if (isKarrasOctreeLevelName(level._typeName))
@@ -855,7 +868,13 @@ static std::string randomTypeNameForBase(
 	const Experiments::SchemaGenerationOptions& options)
 {
 	if (queryMinimalPrimitiveProfile(options))
+	{
+		// STR is not a CPU alias of the octree (BIH, KarrasOctree, LBVH are), so the CPU-minimal
+		// profile keeps it: a third of octree-family draws.
+		if (type == MultiDataStructure::OctreeNode && !options._gpuNativeAxisPolicy && std::uniform_int_distribution<int>(0, 2)(rng) == 0)
+			return "STR";
 		return Config::dataStructureLevelName(type);
+	}
 
 	if (type == MultiDataStructure::KDTreeNode)
 	{
@@ -865,7 +884,7 @@ static std::string randomTypeNameForBase(
 	}
 	if (type == MultiDataStructure::OctreeNode)
 	{
-		static const std::array<const char*, 4> names = { "Octree", "KarrasOctree", "RegularGrid", "HGrid" };
+		static const std::array<const char*, 5> names = { "Octree", "KarrasOctree", "RegularGrid", "HGrid", "STR" };
 		std::uniform_int_distribution<size_t> distribution(0, names.size() - 1);
 		return names[distribution(rng)];
 	}
@@ -1214,7 +1233,9 @@ static bool schemaUsesGpuUnsupportedFeature(const SchemaConfig& schema)
 	if (schemaUsesAdaptiveLeafCapacity(schema))
 		return true;
 	return std::any_of(schema._levels.begin(), schema._levels.end(), [](const SchemaLevelConfig& level) {
-		return level._condition._minOccupancyEntropy.has_value() || level._condition._maxOccupancyEntropy.has_value();
+		// The CUDA builders split at cell centres only (no tight centre, no sliding midpoint).
+		return level._condition._minOccupancyEntropy.has_value() || level._condition._maxOccupancyEntropy.has_value() ||
+			level._tightCenter || level._axisPolicy == "sliding_midpoint" || isStrLevelName(level._typeName);
 	});
 }
 
@@ -1516,6 +1537,8 @@ static std::string schemaSignature(const SchemaConfig& schema)
 				output << "ap=rr";
 			else if (level._axisPolicy == "center_longest_axis")
 				output << "ap=cl";
+			else if (level._axisPolicy == "sliding_midpoint")
+				output << "ap=sm";
 			else if (level._axisPolicy == "xz")
 				output << "ap=xz";
 			else if (level._axisPolicy == "yz")
@@ -1531,6 +1554,8 @@ static std::string schemaSignature(const SchemaConfig& schema)
 			else
 				output << "ap=other";
 		}
+		if (level._tightCenter)
+			output << "tc";
 		appendConditionSignature(output, level._condition);
 	}
 	return output.str();
@@ -1565,6 +1590,10 @@ static std::string schemaConfigToJson(const SchemaConfig& schema)
 		output << "      \"minPointsToSplit\": " << level._minPrimitivesToSplit;
 		if (!level._axisPolicy.empty())
 			output << ",\n      \"axisPolicy\": \"" << level._axisPolicy << "\"";
+		if (level._tightCenter)
+			output << ",\n      \"splitAt\": \"tight\"";
+		if (isStrLevelName(level._typeName))
+			output << ",\n      \"fanout\": " << strFanout(level);
 		if (level._adaptiveLeafCapacity._enabled)
 		{
 			output << ",\n      \"adaptiveLeafCapacity\": {\n";
@@ -1650,6 +1679,9 @@ static Experiments::SchemaCandidate materializeGeneratedSchema(
 	return candidate;
 }
 
+static std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataStructureLevel type, bool gpuNativeAxisPolicy);
+static bool sampleTightCenter(std::mt19937& rng, MultiDataStructure::DataStructureLevel type, bool gpuNative);
+
 static SchemaLevelConfig randomLevelConfig(
 	std::mt19937& rng,
 	const Experiments::SchemaGenerationOptions& options,
@@ -1668,7 +1700,8 @@ static SchemaLevelConfig randomLevelConfig(
 	if (level._type == MultiDataStructure::QuadTreeNode)
 		level._axisPolicy = "xy";
 	else if (level._type == MultiDataStructure::KDTreeNode)
-		level._axisPolicy = std::bernoulli_distribution(0.5)(rng) ? "round_robin" : "median_longest_axis";
+		level._axisPolicy = sampleAxisPolicy(rng, level._type, options._gpuNativeAxisPolicy);
+	level._tightCenter = sampleTightCenter(rng, level._type, options._gpuNativeAxisPolicy);
 	return level;
 }
 
@@ -1682,8 +1715,16 @@ static std::string sampleAxisPolicy(std::mt19937& rng, MultiDataStructure::DataS
 	// CUDA MixedTree builds kd/BIH with center_longest_axis only; keep generated schemas GPU-native instead of falling back to the CPU.
 	if (gpuNativeAxisPolicy)
 		return "center_longest_axis";
-	std::bernoulli_distribution coin(0.5);
-	return coin(rng) ? "round_robin" : "median_longest_axis";
+	static const std::array<const char*, 3> policies = { "round_robin", "median_longest_axis", "sliding_midpoint" };
+	return policies[std::uniform_int_distribution<size_t>(0, policies.size() - 1)(rng)];
+}
+
+// Octree/QuadTree levels split at the centre of their points half of the time (CPU only).
+static bool sampleTightCenter(std::mt19937& rng, MultiDataStructure::DataStructureLevel type, bool gpuNative)
+{
+	if (gpuNative || (type != MultiDataStructure::OctreeNode && type != MultiDataStructure::QuadTreeNode))
+		return false;
+	return std::bernoulli_distribution(0.5)(rng);
 }
 
 static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::SchemaGenerationOptions& options)
@@ -1694,7 +1735,8 @@ static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::Sc
 
 	if (queryMinimalPrimitiveProfile(options))
 	{
-		level._typeName = Config::dataStructureLevelName(level._type);
+		if (!(level._type == MultiDataStructure::OctreeNode && isStrLevelName(level._typeName)))
+			level._typeName = Config::dataStructureLevelName(level._type);
 		if (level._type == MultiDataStructure::QuadTreeNode)
 		{
 			if (level._axisPolicy.empty())
@@ -1712,7 +1754,8 @@ static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::Sc
 	const bool compatibleLBVH = level._type == MultiDataStructure::BvhNode && isLBVHLevelName(level._typeName);
 	const bool compatibleRegularGrid = level._type == MultiDataStructure::OctreeNode && isRegularGridLevelName(level._typeName);
 	const bool compatibleHGrid = level._type == MultiDataStructure::OctreeNode && isHGridLevelName(level._typeName);
-	if (!compatibleBIH && !compatibleKarras && !compatibleLBVH && !compatibleRegularGrid && !compatibleHGrid)
+	const bool compatibleStr = level._type == MultiDataStructure::OctreeNode && isStrLevelName(level._typeName);
+	if (!compatibleBIH && !compatibleKarras && !compatibleLBVH && !compatibleRegularGrid && !compatibleHGrid && !compatibleStr)
 		level._typeName = Config::dataStructureLevelName(level._type);
 	// Preserve a recognized axisPolicy, resetting only for non-KDTree-family types, so children inherit their parent's sampled policy.
 	if (level._type == MultiDataStructure::QuadTreeNode)
@@ -1785,6 +1828,12 @@ static void normalizeSchemaForGeneration(SchemaConfig& schema, const Experiments
 		normalizeAdaptiveLeafCapacity(level);
 		if (i == 0)
 			level._condition = {};
+		if ((level._type != MultiDataStructure::OctreeNode && level._type != MultiDataStructure::QuadTreeNode) ||
+			isRegularGridLevelName(level._typeName) || isHGridLevelName(level._typeName) || isStrLevelName(level._typeName) ||
+			options._gpuNativeAxisPolicy)
+			level._tightCenter = false;
+		if (isStrLevelName(level._typeName) && level._fanout != 8 && level._fanout != 64)
+			level._fanout = 27;
 	}
 
 	// Trim the prefix from its deepest block up; every prefix block keeps at least one level, and
@@ -2054,6 +2103,7 @@ static SchemaConfig mutateSchemaConfig(
 			level._type = randomStructureType(rng, std::nullopt);
 			level._typeName = randomTypeNameForBase(level._type, rng, options);
 			level._axisPolicy = sampleAxisPolicy(rng, level._type, options._gpuNativeAxisPolicy);
+			level._tightCenter = sampleTightCenter(rng, level._type, options._gpuNativeAxisPolicy);
 			if (levelIndex == 0)
 				level._condition = {};
 			break;
@@ -2114,12 +2164,24 @@ static SchemaConfig mutateSchemaConfig(
 			}
 			break;
 		case 8:
-			// Axis-policy flip; meaningful only for KDTree/BIH levels, a no-op elsewhere.
-			if (level._type == MultiDataStructure::KDTreeNode)
+			// Split-rule change: kd levels move to another axis policy, octree/quadtree levels
+			// toggle between the cell centre and the points' centre.
+			if (isStrLevelName(level._typeName))
 			{
-				level._axisPolicy = (level._axisPolicy == "round_robin")
-					? std::string("median_longest_axis")
-					: std::string("round_robin");
+				// STR: move to another fan-out.
+				level._fanout = level._fanout == 8 ? 27 : level._fanout == 64 ? 8 : 64;
+			}
+			else if (level._type == MultiDataStructure::KDTreeNode && !options._gpuNativeAxisPolicy)
+			{
+				static const std::array<const char*, 3> policies = { "round_robin", "median_longest_axis", "sliding_midpoint" };
+				const auto current = std::find(policies.begin(), policies.end(), level._axisPolicy);
+				const size_t next = (current == policies.end() ? 0 : static_cast<size_t>(current - policies.begin()) + 1 +
+					std::uniform_int_distribution<size_t>(0, 1)(rng)) % policies.size();
+				level._axisPolicy = policies[next];
+			}
+			else if (level._type == MultiDataStructure::OctreeNode || level._type == MultiDataStructure::QuadTreeNode)
+			{
+				level._tightCenter = !level._tightCenter && !options._gpuNativeAxisPolicy;
 			}
 			break;
 		case 9:
@@ -2507,15 +2569,20 @@ static std::vector<Experiments::SchemaCandidate> loadSchemas(const std::vector<s
 // leaf, at leaf 32 and 128, plus each tail on its own. In the 2026-10 diagnostic
 // (scripts/nest_diagnostic.py) this grid alone matched or beat the best uncapped single on 15
 // cells (quadtree -> octree winning on street/campus scans), where random seeds mostly drew
-// unusable genomes, so the GA starts from it.
+// unusable genomes, so the GA starts from it. It also carries each structure's data-adaptive
+// variant (sliding-midpoint kd, tight-centre octree/quadtree) and STR, 67 schemas on the CPU.
 static std::vector<Experiments::SchemaCandidate> twoBlockSeedCandidates(const Experiments::SchemaGenerationOptions& options)
 {
 	using Level = MultiDataStructure::DataStructureLevel;
-	const auto block = [&](Level type, size_t depth, size_t leaf) {
+	// adaptive: the data-adaptive split rule of the type (kd: sliding midpoint; octree/quadtree:
+	// split at the points' centre). CPU-only, so GPU-native generation leaves it out.
+	const auto block = [&](Level type, size_t depth, size_t leaf, bool adaptive = false) {
 		SchemaLevelConfig level;
 		level._type = type;
 		level._typeName = Config::dataStructureLevelName(type);
-		level._axisPolicy = type == Level::QuadTreeNode ? "xy" : type == Level::KDTreeNode ? "median_longest_axis" : "";
+		level._axisPolicy = type == Level::QuadTreeNode ? "xy"
+			: type == Level::KDTreeNode ? (adaptive ? "sliding_midpoint" : "median_longest_axis") : "";
+		level._tightCenter = adaptive && type != Level::KDTreeNode;
 		level._numLevels = depth;
 		level._leafCapacity = leaf;
 		level._minPrimitivesToSplit = 8;
@@ -2524,26 +2591,54 @@ static std::vector<Experiments::SchemaCandidate> twoBlockSeedCandidates(const Ex
 	const std::vector<std::pair<Level, std::vector<size_t>>> prefixes = {
 		{ Level::QuadTreeNode, { 3, 6, 9 } }, { Level::OctreeNode, { 2, 4, 6 } }, { Level::KDTreeNode, { 6, 12 } } };
 	const std::vector<Level> tails = { Level::QuadTreeNode, Level::OctreeNode, Level::KDTreeNode };
+	const std::vector<bool> adaptiveTails = options._gpuNativeAxisPolicy ? std::vector<bool>{ false } : std::vector<bool>{ false, true };
 
 	std::vector<SchemaConfig> grid;
+	// STR, the R-tree-like wide node: alone (fan-out 27 and 64) and as a two-level fan-out-64
+	// top over each of the other structures.
+	const auto strBlock = [&](size_t fanout, size_t depth, size_t leaf) {
+		SchemaLevelConfig level = block(Level::OctreeNode, depth, leaf);
+		level._typeName = "STR";
+		level._fanout = fanout;
+		return level;
+	};
+	if (!options._gpuNativeAxisPolicy)
+	{
+		for (size_t leaf : { size_t(32), size_t(128) })
+			for (size_t fanout : { size_t(27), size_t(64) })
+			{
+				SchemaConfig single;
+				single._levels.push_back(strBlock(fanout, 1, leaf));
+				grid.push_back(single);
+			}
+		for (Level tail : tails)
+		{
+			SchemaConfig nested;
+			nested._levels = { strBlock(64, 2, 128), block(tail, 1, 128) };
+			grid.push_back(nested);
+		}
+	}
 	for (size_t leaf : { size_t(32), size_t(128) })
 	{
 		for (Level tail : tails)
-		{
-			SchemaConfig single;
-			single._levels.push_back(block(tail, 1, leaf));
-			grid.push_back(single);
-		}
+			for (bool adaptive : adaptiveTails)
+			{
+				SchemaConfig single;
+				single._levels.push_back(block(tail, 1, leaf, adaptive));
+				grid.push_back(single);
+			}
 		for (const auto& [prefix, depths] : prefixes)
 			for (size_t depth : depths)
 				for (Level tail : tails)
-				{
-					if (tail == prefix)
-						continue;
-					SchemaConfig nested;
-					nested._levels = { block(prefix, depth, leaf), block(tail, 1, leaf) };
-					grid.push_back(nested);
-				}
+					for (bool adaptive : adaptiveTails)
+					{
+						// The adaptive tails only at leaf 128, the leaf the 2026-10 diagnostic's winners used.
+						if (tail == prefix || (adaptive && leaf != 128))
+							continue;
+						SchemaConfig nested;
+						nested._levels = { block(prefix, depth, leaf), block(tail, 1, leaf, adaptive) };
+						grid.push_back(nested);
+					}
 	}
 
 	std::unordered_set<std::string> seen;
@@ -7487,6 +7582,7 @@ std::vector<Experiments::SchemaCandidate> Experiments::generateSchemaCandidates(
 			level._leafCapacity = schema._buildPolicy._leafCapacity;
 			level._minPrimitivesToSplit = std::max<size_t>(2, level._leafCapacity / 4);
 			level._axisPolicy = sampleAxisPolicy(rng, level._type, options._gpuNativeAxisPolicy);
+			level._tightCenter = sampleTightCenter(rng, level._type, options._gpuNativeAxisPolicy);
 			maybeAssignAdaptiveLeafCapacity(level, rng, options);
 			if (options._conditionalLevels && block > 0 && conditionDistribution(rng))
 				level._condition = randomLevelCondition(rng, level, minLeaf, maxLeaf, conditionDomain);
@@ -8069,6 +8165,7 @@ static std::pair<double, int> primitiveBranchingAndDims(SchemaPrimitiveKind kind
 	case SchemaPrimitiveKind::RegularGrid:  return { 27.0, 3 };
 	case SchemaPrimitiveKind::HGrid:        return { 8.0, 3 };
 	case SchemaPrimitiveKind::Mixed:        return { 8.0, 3 };
+	case SchemaPrimitiveKind::STR:          return { 27.0, 3 };
 	default:                                return { 8.0, 3 };
 	}
 }

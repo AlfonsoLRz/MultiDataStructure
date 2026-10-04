@@ -15,7 +15,9 @@ configs/schemas/tuned_singles_small/kd/tuned_kd16l1024.json
 configs/schemas/tuned_singles_small/kd/tuned_kd19l128.json
 configs/schemas/tuned_singles_small/kd/tuned_kd20l32.json
 configs/schemas/tuned_singles_small/kd/tuned_kd22l128.json
+configs/schemas/tuned_singles_small/kd/tuned_kd22l128sm.json
 configs/schemas/tuned_singles_small/kd/tuned_kd22l64.json
+configs/schemas/tuned_singles_small/kd/tuned_kd22l64sm.json
 configs/schemas/tuned_singles_small/kot/tuned_kot4l8192.json
 configs/schemas/tuned_singles_small/kot/tuned_kot6l128.json
 configs/schemas/tuned_singles_small/kot/tuned_kot6l512.json
@@ -25,7 +27,9 @@ configs/schemas/tuned_singles_small/lbvh/tuned_lbvh16l512.json
 configs/schemas/tuned_singles_small/lbvh/tuned_lbvh20l32.json
 configs/schemas/tuned_singles_small/lbvh/tuned_lbvh21l32.json
 configs/schemas/tuned_singles_small/ot/tuned_ot16l128.json
+configs/schemas/tuned_singles_small/ot/tuned_ot16l128tc.json
 configs/schemas/tuned_singles_small/ot/tuned_ot16l64.json
+configs/schemas/tuned_singles_small/ot/tuned_ot16l64tc.json
 configs/schemas/tuned_singles_small/ot/tuned_ot5l4096.json
 configs/schemas/tuned_singles_small/ot/tuned_ot6l2048.json
 configs/schemas/tuned_singles_small/ot/tuned_ot7l32.json
@@ -33,7 +37,9 @@ configs/schemas/tuned_singles_small/ot/tuned_ot8l32.json
 configs/schemas/tuned_singles_small/qt/tuned_qt10l128apis.json
 configs/schemas/tuned_singles_small/qt/tuned_qt10l32.json
 configs/schemas/tuned_singles_small/qt/tuned_qt16l128.json
+configs/schemas/tuned_singles_small/qt/tuned_qt16l128tc.json
 configs/schemas/tuned_singles_small/qt/tuned_qt16l64.json
+configs/schemas/tuned_singles_small/qt/tuned_qt16l64tc.json
 configs/schemas/tuned_singles_small/qt/tuned_qt7l4096apis.json
 configs/schemas/tuned_singles_small/qt/tuned_qt9l1024.json
 configs/schemas/tuned_singles_small/rg/tuned_rg3l32768.json

@@ -147,6 +147,11 @@ static glm::uvec3 gridSubdivisionsForLevel(const SchemaLevelConfig& levelConfig)
 	return glm::uvec3(3, 3, 3);
 }
 
+static glm::uint strSlabsForLevel(const SchemaLevelConfig& levelConfig)
+{
+	return levelConfig._fanout == 8 ? 2u : levelConfig._fanout == 64 ? 4u : 3u;
+}
+
 static bool isGridPrimitive(const SchemaLevelConfig& levelConfig)
 {
 	const SchemaPrimitiveKind kind = primitiveKindForLevel(levelConfig);
@@ -160,7 +165,12 @@ static PointSpatialIndex::ResolvedLevel resolveLevel(const SchemaLevelConfig& le
 {
 	using ResolvedLevel = PointSpatialIndex::ResolvedLevel;
 	ResolvedLevel resolved;
-	if (isGridPrimitive(levelConfig))
+	if (primitiveKindForLevel(levelConfig) == SchemaPrimitiveKind::STR)
+	{
+		resolved._split = ResolvedLevel::Split::Str;
+		resolved._strSlabs = strSlabsForLevel(levelConfig);
+	}
+	else if (isGridPrimitive(levelConfig))
 	{
 		resolved._split = ResolvedLevel::Split::Grid;
 		resolved._gridSubdivisions = gridSubdivisionsForLevel(levelConfig);
@@ -168,6 +178,7 @@ static PointSpatialIndex::ResolvedLevel resolveLevel(const SchemaLevelConfig& le
 	else if (levelConfig._type == MultiDataStructure::DataStructureLevel::OctreeNode)
 	{
 		resolved._split = ResolvedLevel::Split::Octree;
+		resolved._tightCenter = levelConfig._tightCenter;
 	}
 	else if (levelConfig._type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
 	{
@@ -181,6 +192,7 @@ static PointSpatialIndex::ResolvedLevel resolveLevel(const SchemaLevelConfig& le
 			resolved._quadIgnoredAxis = -1;
 		else
 			resolved._quadIgnoredAxis = 2;
+		resolved._tightCenter = levelConfig._tightCenter;
 	}
 	else if (levelConfig._type == MultiDataStructure::DataStructureLevel::KDTreeNode)
 	{
@@ -190,6 +202,8 @@ static PointSpatialIndex::ResolvedLevel resolveLevel(const SchemaLevelConfig& le
 			resolved._kdPolicy = ResolvedLevel::KdPolicy::RoundRobin;
 		else if (policy == "medianlongestaxis")
 			resolved._kdPolicy = ResolvedLevel::KdPolicy::Median;
+		else if (policy == "slidingmidpoint")
+			resolved._kdPolicy = ResolvedLevel::KdPolicy::SlidingMidpoint;
 		else
 			resolved._kdPolicy = ResolvedLevel::KdPolicy::Center;
 	}
@@ -1747,6 +1761,120 @@ const PointSpatialIndex::ResolvedLevel& PointSpatialIndex::resolvedLevelFor(cons
 // Child bounds and the routing geometry for one node. Arithmetic is exactly the old childBounds /
 // locateChild: real division in the grid cell index, (max + min) / 2 centres via AABB::center(),
 // the kd median as element n/2. Trees must come out bit-identical, not merely equivalent.
+// Children of `cell` cut at `center` on every axis with two subdivisions, in split3D's order
+// (x outermost, z innermost), so locateInPlan's index formula addresses them unchanged.
+static void splitCellAt(const AABB& cell, const glm::vec3& center, const glm::uvec3& subdivisions, AABB* out)
+{
+	size_t index = 0;
+	for (glm::uint x = 0; x < subdivisions.x; ++x)
+		for (glm::uint y = 0; y < subdivisions.y; ++y)
+			for (glm::uint z = 0; z < subdivisions.z; ++z)
+			{
+				const glm::uvec3 slot(x, y, z);
+				glm::vec3 low = cell.min(), high = cell.max();
+				for (glm::uint axis = 0; axis < 3; ++axis)
+				{
+					if (subdivisions[axis] != 2)
+						continue;
+					if (slot[axis] == 0)
+						high[axis] = center[axis];
+					else
+						low[axis] = center[axis];
+				}
+				out[index++] = AABB(low, high);
+			}
+}
+
+AABB PointSpatialIndex::pointBounds(const Node& node) const
+{
+	const std::vector<PointPrimitive>& points = _cloud->points();
+	glm::vec3 low(std::numeric_limits<float>::max()), high(-std::numeric_limits<float>::max());
+	for (size_t i = 0; i < node._pointCount; ++i)
+	{
+		const glm::vec3& position = points[_pointOrder[node._pointOffset + i]].position;
+		low = glm::min(low, position);
+		high = glm::max(high, position);
+	}
+	return AABB(low, high);
+}
+
+// Sort-Tile-Recursive. Every part is defined by the same rule routing uses (a point belongs to
+// part c = how many cuts are <= its coordinate), so the quantile cuts only steer the counts: a run
+// of equal coordinates stays together and can leave a part empty (removed like any empty child).
+void PointSpatialIndex::makeStrPlan(const Node& node, glm::uint slabs, SplitPlan& plan, BuildScratch& scratch) const
+{
+	std::vector<glm::vec3>& positions = scratch._strPositions;
+	const std::vector<PointPrimitive>& points = _cloud->points();
+	positions.resize(node._pointCount);
+	for (size_t i = 0; i < node._pointCount; ++i)
+		positions[i] = points[_pointOrder[node._pointOffset + i]].position;
+
+	plan._slabs = slabs;
+	plan._childCount = static_cast<size_t>(slabs) * slabs * slabs;
+	float* const xCuts = plan._cuts.data();
+	float* const yCuts = xCuts + (slabs - 1);
+	float* const zCuts = yCuts + slabs * (slabs - 1);
+
+	// Cuts [begin, end) along `axis` at its quantiles and groups it part by part; parts[c] is
+	// where part c starts. An empty range gets cuts at the cell's low side (no point uses them).
+	const auto tile = [&](size_t begin, size_t end, int axis, float* cuts, size_t* parts) {
+		const auto less = [axis](const glm::vec3& a, const glm::vec3& b) { return a[axis] < b[axis]; };
+		for (glm::uint c = 1; c < slabs; ++c)
+		{
+			if (end == begin)
+			{
+				cuts[c - 1] = node._bounds.min()[axis];
+				continue;
+			}
+			const size_t k = begin + (end - begin) * c / slabs;
+			std::nth_element(positions.begin() + begin, positions.begin() + k, positions.begin() + end, less);
+			cuts[c - 1] = positions[k][axis];
+		}
+		parts[0] = begin;
+		for (glm::uint c = 1; c < slabs; ++c)
+		{
+			const float cut = cuts[c - 1];
+			const auto middle = std::partition(positions.begin() + parts[c - 1], positions.begin() + end,
+				[axis, cut](const glm::vec3& p) { return p[axis] < cut; });
+			parts[c] = static_cast<size_t>(middle - positions.begin());
+		}
+		parts[slabs] = end;
+	};
+
+	size_t xParts[5], yParts[5], zParts[5];
+	tile(0, positions.size(), 0, xCuts, xParts);
+	for (glm::uint i = 0; i < slabs; ++i)
+	{
+		tile(xParts[i], xParts[i + 1], 1, yCuts + i * (slabs - 1), yParts);
+		for (glm::uint j = 0; j < slabs; ++j)
+			tile(yParts[j], yParts[j + 1], 2, zCuts + (i * slabs + j) * (slabs - 1), zParts);
+	}
+
+	// Child cells: the parent's cell cut at the same values, x outermost as in split3D.
+	std::vector<AABB>& bounds = scratch._childBounds;
+	bounds.resize(plan._childCount);
+	const glm::vec3 low = node._bounds.min(), high = node._bounds.max();
+	const auto range = [](const float* cuts, glm::uint part, glm::uint parts, float lo, float hi) {
+		const float a = part == 0 ? lo : std::clamp(cuts[part - 1], lo, hi);
+		const float b = part + 1 == parts ? hi : std::clamp(cuts[part], lo, hi);
+		return std::pair<float, float>(a, std::max(a, b));
+	};
+	size_t index = 0;
+	for (glm::uint i = 0; i < slabs; ++i)
+	{
+		const auto [x0, x1] = range(xCuts, i, slabs, low.x, high.x);
+		for (glm::uint j = 0; j < slabs; ++j)
+		{
+			const auto [y0, y1] = range(yCuts + i * (slabs - 1), j, slabs, low.y, high.y);
+			for (glm::uint k = 0; k < slabs; ++k)
+			{
+				const auto [z0, z1] = range(zCuts + (i * slabs + j) * (slabs - 1), k, slabs, low.z, high.z);
+				bounds[index++] = AABB(glm::vec3(x0, y0, z0), glm::vec3(x1, y1, z1));
+			}
+		}
+	}
+}
+
 void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& level, SplitPlan& plan, BuildScratch& scratch) const
 {
 	std::vector<AABB>& bounds = scratch._childBounds;
@@ -1766,9 +1894,15 @@ void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& lev
 		return;
 	}
 	case ResolvedLevel::Split::Octree:
-		plan._center = node._bounds.center();
 		plan._childCount = 8;
 		bounds.resize(8);
+		if (level._tightCenter && node._pointCount > 0)
+		{
+			plan._center = pointBounds(node).center();
+			splitCellAt(node._bounds, plan._center, glm::uvec3(2, 2, 2), bounds.data());
+			return;
+		}
+		plan._center = node._bounds.center();
 		node._bounds.split3D(glm::uvec3(2, 2, 2), bounds.data());
 		return;
 	case ResolvedLevel::Split::Quad:
@@ -1776,12 +1910,21 @@ void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& lev
 		plan._axis = level._quadIgnoredAxis < 0 ? shortestAxis(node._bounds) : static_cast<glm::uint>(level._quadIgnoredAxis);
 		plan._subdivisions = glm::uvec3(2, 2, 2);
 		plan._subdivisions[plan._axis] = 1;
-		plan._center = node._bounds.center();
 		plan._childCount = 4;
 		bounds.resize(4);
+		if (level._tightCenter && node._pointCount > 0)
+		{
+			plan._center = pointBounds(node).center();
+			splitCellAt(node._bounds, plan._center, plan._subdivisions, bounds.data());
+			return;
+		}
+		plan._center = node._bounds.center();
 		node._bounds.split3D(plan._subdivisions, bounds.data());
 		return;
 	}
+	case ResolvedLevel::Split::Str:
+		makeStrPlan(node, level._strSlabs, plan, scratch);
+		return;
 	case ResolvedLevel::Split::BinaryKd:
 	case ResolvedLevel::Split::Binary:
 		break;
@@ -1807,6 +1950,22 @@ void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& lev
 			const size_t median = coordinates.size() / 2;
 			std::nth_element(coordinates.begin(), coordinates.begin() + median, coordinates.end());
 			plan._value = coordinates[median];
+		}
+		else if (level._kdPolicy == ResolvedLevel::KdPolicy::SlidingMidpoint && node._pointCount > 0)
+		{
+			// nanoflann's middle split. Its node box is the bounding box of the node's points, so
+			// the cut is the midpoint of the points' extent on their longest side: strictly inside
+			// the points whenever they spread, so both sides keep points and no level is spent
+			// peeling a few off an edge (cutting the CELL's midpoint did that, and at depth 22
+			// left Toronto 5M with 10x the points tested per query).
+			const AABB points = pointBounds(node);
+			const glm::vec3 spread = points.size();
+			plan._axis = spread.x >= spread.y && spread.x >= spread.z ? 0u : spread.y >= spread.z ? 1u : 2u;
+			const float low = points.min()[plan._axis];
+			const float high = points.max()[plan._axis];
+			// Points on the cut go left (<=); the midpoint stays below `high`, so the right side
+			// keeps the points at the far edge.
+			plan._value = high > low ? std::min(low + (high - low) * 0.5f, std::nextafter(high, low)) : low;
 		}
 	}
 
@@ -1865,6 +2024,23 @@ namespace
 		{
 			return point[plan._axis] <= plan._value ? 0 : 1;
 		}
+		else if constexpr (S == Split::Str)
+		{
+			const glm::uint slabs = plan._slabs;
+			const float* xCuts = plan._cuts.data();
+			glm::uint i = 0;
+			while (i + 1 < slabs && point.x >= xCuts[i])
+				++i;
+			const float* yCuts = xCuts + (slabs - 1) + i * (slabs - 1);
+			glm::uint j = 0;
+			while (j + 1 < slabs && point.y >= yCuts[j])
+				++j;
+			const float* zCuts = xCuts + (slabs - 1) + slabs * (slabs - 1) + (i * slabs + j) * (slabs - 1);
+			glm::uint k = 0;
+			while (k + 1 < slabs && point.z >= zCuts[k])
+				++k;
+			return (static_cast<size_t>(i) * slabs + j) * slabs + k;
+		}
 		else
 		{
 			return point[plan._axis] < plan._value ? 0 : 1;
@@ -1899,6 +2075,7 @@ void PointSpatialIndex::routePointsToChildren(const Node& node, const SplitPlan&
 	case Split::Quad: routeWith<Split::Quad>(plan, points, order, node._pointCount, childOf, counts); break;
 	case Split::BinaryKd: routeWith<Split::BinaryKd>(plan, points, order, node._pointCount, childOf, counts); break;
 	case Split::Binary: routeWith<Split::Binary>(plan, points, order, node._pointCount, childOf, counts); break;
+	case Split::Str: routeWith<Split::Str>(plan, points, order, node._pointCount, childOf, counts); break;
 	}
 }
 

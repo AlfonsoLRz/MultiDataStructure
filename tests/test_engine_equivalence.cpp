@@ -38,8 +38,8 @@ namespace BaselineTests
 		SchemaLevelConfig randomLevel(Rng& rng, bool allowCondition)
 		{
 			static const char* const Types[] = {
-				"Octree", "QuadTree", "KDTree", "BVH", "BIH", "RegularGrid", "HGrid", "LBVH", "KarrasOctree" };
-			static const char* const KdPolicies[] = { "", "median_longest_axis", "round_robin", "center_longest_axis" };
+				"Octree", "QuadTree", "KDTree", "BVH", "BIH", "RegularGrid", "HGrid", "LBVH", "KarrasOctree", "STR" };
+			static const char* const KdPolicies[] = { "", "median_longest_axis", "round_robin", "center_longest_axis", "sliding_midpoint" };
 			static const char* const QuadPolicies[] = { "xy", "xz", "yz", "ignore_shortest" };
 			static const size_t Capacities[] = { 1, 2, 3, 4, 8, 16, 64 };
 
@@ -55,6 +55,12 @@ namespace BaselineTests
 				level._axisPolicy = rng.pick(KdPolicies);
 			else if (level._type == MultiDataStructure::DataStructureLevel::QuadTreeNode)
 				level._axisPolicy = rng.pick(QuadPolicies);
+			static const size_t Fanouts[] = { 8, 27, 64 };
+			if (level._primitiveKind == SchemaPrimitiveKind::STR)
+				level._fanout = rng.pick(Fanouts);
+			else if ((level._type == MultiDataStructure::DataStructureLevel::OctreeNode ||
+				 level._type == MultiDataStructure::DataStructureLevel::QuadTreeNode) && rng.chance(0.4))
+				level._tightCenter = true;
 
 			if (allowCondition && rng.chance(0.35))
 			{
@@ -274,6 +280,12 @@ namespace BaselineTests
 		first._levels.resize(1);
 		first._levels.front()._condition = SchemaLevelCondition();
 		first._levels.front()._adaptiveLeafCapacity = AdaptiveLeafCapacityConfig();
+		// An explicit type: the fuzz type list grows, and a drawn type need not split this cloud
+		// differently at these two capacities.
+		first._levels.front()._typeName = "Octree";
+		first._levels.front()._primitiveKind = SchemaPrimitiveKind::Octree;
+		first._levels.front()._type = MultiDataStructure::DataStructureLevel::OctreeNode;
+		first._levels.front()._tightCenter = false;
 		first._levels.front()._numLevels = 4;
 		first._levels.front()._leafCapacity = 64;
 		first._levels.front()._minPrimitivesToSplit = 1;
@@ -286,5 +298,82 @@ namespace BaselineTests
 		c.build(cloud, second);
 		expect(a.structureDigest() == b.structureDigest(), "structure digest is reproducible");
 		expect(a.structureDigest() != c.structureDigest(), "structure digest separates different trees");
+
+		// Geometry-only digest: the same tree under different labels matches. An Octree level
+		// and a KarrasOctree level split identically on the CPU.
+		const auto level = [](const char* type, size_t depth, bool tight = false, const char* policy = "") {
+			SchemaLevelConfig config;
+			config._typeName = type;
+			config._primitiveKind = Config::parseSchemaPrimitiveKind(config._typeName);
+			config._cpuFallbackType = Config::cpuFallbackForPrimitiveKind(config._primitiveKind);
+			config._type = config._cpuFallbackType;
+			config._numLevels = depth;
+			config._leafCapacity = 4;
+			config._minPrimitivesToSplit = 1;
+			config._axisPolicy = policy;
+			config._tightCenter = tight;
+			return config;
+		};
+		SchemaConfig plain, relabelled;
+		plain._levels = { level("Octree", 6) };
+		relabelled._levels = { level("Octree", 2), level("KarrasOctree", 4) };
+		PointSpatialIndex plainIndex, relabelledIndex;
+		plainIndex.build(cloud, plain);
+		relabelledIndex.build(cloud, relabelled);
+		expect(plainIndex.structureDigest(true) == relabelledIndex.structureDigest(true), "geometry digest ignores structure labels");
+		expect(plainIndex.structureDigest() != relabelledIndex.structureDigest(), "full digest keeps structure labels");
+
+		// The data-adaptive splits: every point lies in its leaf's cell (the tight-centre child
+		// cells match the routing), and a sliding-midpoint node only leaves a side empty when all
+		// its points coincide.
+		for (const auto& [label, edgeCloud] : clouds)
+		{
+			for (int variant = 0; variant < 4; ++variant)
+			{
+				SchemaConfig schema;
+				schema._levels = { variant == 0 ? level("Octree", 24, true)
+					: variant == 1 ? level("QuadTree", 24, true, "xy")
+					: variant == 2 ? level("KDTree", 40, false, "sliding_midpoint")
+					: level("STR", 12) };
+				schema._levels.front()._fanout = 64;
+				schema._buildPolicy._removeEmptyNodes = false;
+				schema._buildPolicy._collapseSingleChild = false;
+				PointSpatialIndex index;
+				index.build(edgeCloud, schema);
+				bool contained = true, bothSides = true;
+				std::vector<PointSpatialIndex::NodeView> stack;
+				if (const PointSpatialIndex::NodeView root = index.root())
+					stack.push_back(root);
+				while (!stack.empty())
+				{
+					const PointSpatialIndex::NodeView node = stack.back();
+					stack.pop_back();
+					if (node.isLeaf())
+					{
+						const AABB cell = node.bounds();
+						for (size_t i = 0; i < node.pointCount(); ++i)
+						{
+							const glm::vec3 p = edgeCloud.points()[index.pointOrder()[node.pointOffset() + i]].position;
+							contained = contained && p.x >= cell.min().x && p.y >= cell.min().y && p.z >= cell.min().z &&
+								p.x <= cell.max().x && p.y <= cell.max().y && p.z <= cell.max().z;
+						}
+						continue;
+					}
+					expect(node.childCount() <= 64, "no node has more than 64 children: " + label);
+					if (variant == 2 && node.childCount() == 2)
+					{
+						const bool empty = node.child(0).subtreePointCount() == 0 || node.child(1).subtreePointCount() == 0;
+						const glm::vec3 spread = node.tightBounds().size();
+						bothSides = bothSides && (!empty || (spread.x == 0.0f && spread.y == 0.0f && spread.z == 0.0f));
+					}
+					for (size_t c = 0; c < node.childCount(); ++c)
+						stack.push_back(node.child(c));
+				}
+				const std::string where = label + (variant == 0 ? " tight octree" : variant == 1 ? " tight quadtree"
+					: variant == 2 ? " sliding midpoint" : " STR 64");
+				expect(contained, "every point lies in its leaf's cell: " + where);
+				expect(bothSides, "sliding midpoint never leaves a side empty unless the points coincide: " + where);
+			}
+		}
 	}
 }

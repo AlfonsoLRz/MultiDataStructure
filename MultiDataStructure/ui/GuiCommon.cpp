@@ -372,6 +372,8 @@ glm::vec3 Gui::structureColorRgb(const std::string& typeName)
 		return { 1.00f, 0.58f, 0.28f };
 	if (oneOf(n, { "hgrid", "hierarchicalgrid", "hierarchicalgrid3d", "hg" }))
 		return { 0.78f, 0.64f, 1.00f };
+	if (oneOf(n, { "str", "strtree", "sorttilerecursive" }))
+		return { 0.98f, 0.92f, 0.45f };
 	if (oneOf(n, { "bvh", "bvhnode" }))
 		return { 0.55f, 0.70f, 1.00f };
 	if (oneOf(n, { "lbvh", "linearbvh" }))

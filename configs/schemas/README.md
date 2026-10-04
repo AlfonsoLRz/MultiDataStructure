@@ -41,8 +41,12 @@ Supported `type` values at this stage:
 
 maps depth `0` to `Octree`, then depths `1`, `2`, and `3` to `BVH`. Depths beyond the configured total reuse the final block only as a defensive fallback; normal builds stop at the configured total or `buildPolicy.maxDepth`.
 
+`Octree` and `QuadTree` levels accept `"splitAt": "tight"` to split at the centre of the node's points instead of its cell (default `"cell"`; CPU only).
+
+`STR` levels (Sort-Tile-Recursive, a bulk-loaded R-tree level) cut each node into `fanout` = 8, 27 or 64 tiles of about equal point count: x quantile slabs, each cut into y columns, each into z tiles (default 27; CPU only).
+
 `QuadTree` levels support an optional `axisPolicy`. Point-cloud schemas default to `xy`, which splits X/Y and leaves Z unsplit. Explicit values are `xy`, `xz`, `yz`, `ignore_shortest`, `ignore_x`, `ignore_y`, and `ignore_z`.
 
-`KDTree` and `BIH` levels support `axisPolicy` values `median_longest_axis`, `center_longest_axis`, and `round_robin`. CPU builds honor all three. CUDA KDTree/BIH can match `center_longest_axis` and `round_robin`; CUDA MixedTree currently matches `center_longest_axis` only. Rows with policies the selected CUDA builder cannot reproduce are tagged `gpu_support_status=unsupported_policy` and evaluated on CPU by schema search.
+`KDTree` and `BIH` levels support `axisPolicy` values `median_longest_axis`, `center_longest_axis`, `round_robin`, and `sliding_midpoint` (nanoflann's rule: the midpoint of the node's points on their longest side; CPU only). CPU builds honor all three. CUDA KDTree/BIH can match `center_longest_axis` and `round_robin`; CUDA MixedTree currently matches `center_longest_axis` only. Rows with policies the selected CUDA builder cannot reproduce are tagged `gpu_support_status=unsupported_policy` and evaluated on CPU by schema search.
 
 `KarrasOctree`, `BIH`, and `LBVH` are GPU-flavored schema names that preserve base Octree, KDTree, and BVH CPU fallback families while letting CUDA builders pick more specific split behavior. `RegularGrid` and `HGrid` are implemented by the CPU point index as recursive grid split levels and by CUDA as both MixedTree split levels and standalone global cell-bin evaluators. Point-cloud builds use single-child assignment and should keep `allowOverlapDuplication` set to `false`.

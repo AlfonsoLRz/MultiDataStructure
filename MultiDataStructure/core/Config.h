@@ -15,7 +15,10 @@ enum class SchemaPrimitiveKind
 	KarrasOctree,
 	RegularGrid,
 	HGrid,
-	Mixed
+	Mixed,
+	// Sort-Tile-Recursive: a node's points cut into fanout = S^3 tiles of about equal count (x
+	// quantile slabs, each cut into y columns, each into z tiles); a bulk-loaded R-tree level.
+	STR
 };
 
 struct SchemaLevelCondition
@@ -64,6 +67,11 @@ struct SchemaLevelConfig
 	size_t	_leafCapacity = 1;
 	size_t	_minPrimitivesToSplit = 2;
 	std::string	_axisPolicy;
+	// Octree/QuadTree: split at the centre of the node's points instead of its cell (JSON
+	// "splitAt": "tight"). Adapts to sparse clouds where most of a cell is empty.
+	bool	_tightCenter = false;
+	// STR levels: children per node, 8, 27 or 64 (0 = 27). JSON "fanout".
+	size_t	_fanout = 0;
 	SchemaLevelCondition	_condition;
 	AdaptiveLeafCapacityConfig	_adaptiveLeafCapacity;
 };

@@ -470,7 +470,8 @@ std::vector<double> Experiments::schemaFeatureVector(const SchemaConfig& schema)
 				 kind == SchemaPrimitiveKind::KarrasOctree ||
 				 kind == SchemaPrimitiveKind::RegularGrid ||
 				 kind == SchemaPrimitiveKind::HGrid ||
-				 kind == SchemaPrimitiveKind::Mixed)
+				 kind == SchemaPrimitiveKind::Mixed ||
+				 kind == SchemaPrimitiveKind::STR)
 			features[1] = 1.0;
 		else if (kind == SchemaPrimitiveKind::KDTree || kind == SchemaPrimitiveKind::BIH)
 			features[2] = 1.0;

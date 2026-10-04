@@ -172,14 +172,20 @@ public:
 	// normalizer allocate and lowercase strings - twice per level (count pass and scatter pass).
 	struct ResolvedLevel
 	{
-		enum class Split : uint8_t { Grid, Octree, Quad, BinaryKd, Binary };
-		enum class KdPolicy : uint8_t { Median, RoundRobin, Center };
+		enum class Split : uint8_t { Grid, Octree, Quad, BinaryKd, Binary, Str };
+		// SlidingMidpoint: nanoflann's rule - the midpoint of the node's points' extent on its
+		// longest side, so both sides always keep points.
+		enum class KdPolicy : uint8_t { Median, RoundRobin, Center, SlidingMidpoint };
 
 		Split		_split = Split::Octree;
 		glm::uvec3	_gridSubdivisions = glm::uvec3(1);
 		// Axis a quadtree level does not split; -1 = the node's shortest axis, decided per node.
 		int			_quadIgnoredAxis = 2;
 		KdPolicy	_kdPolicy = KdPolicy::Median;
+		// Octree/Quad: split at the centre of the node's points, not of its cell.
+		bool		_tightCenter = false;
+		// Str: slabs per axis (fanout = slabs^3).
+		glm::uint	_strSlabs = 3;
 	};
 
 	// One node's split, computed once before its points are routed to children.
@@ -193,6 +199,9 @@ public:
 		glm::uint	_axis = 0;
 		float		_value = 0.0f;
 		size_t		_childCount = 0;
+		// Str: S-1 x cuts, then S-1 y cuts per x slab, then S-1 z cuts per (x, y) column (S <= 4).
+		glm::uint				_slabs = 0;
+		std::array<float, 63>	_cuts{};
 	};
 
 	// Read-only view of one node of a built index. After build the tree lives in a contiguous
@@ -346,6 +355,7 @@ private:
 		// written by the counting pass so the scatter pass does not locate every point again.
 		std::vector<uint8_t>	_childOf;
 		std::vector<float>		_medianScratch;
+		std::vector<glm::vec3>	_strPositions;
 	};
 
 	const PointCloud*		_cloud = nullptr;
@@ -383,6 +393,9 @@ private:
 	double nodeHeightRatio(const Node& node) const;
 	double nodeAnisotropy(const Node& node) const;
 	const ResolvedLevel& resolvedLevelFor(const SchemaLevelConfig& levelConfig) const;
+	// Bounds of the points a node holds (its tight bounds, before the node is finalized).
+	AABB pointBounds(const Node& node) const;
+	void makeStrPlan(const Node& node, glm::uint slabs, SplitPlan& plan, BuildScratch& scratch) const;
 	void makeSplitPlan(const Node& node, const ResolvedLevel& level, SplitPlan& plan, BuildScratch& scratch) const;
 	void routePointsToChildren(const Node& node, const SplitPlan& plan, BuildScratch& scratch) const;
 	void flattenTree();
