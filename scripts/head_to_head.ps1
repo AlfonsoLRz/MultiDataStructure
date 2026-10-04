@@ -39,6 +39,8 @@ $driver = Join-Path $repo 'tools\bin\indexicon_point_baseline.exe'
 if (-not (Test-Path $driver)) { throw "driver missing - run tools\build_indexicon_baseline.ps1" }
 # nanoflann is optional: included when its driver has been built (tools\build_nanoflann_baseline.ps1).
 $nanoflann = Join-Path $repo 'tools\bin\nanoflann_point_baseline.exe'
+# The Boost R-tree likewise (tools\build_boost_rtree_baseline.ps1).
+$rtree = Join-Path $repo 'tools\bin\boost_rtree_point_baseline.exe'
 $out = Join-Path $OutRoot $Tag
 New-Item -ItemType Directory -Force $out | Out-Null
 
@@ -79,11 +81,14 @@ for ($round = 1; $round -le $Rounds; $round++) {
             @{ side = 'nf'; exe = $nanoflann; args = @('--input', "`"$($cell.mdspc_path)`"", '--query-trace', "`"$trace`"",
                 '--max-queries', $Queries, '--warmup', '1', '--repeats', '3',
                 '--output', "`"$(Join-Path $out "nf_${name}_r${round}.json")`"") },
+            @{ side = 'rt'; exe = $rtree; args = @('--input', "`"$($cell.mdspc_path)`"", '--query-trace', "`"$trace`"",
+                '--max-queries', $Queries, '--warmup', '1', '--repeats', '3',
+                '--output', "`"$(Join-Path $out "rt_${name}_r${round}.json")`"") },
             @{ side = 'mds'; exe = (Resolve-Path $Mds).Path; args = @('--mode', 'engine-check', '--input', "`"$($cell.mdspc_path)`"",
                 '--schemas', "`"$($schemas -join ';')`"", '--input-trace', "`"$trace`"", '--queries', $Queries,
                 '--warmup', '1', '--measure-repeats', '3', '--summary-csv', "`"$(Join-Path $out "mds_r${round}.csv")`"") }
         )
-        $runs = @($runs | Where-Object { $_.side -ne 'nf' -or (Test-Path $nanoflann) })
+        $runs = @($runs | Where-Object { ($_.side -ne 'nf' -or (Test-Path $nanoflann)) -and ($_.side -ne 'rt' -or (Test-Path $rtree)) })
         if ($round % 2 -eq 0) { [array]::Reverse($runs) }
         foreach ($run in $runs) {
             $sw = [Diagnostics.Stopwatch]::StartNew()
