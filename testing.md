@@ -441,6 +441,54 @@ Where it runs:
 - makinon2 also runs `scripts/nest_diagnostic.py` on the three 250M cells (core 35, node 1),
   `results/nest_diag`.
 
+### 2h. 2026-10-04 — e7's losses were selection noise; selection and timing fixed (battery e8)
+
+e7 (49 workstation cells, 1M-25M) answered nested vs single at held-out geomean 0.994 (25M 0.964;
+ground scans 0.960, aerial 1.025, forest 1.036), but the GA's final pick against the tuned single
+was a coin flip (1.003; 19 wins, 18 losses). The 16 losses were **not depth** (no nested p99 leaf
+above 2x capacity). Two causes:
+- **Selection on the wrong measure.** The GA and singles arms ranked on `avg_latency_ms`, the
+  instrumented cold pass 0 (`--measure-repeats 1`); TEST reported telemetry-off passes. Rank
+  correlation of nested/single between opt and test: 0.27. In 9 of the 16 losses the nested schema
+  had looked >= 3% better on opt.
+- **Shared machines.** The workstation also runs other jobs (an NLOS simulation on ~4 cores, a
+  python job on 1); makinon2 had another user on ~70 of 72 threads (load 77). For whole
+  measurement windows a core runs 40-50% slow (SMT co-runner or frequency): the per-query median
+  shifts, the CI stays tight. Identical trees (same digest; e.g. waikato_5M `qt9 -> ot16` vs `qt16`)
+  timed 0.81-1.47 us across processes, 1.03-1.30x apart sequentially.
+
+Fixes (`496025d`):
+- the score reads the telemetry-off passes when `--measure-repeats >= 2` (arms run 3 repeats,
+  `--min-timed-ms 30`);
+- `engine-check --interleave` builds all schemas, then rotates one pass per schema with an untimed
+  warm sweep first. Identical trees then time 0.971-1.028 apart, under the same load that gave
+  0.74-1.05 sequentially;
+- `run_cells.py` confirmation step: the top 3 nested and top 3 singles (deduplicated by a
+  geometry-only structure digest) are timed interleaved on the opt half in 3 processes. Nested is
+  the pick only if it is >= 3% faster in the median AND in every process;
+- held-out timing is interleaved too (`<cell>_test_timing.csv`, `<cell>_pick.json`), summarized by
+  `scripts/summarize_nesting.py`.
+
+**Validation on 21 e7 cells (the 16 losses + 5 wins, e7's arms re-used,
+`D:\MDS_ab\e7_confirm`):**
+- pick/best single held-out geomean 0.978: **0 losses**, 4 wins (Toronto 25M 0.88, Neugasse 5M
+  0.89, OttobrunnCampus 25M 0.91, Cathedral 25M 0.94), 17 ties;
+- by scan type: ground 0.954, aerial 0.999, forest 1.000;
+- price of the rule: Alhambra 25M fell back to the single although nested measured 0.961 held out.
+
+New structures (`eb52a0e`, CPU only, equivalence vs golden_v1: 0 result mismatches, only the two
+uncapped hand-nested configs change structure), first numbers at 5M (interleaved, vs `qt16l128`):
+- `sliding_midpoint` kd (nanoflann's rule, midpoint of the points' extent): Toronto 1.01,
+  SanAndreas 1.02; 10-20% faster than our median kd, best radius of all (Toronto 1.83 vs 2.33 us).
+  Cutting the cell's midpoint instead (the first attempt) peeled points off edges and hit the
+  depth cap: 10x tested points;
+- `splitAt: tight` octree/quadtree: quadtree 0.97-0.99 (a tie), octree worse;
+- `STR` (fanout 27/64): 2.3-2.9x slower. Wide nodes need SIMD child-box tests to pay off; the
+  Boost R-tree (`17fadc1`) is slow here for the same reason.
+
+Battery e8 = e7's cells with all of the above: workstation `results/eval_traces/matrix_e8` (log
+`D:\MDS_ab\battery_pc_e8.log`); makinon2 after its e7 streams.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
