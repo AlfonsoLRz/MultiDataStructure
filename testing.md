@@ -317,6 +317,45 @@ one of these pairs (kd ~2x). The searched winners in `equivalence_set/winner_*` 
 engine 1 on shifted queries and are now stale (best radius, poor kNN: winner_toronto_25M kNN
 9.05 us vs 2.98 us for kdtree_default). **Re-run the searches before quoting searched-vs-single.**
 
+### 2e. Engine-6 battery, 1M-100M on the workstation (2026-10-04, `results/eval_traces/matrix_e6`)
+
+69 cells (all searched cells except the three scenes the server runs at >= 100M), protocol of
+`scripts/run_cells.py`: GA (8 parallel workers) and all 36 tuned singles on the `_opt` trace half,
+held-out TEST of winners + 9 defaults + 2 hand-nested on `_test`, 5 uninstrumented repeats.
+207/207 steps exit 0, 3.5 h.
+
+**Searched nested schemas no longer beat the best single structure at <= 100M.** Best single
+(tuned or default) / best searched, held-out:
+
+| size | cells with a searched row | median | CI-separated searched wins | losses |
+|---|---|---|---|---|
+| 1M | 17 | 0.87 | 1 | 11 |
+| 5M | 12 | 0.89 | 2 | 7 |
+| 25M | 13 | 0.97 | 0 | 4 |
+| 50M | 13 | 0.89 | 1 | 3 |
+| 100M | 6 | 0.85 | 0 | 3 |
+
+(Cells without a searched row: the GA's own winner was a single structure.) In August searched
+won ~60% of 5M-25M cells. Two things changed under it: node visits became cheap (engine 6), which
+removes what nesting was buying, and the defaults stopped being depth-capped (`d72c117`).
+
+**Measured selection still pays; nesting adds little.** Regret of always using one structure vs
+the per-cell best (69 cells):
+
+| always use | geomean | median | p90 | worst |
+|---|---|---|---|---|
+| bih_default | 1.38 | 1.28 | 1.86 | 3.85 |
+| kdtree_default | 1.42 | 1.30 | 1.99 | 3.74 |
+| quadtree_default | 1.47 | 1.35 | 2.70 | 3.30 |
+| octree_default | 1.62 | 1.58 | 2.32 | 2.82 |
+| bvh_default / lbvh_default | 2.77 | 1.57 | 24.2 | 285 |
+| best default per cell (oracle) | 1.10 | 1.08 | 1.26 | 1.36 |
+
+Open question being tested: whether the GA's parallel timing (8 candidates timed concurrently,
+singles timed serially) hides searched wins - serial-GA rerun of 8 cells at 25M in
+`results/eval_traces/matrix_e6_serial`. And the 250M-1B ladder on the server, where August's
+nested advantage was largest (1B: 1.40x).
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
