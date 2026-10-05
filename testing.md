@@ -491,7 +491,7 @@ Battery e8 = e7's cells with all of the above: workstation `results/eval_traces/
 
 ### 2i. 2026-10-05 — first e8 results: nesting wins on ground scans, never loses on aerial
 
-**Workstation, 57 of 63 cells (1M-50M; the last six 50M cells were re-queued after the session
+**Workstation, all 63 cells (1M-50M; the last six 50M cells were re-queued after the session
 running the battery ended), `scripts/summarize_nesting.py results/eval_traces/matrix_e8`.**
 pick/best single (both chosen on opt), held-out, interleaved:
 
@@ -500,18 +500,18 @@ pick/best single (both chosen on opt), held-out, interleaved:
 | 1M | 17 | 0.976 | 3 / 14 / 0 |
 | 5M | 16 | 0.955 | 4 / 12 / 0 |
 | 25M | 16 | 0.947 | 5 / 11 / 0 |
-| 50M | 8 | 0.938 | 4 / 3 / 1 |
-| ground scans (TLS/MLS street, heritage) | 29 | **0.915** | 16 / 13 / 0 |
-| aerial (terrain, urban, industrial) | 16 | 1.000 | 0 / 16 / 0 |
+| 50M | 14 | 0.936 | 7 / 6 / 1 |
+| ground scans (TLS/MLS street, heritage) | 32 | **0.911** | 19 / 13 / 0 |
+| aerial (terrain, urban, industrial) | 19 | 1.000 | 0 / 19 / 0 |
 | forest / vegetation | 11 | 1.004 | 0 / 10 / 1 |
-| all | 57 | 0.957 | 16 / 40 / 1 |
+| all | 63 | 0.954 | 19 / 43 / 1 |
 
-Against the best single measured on the test half itself (an oracle that favours singles): 0.959.
+Against the best single measured on the test half itself (an oracle that favours singles): 0.957.
 
 The winning nested schemas share one shape: a plan-view quadtree (or octree) for 2-9 levels, then a
 sliding-midpoint kd tail at leaf 128 (`qt6l128_kd22l128ap=sm` and neighbours):
 - Neugasse 0.78-0.81 at every size, Toronto 0.79-0.85, Cathedral 0.83-0.86, DomFountain
-  0.85-0.90, OttobrunnCampus 25M 0.86;
+  0.85-0.90, OttobrunnCampus 0.85-0.86 at 25M/50M;
 - the single sliding-midpoint kd is in the tuned grid and the seeds, so the gain is the nesting;
 - aerial cells pick a single quadtree every time;
 - the one loss is GaliciaForest 50M, 1.046 (the archipelago).
@@ -527,7 +527,10 @@ GA best nested / tuned single, held-out:
 Waikato 1.00, SanAndreas 1.09. All three are aerial, matching the aerial ties above.
 
 makinon2 e8 runs from 2026-10-05 (`src_e8`, `build_e8`, `run_battery_e8_streams.sh`,
-`results/matrix_e8`); the server is quiet again (load ~1).
+`results/matrix_e8`, copied to `results/eval_traces/matrix_e8_makinon2`); the server is quiet again
+(load ~1). First cells, pick/best single held-out: DomFountain 100M 0.893 (qt9 -> kd3 -> kd22, all
+sliding-midpoint kd, leaf 128) and Alhambra 100M 0.967 (qt3 -> sliding-midpoint kd22, leaf 64; it
+lost 1.07 in e7). Same shape as the workstation winners.
 
 ## 3. Pending experiments (exact commands)
 
