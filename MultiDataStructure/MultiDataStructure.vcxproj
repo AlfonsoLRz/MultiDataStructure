@@ -128,6 +128,7 @@
     <ClInclude Include="bvh_kernels.cuh" />
     <ClInclude Include="core\BuildPolicy.h" />
     <ClInclude Include="core\Config.h" />
+    <ClInclude Include="experiments\BatchCheck.h" />
     <ClInclude Include="experiments\EngineCheck.h" />
     <ClInclude Include="experiments\EvaluationCache.h" />
     <ClInclude Include="experiments\BatchSearch.h" />
@@ -162,6 +163,7 @@
     <ClInclude Include="workloads\points\PointPrimitive.h" />
     <ClInclude Include="workloads\points\LBVH.h" />
     <ClInclude Include="workloads\points\Octree.h" />
+    <ClInclude Include="workloads\points\PointGpuIndex.h" />
     <ClInclude Include="workloads\points\PointGpuTypes.h" />
     <ClInclude Include="workloads\points\PointSpatialIndex.h" />
     <ClInclude Include="workloads\points\QuadTree.h" />
@@ -192,6 +194,7 @@
     <ClCompile Include="AppConfig.cpp" />
     <ClCompile Include="core\BuildPolicy.cpp" />
     <ClCompile Include="core\Config.cpp" />
+    <ClCompile Include="experiments\BatchCheck.cpp" />
     <ClCompile Include="experiments\EngineCheck.cpp" />
     <ClCompile Include="experiments\EvaluationCache.cpp" />
     <ClCompile Include="experiments\BatchSearch.cpp" />
@@ -252,6 +255,10 @@
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>
     <CudaCompile Include="workloads\points\QuadTree.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\PointGpuIndex.cu">
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>

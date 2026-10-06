@@ -41,6 +41,7 @@ set(MDS_CXX_SOURCES
 	${MDS_DIR}/Ray.cpp
 	${MDS_DIR}/core/BuildPolicy.cpp
 	${MDS_DIR}/core/Config.cpp
+	${MDS_DIR}/experiments/BatchCheck.cpp
 	${MDS_DIR}/experiments/BatchSearch.cpp
 	${MDS_DIR}/experiments/EngineCheck.cpp
 	${MDS_DIR}/experiments/EvaluationCache.cpp
@@ -67,6 +68,7 @@ set(MDS_CUDA_SOURCES
 	${MDS_DIR}/workloads/points/LBVH.cu
 	${MDS_DIR}/workloads/points/MixedTree.cu
 	${MDS_DIR}/workloads/points/Octree.cu
+	${MDS_DIR}/workloads/points/PointGpuIndex.cu
 	${MDS_DIR}/workloads/points/QuadTree.cu
 	${MDS_DIR}/workloads/points/RegularGrid.cu
 )

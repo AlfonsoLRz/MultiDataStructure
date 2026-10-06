@@ -35,19 +35,22 @@ int main(int argc, char* argv[])
 		if (config._mode == "engine-check")
 			return Experiments::runEngineCheck(config.engineCheckOptions());
 
+		if (config._mode == "batch-check")
+			return Experiments::runBatchCheck(config.batchCheckOptions());
+
 		if (config._mode == "evaluate-one")
 			return Experiments::runEvaluateOne(config._schemaSearchOptions);
 
 		if (config._mode == "gui")
 		{
 #ifdef MDS_HEADLESS
-			throw std::invalid_argument("--mode gui is not available in this headless build; use --mode points, schema-search, batch-search, evaluate-one, engine-check, or --run-tests");
+			throw std::invalid_argument("--mode gui is not available in this headless build; use --mode points, schema-search, batch-search, evaluate-one, engine-check, batch-check, or --run-tests");
 #else
 			return OptimizerGui::run(&config);
 #endif
 		}
 
-		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode batch-search, --mode evaluate-one, --mode engine-check, or --run-tests");
+		throw std::invalid_argument("Unsupported mode: " + config._mode + ". Use --mode gui, --mode points, --mode schema-search, --mode batch-search, --mode evaluate-one, --mode engine-check, --mode batch-check, or --run-tests");
 	}
 	catch (const std::exception& exception)
 	{

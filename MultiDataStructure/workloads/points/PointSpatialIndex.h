@@ -270,6 +270,44 @@ public:
 	QueryResult radiusQuery(const glm::vec3& center, float radius, QueryTelemetry telemetry = QueryTelemetry::Full) const;
 	QueryResult knnQuery(const glm::vec3& center, size_t k, QueryTelemetry telemetry = QueryTelemetry::Full) const;
 
+	// Query-time node: tight bounds and the payload range, 32 bytes, two per cache line. Every
+	// internal node's children occupy one contiguous group starting on an even slot, so with the
+	// pool 64-byte aligned a binary node's children share one cache line and an octree's four,
+	// and a pruned child costs no fetch of its own. This replaces vector<unique_ptr<Node>>, where
+	// each level down cost two dependent cache misses (children buffer, then the child) into
+	// nodes scattered across the heap. Public because PointGpuIndex copies the pool byte for byte.
+	struct alignas(32) HotNode
+	{
+		float		_lo[3] = { 0.0f, 0.0f, 0.0f };
+		float		_hi[3] = { 0.0f, 0.0f, 0.0f };
+		uint32_t	_first = 0;	// internal: first child slot; leaf: first point in tree order
+		uint32_t	_word = 0;	// InternalBit | child count, or the leaf's point count
+
+		bool isInternal() const { return (_word & InternalBit) != 0; }
+		uint32_t count() const { return _word & ~InternalBit; }
+	};
+	static constexpr uint32_t InternalBit = 0x80000000u;
+
+	// The query pool as flat arrays, for a copy of the index on another device (PointGpuIndex).
+	// Slot 0 is the root and every child slot follows its parent's. A leaf's points, and every
+	// subtree's, are a contiguous run of tree-order positions into x/y/z/order.
+	struct PoolView
+	{
+		const HotNode*	_nodes = nullptr;
+		size_t			_nodeCount = 0;
+		const float*	_x = nullptr;
+		const float*	_y = nullptr;
+		const float*	_z = nullptr;
+		const uint32_t*	_order = nullptr;	// tree-order position -> cloud index
+		size_t			_pointCount = 0;
+		// Per slot: first tree-order position of the subtree, then its point count.
+		std::vector<uint32_t>	_subtree;
+		// Deepest explicit stack a depth-first traversal can need: a node's children are pushed
+		// together, so 1 + the largest sum of (children - 1) along a root-to-leaf path.
+		size_t			_stackBound = 0;
+	};
+	PoolView poolView() const;
+
 private:
 	// Build-time tree. buildNode() grows it recursively exactly as the engine always has, then
 	// flattenTree() lays it out into the query pool below and frees it. Nothing after build()
@@ -293,23 +331,6 @@ private:
 		bool isLeaf() const { return _children.empty(); }
 	};
 
-	// Query-time node: tight bounds and the payload range, 32 bytes, two per cache line. Every
-	// internal node's children occupy one contiguous group starting on an even slot, so with the
-	// pool 64-byte aligned a binary node's children share one cache line and an octree's four,
-	// and a pruned child costs no fetch of its own. This replaces vector<unique_ptr<Node>>, where
-	// each level down cost two dependent cache misses (children buffer, then the child) into
-	// nodes scattered across the heap.
-	struct alignas(32) HotNode
-	{
-		float		_lo[3] = { 0.0f, 0.0f, 0.0f };
-		float		_hi[3] = { 0.0f, 0.0f, 0.0f };
-		uint32_t	_first = 0;	// internal: first child slot; leaf: first point in tree order
-		uint32_t	_word = 0;	// InternalBit | child count, or the leaf's point count
-
-		bool isInternal() const { return (_word & InternalBit) != 0; }
-		uint32_t count() const { return _word & ~InternalBit; }
-	};
-	static constexpr uint32_t InternalBit = 0x80000000u;
 	static constexpr uint32_t NoSlot = 0xFFFFFFFFu;
 
 	// Everything the traversal does not need, indexed by the same slot.

@@ -429,6 +429,40 @@ void PointSpatialIndex::flattenTree()
 		throw std::runtime_error("CPU point index node pool exceeds the 32-bit slot space; use a larger leaf capacity.");
 }
 
+PointSpatialIndex::PoolView PointSpatialIndex::poolView() const
+{
+	PoolView view;
+	view._nodes = _hot.data();
+	view._nodeCount = _hot.size();
+	view._x = _orderedX.data();
+	view._y = _orderedY.data();
+	view._z = _orderedZ.data();
+	view._order = _pointOrder.data();
+	view._pointCount = _pointOrder.size();
+	view._subtree.resize(2 * _cold.size());
+	for (size_t slot = 0; slot < _cold.size(); ++slot)
+	{
+		view._subtree[2 * slot] = _cold[slot]._subtreeOffset;
+		view._subtree[2 * slot + 1] = _cold[slot]._subtreeCount;
+	}
+
+	// Children follow their parent in the pool, so one pass from the last slot up sees every
+	// child's need before its parent's.
+	std::vector<uint32_t> need(_hot.size(), 1);
+	for (size_t slot = _hot.size(); slot-- > 0;)
+	{
+		const HotNode& node = _hot[slot];
+		if (!node.isInternal() || node.count() == 0)
+			continue;
+		uint32_t deepest = 1;
+		for (uint32_t c = 0; c < node.count(); ++c)
+			deepest = std::max(deepest, need[node._first + c]);
+		need[slot] = node.count() - 1 + deepest;
+	}
+	view._stackBound = need.empty() ? 0 : need.front();
+	return view;
+}
+
 void PointSpatialIndex::writePoolNode(Node& node, uint32_t slot)
 {
 	HotNode& hot = _hot[slot];

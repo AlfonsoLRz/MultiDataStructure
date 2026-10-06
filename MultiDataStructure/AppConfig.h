@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stdafx.h"
+#include "experiments/BatchCheck.h"
 #include "experiments/EngineCheck.h"
 #include "experiments/SchemaSearch.h"
 #include "workloads/points/PointBenchmark.h"
@@ -61,8 +62,16 @@ public:
 	size_t		_engineBuildRepeats = 1;
 	bool		_engineInterleave = false;
 	bool		_engineTimedTelemetryFull = false;
+	// batch-check only; --input, --schemas, --input-trace, --summary-csv and --query-seed are shared.
+	std::vector<size_t>			_batchSizes{ 1000, 10000, 100000, 1000000 };
+	std::vector<std::string>	_batchBackends{ "cpu1", "cpuN", "gpu" };
+	size_t		_batchThreads = 0;
+	size_t		_batchRepeats = 3;
+	bool		_batchGpuIndices = true;
+	bool		_batchSortQueries = true;
 
 	Experiments::EngineCheckOptions engineCheckOptions() const;
+	Experiments::BatchCheckOptions batchCheckOptions() const;
 
 	AppConfig();
 

@@ -1,4 +1,5 @@
 #include "../MultiDataStructure/stdafx.h"
+#include "../MultiDataStructure/workloads/points/PointGpuIndex.h"
 #include "../MultiDataStructure/workloads/points/PointSpatialIndex.h"
 #include "../MultiDataStructure/workloads/points/SyntheticPointClouds.h"
 
@@ -373,6 +374,112 @@ namespace BaselineTests
 				expect(contained, "every point lies in its leaf's cell: " + where);
 				expect(bothSides, "sliding midpoint never leaves a side empty: " + where);
 				expect(coincidentLeaf, "a node whose points all coincide is a leaf: " + where);
+			}
+		}
+
+		// The GPU batch engine queries the CPU's own tree, so every answer of a batch must be the
+		// CPU's: counts and checksums, range and radius as sets, kNN in order, Morton-sorted or not,
+		// with and without indices. Skipped without a CUDA device.
+		if (!PointGpuIndex::deviceAvailable())
+			return;
+		Rng gpuRng{ 20261006 };
+		for (size_t s = 0; s < 24; ++s)
+		{
+			const SchemaConfig schema = randomSchema(gpuRng, s);
+			for (const auto& [label, gpuCloud] : clouds)
+			{
+				PointSpatialIndex index;
+				index.build(gpuCloud, schema);
+				PointGpuIndex device;
+				device.upload(index);
+
+				const std::vector<PointPrimitive>& points = gpuCloud.points();
+				const AABB bounds = gpuCloud.empty() ? AABB(glm::vec3(0.0f), glm::vec3(1.0f)) : gpuCloud.bounds();
+				const glm::vec3 size = glm::max(bounds.size(), glm::vec3(1.0f));
+				std::vector<PointGpuIndex::Query> queries;
+				for (int q = 0; q < 64; ++q)
+				{
+					glm::vec3 center;
+					if (!points.empty() && gpuRng.chance(0.7))
+						center = points[gpuRng.below(points.size())].position;
+					else
+						for (int axis = 0; axis < 3; ++axis)
+							center[axis] = bounds.min()[axis] - 0.2f * size[axis] + static_cast<float>(gpuRng.unit()) * 1.4f * size[axis];
+					const float scale = static_cast<float>(glm::length(size) * std::pow(10.0, -2.5 + 2.5 * gpuRng.unit()));
+					PointGpuIndex::Query query;
+					query._kind = static_cast<PointGpuIndex::Kind>(q % 4);
+					switch (query._kind)
+					{
+					case PointGpuIndex::Kind::Range:
+					case PointGpuIndex::Kind::CountRange:
+					{
+						glm::vec3 half;
+						for (int axis = 0; axis < 3; ++axis)
+							half[axis] = scale * static_cast<float>(0.1 + gpuRng.unit());
+						query._min = center - half;
+						query._max = center + half;
+						break;
+					}
+					case PointGpuIndex::Kind::Radius:
+						query._min = center;
+						query._radius = gpuRng.chance(0.1) ? 0.0f : scale;
+						break;
+					case PointGpuIndex::Kind::Knn:
+					{
+						static const uint32_t Ks[] = { 1, 3, 16, 64 };
+						query._min = center;
+						query._k = points.size() + 3 <= PointGpuIndex::MaxK && gpuRng.chance(0.2)
+							? static_cast<uint32_t>(points.size() + 3) : gpuRng.pick(Ks);
+						break;
+					}
+					}
+					queries.push_back(query);
+				}
+
+				const bool sorted = s % 2 == 0;
+				const PointGpuIndex::BatchResult full = device.run(queries, true, sorted);
+				const PointGpuIndex::BatchResult counted = device.run(queries, false, !sorted);
+				for (size_t q = 0; q < queries.size(); ++q)
+				{
+					const PointGpuIndex::Query& query = queries[q];
+					const std::string where = label + " / " + schema._name + " / gpu q" + std::to_string(q);
+					expect(full._counts[q] == counted._counts[q] && full._checksums[q] == counted._checksums[q],
+						   "gpu answers agree with and without indices and sorting: " + where);
+					const auto slice = [&](size_t count) {
+						const auto begin = full._indices.begin() + static_cast<std::ptrdiff_t>(full._offsets[q]);
+						return std::vector<size_t>(begin, begin + static_cast<std::ptrdiff_t>(count));
+					};
+					switch (query._kind)
+					{
+					case PointGpuIndex::Kind::Range:
+					{
+						const PointSpatialIndex::QueryResult cpu = index.rangeQuery(AABB(query._min, query._max));
+						expect(full._counts[q] == cpu._pointIndices.size() && full._checksums[q] == cpu._stats._resultChecksum,
+							   "gpu range count and checksum == cpu: " + where);
+						expect(sortedCopy(slice(full._counts[q])) == sortedCopy(cpu._pointIndices), "gpu range set == cpu: " + where);
+						break;
+					}
+					case PointGpuIndex::Kind::CountRange:
+						expect(full._counts[q] == index.countRange(AABB(query._min, query._max))._count && full._checksums[q] == 0,
+							   "gpu count == cpu: " + where);
+						break;
+					case PointGpuIndex::Kind::Radius:
+					{
+						const PointSpatialIndex::QueryResult cpu = index.radiusQuery(query._min, query._radius);
+						expect(full._counts[q] == cpu._pointIndices.size() && full._checksums[q] == cpu._stats._resultChecksum,
+							   "gpu radius count and checksum == cpu: " + where);
+						expect(sortedCopy(slice(full._counts[q])) == sortedCopy(cpu._pointIndices), "gpu radius set == cpu: " + where);
+						break;
+					}
+					case PointGpuIndex::Kind::Knn:
+					{
+						const PointSpatialIndex::QueryResult cpu = index.knnQuery(query._min, query._k);
+						expect(full._counts[q] == cpu._pointIndices.size() && slice(full._counts[q]) == cpu._pointIndices,
+							   "gpu knn == cpu, in order: " + where);
+						break;
+					}
+					}
+				}
 			}
 		}
 	}

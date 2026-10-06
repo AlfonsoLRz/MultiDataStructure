@@ -96,6 +96,9 @@
     <ClInclude Include="experiments\Metrics.h">
       <Filter>experiments</Filter>
     </ClInclude>
+    <ClInclude Include="experiments\BatchCheck.h">
+      <Filter>experiments</Filter>
+    </ClInclude>
     <ClInclude Include="experiments\EngineCheck.h">
       <Filter>experiments</Filter>
     </ClInclude>
@@ -142,6 +145,9 @@
       <Filter>workloads\points</Filter>
     </ClInclude>
     <ClInclude Include="workloads\points\Octree.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointGpuIndex.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
     <ClInclude Include="workloads\points\PointGpuTypes.h">
@@ -281,6 +287,9 @@
     <ClCompile Include="experiments\Metrics.cpp">
       <Filter>experiments</Filter>
     </ClCompile>
+    <ClCompile Include="experiments\BatchCheck.cpp">
+      <Filter>experiments</Filter>
+    </ClCompile>
     <ClCompile Include="experiments\EngineCheck.cpp">
       <Filter>experiments</Filter>
     </ClCompile>
@@ -365,6 +374,9 @@
       <Filter>cuda</Filter>
     </CudaCompile>
     <CudaCompile Include="workloads\points\QuadTree.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\PointGpuIndex.cu">
       <Filter>cuda</Filter>
     </CudaCompile>
     <CudaCompile Include="workloads\points\RegularGrid.cu">

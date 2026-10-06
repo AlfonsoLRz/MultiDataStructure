@@ -672,6 +672,32 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 				throw std::invalid_argument("--timed-telemetry expects off or full");
 			config._engineTimedTelemetryFull = value == "full";
 		}
+		else if (arg == "--batch-sizes" && i + 1 < argc)
+		{
+			config._batchSizes.clear();
+			for (const std::string& size : splitPathList(argv[++i]))
+				config._batchSizes.push_back(static_cast<size_t>(std::stoull(size)));
+		}
+		else if (arg == "--backends" && i + 1 < argc)
+		{
+			config._batchBackends = splitPathList(argv[++i]);
+		}
+		else if (arg == "--threads" && i + 1 < argc)
+		{
+			config._batchThreads = static_cast<size_t>(std::stoull(argv[++i]));
+		}
+		else if (arg == "--batch-repeats" && i + 1 < argc)
+		{
+			config._batchRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
+		}
+		else if (arg == "--gpu-count-only")
+		{
+			config._batchGpuIndices = false;
+		}
+		else if (arg == "--no-sort-queries")
+		{
+			config._batchSortQueries = false;
+		}
 		else if (arg == "--build-repeats" && i + 1 < argc)
 		{
 			config._engineBuildRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
@@ -902,6 +928,14 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --interleave                engine-check: build every schema first, then rotate one pass per schema\n"
 		<< "  --build-repeats <n>         engine-check: builds per schema, for build-time statistics (default 1)\n"
 		<< "  --timed-telemetry off|full  engine-check: counters during timed passes (default off; pass 0 is always full)\n"
+		<< "  --mode batch-check          Throughput of whole query batches on one core, all cores and the GPU, on\n"
+		<< "                              the same CPU-built trees, every answer checked against the single-core one\n"
+		<< "  --batch-sizes <a,b,...>     batch-check: batch sizes (default 1000,10000,100000,1000000)\n"
+		<< "  --backends <a,b,...>        batch-check: cpu1, cpuN, gpu (default all three)\n"
+		<< "  --threads <n>               batch-check: cpuN threads (default every hardware thread)\n"
+		<< "  --batch-repeats <n>         batch-check: timed runs per batch after one warm-up (default 3)\n"
+		<< "  --gpu-count-only            batch-check: the GPU returns counts and checksums, not indices\n"
+		<< "  --no-sort-queries           batch-check: keep the batch order on the GPU (no Morton sort)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
 		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
 		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
@@ -943,6 +977,24 @@ Experiments::EngineCheckOptions AppConfig::engineCheckOptions() const
 	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	options._enableLeafMicroIndexes = _schemaSearchOptions._enableLeafMicroIndexes;
 	options._leafMicroIndexThreshold = _schemaSearchOptions._leafMicroIndexThreshold;
+	return options;
+}
+
+Experiments::BatchCheckOptions AppConfig::batchCheckOptions() const
+{
+	Experiments::BatchCheckOptions options;
+	options._inputPath = _schemaSearchOptions._inputPaths.empty() ? _pointOptions._inputPath : _schemaSearchOptions._inputPaths.front();
+	options._schemaPaths = _schemaSearchOptions._schemaPaths;
+	options._inputTracePath = _schemaSearchOptions._inputTracePath;
+	options._summaryCsvPath = _engineSummaryCsvPath;
+	options._batchSizes = _batchSizes;
+	options._backends = _batchBackends;
+	options._threads = _batchThreads;
+	options._repeats = _batchRepeats;
+	options._querySeed = _schemaSearchOptions._querySeed;
+	options._gpuIndices = _batchGpuIndices;
+	options._sortQueries = _batchSortQueries;
+	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	return options;
 }
 
