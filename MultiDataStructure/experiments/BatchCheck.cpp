@@ -243,6 +243,8 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 
 	const bool wantGpu = std::find(options._backends.begin(), options._backends.end(), "gpu") != options._backends.end();
 	const bool gpu = wantGpu && PointGpuIndex::deviceAvailable();
+	if (gpu)
+		PointGpuIndex::selectDevice(options._device);
 	const int allThreads = options._threads > 0 ? static_cast<int>(options._threads) : omp_get_max_threads();
 
 	std::cout << "batch-check: engine " << PointSpatialIndex::EngineVersion << ", " << cloud.size() << " points, "

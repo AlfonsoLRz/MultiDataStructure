@@ -994,6 +994,7 @@ Experiments::BatchCheckOptions AppConfig::batchCheckOptions() const
 	options._querySeed = _schemaSearchOptions._querySeed;
 	options._gpuIndices = _batchGpuIndices;
 	options._sortQueries = _batchSortQueries;
+	options._device = _schemaSearchOptions._cuda._device;
 	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	return options;
 }

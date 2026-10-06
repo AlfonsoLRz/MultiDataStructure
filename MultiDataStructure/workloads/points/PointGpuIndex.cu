@@ -553,21 +553,24 @@ namespace
 	void launchGroup(uint32_t group, bool write, const Tree& tree, const GpuQuery* queries, const uint32_t* permutation,
 					 uint32_t begin, uint32_t count, const Outputs& out)
 	{
-		const unsigned blocks = blocksFor(count);
+		// A thread walks its whole query alone, so a small batch in 128-thread blocks would sit on a
+		// handful of SMs: 1,000 queries are 8 blocks. Below 64k queries, blocks of one warp.
+		const unsigned threads = count >= 65536 ? ThreadsPerBlock : 32;
+		const unsigned blocks = (count + threads - 1) / threads;
 		switch (group)
 		{
 		case RangeGroup:
-			write ? rangeKernel<StackSize, true><<<blocks, ThreadsPerBlock>>>(tree, queries, permutation, begin, count, out)
-				  : rangeKernel<StackSize, false><<<blocks, ThreadsPerBlock>>>(tree, queries, permutation, begin, count, out);
+			write ? rangeKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
+				  : rangeKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
 			break;
 		case RadiusGroup:
-			write ? radiusKernel<StackSize, true><<<blocks, ThreadsPerBlock>>>(tree, queries, permutation, begin, count, out)
-				  : radiusKernel<StackSize, false><<<blocks, ThreadsPerBlock>>>(tree, queries, permutation, begin, count, out);
+			write ? radiusKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
+				  : radiusKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
 			break;
 		case KnnGroup:
 			// The kNN answer is final after the counting pass; with indices it also lands in scratch.
-			write ? knnKernel<StackSize, true><<<blocks, ThreadsPerBlock>>>(tree, queries, permutation, begin, count, out)
-				  : knnKernel<StackSize, false><<<blocks, ThreadsPerBlock>>>(tree, queries, permutation, begin, count, out);
+			write ? knnKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
+				  : knnKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
 			break;
 		}
 		CudaHelper::checkError(cudaGetLastError());
@@ -676,6 +679,12 @@ bool PointGpuIndex::deviceAvailable()
 {
 	int count = 0;
 	return cudaGetDeviceCount(&count) == cudaSuccess && count > 0;
+}
+
+void PointGpuIndex::selectDevice(int device)
+{
+	if (device >= 0)
+		CudaHelper::checkError(cudaSetDevice(device));
 }
 
 std::string PointGpuIndex::deviceName()

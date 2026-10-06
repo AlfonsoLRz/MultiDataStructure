@@ -28,6 +28,8 @@ namespace Experiments
 		// Timed runs per (schema, backend, batch size), after one untimed warm-up run.
 		size_t						_repeats = 3;
 		uint32_t					_querySeed = 1337;
+		// CUDA device for the gpu backend (--cuda-device); -1 = the default one.
+		int							_device = -1;
 		// The GPU also writes every result index (two passes), as the CPU backends do.
 		bool						_gpuIndices = true;
 		bool						_sortQueries = true;

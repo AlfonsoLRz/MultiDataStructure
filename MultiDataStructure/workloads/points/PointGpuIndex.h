@@ -63,6 +63,8 @@ public:
 
 	static bool deviceAvailable();
 	static std::string deviceName();
+	// Makes `device` current for this thread's later uploads and runs; -1 keeps the current one.
+	static void selectDevice(int device);
 
 	// Copies the index to the device, replacing any previous upload. Throws when the tree needs a
 	// deeper stack than MaxStack.
