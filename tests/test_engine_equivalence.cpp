@@ -324,8 +324,9 @@ namespace BaselineTests
 		expect(plainIndex.structureDigest() != relabelledIndex.structureDigest(), "full digest keeps structure labels");
 
 		// The data-adaptive splits: every point lies in its leaf's cell (the tight-centre child
-		// cells match the routing), and a sliding-midpoint node only leaves a side empty when all
-		// its points coincide.
+		// cells match the routing), a sliding-midpoint node never leaves a side empty, and a node
+		// whose points all coincide is a leaf (with depth caps of 48 and 24, splitting it would
+		// chain empty nodes down to the cap).
 		for (const auto& [label, edgeCloud] : clouds)
 		{
 			for (int variant = 0; variant < 4; ++variant)
@@ -340,7 +341,7 @@ namespace BaselineTests
 				schema._buildPolicy._collapseSingleChild = false;
 				PointSpatialIndex index;
 				index.build(edgeCloud, schema);
-				bool contained = true, bothSides = true;
+				bool contained = true, bothSides = true, coincidentLeaf = true;
 				std::vector<PointSpatialIndex::NodeView> stack;
 				if (const PointSpatialIndex::NodeView root = index.root())
 					stack.push_back(root);
@@ -360,19 +361,18 @@ namespace BaselineTests
 						continue;
 					}
 					expect(node.childCount() <= 64, "no node has more than 64 children: " + label);
+					const glm::vec3 spread = node.tightBounds().size();
+					coincidentLeaf = coincidentLeaf && (spread.x > 0.0f || spread.y > 0.0f || spread.z > 0.0f);
 					if (variant == 2 && node.childCount() == 2)
-					{
-						const bool empty = node.child(0).subtreePointCount() == 0 || node.child(1).subtreePointCount() == 0;
-						const glm::vec3 spread = node.tightBounds().size();
-						bothSides = bothSides && (!empty || (spread.x == 0.0f && spread.y == 0.0f && spread.z == 0.0f));
-					}
+						bothSides = bothSides && node.child(0).subtreePointCount() > 0 && node.child(1).subtreePointCount() > 0;
 					for (size_t c = 0; c < node.childCount(); ++c)
 						stack.push_back(node.child(c));
 				}
 				const std::string where = label + (variant == 0 ? " tight octree" : variant == 1 ? " tight quadtree"
 					: variant == 2 ? " sliding midpoint" : " STR 64");
 				expect(contained, "every point lies in its leaf's cell: " + where);
-				expect(bothSides, "sliding midpoint never leaves a side empty unless the points coincide: " + where);
+				expect(bothSides, "sliding midpoint never leaves a side empty: " + where);
+				expect(coincidentLeaf, "a node whose points all coincide is a leaf: " + where);
 			}
 		}
 	}

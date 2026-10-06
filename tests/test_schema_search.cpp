@@ -195,8 +195,8 @@ namespace BaselineTests
 			expect(repaired.size() == 2, "repair generator emits bounded targeted candidates");
 			expect(repaired[0]._config._levels[0]._leafCapacity < parent._config._levels[0]._leafCapacity,
 				"high-occupancy repair reduces leaf capacity");
-			expect(repaired[0]._config._levels[0]._numLevels == 16,
-				"the last block of a repaired schema is open-ended (octree: 16 levels)");
+			expect(repaired[0]._config._levels[0]._numLevels == 24,
+				"the last block of a repaired schema is open-ended (octree: 24 levels)");
 			expect(repaired[1]._config._levels.size() > parent._config._levels.size(),
 				"tested-point repair appends a local micro-index block");
 			expect(!repaired[1]._config._levels.back()._condition.empty(),
@@ -264,7 +264,7 @@ namespace BaselineTests
 				const SchemaLevelConfig& tail = schema._levels.back();
 				const bool binary = tail._type == MultiDataStructure::DataStructureLevel::KDTreeNode ||
 					tail._type == MultiDataStructure::DataStructureLevel::BvhNode;
-				tailOpen = tailOpen && tail._numLevels == (binary ? 22u : 16u);
+				tailOpen = tailOpen && tail._numLevels == (binary ? 48u : 24u);
 				prefixCapped = prefixCapped && schema.totalLevels() - tail._numLevels <= 6 &&
 					schema._buildPolicy._maxDepth == schema.totalLevels();
 				for (const SchemaLevelConfig& level : schema._levels)
@@ -272,7 +272,7 @@ namespace BaselineTests
 				leafInRange = leafInRange && tail._leafCapacity >= 16 && tail._leafCapacity <= 512;
 				nested = nested || schema._levels.size() > 1;
 			}
-			expect(tailOpen, "generated last block is open-ended (16 levels, 22 for binary splits)");
+			expect(tailOpen, "generated last block is open-ended (24 levels, 48 for binary splits)");
 			expect(prefixCapped, "only the prefix blocks are depth-capped");
 			expect(oneLeaf, "all blocks of a generated schema share one leaf capacity");
 			expect(leafInRange, "generated leaf capacities stay within 16..512");

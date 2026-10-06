@@ -1769,9 +1769,14 @@ static void refreshLevelTypeName(SchemaLevelConfig& level, const Experiments::Sc
 		level._axisPolicy = "median_longest_axis";
 }
 
-// Levels a block needs to resolve any cloud down to its leaf capacity: the depths the default
-// single-structure schemas carry (configs/schemas/*.json). Grid blocks keep the depth they were
-// given; their fan-out is set per level and the defaults use 1-4 levels.
+// Levels a block needs to resolve any cloud down to its leaf capacity, so that depth never caps a
+// candidate. Splits that halve space rather than points (sliding-midpoint kd, quadtree, octree) go
+// far deeper than log2(n / leaf) on dense scans: at 22/16 levels, 41 of e8's 105 finalists ended
+// at the cap with overfull leaves (OttobrunnCampus 25M's sliding-midpoint kd held 30,781 points in
+// one leaf of capacity 128), which handicapped singles and handed nested schemas free extra depth
+// (testing.md 2j). Quadtree/octree cells stop at 24: past that a cell is narrower than the float
+// resolution of the cloud's extent. Grid blocks keep the depth they were given; their fan-out is
+// set per level and the defaults use 1-4 levels.
 static size_t openEndedDepth(const SchemaLevelConfig& level)
 {
 	if (isRegularGridLevelName(level._typeName) || isHGridLevelName(level._typeName))
@@ -1780,9 +1785,9 @@ static size_t openEndedDepth(const SchemaLevelConfig& level)
 	{
 	case MultiDataStructure::KDTreeNode:
 	case MultiDataStructure::BvhNode:
-		return 22;
+		return 48;
 	default:
-		return 16;
+		return 24;
 	}
 }
 
@@ -6878,9 +6883,11 @@ static std::vector<Experiments::SchemaSearchRecord> runEvolutionarySchemaSearch(
 					std::cout << " (" << cudaBuilderDisplayName(evaluation._records.front()._cudaBuilder) << ")";
 				std::cout << " [" << candidateElapsed << " s]";
 				std::cout << '\n';
+				// Wall time of the whole evaluation (build, instrumented pass and timed passes), on any
+				// backend: usually a deep or small-leaf schema on a large cloud.
 				if (candidateElapsed > 30.0)
-					std::cout << "        WARNING: candidate '" << candidate._config._name
-						<< "' took " << candidateElapsed << " s. Raise --cuda-memory-budget-mb or restrict the schema generator if this repeats.\n";
+					std::cout << "        note: candidate '" << candidate._config._name
+						<< "' took " << candidateElapsed << " s (build + timed passes).\n";
 				appendRecords(records, evaluation);
 				for (const Experiments::SchemaSearchRecord& record : evaluation._records)
 					emitProgress(options, record);

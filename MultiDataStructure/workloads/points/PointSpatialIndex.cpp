@@ -1320,6 +1320,15 @@ void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, Q
 	}
 }
 
+// A node whose points all coincide stays a leaf above its capacity, the only leaf such data
+// allows: no split separates them. The tight-bounds splits (sliding-midpoint kd, tight-centre
+// octree/quadtree) see it in their plan; every other split once it routes all points to one child.
+static bool coincident(const AABB& points)
+{
+	const glm::vec3 size = points.size();
+	return !(size.x > 0.0f) && !(size.y > 0.0f) && !(size.z > 0.0f);
+}
+
 void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node, BuildScratch& scratch)
 {
 	const std::optional<ActiveLevel> activeLevel = activeLevelForNode(*node);
@@ -1349,6 +1358,10 @@ void PointSpatialIndex::buildNode(std::unique_ptr<Node>& node, BuildScratch& scr
 	}
 
 	if (nonEmptyChildren == 0)
+		return;
+	// Every point went to one child. If they all coincide no split will ever separate them, and with
+	// open-ended depths of 48/24 the node would chain down to the cap; it stays a leaf instead.
+	if (nonEmptyChildren == 1 && coincident(pointBounds(*node)))
 		return;
 
 	scratch._childOffsets.resize(childCount);
@@ -1898,7 +1911,13 @@ void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& lev
 		bounds.resize(8);
 		if (level._tightCenter && node._pointCount > 0)
 		{
-			plan._center = pointBounds(node).center();
+			const AABB points = pointBounds(node);
+			if (coincident(points))
+			{
+				plan._childCount = 0;
+				return;
+			}
+			plan._center = points.center();
 			splitCellAt(node._bounds, plan._center, glm::uvec3(2, 2, 2), bounds.data());
 			return;
 		}
@@ -1914,7 +1933,13 @@ void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& lev
 		bounds.resize(4);
 		if (level._tightCenter && node._pointCount > 0)
 		{
-			plan._center = pointBounds(node).center();
+			const AABB points = pointBounds(node);
+			if (coincident(points))
+			{
+				plan._childCount = 0;
+				return;
+			}
+			plan._center = points.center();
 			splitCellAt(node._bounds, plan._center, plan._subdivisions, bounds.data());
 			return;
 		}
@@ -1963,9 +1988,16 @@ void PointSpatialIndex::makeSplitPlan(const Node& node, const ResolvedLevel& lev
 			plan._axis = spread.x >= spread.y && spread.x >= spread.z ? 0u : spread.y >= spread.z ? 1u : 2u;
 			const float low = points.min()[plan._axis];
 			const float high = points.max()[plan._axis];
+			// No spread on the longest side: every point coincides, no cut separates them, and
+			// splitting on would only chain empty nodes down to the depth cap.
+			if (!(high > low))
+			{
+				plan._childCount = 0;
+				return;
+			}
 			// Points on the cut go left (<=); the midpoint stays below `high`, so the right side
 			// keeps the points at the far edge.
-			plan._value = high > low ? std::min(low + (high - low) * 0.5f, std::nextafter(high, low)) : low;
+			plan._value = std::min(low + (high - low) * 0.5f, std::nextafter(high, low));
 		}
 	}
 

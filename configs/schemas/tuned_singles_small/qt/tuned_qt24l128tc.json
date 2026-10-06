@@ -1,0 +1,21 @@
+{
+  "name": "tuned_qt24l128tc",
+  "levels": [
+    {
+      "type": "QuadTree",
+      "numLevels": 24,
+      "leafCapacity": 128,
+      "minPointsToSplit": 32,
+      "axisPolicy": "xy",
+      "splitAt": "tight"
+    }
+  ],
+  "buildPolicy": {
+    "maxDepth": 24,
+    "leafCapacity": 128,
+    "minPointsToSplit": 32,
+    "collapseSingleChild": true,
+    "removeEmptyNodes": true,
+    "allowOverlapDuplication": false
+  }
+}

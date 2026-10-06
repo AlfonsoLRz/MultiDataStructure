@@ -811,6 +811,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --generated-min-blocks <n>  Min nested blocks for generated schemas; deep search sets 2\n"
 		<< "  --generated-max-blocks <n>  Max nested blocks for generated schemas\n"
 		<< "  --generated-max-depth <n>   Max depth of the prefix blocks (default 12); the last block is open-ended\n"
+		<< "                              (48 levels for kd/BVH, 24 for quadtree/octree)\n"
 		<< "  --generated-min-leaf <n>    Min generated leaf capacity (default 16)\n"
 		<< "  --generated-max-leaf <n>    Max generated leaf capacity (default 512)\n"
 		<< "  --no-seed-grid              Do not prepend the two-block seed grid to generated schemas\n"

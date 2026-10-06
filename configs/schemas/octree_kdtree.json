@@ -1,6 +1,6 @@
 {
   "name": "octree_kdtree",
-  "_comment": "Last block uncapped on 2026-10-04 (was 6 levels, maxDepth 10): with the total depth capped, this schema could not resolve 25M+ clouds to its leaf capacity (DomFountain 100M: p99 leaf ~900k points, 286 us/query) and was a strawman for nesting. The last block now runs until leafCapacity binds, as the default singles do (testing.md 2f). Equivalence goldens captured before this date hold the capped version under this name.",
+  "_comment": "Last block uncapped on 2026-10-04 (was 6 levels, maxDepth 10): with the total depth capped, this schema could not resolve 25M+ clouds to its leaf capacity (DomFountain 100M: p99 leaf ~900k points, 286 us/query) and was a strawman for nesting. The last block now runs until leafCapacity binds, as the default singles do (testing.md 2f). Equivalence goldens captured before this date hold the capped version under this name. Deepened on 2026-10-06 to 48 kd levels / 24 octree levels, the open-ended depth of every generated schema: at 22/16 levels, sliding-midpoint and octree trees on dense scans ended at the cap with overfull leaves (testing.md 2j).",
   "levels": [
     {
       "type": "Octree",
@@ -10,14 +10,14 @@
     },
     {
       "type": "KDTree",
-      "numLevels": 22,
+      "numLevels": 48,
       "leafCapacity": 32,
       "minPointsToSplit": 8,
       "axisPolicy": "median_longest_axis"
     }
   ],
   "buildPolicy": {
-    "maxDepth": 26,
+    "maxDepth": 52,
     "leafCapacity": 32,
     "minPointsToSplit": 8,
     "collapseSingleChild": true,
