@@ -532,6 +532,72 @@ makinon2 e8 runs from 2026-10-05 (`src_e8`, `build_e8`, `run_battery_e8_streams.
 sliding-midpoint kd, leaf 128) and Alhambra 100M 0.967 (qt3 -> sliding-midpoint kd22, leaf 64; it
 lost 1.07 in e7). Same shape as the workstation winners.
 
+### 2j. 2026-10-06 — the ties are real, depth starved the singles, the GPU path never measured batches
+
+**Why 43 of e8's 63 workstation cells are ties.** The safe pick hides nothing: across the ties the
+best nested finalist vs the best single is 1.013 on opt and 1.011 held-out, 34 of the 43 nested
+finalists were already no faster on opt, and held out only Lille 25M would have won (0.929). On
+aerial clouds nesting rebuilds the quadtree (`qt6_ot16` vs `qt16`: same tested points, same visited
+nodes). Nesting pays where a scene has distinct regimes (ground and facades, dense near the scanner,
+sparse far away), not on 2.5D terrain.
+
+**Depth starved the singles (fixed in da34c56).** The generator's open-ended last block stopped at
+22 levels (kd/BVH) or 16 (quadtree/octree), and the tuned grid topped out at the same depths.
+Sliding-midpoint kd halves space, not points, so dense TLS/MLS clusters need more:
+- 41 of the 105 e8 finalists ended at their cap, several with the p99 leaf over 2x capacity
+  (OttobrunnCampus 25M `kd22l128sm`: p99 779, max 30,781, capacity 128);
+- nested schemas got prefix + 22 levels, i.e. extra depth for free.
+
+Pilot (`D:\MDS_ab\depth_pilot`, TEST-identical interleaved timing, core 4): each cell's e8 best
+nested and best single, plus copies with the last block at 32/48 (kd) or 20/24 (quadtree/octree).
+
+| cell | nested/single at e8 depth | at equal depth | deeper single |
+|---|---|---|---|
+| OttobrunnCampus 25M | 0.858 | 0.992 | 0.864x |
+| ParisLux 50M | 0.967 | 1.028 | 0.915x |
+| Cathedral 1M | 0.961 | 0.987 | 0.973x |
+| Lille 50M / Alhambra 50M | 0.987 / 0.985 | 0.989 / 0.978 | 0.98-0.99x |
+| Neugasse 5M | 0.783 | 0.762 | 1.000x |
+| Toronto 25M | 0.791 | 0.791 | 1.000x (qt16 -> qt20/24: slower) |
+| SanAndreas 25M / Waikato 50M | 1.012 / 1.008 | 0.980 / 1.004 | 1.000x |
+| GaliciaForest 50M | 1.078 | 1.055 | 0.969x |
+
+- The wins against a starved single (0.86-0.97) were depth artefacts; the big wins (Neugasse,
+  Toronto) are not, and grow slightly.
+- kd trees end at 27-34 levels at 25M-50M; quadtrees at 11-18. 48 and 24 leave room for 1B.
+- A shallow single can win on purpose: `qt10l32` deepened to 20 levels gets slower (1.39 -> 1.54 us),
+  so the shallow tuned variants stay.
+- Identical trees (equal digest) timed up to 4-6% apart within one interleaved process: the noise
+  floor sits near the 3% nesting margin.
+
+The fix: `openEndedDepth` 48 (kd/BVH) and 24 (quadtree/octree); deep tuned singles
+`tuned_kd48l{64,128}sm`, `tuned_{qt,ot}24l{64,128}`, `tuned_qt24l128tc` (55 in the grid);
+`octree_kdtree` 4 + 48, `quadtree_octree` 4 + 24; a node whose points all coincide stays a leaf
+(no split can separate them; with deep caps they chained down to the cap). Equivalence vs the
+previous snapshot (Tier S): 0 result and 0 counter mismatches; trees change only for
+`octree_kdtree` (deepened) and `edge_leaf_capacity_one` (duplicates). `summarize_nesting.py` gained
+a `starved` column.
+
+**The GPU was never in the battery, and the legacy GPU path cannot measure batches.** run_cells
+passes `--evaluator cpu`; confirm and TEST use engine-check, which is CPU-only. The legacy CUDA path
+(`--evaluator cuda`) is not usable for a batch comparison:
+- `avg_latency_ms` is each query's in-kernel `clock64` span while thousands run concurrently, so
+  each span is about the whole kernel: that is where docs/evaluation.md's "1.5-4.5 s per query" at
+  Alhambra 100M and "25x slower than CPU" come from. Do not cite them.
+- A node with one non-empty child becomes a leaf (KDTree.cu:353, MixedTree.cu:1036, Octree.cu,
+  QuadTree.cu): the 25M GPU kd-tree has 2,350 leaves, max 1.3M points.
+- kNN is a brute-force scan of all N points except on kdtree/bih with K <= 16; range and radius only
+  count; only `mixed` honours nesting (depth <= 12); stacks of 128/256 drop children on overflow;
+  nothing checks GPU results against the CPU.
+Replacement in progress: build on the CPU, upload that exact tree, query it with new batch kernels
+(`PointGpuIndex`), next to an all-core CPU batch baseline (plan Part B).
+
+**Battery e9** (e8 protocol, the depth fix, 55 tuned singles) started 2026-10-06: workstation 63
+cells -> `results/eval_traces/matrix_e9` (`D:\MDS_ab\bin_e9`, log `D:\MDS_ab\battery_pc_e9.log`);
+makinon2 `src_e9`/`build_e9` from 7a3a425 -> `results/matrix_e9`. Server e8 was stopped with seven
+100M cells done (`results/eval_traces/matrix_e8_makinon2`; SanAndreas 100M incomplete): nested won
+all six complete cells (0.82-0.97), two of them against a starved single (Alhambra, ES05).
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
