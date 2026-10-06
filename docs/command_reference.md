@@ -371,6 +371,30 @@ $best = (Import-Csv results/alhambra_generated_best.csv | Select-Object -First 1
 .\x64\Release\MultiDataStructure.exe --input C:/Datasets/points/Alhambra_100M.las --schema $best --workload-profile configs/workloads/volume_small_medium.json --queries 64 --no-pause
 ```
 
+## Batch Throughput (CPU and GPU)
+
+`--mode batch-check` times whole query batches on one core (`cpu1`), on every core (`cpuN`,
+OpenMP) and on the GPU, over the same trees. Each schema is built once on the CPU; the GPU gets that
+exact node pool (`PointGpuIndex`) and runs one thread per query, so any schema the CPU builds runs
+there unchanged. Every backend's per-query count and checksum must equal the single-core answer
+(`mismatches` column, 0 expected; exit code 2 otherwise). Batch queries keep the trace's mix of
+kinds, radii, k and box sizes, centred on points drawn from the cloud.
+
+```powershell
+.\x64\Release\MultiDataStructure.exe --mode batch-check --input <cloud.mdspc> `
+  --input-trace results/traces/curated/toronto_25M/pipeline_trace_test.csv `
+  --schemas "configs/schemas/tuned_singles_small/kd/tuned_kd48l128sm.json;configs/schemas/octree.json" `
+  --batch-sizes 1000,10000,100000,1000000 --backends cpu1,cpuN,gpu --summary-csv results/batch/toronto_25M.csv --no-pause
+```
+
+Options: `--threads <n>` (cpuN threads, default all), `--batch-repeats <n>` (timed runs after one
+warm-up, default 3), `--gpu-count-only` (counts and checksums, no indices), `--no-sort-queries`
+(no Morton sort of the batch on the GPU), `--cuda-device <i>`. kNN on the GPU takes k <= 64; trace
+kNN queries with larger k are left out of the batch. GPU times come from CUDA events: `kernel_ms`
+(traversals), `sort_ms`, and `median_ms` end to end (queries up, results down). The legacy
+`--evaluator cuda` path builds its own trees on the GPU and is not a batch-throughput measurement
+(testing.md 2j).
+
 ## Main Executable Arguments
 
 Mode and basic IO:
