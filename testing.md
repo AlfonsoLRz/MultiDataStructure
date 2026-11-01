@@ -598,6 +598,55 @@ makinon2 `src_e9`/`build_e9` from 7a3a425 -> `results/matrix_e9`. Server e8 was 
 100M cells done (`results/eval_traces/matrix_e8_makinon2`; SanAndreas 100M incomplete): nested won
 all six complete cells (0.82-0.97), two of them against a starved single (Alhambra, ES05).
 
+### 2k. 2026-10/11 — e9: with fair depth, nesting never wins
+
+**Correction to 2j.** The depth pilot deepened only each cell's e8 best single (a median kd on
+Neugasse, a quadtree on Toronto) and concluded that the big wins (Neugasse 0.76, Toronto 0.79)
+survive. It never deepened the sliding-midpoint kd, which e8 capped at 22 levels. At 48 levels that
+single ties the nested quadtree -> sliding-midpoint kd everywhere: the e8 nesting advantage was the
+extra depth the quadtree prefix bought the kd tail.
+
+**e9** (e8 protocol, open-ended depth 48/24, 55 tuned singles): makinon2 complete (18 cells, 100M-1B,
+`results/eval_traces/matrix_e9_makinon2`); workstation 55 of 63 (`results/eval_traces/matrix_e9`; the
+run stopped at lille_50M when the Claude session hosting it ended, 8 x 50M cells missing).
+
+| | cells | nested picked | best nested / best single (held-out) | pick / oracle |
+|---|---|---|---|---|
+| 1M / 5M / 25M / 50M | 17 / 16 / 16 / 6 | 0 | 1.015 / 1.013 / 1.006 / 1.017 | 1.001-1.009 |
+| 100M / 250M / 500M / 1B | 9 / 3 / 3 / 3 | 0 | 1.012 / 1.006 / 1.006 / 1.004 | 1.000-1.008 |
+| ground / aerial / forest | 31 / 25 / 16 | 0 | 1.020 / 1.005 / 1.002 | 1.002-1.004 |
+| all | 73 | 0 | 1.011 | 1.003 |
+
+Winners: a deep sliding-midpoint kd (`kd48l64sm`/`kd48l128sm`) on ground and forest scans, a quadtree
+(`qt16`/`qt24`, `qt10l32`) on aerial ones. Selection still works (pick within 0.3% of the held-out
+oracle); what it selects is a single, tuned structure.
+
+**Build and size** (e9 finalists): the best nested schema builds 8% faster than the best single
+(geomean 0.922; >10% faster in 32 of 57 cells, >10% slower in 10) with 6% fewer nodes, at 1.3% higher
+latency. A build-weighted objective could favour nesting slightly; latency alone does not.
+
+**Other workloads** (`scripts/workload_sweep.py`, makinon2, 100M clouds, panel of 4 singles and 5
+nested schemas all with open-ended depth, 7 workloads built on each test trace's centres, 2 rotated
+processes; `results/eval_traces/workload_sweep_makinon2`). Best nested / best single:
+
+| workload | geomean (6 clouds) | range |
+|---|---|---|
+| base trace | 1.005 | 0.996-1.016 |
+| radius 4x / 16x | 1.022 / 1.018 | 1.003-1.096 / 0.996-1.093 |
+| kNN k=64 | 1.002 | 0.989-1.008 |
+| range boxes 8x | 1.010 | 0.989-1.093 |
+| count boxes 64x | 1.020 | 0.992-1.109 |
+| mixed | 1.011 | 1.000-1.040 |
+
+No workload where nesting pays; on Alhambra it loses 9-11% on larger queries. Leaf 512 wins the
+larger queries for singles and nested alike.
+
+**GPU batches** (`--mode batch-check`, RTX 4080 SUPER, same panel, Toronto and Neugasse 25M, half of
+the planned sweep; 0 mismatches against the CPU in every run): best nested / best single ranges
+0.78-1.05 with no consistent sign. Heavy queries are the thread-per-query kernels' weak spot: the
+mixed workload (with 8x range and 64x count boxes) took 1,025 ms per 100k queries on Toronto against
+3.4 ms for the base trace, one thread scanning a large box alone.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
