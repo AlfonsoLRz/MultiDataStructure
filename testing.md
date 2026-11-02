@@ -753,6 +753,50 @@ time and memory carry weight in the objective; neither holds for the in-memory l
 Raw outputs: `results/eval_traces/order_sweep_makinon2/<cell>/{base+grid,paper}_<variant>.csv`,
 reports `report_base+grid.txt`, `report_paper.txt`; server copies deleted after download.
 
+### 2m. 2026-11-02 — two papers: the levers and the cost model (Paper A), the GPU pilot (Paper B)
+
+Decision (plan file, 2026-11-02): Paper A for C&G, the measured study of what matters in point-cloud
+indexing with a per-node vs per-point cost model; Paper B for HPG 2027, GPU batch queries with the
+schema chosen for the hardware, gated by a fan-out pilot on makinon2.
+
+**Levers** (`scripts/lever_decomposition.py`, e9 held-out chain over 73 cells; latency ratios, >1 =
+the later lever is faster; `<cell>_test.csv` holds the library defaults at leaf 32 and the finalists,
+timed interleaved where both sides were contenders):
+
+| group | cells | octree default / best primitive at defaults | kd default / same | best primitive / best tuned single | nested / single | octree default / best single |
+|---|---|---|---|---|---|---|
+| ground scans | 31 | 1.175 | 1.124 | 1.391 | 1.020 | 1.610 |
+| aerial | 25 | 1.533 | 1.571 | 1.067 | 1.005 | 1.703 |
+| forest / vegetation | 16 | 1.504 | 1.103 | 1.127 | 1.002 | 1.707 |
+| all | 73 | 1.360 | 1.255 | 1.210 | 1.011 | 1.659 |
+
+The library octree is 1.66x slower than the best single, the median kd 1.53x. Choosing the primitive
+is worth 1.26-1.36x (nearly all of the aerial gain), tuning leaf, split rule and depth another 1.21x
+(nearly all of the ground-scan gain), composition nothing. With a leaf-128 octree as the default
+(opt-half chain, instrumented) the whole gain is 1.41x: half of the "default" penalty is leaf 32.
+
+**Cost model** (`scripts/cost_model.py`): t = c_node * visited + c_point * tested + c_out * returned,
+fitted over the 184-220 opt-half single arms per cell (median R^2 0.98): c_node ~ 20-25 ns per visited
+node, c_point ~ 0.4 ns per tested point on the workstation (~1 ns on makinon2), c_out ~ 100 ns per
+returned point acting as the per-query constant. A query visits 20-100 nodes, so traversal is a third
+to a half of its 1-5 us at best. The nested finalists visit 5% fewer nodes at the median (more on
+aerial cells), worth under 4% of latency in nearly every cell; the c_node at which a 20% visit saving
+would give a 10% speed-up is 22-30 ns at <= 50M and 65-95 ns at >= 100M, at or above the measured
+value. The 13-15-schema `_test.csv` fits are ill-conditioned (regular_grid_default alone pins
+c_point) and are not used.
+
+**GPU pilot** (`scripts/gpu_pilot.py`, `--mode batch-check` with the new warp-per-query kernels,
+backend `gpuwarp`, commit 067c009; GPU==CPU and warp==thread checks pass in `--run-tests` on
+makinon2). Panel: 2/4/8/27/64-way singles at leaf 32/128/512 (kd sm, quadtree, octree, STR 27/64,
+RegularGrid, HGrid) plus wide-top/narrow-tail and narrow-top/wide-tail nested schemas at leaf
+128/512, 35 schemas; workloads base, radius4, range8; batches 10^4-10^6; backends cpu1, cpuN (72
+threads), gpu, gpuwarp; Quadro RTX 6000. Cells: DomFountain, SanAndreas, GaliciaForest at 25M and
+100M (25M clouds copied to makinon2 for this). Smoke on DomFountain 1M (tree resident in cache, not
+the regime of interest): 0 mismatches; gpuwarp 2.7x gpu on the base trace and 1.5x on range8 at 10k
+queries; GPU best/worst schema 2.5-5x; no mixed schema beat the best uniform on the GPU there.
+Running; results below when complete.
+
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
