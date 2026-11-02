@@ -241,7 +241,10 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 	const size_t largest = *std::max_element(options._batchSizes.begin(), options._batchSizes.end());
 	const std::vector<Query> queries = batchQueries(templates, cloud, largest, options._querySeed);
 
-	const bool wantGpu = std::find(options._backends.begin(), options._backends.end(), "gpu") != options._backends.end();
+	const auto wants = [&options](const char* backend) {
+		return std::find(options._backends.begin(), options._backends.end(), backend) != options._backends.end();
+	};
+	const bool wantGpu = wants("gpu") || wants("gpuwarp");
 	const bool gpu = wantGpu && PointGpuIndex::deviceAvailable();
 	if (gpu)
 		PointGpuIndex::selectDevice(options._device);
@@ -299,9 +302,11 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 		for (const size_t size : options._batchSizes)
 		{
 			const std::vector<Query> batch(queries.begin(), queries.begin() + std::min(size, queries.size()));
-			// The reference answer: one core, one query at a time. Also the cpu1 warm-up.
+			// The reference answer, on every core: each query is answered on its own, so the counts
+			// and checksums are the single-core ones (cpu1 is checked against them like any backend).
+			// Also the cpuN warm-up.
 			Answers reference;
-			runCpu(index, batch, 1, reference);
+			runCpu(index, batch, allThreads, reference);
 			double returned = 0.0;
 			for (const uint32_t count : reference._counts)
 				returned += count;
@@ -316,6 +321,10 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 				std::vector<double> times, kernels, sorts;
 				if (backend == "cpu1" || backend == "cpuN")
 				{
+					// One core's throughput does not depend on the batch size; timing it on a million
+					// queries only costs minutes.
+					if (backend == "cpu1" && options._cpu1MaxBatch > 0 && batch.size() > options._cpu1MaxBatch)
+						continue;
 					row._threads = backend == "cpu1" ? 1 : allThreads;
 					Answers answers;
 					if (backend == "cpuN")
@@ -331,15 +340,26 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 					row._threads = 0;
 					const PointGpuIndex::Traversal traversal = backend == "gpuwarp" ? PointGpuIndex::Traversal::Warp
 																					: PointGpuIndex::Traversal::Thread;
-					PointGpuIndex::BatchResult result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
-					for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
+					// A batch whose results do not fit on the device (a million large queries can return
+					// tens of GB of indices) is skipped; the other batches and schemas still run.
+					try
 					{
-						result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
-						times.push_back(result._endToEndMs);
-						kernels.push_back(result._countMs + result._writeMs);
-						sorts.push_back(result._sortMs);
+						PointGpuIndex::BatchResult result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
+						for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
+						{
+							result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
+							times.push_back(result._endToEndMs);
+							kernels.push_back(result._countMs + result._writeMs);
+							sorts.push_back(result._sortMs);
+						}
+						row._mismatches = mismatches(reference, result._counts, result._checksums);
 					}
-					row._mismatches = mismatches(reference, result._counts, result._checksums);
+					catch (const std::exception& error)
+					{
+						std::cout << "    " << std::setw(7) << backend << "  batch " << std::setw(8) << batch.size()
+								  << ": skipped (" << error.what() << ")\n";
+						continue;
+					}
 				}
 				else
 				{
@@ -352,10 +372,10 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 				rows.push_back(row);
 
 				const double qps = row._medianMs > 0.0 ? static_cast<double>(row._batch) / (row._medianMs * 1e-3) : 0.0;
-				std::cout << "    " << std::setw(5) << backend << " x" << std::setw(2) << (row._threads ? row._threads : 1)
+				std::cout << "    " << std::setw(7) << backend << " x" << std::setw(2) << (row._threads ? row._threads : 1)
 						  << "  batch " << std::setw(8) << row._batch << ": " << std::fixed << std::setprecision(3)
 						  << std::setw(10) << row._medianMs << " ms  " << std::setprecision(0) << std::setw(12) << qps << " q/s"
-						  << (backend == "gpu" ? "  (kernels " + std::to_string(row._kernelMs) + " ms, sort " + std::to_string(row._sortMs) + " ms)" : std::string())
+						  << (row._threads == 0 ? "  (kernels " + std::to_string(row._kernelMs) + " ms, sort " + std::to_string(row._sortMs) + " ms)" : std::string())
 						  << (row._mismatches ? "  MISMATCHES " + std::to_string(row._mismatches) : std::string()) << '\n';
 				std::cout.unsetf(std::ios::floatfield);
 				if (row._mismatches)
@@ -370,7 +390,7 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 							<< backend << ',' << row._threads << ',' << row._batch << ',' << (options._gpuIndices ? 1 : 0) << ','
 							<< (options._sortQueries ? 1 : 0) << ',' << row._medianMs << ',' << row._minMs << ',' << qps << ','
 							<< row._kernelMs << ',' << row._sortMs << ',' << (gpuReady ? device.uploadMs() : 0.0) << ','
-							<< (gpuReady ? device.deviceBytes() : 0) << ',' << csvField(backend == "gpu" ? PointGpuIndex::deviceName() : "cpu") << ','
+							<< (gpuReady ? device.deviceBytes() : 0) << ',' << csvField(row._threads == 0 ? PointGpuIndex::deviceName() : "cpu") << ','
 							<< row._mismatches << ',' << row._meanReturned << '\n';
 					summary.flush();
 				}

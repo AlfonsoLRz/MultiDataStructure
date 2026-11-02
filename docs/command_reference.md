@@ -390,7 +390,10 @@ kinds, radii, k and box sizes, centred on points drawn from the cloud.
 
 Options: `--threads <n>` (cpuN threads, default all), `--batch-repeats <n>` (timed runs after one
 warm-up, default 3), `--gpu-count-only` (counts and checksums, no indices), `--no-sort-queries`
-(no Morton sort of the batch on the GPU), `--cuda-device <i>`. kNN on the GPU takes k <= 64; trace
+(no Morton sort of the batch on the GPU), `--cpu1-max-batch <n>` (cpu1 is timed only up to n queries,
+default 100000, 0 = all; its throughput does not depend on the batch size), `--cuda-device <i>`. The
+reference answers come from the all-core run. A GPU batch that runs out of device memory is skipped
+with a message, and the run continues. kNN on the GPU takes k <= 64; trace
 kNN queries with larger k are left out of the batch. GPU times come from CUDA events: `kernel_ms`
 (traversals), `sort_ms`, and `median_ms` end to end (queries up, results down). The legacy
 `--evaluator cuda` path builds its own trees on the GPU and is not a batch-throughput measurement

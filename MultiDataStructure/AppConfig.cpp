@@ -694,6 +694,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._batchGpuIndices = false;
 		}
+		else if (arg == "--cpu1-max-batch" && i + 1 < argc)
+		{
+			config._batchCpu1MaxBatch = static_cast<size_t>(std::stoull(argv[++i]));
+		}
 		else if (arg == "--no-sort-queries")
 		{
 			config._batchSortQueries = false;
@@ -936,6 +940,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --batch-repeats <n>         batch-check: timed runs per batch after one warm-up (default 3)\n"
 		<< "  --gpu-count-only            batch-check: the GPU returns counts and checksums, not indices\n"
 		<< "  --no-sort-queries           batch-check: keep the batch order on the GPU (no Morton sort)\n"
+		<< "  --cpu1-max-batch <n>        batch-check: time cpu1 only on batches up to n queries (default 100000, 0 = all)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
 		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
 		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
@@ -991,6 +996,7 @@ Experiments::BatchCheckOptions AppConfig::batchCheckOptions() const
 	options._backends = _batchBackends;
 	options._threads = _batchThreads;
 	options._repeats = _batchRepeats;
+	options._cpu1MaxBatch = _batchCpu1MaxBatch;
 	options._querySeed = _schemaSearchOptions._querySeed;
 	options._gpuIndices = _batchGpuIndices;
 	options._sortQueries = _batchSortQueries;

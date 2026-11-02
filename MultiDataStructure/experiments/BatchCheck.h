@@ -21,8 +21,11 @@ namespace Experiments
 		std::string					_inputTracePath;
 		std::string					_summaryCsvPath;
 		std::vector<size_t>			_batchSizes{ 1000, 10000, 100000, 1000000 };
-		// cpu1, cpuN, gpu
+		// cpu1, cpuN, gpu (one thread per query), gpuwarp (one warp per query)
 		std::vector<std::string>	_backends{ "cpu1", "cpuN", "gpu", "gpuwarp" };
+		// cpu1 is timed only on batches up to this size (0 = all): its throughput is flat in the
+		// batch size, and a million queries on one core take minutes per schema.
+		size_t						_cpu1MaxBatch = 100000;
 		// Threads of the cpuN backend; 0 = every hardware thread.
 		size_t						_threads = 0;
 		// Timed runs per (schema, backend, batch size), after one untimed warm-up run.

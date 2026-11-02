@@ -57,6 +57,18 @@ def panel():
     return out
 
 
+def depth_panel():
+    """Singles where the depth cap, not the leaf size, ends the dense regions (leaf 32, few levels)."""
+    return [
+        schema("kd16l32sm", 32, [("KDTree", 16, SM)]),
+        schema("kd20l32sm", 32, [("KDTree", 20, SM)]),
+        schema("qt12l32", 32, [("QuadTree", 12, XY)]),
+    ]
+
+
+PANELS = {"main": ("", panel), "depth": ("_depth", depth_panel)}
+
+
 def is_mixed(name):
     return "_" in name
 
@@ -75,6 +87,9 @@ def main():
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--cuda-device", type=int, default=-1)
     parser.add_argument("--queries", type=int, default=3000, help="trace rows used as query templates")
+    parser.add_argument("--panel", default="main", choices=sorted(PANELS),
+                        help="main: the fan-out panel; depth: depth-capped singles, written to <workload>_depth.csv")
+    parser.add_argument("--cpu1-max-batch", type=int, default=100000)
     args = parser.parse_args()
 
     cell = {c["cell"]: c for c in json.loads((REPO / args.cells).read_text())["cells"]}[args.cell]
@@ -84,8 +99,9 @@ def main():
     out = Path(args.out).resolve() / args.cell
     (out / "schemas").mkdir(parents=True, exist_ok=True)
 
+    suffix, make_panel = PANELS[args.panel]
     schemas = []
-    for s in panel():
+    for s in make_panel():
         path = out / "schemas" / f"{s['name']}.json"
         path.write_text(json.dumps(s, indent=2))
         schemas.append(str(path))
@@ -97,7 +113,7 @@ def main():
     print(f"{args.cell}: {len(schemas)} schemas, trace radius {r0:.4f}", flush=True)
 
     for workload in args.workloads.split(","):
-        summary = out / f"{workload}.csv"
+        summary = out / f"{workload}{suffix}.csv"
         if summary.exists():
             continue
         trace = out / f"trace_{workload}.csv"
@@ -106,19 +122,22 @@ def main():
             writer = csv.DictWriter(handle, fieldnames=list(variant[0]))
             writer.writeheader()
             writer.writerows(variant)
-        partial = out / f"{workload}.partial.csv"
+        partial = out / f"{workload}{suffix}.partial.csv"
         partial.unlink(missing_ok=True)
         argv = [args.exe, "--mode", "batch-check", "--input", cloud, "--input-trace", str(trace),
                 "--schemas", ";".join(schemas), "--batch-sizes", args.batch_sizes, "--backends", args.backends,
-                "--batch-repeats", str(args.repeats), "--summary-csv", str(partial), "--no-pause"]
+                "--batch-repeats", str(args.repeats), "--cpu1-max-batch", str(args.cpu1_max_batch),
+                "--summary-csv", str(partial), "--no-pause"]
         if args.cuda_device >= 0:
             argv += ["--cuda-device", str(args.cuda_device)]
         print(f"\n##### {args.cell} {workload}", flush=True)
         status = subprocess.run(argv, cwd=REPO).returncode
-        if status not in (0, 2):
-            print(f"batch-check exited {status}", flush=True)
-        if partial.exists():
+        # 2 = finished with mismatches (kept, and reported); anything else is a crash: the partial
+        # CSV stays partial, so the next run times the workload again.
+        if status in (0, 2) and partial.exists():
             partial.rename(summary)
+        else:
+            print(f"batch-check exited {status}; {partial.name} kept for inspection, the workload reruns next time", flush=True)
 
     report(out)
 
@@ -126,10 +145,13 @@ def main():
 def report(out):
     lines = []
     for workload in WORKLOADS:
-        summary = out / f"{workload}.csv"
-        if not summary.exists():
+        rows = []
+        for suffix, _ in PANELS.values():
+            summary = out / f"{workload}{suffix}.csv"
+            if summary.exists():
+                rows += list(csv.DictReader(open(summary, newline="", encoding="utf-8-sig")))
+        if not rows:
             continue
-        rows = list(csv.DictReader(open(summary, newline="", encoding="utf-8-sig")))
         mismatches = sum(int(r["mismatches"]) for r in rows)
         lines.append(f"== {workload}: {len(rows)} rows, mismatches {mismatches}")
         batches = sorted({int(r["batch"]) for r in rows})
@@ -138,7 +160,9 @@ def report(out):
             qps = {b: {r["schema_name"]: float(r["throughput_qps"]) for r in rows if r["backend"] == b and int(r["batch"]) == batch}
                    for b in backends}
             lines.append(f"-- batch {batch}")
-            cpu_best = max(qps["cpu1"], key=qps["cpu1"].get) if qps.get("cpu1") else None
+            # The CPU's pick: cpu1 where it was timed, else the all-core one (same tree costs).
+            cpu_ref = "cpu1" if qps.get("cpu1") else "cpuN"
+            cpu_best = max(qps[cpu_ref], key=qps[cpu_ref].get) if qps.get(cpu_ref) else None
             for b in backends:
                 table = qps[b]
                 if not table:
@@ -151,9 +175,18 @@ def report(out):
                         f"   top5 {', '.join(ranked[:5])}")
                 if uniform and mixed:
                     line += f"   mixed/uniform {table[mixed[0]] / table[uniform[0]]:5.3f} ({mixed[0]} vs {uniform[0]})"
-                if cpu_best and cpu_best in table and b != "cpu1":
-                    line += f"   cpu1-best on {b}: {table[cpu_best] / table[best]:5.3f} of best"
+                if cpu_best and cpu_best in table and b != cpu_ref:
+                    line += f"   {cpu_ref}-best on {b}: {table[cpu_best] / table[best]:5.3f} of best"
+                if b.startswith("gpu"):
+                    kernel = {r["schema_name"]: batch / (float(r["kernel_ms"]) * 1e-3) for r in rows
+                              if r["backend"] == b and int(r["batch"]) == batch and float(r["kernel_ms"]) > 0}
+                    if kernel:
+                        kbest = max(kernel, key=kernel.get)
+                        line += f"   kernel-only best {kbest} {kernel[kbest]:.0f} q/s"
                 lines.append(line)
+            gpu_best = max((max(qps[b].values()) for b in backends if b.startswith("gpu") and qps[b]), default=0)
+            if gpu_best and qps.get("cpuN"):
+                lines.append(f"         best GPU / best cpuN (end to end): {gpu_best / max(qps['cpuN'].values()):5.2f}")
     text = "\n".join(lines)
     (out / "report.txt").write_text(text + "\n")
     print("\n" + text, flush=True)

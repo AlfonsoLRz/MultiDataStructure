@@ -736,20 +736,28 @@ namespace
 		values[q] = q;
 	}
 
+	// Grow a device buffer. The old buffer is released first (its contents are never kept), and the
+	// pointer, capacity and byte count change only once the new allocation succeeded: after an
+	// out-of-memory throw the buffer is empty, so the next call allocates again instead of handing
+	// out a null pointer with a stale capacity.
 	template <typename T>
 	void ensure(T*& pointer, size_t& capacity, size_t needed, size_t& bytes)
 	{
 		if (needed <= capacity)
 			return;
+		const size_t grown = std::max<size_t>(needed, capacity + capacity / 2);
 		if (pointer)
 		{
 			CudaHelper::checkError(cudaFree(pointer));
 			bytes -= capacity * sizeof(T);
 		}
 		pointer = nullptr;
-		capacity = std::max<size_t>(needed, capacity + capacity / 2);
-		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&pointer), capacity * sizeof(T)));
-		bytes += capacity * sizeof(T);
+		capacity = 0;
+		T* allocated = nullptr;
+		CudaHelper::checkError(cudaMalloc(reinterpret_cast<void**>(&allocated), grown * sizeof(T)));
+		pointer = allocated;
+		capacity = grown;
+		bytes += grown * sizeof(T);
 	}
 
 	template <typename T>
@@ -757,11 +765,15 @@ namespace
 	{
 		if (needed <= capacity)
 			return;
+		const size_t grown = std::max<size_t>(needed, capacity + capacity / 2);
 		if (pointer)
 			CudaHelper::checkError(cudaFreeHost(pointer));
 		pointer = nullptr;
-		capacity = std::max<size_t>(needed, capacity + capacity / 2);
-		CudaHelper::checkError(cudaMallocHost(reinterpret_cast<void**>(&pointer), capacity * sizeof(T)));
+		capacity = 0;
+		T* allocated = nullptr;
+		CudaHelper::checkError(cudaMallocHost(reinterpret_cast<void**>(&allocated), grown * sizeof(T)));
+		pointer = allocated;
+		capacity = grown;
 	}
 
 	template <typename T>

@@ -67,6 +67,7 @@ public:
 	std::vector<std::string>	_batchBackends{ "cpu1", "cpuN", "gpu", "gpuwarp" };
 	size_t		_batchThreads = 0;
 	size_t		_batchRepeats = 3;
+	size_t		_batchCpu1MaxBatch = 100000;
 	bool		_batchGpuIndices = true;
 	bool		_batchSortQueries = true;
 
