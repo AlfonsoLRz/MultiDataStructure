@@ -5,9 +5,11 @@
 
 #include <cub/cub.cuh>
 
-// Every kernel is one thread per query, and is the CPU traversal of PointSpatialIndex.cpp line for
-// line: the same root test, the same prune expressions, children pushed in reverse so they pop in
-// child order, kNN depth-first with the nearest child first and the same (distance, index) heap.
+// The thread kernels are one thread per query, and are the CPU traversal of PointSpatialIndex.cpp
+// line for line: the same root test, the same prune expressions, children pushed in reverse so they
+// pop in child order, kNN depth-first with the nearest child first and the same (distance, index)
+// heap. The warp kernels (range, count, radius) give one query to a warp: lanes test children and
+// scan leaf points side by side, with the same tests and the same arithmetic.
 // Float arithmetic goes through __fmul_rn / __fadd_rn / __fsub_rn, which nvcc never contracts into
 // an FMA: the CPU build has no FMA either, and a fused multiply-add rounds once instead of twice,
 // which would move points that sit exactly on a radius boundary.
@@ -304,6 +306,232 @@ namespace
 		}
 	}
 
+	// Warp-per-query traversal. Every branch below is warp-uniform except the per-lane tests, so
+	// the full-mask ballots and shuffles are always reached by all 32 lanes.
+	constexpr int WarpsPerBlock = 4;
+	constexpr uint32_t FullMask = 0xFFFFFFFFu;
+
+	__device__ __forceinline__ uint32_t lanesBelow(uint32_t lane) { return (1u << lane) - 1u; }
+
+	__device__ __forceinline__ uint64_t warpSum(uint64_t value)
+	{
+		for (int offset = 16; offset > 0; offset >>= 1)
+			value += __shfl_xor_sync(FullMask, value, offset);
+		return value;
+	}
+
+	// Range and count, one warp per query. The stack lives in shared memory; a pop is read by every
+	// lane, pushes are compacted with a ballot. Results per query equal the thread kernel's: counts
+	// and checksums are order independent, and the written indices are the same set.
+	template <int StackSize, bool Write>
+	__global__ void __launch_bounds__(WarpsPerBlock * 32)
+	warpRangeKernel(Tree tree, const GpuQuery* __restrict__ queries, const uint32_t* __restrict__ permutation,
+					uint32_t begin, uint32_t count, Outputs out)
+	{
+		__shared__ uint32_t stacks[WarpsPerBlock][StackSize];
+		const uint32_t lane = threadIdx.x & 31u;
+		const uint32_t warp = threadIdx.x >> 5;
+		const uint32_t w = blockIdx.x * WarpsPerBlock + warp;
+		if (w >= count)
+			return;
+		const uint32_t q = permutation[begin + w];
+		const GpuQuery query = queries[q];
+		const bool countOnly = query._kind == static_cast<uint32_t>(PointGpuIndex::Kind::CountRange);
+		if (Write && countOnly)
+			return;
+
+		uint32_t* stack = stacks[warp];
+		int top = 0;				// warp-uniform
+		uint64_t found = 0;			// warp-uniform
+		uint64_t checksum = 0;		// this lane's share
+		uint32_t* destination = Write ? out._indices + out._offsets[q] : nullptr;
+
+		const GpuNode root = loadNode(tree._nodes, 0);
+		if (!emptyLeaf(root) && boxOverlaps(root, query._a, query._b))
+		{
+			if (lane == 0)
+				stack[0] = 0;
+			top = 1;
+		}
+		__syncwarp();
+		while (top > 0)
+		{
+			const uint32_t slot = stack[--top];
+			const GpuNode node = loadNode(tree._nodes, slot);
+
+			if (boxInside(node, query._a, query._b))
+			{
+				const uint32_t first = tree._subtree[2 * slot];
+				const uint32_t points = tree._subtree[2 * slot + 1];
+				if (!countOnly)
+				{
+					for (uint32_t i = first + lane; i < first + points; i += 32)
+					{
+						const uint32_t index = __ldg(tree._order + i);
+						if (Write)
+							destination[found + (i - first)] = index;
+						else
+							checksum += mixIndex(index);
+					}
+				}
+				found += points;
+				continue;
+			}
+
+			if (!isInternal(node))
+			{
+				const uint32_t end = node._first + countOf(node);
+				for (uint32_t base = node._first; base < end; base += 32)
+				{
+					const uint32_t i = base + lane;
+					const bool hit = i < end && pointInBox(tree, i, query._a, query._b);
+					const uint32_t ballot = __ballot_sync(FullMask, hit);
+					if (hit && !countOnly)
+					{
+						const uint32_t index = __ldg(tree._order + i);
+						if (Write)
+							destination[found + __popc(ballot & lanesBelow(lane))] = index;
+						else
+							checksum += mixIndex(index);
+					}
+					found += __popc(ballot);
+				}
+				continue;
+			}
+
+			__syncwarp();	// every lane has read `slot`; pushes may now reuse that entry
+			const uint32_t childCount = countOf(node);
+			for (uint32_t base = 0; base < childCount; base += 32)
+			{
+				const uint32_t c = base + lane;
+				bool keep = false;
+				if (c < childCount)
+				{
+					const GpuNode child = loadNode(tree._nodes, node._first + c);
+					keep = !emptyLeaf(child) && boxOverlaps(child, query._a, query._b);
+				}
+				const uint32_t ballot = __ballot_sync(FullMask, keep);
+				const int pushed = __popc(ballot);
+				if (top + pushed > StackSize)
+				{
+					if (lane == 0)
+						atomicExch(out._overflow, 1);
+					return;
+				}
+				if (keep)
+					stack[top + __popc(ballot & lanesBelow(lane))] = node._first + c;
+				top += pushed;
+			}
+			__syncwarp();
+		}
+
+		if (!Write)
+		{
+			checksum = warpSum(checksum);
+			if (lane == 0)
+			{
+				out._counts[q] = found;
+				out._emitted[q] = countOnly ? 0 : found;
+				out._checksums[q] = countOnly ? 0 : checksum;
+			}
+		}
+	}
+
+	template <int StackSize, bool Write>
+	__global__ void __launch_bounds__(WarpsPerBlock * 32)
+	warpRadiusKernel(Tree tree, const GpuQuery* __restrict__ queries, const uint32_t* __restrict__ permutation,
+					 uint32_t begin, uint32_t count, Outputs out)
+	{
+		__shared__ uint32_t stacks[WarpsPerBlock][StackSize];
+		const uint32_t lane = threadIdx.x & 31u;
+		const uint32_t warp = threadIdx.x >> 5;
+		const uint32_t w = blockIdx.x * WarpsPerBlock + warp;
+		if (w >= count)
+			return;
+		const uint32_t q = permutation[begin + w];
+		const GpuQuery query = queries[q];
+
+		uint32_t* stack = stacks[warp];
+		int top = 0;
+		uint64_t found = 0;
+		uint64_t checksum = 0;
+		uint32_t* destination = Write ? out._indices + out._offsets[q] : nullptr;
+
+		if (query._radius >= 0.0f)
+		{
+			const float radiusSquared = __fmul_rn(query._radius, query._radius);
+			const GpuNode root = loadNode(tree._nodes, 0);
+			if (!emptyLeaf(root) && boxDistanceSquared(root, query._a) <= radiusSquared)
+			{
+				if (lane == 0)
+					stack[0] = 0;
+				top = 1;
+			}
+			__syncwarp();
+			while (top > 0)
+			{
+				const uint32_t slot = stack[--top];
+				const GpuNode node = loadNode(tree._nodes, slot);
+				if (!isInternal(node))
+				{
+					const uint32_t end = node._first + countOf(node);
+					for (uint32_t base = node._first; base < end; base += 32)
+					{
+						const uint32_t i = base + lane;
+						const bool hit = i < end && pointDistanceSquared(tree, i, query._a) <= radiusSquared;
+						const uint32_t ballot = __ballot_sync(FullMask, hit);
+						if (hit)
+						{
+							const uint32_t index = __ldg(tree._order + i);
+							if (Write)
+								destination[found + __popc(ballot & lanesBelow(lane))] = index;
+							else
+								checksum += mixIndex(index);
+						}
+						found += __popc(ballot);
+					}
+					continue;
+				}
+
+				__syncwarp();
+				const uint32_t childCount = countOf(node);
+				for (uint32_t base = 0; base < childCount; base += 32)
+				{
+					const uint32_t c = base + lane;
+					bool keep = false;
+					if (c < childCount)
+					{
+						const GpuNode child = loadNode(tree._nodes, node._first + c);
+						keep = !emptyLeaf(child) && boxDistanceSquared(child, query._a) <= radiusSquared;
+					}
+					const uint32_t ballot = __ballot_sync(FullMask, keep);
+					const int pushed = __popc(ballot);
+					if (top + pushed > StackSize)
+					{
+						if (lane == 0)
+							atomicExch(out._overflow, 1);
+						return;
+					}
+					if (keep)
+						stack[top + __popc(ballot & lanesBelow(lane))] = node._first + c;
+					top += pushed;
+				}
+				__syncwarp();
+			}
+		}
+
+		if (!Write)
+		{
+			checksum = warpSum(checksum);
+			if (lane == 0)
+			{
+				out._counts[q] = found;
+				out._emitted[q] = found;
+				out._checksums[q] = checksum;
+			}
+		}
+	}
+
 	struct Candidate
 	{
 		float		_distance;
@@ -550,22 +778,33 @@ namespace
 	}
 
 	template <int StackSize>
-	void launchGroup(uint32_t group, bool write, const Tree& tree, const GpuQuery* queries, const uint32_t* permutation,
-					 uint32_t begin, uint32_t count, const Outputs& out)
+	void launchGroup(uint32_t group, bool write, PointGpuIndex::Traversal traversal, const Tree& tree, const GpuQuery* queries,
+					 const uint32_t* permutation, uint32_t begin, uint32_t count, const Outputs& out)
 	{
 		// A thread walks its whole query alone, so a small batch in 128-thread blocks would sit on a
 		// handful of SMs: 1,000 queries are 8 blocks. Below 64k queries, blocks of one warp.
 		const unsigned threads = count >= 65536 ? ThreadsPerBlock : 32;
 		const unsigned blocks = (count + threads - 1) / threads;
+		// Warp mode: WarpsPerBlock queries per block.
+		const unsigned warpBlocks = (count + WarpsPerBlock - 1) / WarpsPerBlock;
+		const bool warp = traversal == PointGpuIndex::Traversal::Warp;
 		switch (group)
 		{
 		case RangeGroup:
-			write ? rangeKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
-				  : rangeKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
+			if (warp)
+				write ? warpRangeKernel<StackSize, true><<<warpBlocks, WarpsPerBlock * 32>>>(tree, queries, permutation, begin, count, out)
+					  : warpRangeKernel<StackSize, false><<<warpBlocks, WarpsPerBlock * 32>>>(tree, queries, permutation, begin, count, out);
+			else
+				write ? rangeKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
+					  : rangeKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
 			break;
 		case RadiusGroup:
-			write ? radiusKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
-				  : radiusKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
+			if (warp)
+				write ? warpRadiusKernel<StackSize, true><<<warpBlocks, WarpsPerBlock * 32>>>(tree, queries, permutation, begin, count, out)
+					  : warpRadiusKernel<StackSize, false><<<warpBlocks, WarpsPerBlock * 32>>>(tree, queries, permutation, begin, count, out);
+			else
+				write ? radiusKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
+					  : radiusKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
 			break;
 		case KnnGroup:
 			// The kNN answer is final after the counting pass; with indices it also lands in scratch.
@@ -576,15 +815,15 @@ namespace
 		CudaHelper::checkError(cudaGetLastError());
 	}
 
-	void launch(size_t stackBound, uint32_t group, bool write, const Tree& tree, const GpuQuery* queries, const uint32_t* permutation,
-				uint32_t begin, uint32_t count, const Outputs& out)
+	void launch(size_t stackBound, uint32_t group, bool write, PointGpuIndex::Traversal traversal, const Tree& tree, const GpuQuery* queries,
+				const uint32_t* permutation, uint32_t begin, uint32_t count, const Outputs& out)
 	{
 		if (stackBound <= 64)
-			launchGroup<64>(group, write, tree, queries, permutation, begin, count, out);
+			launchGroup<64>(group, write, traversal, tree, queries, permutation, begin, count, out);
 		else if (stackBound <= 256)
-			launchGroup<256>(group, write, tree, queries, permutation, begin, count, out);
+			launchGroup<256>(group, write, traversal, tree, queries, permutation, begin, count, out);
 		else
-			launchGroup<1024>(group, write, tree, queries, permutation, begin, count, out);
+			launchGroup<1024>(group, write, traversal, tree, queries, permutation, begin, count, out);
 	}
 
 	float elapsed(cudaEvent_t from, cudaEvent_t to)
@@ -738,7 +977,7 @@ void PointGpuIndex::upload(const PointSpatialIndex& index)
 	}
 }
 
-PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries, bool withIndices, bool sortQueries)
+PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries, bool withIndices, bool sortQueries, Traversal traversal)
 {
 	if (!_state)
 		throw std::runtime_error("PointGpuIndex::run before upload");
@@ -824,7 +1063,7 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 	for (uint32_t group = 0; group < GroupCount; ++group)
 	{
 		if (groupSize[group])
-			launch(s._stackBound, group, withIndices && group == KnnGroup, tree, s._queries, s._permutation, begin, groupSize[group], out);
+			launch(s._stackBound, group, withIndices && group == KnnGroup, traversal, tree, s._queries, s._permutation, begin, groupSize[group], out);
 		begin += groupSize[group];
 	}
 	CudaHelper::checkError(cudaEventRecord(e[3]));
@@ -848,7 +1087,7 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 		for (uint32_t group = 0; group < GroupCount; ++group)
 		{
 			if (groupSize[group] && group != KnnGroup)
-				launch(s._stackBound, group, true, tree, s._queries, s._permutation, begin, groupSize[group], out);
+				launch(s._stackBound, group, true, traversal, tree, s._queries, s._permutation, begin, groupSize[group], out);
 			else if (groupSize[group])
 			{
 				copyKnnKernel<<<blocksFor(groupSize[group]), ThreadsPerBlock>>>(s._permutation, begin, groupSize[group], out);

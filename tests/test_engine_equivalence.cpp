@@ -439,12 +439,27 @@ namespace BaselineTests
 				const bool sorted = s % 2 == 0;
 				const PointGpuIndex::BatchResult full = device.run(queries, true, sorted);
 				const PointGpuIndex::BatchResult counted = device.run(queries, false, !sorted);
+				// The warp-per-query kernels must give the same answers as the thread kernels: counts,
+				// checksums and the written sets (range/radius sets are order independent).
+				const PointGpuIndex::BatchResult warp = device.run(queries, true, sorted, PointGpuIndex::Traversal::Warp);
+				const PointGpuIndex::BatchResult warpCounted = device.run(queries, false, !sorted, PointGpuIndex::Traversal::Warp);
 				for (size_t q = 0; q < queries.size(); ++q)
 				{
 					const PointGpuIndex::Query& query = queries[q];
 					const std::string where = label + " / " + schema._name + " / gpu q" + std::to_string(q);
 					expect(full._counts[q] == counted._counts[q] && full._checksums[q] == counted._checksums[q],
 						   "gpu answers agree with and without indices and sorting: " + where);
+					expect(warp._counts[q] == full._counts[q] && warp._checksums[q] == full._checksums[q] &&
+						   warpCounted._counts[q] == full._counts[q] && warpCounted._checksums[q] == full._checksums[q],
+						   "warp traversal == thread traversal (counts, checksums): " + where);
+					if (query._kind != PointGpuIndex::Kind::CountRange)	// a count query writes no indices
+					{
+						const auto begin = warp._indices.begin() + static_cast<std::ptrdiff_t>(warp._offsets[q]);
+						std::vector<size_t> warpSet(begin, begin + static_cast<std::ptrdiff_t>(warp._counts[q]));
+						const auto fullBegin = full._indices.begin() + static_cast<std::ptrdiff_t>(full._offsets[q]);
+						std::vector<size_t> fullSet(fullBegin, fullBegin + static_cast<std::ptrdiff_t>(full._counts[q]));
+						expect(sortedCopy(warpSet) == sortedCopy(fullSet), "warp traversal == thread traversal (index set): " + where);
+					}
 					const auto slice = [&](size_t count) {
 						const auto begin = full._indices.begin() + static_cast<std::ptrdiff_t>(full._offsets[q]);
 						return std::vector<size_t>(begin, begin + static_cast<std::ptrdiff_t>(count));

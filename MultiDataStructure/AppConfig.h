@@ -64,7 +64,7 @@ public:
 	bool		_engineTimedTelemetryFull = false;
 	// batch-check only; --input, --schemas, --input-trace, --summary-csv and --query-seed are shared.
 	std::vector<size_t>			_batchSizes{ 1000, 10000, 100000, 1000000 };
-	std::vector<std::string>	_batchBackends{ "cpu1", "cpuN", "gpu" };
+	std::vector<std::string>	_batchBackends{ "cpu1", "cpuN", "gpu", "gpuwarp" };
 	size_t		_batchThreads = 0;
 	size_t		_batchRepeats = 3;
 	bool		_batchGpuIndices = true;

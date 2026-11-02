@@ -375,8 +375,9 @@ $best = (Import-Csv results/alhambra_generated_best.csv | Select-Object -First 1
 
 `--mode batch-check` times whole query batches on one core (`cpu1`), on every core (`cpuN`,
 OpenMP) and on the GPU, over the same trees. Each schema is built once on the CPU; the GPU gets that
-exact node pool (`PointGpuIndex`) and runs one thread per query, so any schema the CPU builds runs
-there unchanged. Every backend's per-query count and checksum must equal the single-core answer
+exact node pool (`PointGpuIndex`) and runs it either one thread per query (`gpu`) or one warp per
+query (`gpuwarp`: the 32 lanes test a node's children and scan a leaf together, with the stack in
+shared memory; kNN stays per thread), so any schema the CPU builds runs there unchanged. Every backend's per-query count and checksum must equal the single-core answer
 (`mismatches` column, 0 expected; exit code 2 otherwise). Batch queries keep the trace's mix of
 kinds, radii, k and box sizes, centred on points drawn from the cloud.
 
@@ -384,7 +385,7 @@ kinds, radii, k and box sizes, centred on points drawn from the cloud.
 .\x64\Release\MultiDataStructure.exe --mode batch-check --input <cloud.mdspc> `
   --input-trace results/traces/curated/toronto_25M/pipeline_trace_test.csv `
   --schemas "configs/schemas/tuned_singles_small/kd/tuned_kd48l128sm.json;configs/schemas/octree.json" `
-  --batch-sizes 1000,10000,100000,1000000 --backends cpu1,cpuN,gpu --summary-csv results/batch/toronto_25M.csv --no-pause
+  --batch-sizes 1000,10000,100000,1000000 --backends cpu1,cpuN,gpu,gpuwarp --summary-csv results/batch/toronto_25M.csv --no-pause
 ```
 
 Options: `--threads <n>` (cpuN threads, default all), `--batch-repeats <n>` (timed runs after one

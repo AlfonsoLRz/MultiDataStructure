@@ -931,7 +931,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --mode batch-check          Throughput of whole query batches on one core, all cores and the GPU, on\n"
 		<< "                              the same CPU-built trees, every answer checked against the single-core one\n"
 		<< "  --batch-sizes <a,b,...>     batch-check: batch sizes (default 1000,10000,100000,1000000)\n"
-		<< "  --backends <a,b,...>        batch-check: cpu1, cpuN, gpu (default all three)\n"
+		<< "  --backends <a,b,...>        batch-check: cpu1, cpuN, gpu (thread per query), gpuwarp (warp per query); default all\n"
 		<< "  --threads <n>               batch-check: cpuN threads (default every hardware thread)\n"
 		<< "  --batch-repeats <n>         batch-check: timed runs per batch after one warm-up (default 3)\n"
 		<< "  --gpu-count-only            batch-check: the GPU returns counts and checksums, not indices\n"

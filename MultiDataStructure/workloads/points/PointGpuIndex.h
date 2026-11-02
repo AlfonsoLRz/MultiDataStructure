@@ -3,7 +3,7 @@
 #include "PointSpatialIndex.h"
 
 // A built PointSpatialIndex copied to the GPU as it is - the same node pool, the same tree-ordered
-// points - and queried there in batches, one thread per query. Any schema the CPU builds (nested,
+// points - and queried there in batches, one thread or one warp per query. Any schema the CPU builds (nested,
 // sliding-midpoint, STR, tight-centre, any depth) runs unchanged, and every answer equals the CPU's
 // bit for bit: the traversals are the CPU's, and distances are computed with separately rounded
 // multiplies and adds (no FMA), as the CPU build does.
@@ -28,6 +28,17 @@ public:
 		glm::vec3	_max = glm::vec3(0.0f);	// range/count: box maximum
 		float		_radius = 0.0f;
 		uint32_t	_k = 0;
+	};
+
+	// How a batch walks the tree. Thread: one thread per query, the CPU traversal verbatim. Warp: one
+	// warp per query; the 32 lanes test a node's children together (two rounds for a 64-way node),
+	// scan a leaf 32 points at a time and keep the stack in shared memory. Wide nodes cost a warp
+	// one round where they cost a thread 32 loads, which is what makes fan-out a GPU design choice.
+	// kNN runs per thread in both modes. Both give the CPU's answers.
+	enum class Traversal : uint32_t
+	{
+		Thread = 0,
+		Warp = 1,
 	};
 
 	struct BatchResult
@@ -71,7 +82,8 @@ public:
 	void upload(const PointSpatialIndex& index);
 	// Runs one batch. Throws on a kNN query with k > MaxK. sortQueries orders the batch along a
 	// Morton curve of the query centres first, so neighbouring threads walk neighbouring paths.
-	BatchResult run(const std::vector<Query>& queries, bool withIndices, bool sortQueries = true);
+	BatchResult run(const std::vector<Query>& queries, bool withIndices, bool sortQueries = true,
+					Traversal traversal = Traversal::Thread);
 
 	double uploadMs() const;
 	size_t deviceBytes() const;

@@ -324,15 +324,17 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 						times.push_back(runCpu(index, batch, row._threads, answers));
 					row._mismatches = mismatches(reference, answers._counts, answers._checksums);
 				}
-				else if (backend == "gpu")
+				else if (backend == "gpu" || backend == "gpuwarp")
 				{
 					if (!gpuReady)
 						continue;
 					row._threads = 0;
-					PointGpuIndex::BatchResult result = device.run(batch, options._gpuIndices, options._sortQueries);
+					const PointGpuIndex::Traversal traversal = backend == "gpuwarp" ? PointGpuIndex::Traversal::Warp
+																					: PointGpuIndex::Traversal::Thread;
+					PointGpuIndex::BatchResult result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
 					for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
 					{
-						result = device.run(batch, options._gpuIndices, options._sortQueries);
+						result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
 						times.push_back(result._endToEndMs);
 						kernels.push_back(result._countMs + result._writeMs);
 						sorts.push_back(result._sortMs);
@@ -341,7 +343,7 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 				}
 				else
 				{
-					throw std::invalid_argument("batch-check: unknown backend " + backend + " (cpu1, cpuN, gpu)");
+					throw std::invalid_argument("batch-check: unknown backend " + backend + " (cpu1, cpuN, gpu, gpuwarp)");
 				}
 				row._medianMs = median(times);
 				row._minMs = *std::min_element(times.begin(), times.end());

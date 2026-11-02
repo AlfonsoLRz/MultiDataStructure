@@ -22,7 +22,7 @@ namespace Experiments
 		std::string					_summaryCsvPath;
 		std::vector<size_t>			_batchSizes{ 1000, 10000, 100000, 1000000 };
 		// cpu1, cpuN, gpu
-		std::vector<std::string>	_backends{ "cpu1", "cpuN", "gpu" };
+		std::vector<std::string>	_backends{ "cpu1", "cpuN", "gpu", "gpuwarp" };
 		// Threads of the cpuN backend; 0 = every hardware thread.
 		size_t						_threads = 0;
 		// Timed runs per (schema, backend, batch size), after one untimed warm-up run.
