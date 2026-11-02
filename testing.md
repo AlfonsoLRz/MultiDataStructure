@@ -647,6 +647,112 @@ the planned sweep; 0 mismatches against the CPU in every run): best nested / bes
 mixed workload (with 8x range and 64x count boxes) took 1,025 ms per 100k queries on Toronto against
 3.4 ms for the base trace, one thread scanning a large box alone.
 
+### 2l. 2026-11-01 — why nesting never wins: expected, not a defect
+
+The user asked whether the e9 tie is expected or a failure on our side; the design follows
+Ogayar-Anguita, López-Ruiz, Rueda-Ruiz, Segura-Sánchez, "Nested spatial data structures for optimal
+indexing of LiDAR data", ISPRS J. 195 (2023) 287-297 (PDF read in full on 2026-11-01).
+
+**1. In this engine a nested schema is not a different data structure.** Every level is built into
+one pool of identical 32-byte nodes (tight box, first child or first point, count) with one SoA
+point array in tree order, the same AVX2 leaf scans and the same depth-first layout
+(`PointSpatialIndex.cpp` flattenTree/buildNode). The level boundary only changes the split rule
+applied while a node is built (`locateInPlan`); the four searches are one generic stack walk that
+tests every child's tight box and never branches on primitive type. A grid node is 27 (RegularGrid)
+or 64 (HGrid) box-tested children with no direct addressing, and the CPU generator never emits grids.
+
+**2. Nesting does the only thing it can: fewer node visits.** Over the 73 e9 cells, best nested vs
+best single finalist (instrumented pass of `<cell>_test.csv`):
+
+| | geomean | TLS/MLS scans |
+|---|---|---|
+| nodes visited per query | 0.976 | 0.80-0.92 |
+| points tested per query | 1.061 | ~1.00 |
+| nodes in the tree | 0.915 | |
+| build time | 0.941 | |
+| latency | 0.994 | |
+
+**3. The levels where nesting acts are free.** The traces are stride-subsampled from scan order
+(DomFountain 100M: consecutive centres 0.12 / 0.43 / 2.6 m apart at p10/p50/p90 in a 325 x 445 m
+scene), engine-check replays them in that order, and the queries are tiny (k = 16; radii sized to
+return ~13-280 points; 12-45 node visits; 1-3 leaves). The root-to-mid-level path is in cache for
+every query; the time goes to the cold bottom levels and the leaf scans, which are identical for
+every schema. Build and memory, where nesting is 6-8% better, carry zero weight in the objective.
+
+**4. What the ISPRS paper measured.** It is an out-of-core storage framework: every node is a LAZ
+file or a database record, global depth 10, and leaves hold thousands to millions of points
+(Table 3: 2,876-154,719 leaf nodes for 48M-1.14B points, 787-33,015 points per leaf on average).
+The benchmark is 100 random boxes of 20-40% of the dataset per axis, scored as nodes loaded (Fig. 7)
+and as throughput in Mpoints/s including opening and LAZ-decompressing the node files (Fig. 8).
+The multi-structure (2D grid -> quadtree -> 3D grid -> octree) loads far fewer nodes (Manhattan
+~1,500 vs ~8,600 for the quadtree and octree), has fewer nodes and builds "somewhat faster"; the
+paper itself calls the throughput differences "not very significant" (about 0.9-1.2x). The singles
+are the same framework with one structure, not external libraries.
+
+So the paper's effect is exactly the one e9 reproduces: fewer, better-fitted coarse nodes. There it
+became time because a node cost a file open plus decompression; here a node costs one hot cache
+line and a query touches 1-3 leaves of 128 points, so the same saving is worth about 1%. The
+unified pool gives every single structure the locality and flat leaves that nesting supplied in the
+paper, and a 48-level sliding-midpoint kd already is a grid of well-fitted subtrees.
+
+**Diagnostics** (`scripts/order_sweep.py`, makinon2, build_e9, 100M cells, 2 rotated processes,
+3000 queries; `results/eval_traces/order_sweep_makinon2`):
+
+*Query order* (panel of 4 deep singles, 5 nested, 5 grid-topped schemas; the test trace as recorded,
+the same queries shuffled, shuffled zero-extent count queries = a pure root-to-leaf descent, and
+shuffled radius queries at 4x the trace radius). Best nested / best single:
+
+| cell | trace | shuffled | descent | shuffled, radius 4x | shuffle cost, best single |
+|---|---|---|---|---|---|
+| DomFountain 100M (TLS) | 0.980 | 0.993 | 1.040 | 1.018 | +9% |
+| Lille 100M (MLS) | 1.023 | 1.003 | 1.039 | 1.027 | +12% |
+| SanAndreas 100M (ALS) | 1.000 | 1.004 | 0.996 | 0.997 | +5% |
+
+Shuffling makes the top of the tree cold and slows every schema by the same 5-12%; the nested
+prefix still visits 6-14% fewer nodes (kd tail) and still buys nothing. On the pure descent the
+best structure is the plain quadtree (1.36 / 1.15 / 1.06 us), and the nested qt9 -> ot24 that
+visits the same number of nodes is 4% slower on the ground scans. A 1M smoke test had shown the
+nested kd 11% faster on cold descents (0.21 vs 0.24 us): at 1M the whole tree sits in L2/L3, so a
+saved node visit is a saved cache hit; at 100M the saved visits are the hot top levels and the cost
+is the cold bottom, which both trees share.
+
+*Grid top level* (RegularGrid 27 cells and HGrid 64 cells, 1-2 levels, box-tested, over the same
+tails). Best grid-topped / best single, recorded order: DomFountain 1.018, Lille 1.031,
+SanAndreas 1.151 (`grid1_kd48l128sm`); the two-level HGrid (4,096 cells) 1.05 / 1.18 / 1.49. A grid
+root never wins; a direct-addressed grid could at most remove the 27-64 hot box tests at the root,
+which the descent variant bounds at well under 0.1 us.
+
+*The ISPRS regime* (depth <= 10, leaves 4,096 and 16,384 points, 100 boxes of 20-40% of the extent
+per axis, `range` and `count_range`):
+
+| cell | best single | nested (2D grid -> qt3 -> 3D grid -> ot5) / octree: range, count, nodes visited | qt5 -> ot5 / quadtree |
+|---|---|---|---|
+| DomFountain 100M | `ot10l4096` 16.8 ms | 1.101, 2.38, 2.09x | 0.866 |
+| Lille 100M | `ot10l4096` 19.5 ms | 1.032, 1.54, 1.51x | 0.868 |
+| SanAndreas 100M | `ot10l4096` 24.1 ms | 1.017, 1.32, 1.14x | 0.997 |
+
+The paper's comparison reproduces in part: nesting an octree under a quadtree beats the quadtree
+(0.87 on the ground scans, as the paper's multi-structure beat its quadtree), but the plain octree
+beats both, and the paper's full 2D grid -> quadtree -> 3D grid -> octree visits 1.1-2.1x more nodes
+than the octree. In the paper the multi-structure loaded fewer nodes than the octree because its
+octree cells were implicit (loose) and its grid and quadtree trimmed the empty space above and
+beside the buildings. Our engine stores tight bounds on every node and never creates empty children,
+so a single octree already skips that space, and the extra levels only add nodes.
+
+**Verdict.** Expected, not a defect. (a) Nesting in this engine is a split rule, not a storage
+scheme; the unified pool, tight boxes, empty-node removal and flat SoA leaves give every single
+structure what nesting supplied in the paper. (b) Its one measurable effect, fewer coarse nodes,
+is reproduced (0.915x nodes, 0.976x visits, 0.94x build) but is worth ~1% of an in-memory query
+whose cost is the cold bottom levels and the leaf scans; in the paper it was worth file opens and
+LAZ decompression. (c) Cold query order, grid roots and the paper's own regime do not change the
+sign. (d) The search works as designed: it is allowed to return a single primitive and does so
+within 0.3% of the held-out oracle. Nesting could still pay where a node visit is expensive
+(out-of-core nodes, network storage, a GPU traversal counted in divergent warps) or when build
+time and memory carry weight in the objective; neither holds for the in-memory latency battery.
+
+Raw outputs: `results/eval_traces/order_sweep_makinon2/<cell>/{base+grid,paper}_<variant>.csv`,
+reports `report_base+grid.txt`, `report_paper.txt`; server copies deleted after download.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
