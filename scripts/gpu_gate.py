@@ -11,7 +11,7 @@ summaries). Per cell, workload and batch size it reports, from end-to-end throug
                  cpu1 was not timed), as a fraction of the GPU's best: < 1 means hardware-aware
                  selection pays
   mixed/uniform  best nested (mixed fan-out) schema / best single schema on the GPU: > 1 means
-                 composition pays
+                 composition pays; end to end (mix/uni) and kernel time only (k mix)
   warp/thread    best warp-kernel throughput / best thread-kernel throughput
   gpu/cpuN       best GPU / best all-core CPU, end to end and kernel-only
   depth          best depth-capped single / best other single on the GPU
@@ -68,9 +68,9 @@ def main():
     batches = [int(b) for b in args.batches.split(",")]
 
     header = (f"{'cell':18}{'workload':9}{'batch':>8}{'spread w':>9}{'spread t':>9}{'cpu pick':>9}"
-              f"{'mix/uni':>8}{'warp/thr':>9}{'gpu/cpuN':>9}{'kern/cpuN':>10}{'depth':>7}  gpu best (warp) | cpu best | skipped")
+              f"{'mix/uni':>8}{'k mix':>7}{'warp/thr':>9}{'gpu/cpuN':>9}{'kern/cpuN':>10}{'depth':>7}  gpu best (warp) | cpu best | skipped")
     print(header)
-    summary = {k: [] for k in ("spread", "pick", "mixed", "warp", "gpucpu", "kerncpu", "depth")}
+    summary = {k: [] for k in ("spread", "pick", "mixed", "kmixed", "warp", "gpucpu", "kerncpu", "depth")}
     for cell_dir in sorted(p for p in root.iterdir() if p.is_dir()):
         for workload in WORKLOADS:
             rows = load(cell_dir, workload)
@@ -103,14 +103,17 @@ def main():
                 for n, v in table(rows, "gpuwarp", batch, True).items():
                     kern[n] = max(kern.get(n, 0), v)
                 kc = max(kern.values()) / max(cpun.values()) if kern and cpun else float("nan")
+                kmixed = [v for n, v in kern.items() if nested(n)]
+                ksingle = [v for n, v in kern.items() if not nested(n)]
+                kmix = max(kmixed) / max(ksingle) if kmixed and ksingle else float("nan")
                 depth_s = {n: v for n, v in singles.items() if n in DEPTH}
                 other_s = {n: v for n, v in singles.items() if n not in DEPTH}
                 dep = max(depth_s.values()) / max(other_s.values()) if depth_s and other_s else float("nan")
                 wbest = max(warp, key=warp.get) if warp else "-"
                 skipped = sum(1 for b in ("gpu", "gpuwarp") for n in cpun if n not in table(rows, b, batch))
-                print(f"{cell_dir.name:18}{workload:9}{batch:>8}{spread_w:9.2f}{spread_t:9.2f}{pick:9.3f}{mix:8.3f}"
+                print(f"{cell_dir.name:18}{workload:9}{batch:>8}{spread_w:9.2f}{spread_t:9.2f}{pick:9.3f}{mix:8.3f}{kmix:7.3f}"
                       f"{wt:9.2f}{gc:9.2f}{kc:10.2f}{dep:7.3f}  {wbest} | {cpu_best} | {skipped}")
-                for key, value in (("spread", spread_w), ("pick", pick), ("mixed", mix), ("warp", wt),
+                for key, value in (("spread", spread_w), ("pick", pick), ("mixed", mix), ("kmixed", kmix), ("warp", wt),
                                    ("gpucpu", gc), ("kerncpu", kc), ("depth", dep)):
                     if not math.isnan(value):
                         summary[key].append(value)

@@ -823,8 +823,20 @@ GPU than the CPU's `qt24l32`. At 100M the CPU picks the same depth-capped tree i
 and GPU choices agree to within 4% on average (the larger tree no longer fits the CPU caches either:
 a hypothesis, not measured). The best mixed result is `kd6_hgrid64l128sm` on SanAndreas 100M radius4,
 1.084x at 100k and 1.022x at 1M. Gate: (ii) holds; (i) holds at 25M, but is within 4% on average at
-100M; (iii) fails. A GPU paper built on schema selection is not supported. What stands is the kernel
-margin over the CPU, the warp kernels, and the result volume as the end-to-end bottleneck.
+100M; (iii) fails end to end. A GPU paper built on schema selection is not supported. What stands is
+the kernel margin over the CPU, the warp kernels, and the result volume as the end-to-end bottleneck.
+
+Kernel time only (`k mix` column of `gpu_gate.py`), nesting loses on average too: best nested / best
+single 0.875 geomean (0.49-1.28). But 4 of the 34 rows clear 1.05x:
+- SanAndreas 100M radius4, `kd6_hgrid64l128sm`: 1.28x at 100k, 1.12x at 1M;
+- DomFountain 100M radius4 at 1M, `hgrid2_ot24l512`: 1.21x;
+- DomFountain 25M range8 at 100k, `qt6_kd48l128sm`: 1.09x.
+
+So (iii) holds in kernel time on 2 rows at >= 1.15x, wide 64-way levels on 100M clouds with large
+radii, and the result download hides it end to end. This is the only place nesting wins a time
+measurement. The all-GPU normals pilot (plan 2026-11-03: warp kNN plus a fused PCA normal, against
+cudaKDTree and a uniform grid) tests whether it survives where results never leave the device.
+Summary page with every chart: https://claude.ai/artifact/TJo2FUFT3B11sGnt16R8Hj.
 
 
 
