@@ -796,6 +796,29 @@ the regime of interest): 0 mismatches; gpuwarp 2.7x gpu on the base trace and 1.
 queries; GPU best/worst schema 2.5-5x; no mixed schema beat the best uniform on the GPU there.
 Running; results below when complete.
 
+**GPU pilot, interim (2026-11-03; 4 of 6 cells: DomFountain 25M/100M, SanAndreas 25M, GaliciaForest
+25M; Quadro RTX 6000 via CUDA_DEVICE_ORDER=PCI_BUS_ID; `scripts/gpu_gate.py`).** The first attempt ran
+on the 2080 Ti by mistake (CUDA numbers GPUs fastest-first) and lost workloads to out-of-memory
+crashes; it is kept apart in `results/gpu_pilot_2080ti` on makinon2. 0 mismatches in every row; GPU
+batches whose results exceed device memory (1M range8 queries) are skipped. End-to-end throughput,
+batches 10k / 100k / 1M, geomean over cell x workload x batch rows:
+
+| measure | geomean | range | reading |
+|---|---|---|---|
+| GPU best / worst schema (warp kernels) | 10x | 1.5-580x | the schema matters on the GPU |
+| GPU throughput of the CPU's pick / GPU best | 0.80 | 0.27-1.00 | hardware-aware selection pays 20% on average, up to 3.7x |
+| best nested / best single on the GPU | 0.90 | 0.59-1.015 | composition does not pay on the GPU either |
+| warp / thread kernels (best of each) | 1.69x | 1.05-4.1x | |
+| best GPU / best 72-thread CPU, end to end | 1.76x | 0.25-28x | below 1 on radius4/range8: copying result indices back dominates |
+| same, kernel time only | 7.8x | 1.5-54x | |
+
+The largest selection effect comes from the depth-capped panel: on SanAndreas (aerial) a 12-level
+quadtree with leaf 32 is 1.8-3.6x faster on the GPU than the CPU's pick (`qt24l32`, the CPU's best),
+and on GaliciaForest radius4 a 20-level kd beats every other single by 1.2-1.7x; on the dense TLS
+scene a depth cap is catastrophic (leaves of thousands of points). Gate so far: (i) and (ii) hold,
+(iii) fails: the "hardware-aware selection without composition" outcome.
+
+
 
 ## 3. Pending experiments (exact commands)
 
