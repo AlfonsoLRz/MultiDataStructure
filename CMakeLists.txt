@@ -53,6 +53,7 @@ set(MDS_CXX_SOURCES
 	${MDS_DIR}/experiments/SurrogateAcquisition.cpp
 	${MDS_DIR}/experiments/ThresholdRefiner.cpp
 	${MDS_DIR}/workloads/points/BIH.cpp
+	${MDS_DIR}/workloads/points/CudaKdTreeBaselineStub.cpp
 	${MDS_DIR}/workloads/points/HGrid.cpp
 	${MDS_DIR}/workloads/points/PointBenchmark.cpp
 	${MDS_DIR}/workloads/points/PointCloud.cpp
@@ -74,14 +75,27 @@ set(MDS_CUDA_SOURCES
 	${MDS_DIR}/workloads/points/RegularGrid.cu
 )
 
+# Optional external baseline for batch-check (backend gpucudakd): a checkout of
+# github.com/ingowald/cudaKDTree (header only). Its kernels keep their own register budget.
+set(MDS_CUDAKDTREE_DIR "" CACHE PATH "cudaKDTree checkout; enables the gpucudakd batch-check baseline")
+set_source_files_properties(${MDS_CUDA_SOURCES} PROPERTIES COMPILE_OPTIONS --maxrregcount=64)
+if(MDS_CUDAKDTREE_DIR)
+	list(APPEND MDS_CUDA_SOURCES ${MDS_DIR}/workloads/points/CudaKdTreeBaseline.cu)
+endif()
+
 add_executable(MultiDataStructure ${MDS_CXX_SOURCES} ${MDS_TEST_SOURCES} ${MDS_CUDA_SOURCES})
+if(MDS_CUDAKDTREE_DIR)
+	target_include_directories(MultiDataStructure PRIVATE ${MDS_CUDAKDTREE_DIR})
+	target_compile_definitions(MultiDataStructure PRIVATE MDS_WITH_CUDAKDTREE)
+endif()
 
 target_include_directories(MultiDataStructure PRIVATE ${MDS_DIR} ${GLM_INCLUDE_DIR})
 target_compile_definitions(MultiDataStructure PRIVATE MDS_HEADLESS)
 target_link_libraries(MultiDataStructure PRIVATE
 	Boost::json OpenMP::OpenMP_CXX Threads::Threads CUDA::cudart_static)
 
-# Mirrors the vcxproj: relocatable device code and a 64-register cap for the CUDA kernels.
+# Mirrors the vcxproj: relocatable device code and (set per source above) a 64-register cap for our
+# CUDA kernels.
 set_target_properties(MultiDataStructure PROPERTIES
 	CUDA_SEPARABLE_COMPILATION ON
 	CUDA_RESOLVE_DEVICE_SYMBOLS ON)
@@ -92,4 +106,4 @@ set_target_properties(MultiDataStructure PROPERTIES
 # AVX2/BMI/POPCNT match /arch:AVX2 and enable the leaf-scan intrinsics in PointSpatialIndex.cpp.
 target_compile_options(MultiDataStructure PRIVATE
 	$<$<COMPILE_LANGUAGE:CXX>:-mavx2 -mbmi -mpopcnt -ffp-contract=off>
-	$<$<COMPILE_LANGUAGE:CUDA>:--maxrregcount=64 -Xcompiler=-ffp-contract=off>)
+	$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=off>)

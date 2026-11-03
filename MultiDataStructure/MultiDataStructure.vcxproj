@@ -163,6 +163,7 @@
     <ClInclude Include="workloads\points\PointPrimitive.h" />
     <ClInclude Include="workloads\points\LBVH.h" />
     <ClInclude Include="workloads\points\Octree.h" />
+    <ClInclude Include="workloads\points\CudaKdTreeBaseline.h" />
     <ClInclude Include="workloads\points\GpuKnnCommon.cuh" />
     <ClInclude Include="workloads\points\GpuUniformGrid.h" />
     <ClInclude Include="workloads\points\PointGpuIndex.h" />
@@ -223,6 +224,7 @@
     <ClCompile Include="ui\SearchFlow.cpp" />
     <ClCompile Include="ui\Viewer3D.cpp" />
     <ClCompile Include="workloads\points\BIH.cpp" />
+    <ClCompile Include="workloads\points\CudaKdTreeBaselineStub.cpp" />
     <ClCompile Include="workloads\points\HGrid.cpp" />
     <ClCompile Include="workloads\points\PointBenchmark.cpp" />
     <ClCompile Include="workloads\points\PointCloud.cpp" />

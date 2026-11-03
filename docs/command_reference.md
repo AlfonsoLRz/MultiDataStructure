@@ -407,7 +407,12 @@ GPU then downloads only normals, counts and checksums. `normal_mismatches` count
 tree-free baseline (`GpuUniformGrid`: a uniform grid built on the GPU, occupied cells in a hash table,
 one warp per query ring by ring); it runs once, with the first schema, for each cell side in
 `--grid-cell-factors` (multiples of the median k-th neighbour distance, default 1), and writes its
-GPU build time to `build_ms` (tree rows: the CPU build) and its cell side to `cell_size`.
+GPU build time to `build_ms` (tree rows: the CPU build) and its cell side to `cell_size`. Backend
+`gpucudakd` adds Wald's cudaKDTree (left-balanced point k-d tree built on the GPU, widest-dimension
+splits, closest-corner-tracking kNN, one thread per query; k = 8, 16 or 32), compiled only when CMake
+gets `-DMDS_CUDAKDTREE_DIR=<cudaKDTree checkout>`; it breaks distance ties by its own point order, so
+its `mismatches` compare counts and k-th neighbour distances, and the log reports how many exact sets
+differ. `scripts/gpu_normals_pilot.py` runs this mode over a schema panel and prints the gate table.
 
 ```bash
 MultiDataStructure --mode batch-check --input <cloud.mdspc> --schemas "<a.json>;<b.json>" --self-knn 16 \

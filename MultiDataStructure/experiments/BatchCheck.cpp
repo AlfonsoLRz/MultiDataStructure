@@ -4,6 +4,7 @@
 #include "QueryTrace.h"
 #include "../core/Config.h"
 #include "../workloads/points/PointCloud.h"
+#include "../workloads/points/CudaKdTreeBaseline.h"
 #include "../workloads/points/GpuUniformGrid.h"
 #include "../workloads/points/PointGpuIndex.h"
 #include "../workloads/points/PointNormals.h"
@@ -134,7 +135,7 @@ namespace
 	}
 
 	void cpuQuery(const PointSpatialIndex& index, const PointCloud& cloud, const Query& query, uint32_t& count, uint64_t& checksum,
-				  PointNormals::Estimate* normal)
+				  PointNormals::Estimate* normal, float& kth)
 	{
 		constexpr PointSpatialIndex::QueryTelemetry off = PointSpatialIndex::QueryTelemetry::Off;
 		switch (query._kind)
@@ -164,6 +165,12 @@ namespace
 			checksum = result._stats._resultChecksum;
 			if (normal)
 				*normal = cpuNormal(cloud, result._pointIndices);
+			if (!result._pointIndices.empty())
+			{
+				// (dx*dx + dy*dy) + dz*dz, the engine's arithmetic.
+				const glm::vec3 d = cloud.points()[result._pointIndices.back()].position - query._min;
+				kth = (d.x * d.x + d.y * d.y) + d.z * d.z;
+			}
 			return;
 		}
 		}
@@ -174,6 +181,7 @@ namespace
 		std::vector<uint32_t>				_counts;
 		std::vector<uint64_t>				_checksums;
 		std::vector<PointNormals::Estimate>	_normals;	// with normals: per query (kNN only)
+		std::vector<float>					_kth;		// kNN: squared distance to the farthest neighbour
 	};
 
 	double runCpu(const PointSpatialIndex& index, const PointCloud& cloud, const std::vector<Query>& queries, int threads, bool normals,
@@ -182,10 +190,12 @@ namespace
 		answers._counts.assign(queries.size(), 0);
 		answers._checksums.assign(queries.size(), 0);
 		answers._normals.assign(normals ? queries.size() : 0, PointNormals::Estimate{});
+		answers._kth.assign(queries.size(), 0.0f);
 		const int n = static_cast<int>(queries.size());
 		const auto start = std::chrono::steady_clock::now();
 		const auto one = [&](int q) {
-			cpuQuery(index, cloud, queries[q], answers._counts[q], answers._checksums[q], normals ? &answers._normals[q] : nullptr);
+			cpuQuery(index, cloud, queries[q], answers._counts[q], answers._checksums[q], normals ? &answers._normals[q] : nullptr,
+					 answers._kth[q]);
 		};
 		if (threads <= 1)
 		{
@@ -199,6 +209,20 @@ namespace
 				one(q);
 		}
 		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	}
+
+	// Tie-tolerant kNN comparison, for a library that breaks distance ties its own way: the count and
+	// the squared distance to the farthest neighbour must match (to rounding).
+	size_t kthMismatches(const Answers& reference, const std::vector<uint32_t>& counts, const std::vector<float>& kth)
+	{
+		size_t different = 0;
+		for (size_t q = 0; q < reference._counts.size(); ++q)
+		{
+			const double expected = reference._kth[q];
+			if (reference._counts[q] != counts[q] || std::abs(kth[q] - expected) > 1e-5 * expected + 1e-12)
+				++different;
+		}
+		return different;
 	}
 
 	// kNN queries whose normal differs from the reference's (PointNormals::agrees).
@@ -355,7 +379,7 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 	const auto wants = [&options](const char* backend) {
 		return std::find(options._backends.begin(), options._backends.end(), backend) != options._backends.end();
 	};
-	const bool wantGpu = wants("gpu") || wants("gpuwarp") || wants("gpugrid");
+	const bool wantGpu = wants("gpu") || wants("gpuwarp") || wants("gpugrid") || wants("gpucudakd");
 	const bool gpu = wantGpu && PointGpuIndex::deviceAvailable();
 	if (gpu)
 		PointGpuIndex::selectDevice(options._device);
@@ -481,6 +505,27 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 			}
 		}
 
+		std::unique_ptr<CudaKdTreeBaseline> cudaKd;
+		if (schemaNumber == 0 && gpu && wants("gpucudakd"))
+		{
+			if (!CudaKdTreeBaseline::available())
+				std::cout << "  gpucudakd skipped: built without MDS_CUDAKDTREE_DIR\n";
+			else
+			{
+				try
+				{
+					cudaKd = std::make_unique<CudaKdTreeBaseline>();
+					cudaKd->build(cloud);
+					std::cout << "  cudaKDTree: upload " << cudaKd->uploadMs() << " ms, build " << cudaKd->buildMs() << " ms\n";
+				}
+				catch (const std::exception& error)
+				{
+					std::cout << "  gpucudakd skipped (" << error.what() << ")\n";
+					cudaKd.reset();
+				}
+			}
+		}
+
 		for (size_t b = 0; b < batches.size(); ++b)
 		{
 			const std::vector<Query>& batch = batches[b];
@@ -592,9 +637,49 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 					}
 					continue;
 				}
+				else if (backend == "gpucudakd")
+				{
+					if (!cudaKd)
+						continue;
+					row._threads = 0;
+					row._name = "cudakdtree";
+					row._path.clear();
+					row._digest = 0;
+					row._nodes = cloud.size();
+					row._depth = 0;
+					row._stackBound = 0;
+					row._buildMs = cudaKd->buildMs();
+					row._uploadMs = cudaKd->uploadMs();
+					row._deviceBytes = cudaKd->deviceBytes();
+					try
+					{
+						std::vector<float> kth;
+						PointGpuIndex::BatchResult result = cudaKd->run(batch, options._sortQueries, options._normals, kth);
+						for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
+						{
+							result = cudaKd->run(batch, options._sortQueries, options._normals, kth);
+							times.push_back(result._endToEndMs);
+							kernels.push_back(result._countMs);
+							sorts.push_back(result._sortMs);
+						}
+						// Exact sets differ only where cudaKDTree broke a distance tie differently.
+						const size_t exact = mismatches(reference, result._counts, result._checksums);
+						row._mismatches = kthMismatches(reference, result._counts, kth);
+						row._normalMismatches = normalMismatches(reference, batch, result._normals);
+						if (exact)
+							std::cout << "    gpucudakd  batch " << std::setw(8) << batch.size() << ": " << exact
+									  << " neighbour sets differ from the CPU's (distance ties broken by cudaKDTree's point order)\n";
+					}
+					catch (const std::exception& error)
+					{
+						std::cout << "    " << std::setw(7) << backend << "  batch " << std::setw(8) << batch.size()
+								  << ": skipped (" << error.what() << ")\n";
+						continue;
+					}
+				}
 				else
 				{
-					throw std::invalid_argument("batch-check: unknown backend " + backend + " (cpu1, cpuN, gpu, gpuwarp, gpugrid)");
+					throw std::invalid_argument("batch-check: unknown backend " + backend + " (cpu1, cpuN, gpu, gpuwarp, gpugrid, gpucudakd)");
 				}
 				row._medianMs = median(times);
 				row._minMs = *std::min_element(times.begin(), times.end());

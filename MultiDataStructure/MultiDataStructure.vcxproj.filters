@@ -147,6 +147,9 @@
     <ClInclude Include="workloads\points\Octree.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
+    <ClInclude Include="workloads\points\CudaKdTreeBaseline.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
     <ClInclude Include="workloads\points\GpuKnnCommon.cuh">
       <Filter>cuda</Filter>
     </ClInclude>
@@ -321,6 +324,9 @@
       <Filter>experiments</Filter>
     </ClCompile>
     <ClCompile Include="workloads\points\BIH.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\CudaKdTreeBaselineStub.cpp">
       <Filter>workloads\points</Filter>
     </ClCompile>
     <ClCompile Include="workloads\points\HGrid.cpp">
