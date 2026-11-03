@@ -2,19 +2,27 @@
 #include "PointGpuIndex.h"
 
 #include "../../CudaHelper.h"
+#include "GpuKnnCommon.cuh"
 
 #include <cub/cub.cuh>
 
 // The thread kernels are one thread per query, and are the CPU traversal of PointSpatialIndex.cpp
 // line for line: the same root test, the same prune expressions, children pushed in reverse so they
 // pop in child order, kNN depth-first with the nearest child first and the same (distance, index)
-// heap. The warp kernels (range, count, radius) give one query to a warp: lanes test children and
-// scan leaf points side by side, with the same tests and the same arithmetic.
+// heap. The warp kernels give one query to a warp: lanes test children and scan leaf points side by
+// side, with the same tests and the same arithmetic; warp kNN keeps its k <= 32 best one per lane
+// (GpuKnn::WarpKnn). Both kNN kernels can also return each neighbourhood's PCA normal.
 // Float arithmetic goes through __fmul_rn / __fadd_rn / __fsub_rn, which nvcc never contracts into
 // an FMA: the CPU build has no FMA either, and a fused multiply-add rounds once instead of twice,
 // which would move points that sit exactly on a radius boundary.
 namespace
 {
+	using GpuKnn::FullMask;
+	using GpuKnn::lanesBelow;
+	using GpuKnn::less;
+	using GpuKnn::mixIndex;
+	using GpuKnn::warpSum;
+
 	constexpr uint32_t InternalBit = 0x80000000u;
 	constexpr int ThreadsPerBlock = 128;
 	constexpr uint32_t MaxK = PointGpuIndex::MaxK;
@@ -72,6 +80,7 @@ namespace
 		const uint64_t*	_offsets;
 		uint32_t*		_indices;
 		uint32_t*		_knnScratch;	// MaxK answers per kNN thread, (distance, index) order
+		float*			_normals;		// 3 per query: kNN neighbourhood normals, when asked for
 		int*			_overflow;
 	};
 
@@ -91,18 +100,6 @@ namespace
 	__device__ __forceinline__ bool isInternal(const GpuNode& node) { return (node._word & InternalBit) != 0; }
 	__device__ __forceinline__ uint32_t countOf(const GpuNode& node) { return node._word & ~InternalBit; }
 	__device__ __forceinline__ bool emptyLeaf(const GpuNode& node) { return node._word == 0; }
-
-	// PointSpatialIndex::accumulateResultChecksum's mixer.
-	__device__ __forceinline__ uint64_t mixIndex(uint32_t index)
-	{
-		uint64_t mixed = static_cast<uint64_t>(index) + 0x9E3779B97F4A7C15ull;
-		mixed ^= mixed >> 30;
-		mixed *= 0xBF58476D1CE4E5B9ull;
-		mixed ^= mixed >> 27;
-		mixed *= 0x94D049BB133111EBull;
-		mixed ^= mixed >> 31;
-		return mixed;
-	}
 
 	__device__ __forceinline__ float squared(float d) { return __fmul_rn(d, d); }
 
@@ -309,16 +306,6 @@ namespace
 	// Warp-per-query traversal. Every branch below is warp-uniform except the per-lane tests, so
 	// the full-mask ballots and shuffles are always reached by all 32 lanes.
 	constexpr int WarpsPerBlock = 4;
-	constexpr uint32_t FullMask = 0xFFFFFFFFu;
-
-	__device__ __forceinline__ uint32_t lanesBelow(uint32_t lane) { return (1u << lane) - 1u; }
-
-	__device__ __forceinline__ uint64_t warpSum(uint64_t value)
-	{
-		for (int offset = 16; offset > 0; offset >>= 1)
-			value += __shfl_xor_sync(FullMask, value, offset);
-		return value;
-	}
 
 	// Range and count, one warp per query. The stack lives in shared memory; a pop is read by every
 	// lane, pushes are compacted with a ballot. Results per query equal the thread kernel's: counts
@@ -538,13 +525,9 @@ namespace
 		uint32_t	_slot;
 	};
 
-	// (distance, index) order, std::pair's, which the CPU's heap uses.
-	__device__ __forceinline__ bool less(float da, uint32_t ia, float db, uint32_t ib)
-	{
-		return da < db || (da == db && ia < ib);
-	}
-
-	__device__ void siftDown(float* distances, uint32_t* indices, uint32_t size, uint32_t at)
+	// Slots = true also carries each entry's point position (for normals) through the heap.
+	template <bool Slots>
+	__device__ void siftDown(float* distances, uint32_t* indices, uint32_t* slots, uint32_t size, uint32_t at)
 	{
 		for (;;)
 		{
@@ -558,21 +541,29 @@ namespace
 				return;
 			const float d = distances[at]; distances[at] = distances[largest]; distances[largest] = d;
 			const uint32_t i = indices[at]; indices[at] = indices[largest]; indices[largest] = i;
+			if (Slots)
+			{
+				const uint32_t s = slots[at]; slots[at] = slots[largest]; slots[largest] = s;
+			}
 			at = largest;
 		}
 	}
 
 	// PointSpatialIndex's offerKnnPoint: an unordered bucket until k entries, then a max-heap on
 	// (distance, index). Which heap shape holds the k best does not matter; the set does.
-	__device__ __forceinline__ void offer(float* distances, uint32_t* indices, uint32_t& size, uint32_t k, float distance, uint32_t index)
+	template <bool Slots>
+	__device__ __forceinline__ void offer(float* distances, uint32_t* indices, uint32_t* slots, uint32_t& size, uint32_t k,
+										  float distance, uint32_t index, uint32_t slot)
 	{
 		if (size < k)
 		{
 			distances[size] = distance;
 			indices[size] = index;
+			if (Slots)
+				slots[size] = slot;
 			if (++size == k)
 				for (uint32_t at = k / 2; at-- > 0;)
-					siftDown(distances, indices, k, at);
+					siftDown<Slots>(distances, indices, slots, k, at);
 			return;
 		}
 		if (distance > distances[0])
@@ -581,13 +572,23 @@ namespace
 		{
 			distances[0] = distance;
 			indices[0] = index;
-			siftDown(distances, indices, k, 0);
+			if (Slots)
+				slots[0] = slot;
+			siftDown<Slots>(distances, indices, slots, k, 0);
 		}
 	}
 
+	__device__ __forceinline__ void writeNormal(float* normals, uint32_t q, const PointNormals::Estimate& estimate)
+	{
+		normals[3 * static_cast<size_t>(q)] = estimate._normal[0];
+		normals[3 * static_cast<size_t>(q) + 1] = estimate._normal[1];
+		normals[3 * static_cast<size_t>(q) + 2] = estimate._normal[2];
+	}
+
 	// Depth-first, nearest child first: knnSearchDepthFirst. Write = true also stores the answer,
-	// in (distance, index) order, in the thread's MaxK slots of the scratch buffer.
-	template <int StackSize, bool Write>
+	// in (distance, index) order, in the thread's MaxK slots of the scratch buffer; Normals = true
+	// writes the neighbourhood's PCA normal.
+	template <int StackSize, bool Write, bool Normals>
 	__global__ void knnKernel(Tree tree, const GpuQuery* __restrict__ queries, const uint32_t* __restrict__ permutation,
 							  uint32_t begin, uint32_t count, Outputs out)
 	{
@@ -600,6 +601,7 @@ namespace
 
 		float distances[MaxK];
 		uint32_t indices[MaxK];
+		uint32_t slots[Normals ? MaxK : 1];
 		uint32_t size = 0;
 		if (k > 0 && tree._indexed > 0)
 		{
@@ -621,7 +623,7 @@ namespace
 						const float distance = pointDistanceSquared(tree, i, query._a);
 						if (size == k && distance > distances[0])
 							continue;
-						offer(distances, indices, size, k, distance, __ldg(tree._order + i));
+						offer<Normals>(distances, indices, slots, size, k, distance, __ldg(tree._order + i), i);
 					}
 					continue;
 				}
@@ -660,16 +662,27 @@ namespace
 		{
 			const float d = distances[i];
 			const uint32_t index = indices[i];
+			const uint32_t slot = Normals ? slots[i] : 0;
 			uint32_t at = i;
 			while (at > 0 && less(d, index, distances[at - 1], indices[at - 1]))
 			{
 				distances[at] = distances[at - 1];
 				indices[at] = indices[at - 1];
+				if (Normals)
+					slots[at] = slots[at - 1];
 				--at;
 			}
 			distances[at] = d;
 			indices[at] = index;
+			if (Normals)
+				slots[at] = slot;
 		}
+		if (Normals)
+			writeNormal(out._normals, q, PointNormals::fromPoints(size, [&](size_t i, float* p) {
+				p[0] = __ldg(tree._x + slots[i]);
+				p[1] = __ldg(tree._y + slots[i]);
+				p[2] = __ldg(tree._z + slots[i]);
+			}));
 
 		uint64_t checksum = 0;
 		for (uint32_t i = 0; i < size; ++i)
@@ -682,6 +695,123 @@ namespace
 			uint32_t* scratch = out._knnScratch + static_cast<size_t>(t) * MaxK;
 			for (uint32_t i = 0; i < size; ++i)
 				scratch[i] = indices[i];
+		}
+	}
+
+	// kNN, one warp per query, k <= 32. The same depth-first walk: a node is skipped when its box is
+	// farther than the k-th best, children are pushed nearest on top, and every leaf point not
+	// farther than the k-th best is offered to the warp's candidate list, which keeps exactly the k
+	// smallest (distance, index) pairs, so the answer is the CPU's. Lanes test 32 children or 32
+	// points at a time; the stack, with each entry's box distance, lives in shared memory.
+	template <int StackSize, bool Write, bool Normals>
+	__global__ void __launch_bounds__(WarpsPerBlock * 32)
+	warpKnnKernel(Tree tree, const GpuQuery* __restrict__ queries, const uint32_t* __restrict__ permutation,
+				  uint32_t begin, uint32_t count, Outputs out)
+	{
+		__shared__ float stackDistances[WarpsPerBlock][StackSize];
+		__shared__ uint32_t stackSlots[WarpsPerBlock][StackSize];
+		const uint32_t lane = threadIdx.x & 31u;
+		const uint32_t warp = threadIdx.x >> 5;
+		const uint32_t w = blockIdx.x * WarpsPerBlock + warp;
+		if (w >= count)
+			return;
+		const uint32_t q = permutation[begin + w];
+		const GpuQuery query = queries[q];
+		const uint32_t k = min(query._k, GpuKnn::WarpMaxK);
+
+		GpuKnn::WarpKnn knn;
+		knn.init(max(k, 1u), lane);
+		if (k > 0 && tree._indexed > 0)
+		{
+			float* distances = stackDistances[warp];
+			uint32_t* slots = stackSlots[warp];
+			if (lane == 0)
+			{
+				distances[0] = boxDistanceSquared(loadNode(tree._nodes, 0), query._a);
+				slots[0] = 0;
+			}
+			int top = 1;
+			__syncwarp();
+			while (top > 0)
+			{
+				--top;
+				const float entryDistance = distances[top];
+				const uint32_t slot = slots[top];
+				if (entryDistance > knn.worstDistance())
+					continue;
+				const GpuNode node = loadNode(tree._nodes, slot);
+				if (!isInternal(node))
+				{
+					const uint32_t end = node._first + countOf(node);
+					for (uint32_t base = node._first; base < end; base += 32)
+					{
+						const uint32_t i = base + lane;
+						const bool inRange = i < end;
+						knn.offerPoint(inRange, inRange ? pointDistanceSquared(tree, i, query._a) : 0.0f, i, tree._order);
+					}
+					continue;
+				}
+
+				__syncwarp();	// every lane has read the popped entry; pushes may now reuse it
+				const uint32_t childCount = countOf(node);
+				for (uint32_t base = 0; base < childCount; base += 32)
+				{
+					const uint32_t c = base + lane;
+					const float worst = knn.worstDistance();
+					bool keep = false;
+					float childDistance = 0.0f;
+					if (c < childCount)
+					{
+						const GpuNode child = loadNode(tree._nodes, node._first + c);
+						if (!emptyLeaf(child))
+						{
+							childDistance = boxDistanceSquared(child, query._a);
+							keep = childDistance <= worst;
+						}
+					}
+					const uint32_t ballot = __ballot_sync(FullMask, keep);
+					const int pushed = __popc(ballot);
+					if (top + pushed > StackSize)
+					{
+						if (lane == 0)
+							atomicExch(out._overflow, 1);
+						return;
+					}
+					// A survivor sits above every survivor farther than it, so the nearest pops first.
+					uint32_t below = 0;
+					for (uint32_t rest = ballot; rest; rest &= rest - 1)
+					{
+						const int other = __ffs(rest) - 1;
+						const float otherDistance = __shfl_sync(FullMask, childDistance, other);
+						below += otherDistance > childDistance || (otherDistance == childDistance && other > static_cast<int>(lane)) ? 1u : 0u;
+					}
+					if (keep)
+					{
+						distances[top + below] = childDistance;
+						slots[top + below] = node._first + c;
+					}
+					top += pushed;
+				}
+				__syncwarp();
+			}
+		}
+
+		const uint32_t found = k > 0 ? knn.count() : 0u;
+		const uint64_t checksum = k > 0 ? knn.checksum() : 0ull;
+		if (lane == 0)
+		{
+			out._counts[q] = found;
+			out._emitted[q] = found;
+			out._checksums[q] = checksum;
+		}
+		// Lanes are in ascending (distance, index) order: the CPU's output order.
+		if (Write && lane < found)
+			out._knnScratch[static_cast<size_t>(w) * MaxK + lane] = knn._index;
+		if (Normals)
+		{
+			const PointNormals::Estimate estimate = k > 0 ? knn.normal(tree._x, tree._y, tree._z) : PointNormals::Estimate{};
+			if (lane == 0)
+				writeNormal(out._normals, q, estimate);
 		}
 	}
 
@@ -789,8 +919,27 @@ namespace
 		return static_cast<unsigned>((count + ThreadsPerBlock - 1) / ThreadsPerBlock);
 	}
 
+	// What a kNN launch also does: write the answers to scratch, compute normals, walk per warp (the
+	// warp kernel holds k <= 32, so a group with a larger k runs per thread).
+	struct KnnMode
+	{
+		bool	_write = false;
+		bool	_normals = false;
+		bool	_warp = false;
+	};
+
+	template <int StackSize, bool Write, bool Normals>
+	void launchKnn(bool warp, const Tree& tree, const GpuQuery* queries, const uint32_t* permutation, uint32_t begin, uint32_t count,
+				   const Outputs& out, unsigned blocks, unsigned threads, unsigned warpBlocks)
+	{
+		if (warp)
+			warpKnnKernel<StackSize, Write, Normals><<<warpBlocks, WarpsPerBlock * 32>>>(tree, queries, permutation, begin, count, out);
+		else
+			knnKernel<StackSize, Write, Normals><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
+	}
+
 	template <int StackSize>
-	void launchGroup(uint32_t group, bool write, PointGpuIndex::Traversal traversal, const Tree& tree, const GpuQuery* queries,
+	void launchGroup(uint32_t group, bool write, PointGpuIndex::Traversal traversal, KnnMode knn, const Tree& tree, const GpuQuery* queries,
 					 const uint32_t* permutation, uint32_t begin, uint32_t count, const Outputs& out)
 	{
 		// A thread walks its whole query alone, so a small batch in 128-thread blocks would sit on a
@@ -820,22 +969,26 @@ namespace
 			break;
 		case KnnGroup:
 			// The kNN answer is final after the counting pass; with indices it also lands in scratch.
-			write ? knnKernel<StackSize, true><<<blocks, threads>>>(tree, queries, permutation, begin, count, out)
-				  : knnKernel<StackSize, false><<<blocks, threads>>>(tree, queries, permutation, begin, count, out);
+			if (knn._write)
+				knn._normals ? launchKnn<StackSize, true, true>(knn._warp, tree, queries, permutation, begin, count, out, blocks, threads, warpBlocks)
+							 : launchKnn<StackSize, true, false>(knn._warp, tree, queries, permutation, begin, count, out, blocks, threads, warpBlocks);
+			else
+				knn._normals ? launchKnn<StackSize, false, true>(knn._warp, tree, queries, permutation, begin, count, out, blocks, threads, warpBlocks)
+							 : launchKnn<StackSize, false, false>(knn._warp, tree, queries, permutation, begin, count, out, blocks, threads, warpBlocks);
 			break;
 		}
 		CudaHelper::checkError(cudaGetLastError());
 	}
 
-	void launch(size_t stackBound, uint32_t group, bool write, PointGpuIndex::Traversal traversal, const Tree& tree, const GpuQuery* queries,
-				const uint32_t* permutation, uint32_t begin, uint32_t count, const Outputs& out)
+	void launch(size_t stackBound, uint32_t group, bool write, PointGpuIndex::Traversal traversal, KnnMode knn, const Tree& tree,
+				const GpuQuery* queries, const uint32_t* permutation, uint32_t begin, uint32_t count, const Outputs& out)
 	{
 		if (stackBound <= 64)
-			launchGroup<64>(group, write, traversal, tree, queries, permutation, begin, count, out);
+			launchGroup<64>(group, write, traversal, knn, tree, queries, permutation, begin, count, out);
 		else if (stackBound <= 256)
-			launchGroup<256>(group, write, traversal, tree, queries, permutation, begin, count, out);
+			launchGroup<256>(group, write, traversal, knn, tree, queries, permutation, begin, count, out);
 		else
-			launchGroup<1024>(group, write, traversal, tree, queries, permutation, begin, count, out);
+			launchGroup<1024>(group, write, traversal, knn, tree, queries, permutation, begin, count, out);
 	}
 
 	float elapsed(cudaEvent_t from, cudaEvent_t to)
@@ -877,6 +1030,7 @@ struct PointGpuIndex::State
 	uint64_t*	_offsets = nullptr;		size_t _offsetCapacity = 0;
 	uint32_t*	_indices = nullptr;		size_t _indexCapacity = 0;
 	uint32_t*	_knnScratch = nullptr;	size_t _knnScratchCapacity = 0;
+	float*		_normals = nullptr;		size_t _normalCapacity = 0;
 	uint8_t*	_cubTemp = nullptr;		size_t _cubTempCapacity = 0;
 	int*		_overflow = nullptr;
 
@@ -886,6 +1040,7 @@ struct PointGpuIndex::State
 	uint64_t*	_hostChecksums = nullptr;	size_t _hostChecksumCapacity = 0;
 	uint64_t*	_hostOffsets = nullptr;		size_t _hostOffsetCapacity = 0;
 	uint32_t*	_hostIndices = nullptr;		size_t _hostIndexCapacity = 0;
+	float*		_hostNormals = nullptr;		size_t _hostNormalCapacity = 0;
 
 	cudaEvent_t	_events[6] = {};
 
@@ -901,9 +1056,9 @@ struct PointGpuIndex::State
 		releaseTree();
 		release(_queries); release(_keys); release(_sortedKeys); release(_values); release(_permutation);
 		release(_counts); release(_emitted); release(_checksums); release(_offsets); release(_indices); release(_knnScratch);
-		release(_cubTemp); release(_overflow);
+		release(_normals); release(_cubTemp); release(_overflow);
 		for (void* host : { static_cast<void*>(_hostQueries), static_cast<void*>(_hostCounts), static_cast<void*>(_hostChecksums),
-							static_cast<void*>(_hostOffsets), static_cast<void*>(_hostIndices) })
+							static_cast<void*>(_hostOffsets), static_cast<void*>(_hostIndices), static_cast<void*>(_hostNormals) })
 			if (host)
 				cudaFreeHost(host);
 		for (cudaEvent_t event : _events)
@@ -989,7 +1144,8 @@ void PointGpuIndex::upload(const PointSpatialIndex& index)
 	}
 }
 
-PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries, bool withIndices, bool sortQueries, Traversal traversal)
+PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries, bool withIndices, bool sortQueries, Traversal traversal,
+											  bool normals)
 {
 	if (!_state)
 		throw std::runtime_error("PointGpuIndex::run before upload");
@@ -1000,6 +1156,8 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 	result._checksums.resize(n);
 	if (withIndices)
 		result._offsets.resize(n);
+	if (normals)
+		result._normals.assign(3 * n, 0.0f);
 	// An empty index answers every query with nothing, as the CPU does.
 	if (n == 0 || s._nodeCount == 0)
 		return result;
@@ -1009,7 +1167,7 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 	// Host side, untimed: the queries in device form and the size of each kernel group.
 	std::array<uint32_t, GroupCount> groupSize{};
 	ensureHost(s._hostQueries, s._hostQueryCapacity, n);
-	uint32_t knnQueries = 0;
+	uint32_t knnQueries = 0, largestK = 0;
 	for (size_t q = 0; q < n; ++q)
 	{
 		const Query& query = queries[q];
@@ -1026,7 +1184,12 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 		g._k = query._k;
 		++groupSize[groupOf(query._kind)];
 		knnQueries += query._kind == Kind::Knn ? 1u : 0u;
+		if (query._kind == Kind::Knn)
+			largestK = std::max(largestK, query._k);
 	}
+	KnnMode knn;
+	knn._normals = normals;
+	knn._warp = traversal == Traversal::Warp && largestK <= GpuKnn::WarpMaxK;
 
 	// Device buffers, untimed after the first batch of a given size.
 	ensure(s._queries, s._queryCapacity, n, s._batchBytes);
@@ -1046,6 +1209,12 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 	CudaHelper::checkError(cub::DeviceRadixSort::SortPairs(nullptr, sortBytes, s._keys, s._sortedKeys, s._values, s._permutation, static_cast<int>(n)));
 	CudaHelper::checkError(cub::DeviceScan::ExclusiveSum(nullptr, scanBytes, s._emitted, s._offsets, static_cast<int>(n)));
 	ensure(s._cubTemp, s._cubTempCapacity, std::max(sortBytes, scanBytes), s._batchBytes);
+	if (normals)
+	{
+		ensure(s._normals, s._normalCapacity, 3 * n, s._batchBytes);
+		ensureHost(s._hostNormals, s._hostNormalCapacity, 3 * n);
+		CudaHelper::checkError(cudaMemset(s._normals, 0, 3 * n * sizeof(float)));
+	}
 	ensureHost(s._hostCounts, s._hostCountCapacity, n);
 	ensureHost(s._hostChecksums, s._hostChecksumCapacity, n);
 	if (withIndices)
@@ -1055,7 +1224,7 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 
 	cudaEvent_t* e = s._events;
 	const Tree tree = s.tree();
-	Outputs out{ s._counts, s._emitted, s._checksums, s._offsets, s._indices, s._knnScratch, s._overflow };
+	Outputs out{ s._counts, s._emitted, s._checksums, s._offsets, s._indices, s._knnScratch, s._normals, s._overflow };
 
 	CudaHelper::checkError(cudaEventRecord(e[0]));
 	CudaHelper::checkError(cudaMemcpy(s._queries, s._hostQueries, n * sizeof(GpuQuery), cudaMemcpyHostToDevice));
@@ -1075,7 +1244,10 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 	for (uint32_t group = 0; group < GroupCount; ++group)
 	{
 		if (groupSize[group])
-			launch(s._stackBound, group, withIndices && group == KnnGroup, traversal, tree, s._queries, s._permutation, begin, groupSize[group], out);
+		{
+			knn._write = withIndices;
+			launch(s._stackBound, group, withIndices && group == KnnGroup, traversal, knn, tree, s._queries, s._permutation, begin, groupSize[group], out);
+		}
 		begin += groupSize[group];
 	}
 	CudaHelper::checkError(cudaEventRecord(e[3]));
@@ -1099,7 +1271,7 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 		for (uint32_t group = 0; group < GroupCount; ++group)
 		{
 			if (groupSize[group] && group != KnnGroup)
-				launch(s._stackBound, group, true, traversal, tree, s._queries, s._permutation, begin, groupSize[group], out);
+				launch(s._stackBound, group, true, traversal, knn, tree, s._queries, s._permutation, begin, groupSize[group], out);
 			else if (groupSize[group])
 			{
 				copyKnnKernel<<<blocksFor(groupSize[group]), ThreadsPerBlock>>>(s._permutation, begin, groupSize[group], out);
@@ -1122,6 +1294,8 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 		if (total)
 			CudaHelper::checkError(cudaMemcpy(s._hostIndices, s._indices, total * sizeof(uint32_t), cudaMemcpyDeviceToHost));
 	}
+	if (normals)
+		CudaHelper::checkError(cudaMemcpy(s._hostNormals, s._normals, 3 * n * sizeof(float), cudaMemcpyDeviceToHost));
 	cudaEvent_t done = nullptr;
 	CudaHelper::checkError(cudaEventCreate(&done));
 	CudaHelper::checkError(cudaEventRecord(done));
@@ -1151,6 +1325,8 @@ PointGpuIndex::BatchResult PointGpuIndex::run(const std::vector<Query>& queries,
 		result._offsets.assign(s._hostOffsets, s._hostOffsets + n);
 		result._indices.assign(s._hostIndices, s._hostIndices + total);
 	}
+	if (normals)
+		result._normals.assign(s._hostNormals, s._hostNormals + 3 * n);
 	return result;
 }
 

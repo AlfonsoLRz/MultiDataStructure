@@ -13,7 +13,9 @@ namespace Experiments
 	//
 	// Batch queries keep the trace's mix (kind, radius, k, box size) but are centred on points drawn
 	// from the cloud, as pipeline queries are; without a trace, radius and kNN queries at scales set
-	// by the cloud's extent.
+	// by the cloud's extent. With selfKnn the batch is instead a kNN query at evenly spaced points of
+	// the cloud itself, the queries of a normal-estimation pass, and with normals every backend also
+	// computes each neighbourhood's PCA normal (checked against the single-core one).
 	struct BatchCheckOptions
 	{
 		std::string					_inputPath;
@@ -21,7 +23,8 @@ namespace Experiments
 		std::string					_inputTracePath;
 		std::string					_summaryCsvPath;
 		std::vector<size_t>			_batchSizes{ 1000, 10000, 100000, 1000000 };
-		// cpu1, cpuN, gpu (one thread per query), gpuwarp (one warp per query)
+		// cpu1, cpuN, gpu (one thread per query), gpuwarp (one warp per query); kNN-only baselines
+		// that ignore the schema and run once, with the first schema: gpugrid (GpuUniformGrid).
 		std::vector<std::string>	_backends{ "cpu1", "cpuN", "gpu", "gpuwarp" };
 		// cpu1 is timed only on batches up to this size (0 = all): its throughput is flat in the
 		// batch size, and a million queries on one core take minutes per schema.
@@ -37,6 +40,11 @@ namespace Experiments
 		bool						_gpuIndices = true;
 		bool						_sortQueries = true;
 		bool						_useBinaryCache = true;
+		// k of the self-query kNN batch (0 = trace or generated mix).
+		uint32_t					_selfKnn = 0;
+		bool						_normals = false;
+		// gpugrid cell sides, as multiples of the median k-th neighbour distance of the batch.
+		std::vector<double>			_gridCellFactors{ 1.0 };
 	};
 
 	int runBatchCheck(const BatchCheckOptions& options);

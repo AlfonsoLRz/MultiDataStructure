@@ -4,7 +4,9 @@
 #include "QueryTrace.h"
 #include "../core/Config.h"
 #include "../workloads/points/PointCloud.h"
+#include "../workloads/points/GpuUniformGrid.h"
 #include "../workloads/points/PointGpuIndex.h"
+#include "../workloads/points/PointNormals.h"
 #include "../workloads/points/PointSpatialIndex.h"
 
 #include <omp.h>
@@ -119,7 +121,20 @@ namespace
 		return queries;
 	}
 
-	void cpuQuery(const PointSpatialIndex& index, const Query& query, uint32_t& count, uint64_t& checksum)
+	// The k-th neighbourhood's normal from the CPU's own answer (cloud indices in (distance, index) order).
+	PointNormals::Estimate cpuNormal(const PointCloud& cloud, const std::vector<size_t>& indices)
+	{
+		const std::vector<PointPrimitive>& points = cloud.points();
+		return PointNormals::fromPoints(indices.size(), [&](size_t i, float* p) {
+			const glm::vec3& v = points[indices[i]].position;
+			p[0] = v.x;
+			p[1] = v.y;
+			p[2] = v.z;
+		});
+	}
+
+	void cpuQuery(const PointSpatialIndex& index, const PointCloud& cloud, const Query& query, uint32_t& count, uint64_t& checksum,
+				  PointNormals::Estimate* normal)
 	{
 		constexpr PointSpatialIndex::QueryTelemetry off = PointSpatialIndex::QueryTelemetry::Off;
 		switch (query._kind)
@@ -147,6 +162,8 @@ namespace
 			const PointSpatialIndex::QueryResult result = index.knnQuery(query._min, query._k, off);
 			count = static_cast<uint32_t>(result._stats._returnedPoints);
 			checksum = result._stats._resultChecksum;
+			if (normal)
+				*normal = cpuNormal(cloud, result._pointIndices);
 			return;
 		}
 		}
@@ -154,28 +171,100 @@ namespace
 
 	struct Answers
 	{
-		std::vector<uint32_t>	_counts;
-		std::vector<uint64_t>	_checksums;
+		std::vector<uint32_t>				_counts;
+		std::vector<uint64_t>				_checksums;
+		std::vector<PointNormals::Estimate>	_normals;	// with normals: per query (kNN only)
 	};
 
-	double runCpu(const PointSpatialIndex& index, const std::vector<Query>& queries, int threads, Answers& answers)
+	double runCpu(const PointSpatialIndex& index, const PointCloud& cloud, const std::vector<Query>& queries, int threads, bool normals,
+				  Answers& answers)
 	{
 		answers._counts.assign(queries.size(), 0);
 		answers._checksums.assign(queries.size(), 0);
+		answers._normals.assign(normals ? queries.size() : 0, PointNormals::Estimate{});
 		const int n = static_cast<int>(queries.size());
 		const auto start = std::chrono::steady_clock::now();
+		const auto one = [&](int q) {
+			cpuQuery(index, cloud, queries[q], answers._counts[q], answers._checksums[q], normals ? &answers._normals[q] : nullptr);
+		};
 		if (threads <= 1)
 		{
 			for (int q = 0; q < n; ++q)
-				cpuQuery(index, queries[q], answers._counts[q], answers._checksums[q]);
+				one(q);
 		}
 		else
 		{
 #pragma omp parallel for schedule(dynamic, 64) num_threads(threads)
 			for (int q = 0; q < n; ++q)
-				cpuQuery(index, queries[q], answers._counts[q], answers._checksums[q]);
+				one(q);
 		}
 		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	}
+
+	// kNN queries whose normal differs from the reference's (PointNormals::agrees).
+	size_t normalMismatches(const Answers& reference, const std::vector<Query>& queries, const std::vector<float>& normals)
+	{
+		if (reference._normals.empty() || normals.size() < 3 * queries.size())
+			return 0;
+		size_t different = 0;
+		for (size_t q = 0; q < queries.size(); ++q)
+			if (queries[q]._kind == Kind::Knn && !PointNormals::agrees(reference._normals[q], reference._counts[q], &normals[3 * q]))
+				++different;
+		return different;
+	}
+
+	size_t normalMismatches(const Answers& reference, const std::vector<Query>& queries, const std::vector<PointNormals::Estimate>& normals)
+	{
+		std::vector<float> flat(3 * normals.size());
+		for (size_t q = 0; q < normals.size(); ++q)
+			for (int axis = 0; axis < 3; ++axis)
+				flat[3 * q + axis] = normals[q]._normal[axis];
+		return normalMismatches(reference, queries, flat);
+	}
+
+	// A kNN query at `count` evenly spaced points of the cloud, in cloud order: a normal-estimation
+	// pass over the cloud (all of it when count is its size).
+	std::vector<Query> selfQueries(const PointCloud& cloud, uint32_t k, size_t count)
+	{
+		std::vector<Query> queries;
+		const size_t n = cloud.size();
+		if (n == 0)
+			return queries;
+		queries.reserve(count);
+		for (size_t j = 0; j < count; ++j)
+		{
+			Query query;
+			query._kind = Kind::Knn;
+			query._k = k;
+			query._min = cloud.points()[static_cast<size_t>((static_cast<uint64_t>(j) * n) / count) % n].position;
+			queries.push_back(query);
+		}
+		return queries;
+	}
+
+	// The median distance to the k-th neighbour over up to 1,024 of the batch's kNN queries: the
+	// scale of a uniform grid's cells.
+	double medianKnnRadius(const PointSpatialIndex& index, const PointCloud& cloud, const std::vector<Query>& batch)
+	{
+		std::vector<const Query*> knn;
+		for (const Query& query : batch)
+			if (query._kind == Kind::Knn && query._k > 0)
+				knn.push_back(&query);
+		if (knn.empty())
+			return 0.0;
+		std::vector<double> radii;
+		const size_t samples = std::min<size_t>(1024, knn.size());
+		for (size_t s = 0; s < samples; ++s)
+		{
+			const Query& query = *knn[(s * knn.size()) / samples];
+			const PointSpatialIndex::QueryResult result = index.knnQuery(query._min, query._k, PointSpatialIndex::QueryTelemetry::Off);
+			if (!result._pointIndices.empty())
+				radii.push_back(glm::length(cloud.points()[result._pointIndices.back()].position - query._min));
+		}
+		if (radii.empty())
+			return 0.0;
+		std::nth_element(radii.begin(), radii.begin() + radii.size() / 2, radii.end());
+		return radii[radii.size() / 2];
 	}
 
 	size_t mismatches(const Answers& reference, const std::vector<uint32_t>& counts, const std::vector<uint64_t>& checksums)
@@ -219,7 +308,19 @@ namespace
 		double		_kernelMs = 0.0;	// GPU: counting + writing traversal (median)
 		double		_sortMs = 0.0;
 		size_t		_mismatches = 0;
+		size_t		_normalMismatches = 0;
 		double		_meanReturned = 0.0;
+		// The structure: the schema's tree, or a baseline's own (gpugrid).
+		std::string	_name;
+		std::string	_path;
+		uint64_t	_digest = 0;
+		size_t		_nodes = 0;
+		size_t		_depth = 0;
+		size_t		_stackBound = 0;
+		double		_buildMs = 0.0;		// tree: CPU build; baseline: device build
+		double		_uploadMs = 0.0;
+		size_t		_deviceBytes = 0;
+		double		_cellSize = 0.0;
 	};
 }
 
@@ -237,24 +338,35 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 	const PointCloud cloud = PointCloud::load(options._inputPath, loadOptions);
 
 	size_t dropped = 0;
-	const std::vector<Template> templates = templatesFrom(options._inputTracePath, cloud, dropped);
+	std::vector<Template> templates;
+	if (options._selfKnn == 0)
+		templates = templatesFrom(options._inputTracePath, cloud, dropped);
+	else if (options._selfKnn > PointGpuIndex::MaxK)
+		throw std::invalid_argument("batch-check: --self-knn at most " + std::to_string(PointGpuIndex::MaxK));
 	const size_t largest = *std::max_element(options._batchSizes.begin(), options._batchSizes.end());
-	const std::vector<Query> queries = batchQueries(templates, cloud, largest, options._querySeed);
+	const std::vector<Query> queries = options._selfKnn ? std::vector<Query>{} : batchQueries(templates, cloud, largest, options._querySeed);
+	// Every schema answers the same batches. A trace or generated batch of size n is the first n
+	// queries; a self-query batch spreads its n queries over the whole cloud.
+	std::vector<std::vector<Query>> batches;
+	for (const size_t size : options._batchSizes)
+		batches.push_back(options._selfKnn ? selfQueries(cloud, options._selfKnn, size)
+										   : std::vector<Query>(queries.begin(), queries.begin() + std::min(size, queries.size())));
 
 	const auto wants = [&options](const char* backend) {
 		return std::find(options._backends.begin(), options._backends.end(), backend) != options._backends.end();
 	};
-	const bool wantGpu = wants("gpu") || wants("gpuwarp");
+	const bool wantGpu = wants("gpu") || wants("gpuwarp") || wants("gpugrid");
 	const bool gpu = wantGpu && PointGpuIndex::deviceAvailable();
 	if (gpu)
 		PointGpuIndex::selectDevice(options._device);
 	const int allThreads = options._threads > 0 ? static_cast<int>(options._threads) : omp_get_max_threads();
 
 	std::cout << "batch-check: engine " << PointSpatialIndex::EngineVersion << ", " << cloud.size() << " points, "
-			  << queries.size() << " queries (" << (options._inputTracePath.empty() ? "generated mix" : "trace mix")
-			  << ", centred on cloud points" << (dropped ? ", " + std::to_string(dropped) + " trace kNN with k > 64 left out" : "")
-			  << "), cpuN " << allThreads << " threads, GPU " << (gpu ? PointGpuIndex::deviceName() : (wantGpu ? "unavailable" : "off"))
-			  << ", " << options._repeats << " timed runs\n";
+			  << (options._selfKnn ? "self-query kNN, k = " + std::to_string(options._selfKnn)
+								   : std::to_string(queries.size()) + " queries (" + (options._inputTracePath.empty() ? "generated mix" : "trace mix") +
+									 ", centred on cloud points" + (dropped ? ", " + std::to_string(dropped) + " trace kNN with k > 64 left out" : "") + ")")
+			  << (options._normals ? ", with normals" : "") << ", cpuN " << allThreads << " threads, GPU "
+			  << (gpu ? PointGpuIndex::deviceName() : (wantGpu ? "unavailable" : "off")) << ", " << options._repeats << " timed runs\n";
 
 	std::ofstream summary;
 	if (!options._summaryCsvPath.empty())
@@ -267,22 +379,59 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 		if (!exists)
 			summary << "engine_version,cloud,points,schema_name,schema_path,structure_digest,num_nodes,max_depth,stack_bound,"
 					<< "query_source,backend,threads,batch,gpu_indices,sorted,median_ms,min_ms,throughput_qps,kernel_ms,sort_ms,"
-					<< "upload_ms,device_bytes,device,mismatches,mean_returned\n";
+					<< "upload_ms,device_bytes,device,mismatches,mean_returned,normals,normal_mismatches,build_ms,cell_size\n";
 	}
 
 	int status = 0;
-	for (const std::string& schemaPath : options._schemaPaths)
+	const std::string querySource = options._selfKnn ? "self-knn-" + std::to_string(options._selfKnn)
+													 : (options._inputTracePath.empty() ? "generated" : options._inputTracePath);
+	const auto record = [&](const Row& row) {
+		const double qps = row._medianMs > 0.0 ? static_cast<double>(row._batch) / (row._medianMs * 1e-3) : 0.0;
+		std::cout << "    " << std::setw(7) << row._backend << " x" << std::setw(2) << (row._threads ? row._threads : 1)
+				  << "  batch " << std::setw(8) << row._batch << ": " << std::fixed << std::setprecision(3)
+				  << std::setw(10) << row._medianMs << " ms  " << std::setprecision(0) << std::setw(12) << qps << " q/s"
+				  << (row._threads == 0 ? "  (kernels " + std::to_string(row._kernelMs) + " ms, sort " + std::to_string(row._sortMs) + " ms)" : std::string())
+				  << (row._mismatches ? "  MISMATCHES " + std::to_string(row._mismatches) : std::string())
+				  << (row._normalMismatches ? "  NORMAL MISMATCHES " + std::to_string(row._normalMismatches) : std::string()) << '\n';
+		std::cout.unsetf(std::ios::floatfield);
+		if (row._mismatches || row._normalMismatches)
+			status = 2;
+		if (summary)
+		{
+			summary << std::setprecision(10) << PointSpatialIndex::EngineVersion << ',' << csvField(options._inputPath) << ','
+					<< cloud.size() << ',' << csvField(row._name) << ',' << csvField(row._path) << ',' << row._digest << ','
+					<< row._nodes << ',' << row._depth << ',' << row._stackBound << ',' << csvField(querySource) << ','
+					<< row._backend << ',' << row._threads << ',' << row._batch << ',' << (options._gpuIndices ? 1 : 0) << ','
+					<< (options._sortQueries ? 1 : 0) << ',' << row._medianMs << ',' << row._minMs << ',' << qps << ','
+					<< row._kernelMs << ',' << row._sortMs << ',' << row._uploadMs << ',' << row._deviceBytes << ','
+					<< csvField(row._threads == 0 ? PointGpuIndex::deviceName() : "cpu") << ',' << row._mismatches << ','
+					<< row._meanReturned << ',' << (options._normals ? 1 : 0) << ',' << row._normalMismatches << ','
+					<< row._buildMs << ',' << row._cellSize << '\n';
+			summary.flush();
+		}
+	};
+
+	// The reference answers, from the first schema on every core: each query is answered on its own,
+	// and every schema gives the same answers (tests/test_engine_equivalence.cpp), so they are
+	// computed once per batch and every backend of every schema is checked against them.
+	std::vector<Answers> references(batches.size());
+	std::vector<double> meanReturned(batches.size(), 0.0);
+
+	for (size_t schemaNumber = 0; schemaNumber < options._schemaPaths.size(); ++schemaNumber)
 	{
+		const std::string& schemaPath = options._schemaPaths[schemaNumber];
 		const SchemaConfig schema = Config::loadSchemaConfig(schemaPath);
 		const std::string name = schema._name.empty() ? std::filesystem::path(schemaPath).stem().string() : schema._name;
 		PointSpatialIndex index;
+		const auto buildStart = std::chrono::steady_clock::now();
 		index.build(cloud, schema);
+		const double buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - buildStart).count();
 		const PointSpatialIndex::Stats stats = index.stats();
 		const uint64_t digest = index.structureDigest();
 
 		PointGpuIndex device;
 		bool gpuReady = false;
-		if (gpu)
+		if (gpu && (wants("gpu") || wants("gpuwarp")))
 		{
 			try
 			{
@@ -294,30 +443,64 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 				std::cout << "  " << name << ": GPU skipped (" << error.what() << ")\n";
 			}
 		}
-		std::cout << "  " << name << ": " << stats._numNodes << " nodes, depth " << stats._maxDepth
+		std::cout << "  " << name << ": " << stats._numNodes << " nodes, depth " << stats._maxDepth << ", build " << buildMs << " ms"
 				  << (gpuReady ? ", stack bound " + std::to_string(device.stackBound()) + ", upload " +
 						  std::to_string(device.uploadMs()) + " ms" : std::string()) << '\n';
 
-		std::vector<Row> rows;
-		for (const size_t size : options._batchSizes)
+		if (schemaNumber == 0)
+			for (size_t b = 0; b < batches.size(); ++b)
+			{
+				runCpu(index, cloud, batches[b], allThreads, options._normals, references[b]);
+				for (const uint32_t count : references[b]._counts)
+					meanReturned[b] += count;
+				meanReturned[b] /= std::max<size_t>(1, batches[b].size());
+			}
+
+		// The schema-free baselines run once, alongside the first schema; their cell size comes
+		// from that schema's kNN answers.
+		std::vector<std::pair<double, std::unique_ptr<GpuUniformGrid>>> grids;
+		if (schemaNumber == 0 && gpu && wants("gpugrid"))
 		{
-			const std::vector<Query> batch(queries.begin(), queries.begin() + std::min(size, queries.size()));
-			// The reference answer, on every core: each query is answered on its own, so the counts
-			// and checksums are the single-core ones (cpu1 is checked against them like any backend).
-			// Also the cpuN warm-up.
-			Answers reference;
-			runCpu(index, batch, allThreads, reference);
-			double returned = 0.0;
-			for (const uint32_t count : reference._counts)
-				returned += count;
-			returned /= std::max<size_t>(1, batch.size());
+			const double radius = medianKnnRadius(index, cloud, batches.back());
+			if (radius <= 0.0)
+				std::cout << "  gpugrid skipped: no kNN queries with an answer\n";
+			for (const double factor : radius > 0.0 ? options._gridCellFactors : std::vector<double>{})
+			{
+				auto grid = std::make_unique<GpuUniformGrid>();
+				try
+				{
+					grid->build(cloud, static_cast<float>(radius * factor));
+					std::cout << "  grid x" << factor << ": cell " << grid->cellSize() << ", " << grid->cells() << " cells, upload "
+							  << grid->uploadMs() << " ms, build " << grid->buildMs() << " ms\n";
+					grids.emplace_back(factor, std::move(grid));
+				}
+				catch (const std::exception& error)
+				{
+					std::cout << "  grid x" << factor << " skipped (" << error.what() << ")\n";
+				}
+			}
+		}
+
+		for (size_t b = 0; b < batches.size(); ++b)
+		{
+			const std::vector<Query>& batch = batches[b];
+			const Answers& reference = references[b];
 
 			for (const std::string& backend : options._backends)
 			{
 				Row row;
 				row._backend = backend;
 				row._batch = batch.size();
-				row._meanReturned = returned;
+				row._meanReturned = meanReturned[b];
+				row._name = name;
+				row._path = schemaPath;
+				row._digest = digest;
+				row._nodes = stats._numNodes;
+				row._depth = stats._maxDepth;
+				row._stackBound = gpuReady ? device.stackBound() : 0;
+				row._buildMs = buildMs;
+				row._uploadMs = gpuReady ? device.uploadMs() : 0.0;
+				row._deviceBytes = gpuReady ? device.deviceBytes() : 0;
 				std::vector<double> times, kernels, sorts;
 				if (backend == "cpu1" || backend == "cpuN")
 				{
@@ -328,10 +511,11 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 					row._threads = backend == "cpu1" ? 1 : allThreads;
 					Answers answers;
 					if (backend == "cpuN")
-						runCpu(index, batch, row._threads, answers);
+						runCpu(index, cloud, batch, row._threads, options._normals, answers);
 					for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
-						times.push_back(runCpu(index, batch, row._threads, answers));
+						times.push_back(runCpu(index, cloud, batch, row._threads, options._normals, answers));
 					row._mismatches = mismatches(reference, answers._counts, answers._checksums);
+					row._normalMismatches = normalMismatches(reference, batch, answers._normals);
 				}
 				else if (backend == "gpu" || backend == "gpuwarp")
 				{
@@ -344,15 +528,16 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 					// tens of GB of indices) is skipped; the other batches and schemas still run.
 					try
 					{
-						PointGpuIndex::BatchResult result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
+						PointGpuIndex::BatchResult result = device.run(batch, options._gpuIndices, options._sortQueries, traversal, options._normals);
 						for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
 						{
-							result = device.run(batch, options._gpuIndices, options._sortQueries, traversal);
+							result = device.run(batch, options._gpuIndices, options._sortQueries, traversal, options._normals);
 							times.push_back(result._endToEndMs);
 							kernels.push_back(result._countMs + result._writeMs);
 							sorts.push_back(result._sortMs);
 						}
 						row._mismatches = mismatches(reference, result._counts, result._checksums);
+						row._normalMismatches = normalMismatches(reference, batch, result._normals);
 					}
 					catch (const std::exception& error)
 					{
@@ -361,39 +546,61 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 						continue;
 					}
 				}
+				else if (backend == "gpugrid")
+				{
+					for (const auto& [factor, grid] : grids)
+					{
+						Row gridRow = row;
+						gridRow._threads = 0;
+						std::ostringstream label;
+						label << "grid_x" << factor;
+						gridRow._name = label.str();
+						gridRow._path.clear();
+						gridRow._digest = 0;
+						gridRow._nodes = grid->cells();
+						gridRow._depth = 0;
+						gridRow._stackBound = 0;
+						gridRow._buildMs = grid->buildMs();
+						gridRow._uploadMs = grid->uploadMs();
+						gridRow._deviceBytes = grid->deviceBytes();
+						gridRow._cellSize = grid->cellSize();
+						std::vector<double> gridTimes, gridKernels, gridSorts;
+						try
+						{
+							PointGpuIndex::BatchResult result = grid->run(batch, options._sortQueries, options._normals);
+							for (size_t r = 0; r < std::max<size_t>(1, options._repeats); ++r)
+							{
+								result = grid->run(batch, options._sortQueries, options._normals);
+								gridTimes.push_back(result._endToEndMs);
+								gridKernels.push_back(result._countMs);
+								gridSorts.push_back(result._sortMs);
+							}
+							gridRow._mismatches = mismatches(reference, result._counts, result._checksums);
+							gridRow._normalMismatches = normalMismatches(reference, batch, result._normals);
+						}
+						catch (const std::exception& error)
+						{
+							std::cout << "    " << std::setw(7) << backend << "  batch " << std::setw(8) << batch.size()
+									  << ": skipped (" << error.what() << ")\n";
+							continue;
+						}
+						gridRow._medianMs = median(gridTimes);
+						gridRow._minMs = *std::min_element(gridTimes.begin(), gridTimes.end());
+						gridRow._kernelMs = median(gridKernels);
+						gridRow._sortMs = median(gridSorts);
+						record(gridRow);
+					}
+					continue;
+				}
 				else
 				{
-					throw std::invalid_argument("batch-check: unknown backend " + backend + " (cpu1, cpuN, gpu, gpuwarp)");
+					throw std::invalid_argument("batch-check: unknown backend " + backend + " (cpu1, cpuN, gpu, gpuwarp, gpugrid)");
 				}
 				row._medianMs = median(times);
 				row._minMs = *std::min_element(times.begin(), times.end());
 				row._kernelMs = median(kernels);
 				row._sortMs = median(sorts);
-				rows.push_back(row);
-
-				const double qps = row._medianMs > 0.0 ? static_cast<double>(row._batch) / (row._medianMs * 1e-3) : 0.0;
-				std::cout << "    " << std::setw(7) << backend << " x" << std::setw(2) << (row._threads ? row._threads : 1)
-						  << "  batch " << std::setw(8) << row._batch << ": " << std::fixed << std::setprecision(3)
-						  << std::setw(10) << row._medianMs << " ms  " << std::setprecision(0) << std::setw(12) << qps << " q/s"
-						  << (row._threads == 0 ? "  (kernels " + std::to_string(row._kernelMs) + " ms, sort " + std::to_string(row._sortMs) + " ms)" : std::string())
-						  << (row._mismatches ? "  MISMATCHES " + std::to_string(row._mismatches) : std::string()) << '\n';
-				std::cout.unsetf(std::ios::floatfield);
-				if (row._mismatches)
-					status = 2;
-
-				if (summary)
-				{
-					summary << std::setprecision(10) << PointSpatialIndex::EngineVersion << ',' << csvField(options._inputPath) << ','
-							<< cloud.size() << ',' << csvField(name) << ',' << csvField(schemaPath) << ',' << digest << ','
-							<< stats._numNodes << ',' << stats._maxDepth << ',' << (gpuReady ? device.stackBound() : 0) << ','
-							<< (options._inputTracePath.empty() ? "generated" : csvField(options._inputTracePath)) << ','
-							<< backend << ',' << row._threads << ',' << row._batch << ',' << (options._gpuIndices ? 1 : 0) << ','
-							<< (options._sortQueries ? 1 : 0) << ',' << row._medianMs << ',' << row._minMs << ',' << qps << ','
-							<< row._kernelMs << ',' << row._sortMs << ',' << (gpuReady ? device.uploadMs() : 0.0) << ','
-							<< (gpuReady ? device.deviceBytes() : 0) << ',' << csvField(row._threads == 0 ? PointGpuIndex::deviceName() : "cpu") << ','
-							<< row._mismatches << ',' << row._meanReturned << '\n';
-					summary.flush();
-				}
+				record(row);
 			}
 		}
 	}

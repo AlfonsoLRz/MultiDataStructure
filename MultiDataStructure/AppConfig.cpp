@@ -702,6 +702,20 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._batchSortQueries = false;
 		}
+		else if (arg == "--self-knn" && i + 1 < argc)
+		{
+			config._batchSelfKnn = static_cast<uint32_t>(std::stoul(argv[++i]));
+		}
+		else if (arg == "--fused-normals")
+		{
+			config._batchNormals = true;
+		}
+		else if (arg == "--grid-cell-factors" && i + 1 < argc)
+		{
+			config._batchGridCellFactors.clear();
+			for (const std::string& factor : splitPathList(argv[++i]))
+				config._batchGridCellFactors.push_back(std::stod(factor));
+		}
 		else if (arg == "--build-repeats" && i + 1 < argc)
 		{
 			config._engineBuildRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
@@ -935,12 +949,16 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --mode batch-check          Throughput of whole query batches on one core, all cores and the GPU, on\n"
 		<< "                              the same CPU-built trees, every answer checked against the single-core one\n"
 		<< "  --batch-sizes <a,b,...>     batch-check: batch sizes (default 1000,10000,100000,1000000)\n"
-		<< "  --backends <a,b,...>        batch-check: cpu1, cpuN, gpu (thread per query), gpuwarp (warp per query); default all\n"
+		<< "  --backends <a,b,...>        batch-check: cpu1, cpuN, gpu (thread per query), gpuwarp (warp per query); default\n"
+		<< "                              those four; gpugrid adds the uniform-grid kNN baseline (run once, k <= 32)\n"
 		<< "  --threads <n>               batch-check: cpuN threads (default every hardware thread)\n"
 		<< "  --batch-repeats <n>         batch-check: timed runs per batch after one warm-up (default 3)\n"
 		<< "  --gpu-count-only            batch-check: the GPU returns counts and checksums, not indices\n"
 		<< "  --no-sort-queries           batch-check: keep the batch order on the GPU (no Morton sort)\n"
 		<< "  --cpu1-max-batch <n>        batch-check: time cpu1 only on batches up to n queries (default 100000, 0 = all)\n"
+		<< "  --self-knn <k>              batch-check: kNN at evenly spaced cloud points instead of the trace mix\n"
+		<< "  --fused-normals             batch-check: every backend also computes each kNN neighbourhood's PCA normal\n"
+		<< "  --grid-cell-factors <a,..>  batch-check: gpugrid cell sides, times the median k-th neighbour distance (default 1)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
 		<< "                              proxy and measured latency. The summary is always printed to stdout.\n"
 		<< "  --verify-parity             Build canonical schemas on CPU and GPU and compare per-query returned\n"
@@ -1000,6 +1018,9 @@ Experiments::BatchCheckOptions AppConfig::batchCheckOptions() const
 	options._querySeed = _schemaSearchOptions._querySeed;
 	options._gpuIndices = _batchGpuIndices;
 	options._sortQueries = _batchSortQueries;
+	options._selfKnn = _batchSelfKnn;
+	options._normals = _batchNormals;
+	options._gridCellFactors = _batchGridCellFactors;
 	options._device = _schemaSearchOptions._cuda._device;
 	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	return options;

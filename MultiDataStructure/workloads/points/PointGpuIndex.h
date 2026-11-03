@@ -34,7 +34,8 @@ public:
 	// warp per query; the 32 lanes test a node's children together (two rounds for a 64-way node),
 	// scan a leaf 32 points at a time and keep the stack in shared memory. Wide nodes cost a warp
 	// one round where they cost a thread 32 loads, which is what makes fan-out a GPU design choice.
-	// kNN runs per thread in both modes. Both give the CPU's answers.
+	// Warp kNN keeps its k best one per lane, so a batch with a kNN k > 32 runs its kNN per thread.
+	// Both give the CPU's answers.
 	enum class Traversal : uint32_t
 	{
 		Thread = 0,
@@ -53,6 +54,9 @@ public:
 		// query writes none (its range is empty).
 		std::vector<uint64_t>	_offsets;
 		std::vector<uint32_t>	_indices;
+		// With normals: 3 floats per query, the PCA normal of a kNN query's neighbourhood
+		// (PointNormals::fromCovariance; sign arbitrary), zero for other kinds.
+		std::vector<float>		_normals;
 		// Device time from CUDA events: sorting the queries along a Morton curve, the counting
 		// traversal (counts, checksums, kNN answers), and with indices the writing traversal.
 		double	_sortMs = 0.0;
@@ -82,8 +86,10 @@ public:
 	void upload(const PointSpatialIndex& index);
 	// Runs one batch. Throws on a kNN query with k > MaxK. sortQueries orders the batch along a
 	// Morton curve of the query centres first, so neighbouring threads walk neighbouring paths.
+	// normals also computes each kNN neighbourhood's normal on the device, the fused step of a
+	// normal-estimation pass, and downloads only those (plus the counts and checksums).
 	BatchResult run(const std::vector<Query>& queries, bool withIndices, bool sortQueries = true,
-					Traversal traversal = Traversal::Thread);
+					Traversal traversal = Traversal::Thread, bool normals = false);
 
 	double uploadMs() const;
 	size_t deviceBytes() const;

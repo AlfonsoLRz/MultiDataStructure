@@ -1,5 +1,7 @@
 #include "../MultiDataStructure/stdafx.h"
+#include "../MultiDataStructure/workloads/points/GpuUniformGrid.h"
 #include "../MultiDataStructure/workloads/points/PointGpuIndex.h"
+#include "../MultiDataStructure/workloads/points/PointNormals.h"
 #include "../MultiDataStructure/workloads/points/PointSpatialIndex.h"
 #include "../MultiDataStructure/workloads/points/SyntheticPointClouds.h"
 
@@ -494,6 +496,44 @@ namespace BaselineTests
 						break;
 					}
 					}
+				}
+
+				// Fused normals (thread and warp kNN) and the uniform-grid baseline: the same kNN answers,
+				// and normals equal to the CPU's PCA of the CPU's neighbourhood within rounding.
+				std::vector<PointGpuIndex::Query> knnQueries;
+				for (const PointGpuIndex::Query& query : queries)
+					if (query._kind == PointGpuIndex::Kind::Knn && query._k <= 32)
+						knnQueries.push_back(query);
+				const PointGpuIndex::BatchResult threadNormals = device.run(queries, false, sorted, PointGpuIndex::Traversal::Thread, true);
+				const PointGpuIndex::BatchResult warpNormals = device.run(queries, false, !sorted, PointGpuIndex::Traversal::Warp, true);
+				GpuUniformGrid grid;
+				grid.build(gpuCloud, std::max({ size.x, size.y, size.z }) / static_cast<float>(4 + gpuRng.below(28)));
+				const PointGpuIndex::BatchResult gridResult = grid.run(knnQueries, sorted, true);
+				size_t gridQuery = 0;
+				for (size_t q = 0; q < queries.size(); ++q)
+				{
+					const PointGpuIndex::Query& query = queries[q];
+					if (query._kind != PointGpuIndex::Kind::Knn)
+						continue;
+					const std::string where = label + " / " + schema._name + " / gpu normals q" + std::to_string(q);
+					const PointSpatialIndex::QueryResult cpu = index.knnQuery(query._min, query._k);
+					const PointNormals::Estimate reference = PointNormals::fromPoints(cpu._pointIndices.size(), [&](size_t i, float* p) {
+						const glm::vec3& v = points[cpu._pointIndices[i]].position;
+						p[0] = v.x; p[1] = v.y; p[2] = v.z;
+					});
+					expect(threadNormals._counts[q] == full._counts[q] && warpNormals._counts[q] == full._counts[q] &&
+						   threadNormals._checksums[q] == full._checksums[q] && warpNormals._checksums[q] == full._checksums[q],
+						   "kNN with normals == kNN: " + where);
+					expect(PointNormals::agrees(reference, cpu._pointIndices.size(), &threadNormals._normals[3 * q]) &&
+						   PointNormals::agrees(reference, cpu._pointIndices.size(), &warpNormals._normals[3 * q]),
+						   "gpu normals == cpu normals: " + where);
+					if (query._k > 32)
+						continue;
+					const size_t g = gridQuery++;
+					expect(gridResult._counts[g] == cpu._pointIndices.size() && gridResult._checksums[g] == cpu._stats._resultChecksum,
+						   "uniform grid knn == cpu: " + where);
+					expect(PointNormals::agrees(reference, cpu._pointIndices.size(), &gridResult._normals[3 * g]),
+						   "uniform grid normals == cpu normals: " + where);
 				}
 			}
 		}

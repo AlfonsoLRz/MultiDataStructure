@@ -70,6 +70,9 @@ public:
 	size_t		_batchCpu1MaxBatch = 100000;
 	bool		_batchGpuIndices = true;
 	bool		_batchSortQueries = true;
+	uint32_t	_batchSelfKnn = 0;
+	bool		_batchNormals = false;
+	std::vector<double>	_batchGridCellFactors{ 1.0 };
 
 	Experiments::EngineCheckOptions engineCheckOptions() const;
 	Experiments::BatchCheckOptions batchCheckOptions() const;

@@ -68,6 +68,7 @@ set(MDS_CUDA_SOURCES
 	${MDS_DIR}/workloads/points/LBVH.cu
 	${MDS_DIR}/workloads/points/MixedTree.cu
 	${MDS_DIR}/workloads/points/Octree.cu
+	${MDS_DIR}/workloads/points/GpuUniformGrid.cu
 	${MDS_DIR}/workloads/points/PointGpuIndex.cu
 	${MDS_DIR}/workloads/points/QuadTree.cu
 	${MDS_DIR}/workloads/points/RegularGrid.cu

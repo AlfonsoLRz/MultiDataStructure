@@ -147,7 +147,16 @@
     <ClInclude Include="workloads\points\Octree.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
+    <ClInclude Include="workloads\points\GpuKnnCommon.cuh">
+      <Filter>cuda</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\GpuUniformGrid.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
     <ClInclude Include="workloads\points\PointGpuIndex.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
+    <ClInclude Include="workloads\points\PointNormals.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
     <ClInclude Include="workloads\points\PointGpuTypes.h">
@@ -374,6 +383,9 @@
       <Filter>cuda</Filter>
     </CudaCompile>
     <CudaCompile Include="workloads\points\QuadTree.cu">
+      <Filter>cuda</Filter>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\GpuUniformGrid.cu">
       <Filter>cuda</Filter>
     </CudaCompile>
     <CudaCompile Include="workloads\points\PointGpuIndex.cu">

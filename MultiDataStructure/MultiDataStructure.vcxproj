@@ -163,7 +163,10 @@
     <ClInclude Include="workloads\points\PointPrimitive.h" />
     <ClInclude Include="workloads\points\LBVH.h" />
     <ClInclude Include="workloads\points\Octree.h" />
+    <ClInclude Include="workloads\points\GpuKnnCommon.cuh" />
+    <ClInclude Include="workloads\points\GpuUniformGrid.h" />
     <ClInclude Include="workloads\points\PointGpuIndex.h" />
+    <ClInclude Include="workloads\points\PointNormals.h" />
     <ClInclude Include="workloads\points\PointGpuTypes.h" />
     <ClInclude Include="workloads\points\PointSpatialIndex.h" />
     <ClInclude Include="workloads\points\QuadTree.h" />
@@ -255,6 +258,10 @@
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>
     <CudaCompile Include="workloads\points\QuadTree.cu">
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile Include="workloads\points\GpuUniformGrid.cu">
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateRelocatableDeviceCode>
       <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateRelocatableDeviceCode>
     </CudaCompile>

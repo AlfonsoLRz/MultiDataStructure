@@ -377,7 +377,7 @@ $best = (Import-Csv results/alhambra_generated_best.csv | Select-Object -First 1
 OpenMP) and on the GPU, over the same trees. Each schema is built once on the CPU; the GPU gets that
 exact node pool (`PointGpuIndex`) and runs it either one thread per query (`gpu`) or one warp per
 query (`gpuwarp`: the 32 lanes test a node's children and scan a leaf together, with the stack in
-shared memory; kNN stays per thread), so any schema the CPU builds runs there unchanged. Every backend's per-query count and checksum must equal the single-core answer
+shared memory; warp kNN keeps its k <= 32 best one per lane, larger k runs per thread), so any schema the CPU builds runs there unchanged. Every backend's per-query count and checksum must equal the single-core answer
 (`mismatches` column, 0 expected; exit code 2 otherwise). Batch queries keep the trace's mix of
 kinds, radii, k and box sizes, centred on points drawn from the cloud.
 
@@ -398,6 +398,22 @@ kNN queries with larger k are left out of the batch. GPU times come from CUDA ev
 (traversals), `sort_ms`, and `median_ms` end to end (queries up, results down). The legacy
 `--evaluator cuda` path builds its own trees on the GPU and is not a batch-throughput measurement
 (testing.md 2j).
+
+Normal estimation, all on the GPU: `--self-knn <k>` replaces the trace mix with one kNN query at each
+of n evenly spaced cloud points (n = the batch size), and `--fused-normals` makes every backend also
+compute each neighbourhood's PCA normal (`PointNormals.h`, the same closed form on CPU and GPU); the
+GPU then downloads only normals, counts and checksums. `normal_mismatches` counts normals more than
+0.01 rad from the single-core one where that normal is well defined. Backend `gpugrid` adds a
+tree-free baseline (`GpuUniformGrid`: a uniform grid built on the GPU, occupied cells in a hash table,
+one warp per query ring by ring); it runs once, with the first schema, for each cell side in
+`--grid-cell-factors` (multiples of the median k-th neighbour distance, default 1), and writes its
+GPU build time to `build_ms` (tree rows: the CPU build) and its cell side to `cell_size`.
+
+```bash
+MultiDataStructure --mode batch-check --input <cloud.mdspc> --schemas "<a.json>;<b.json>" --self-knn 16 \
+  --fused-normals --gpu-count-only --batch-sizes 1000000,10000000 --backends cpuN,gpu,gpuwarp,gpugrid \
+  --grid-cell-factors 2,4,8 --cuda-device 1 --summary-csv normals.csv --no-pause
+```
 
 ## Main Executable Arguments
 
