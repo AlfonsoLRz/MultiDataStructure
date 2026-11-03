@@ -794,29 +794,37 @@ threads), gpu, gpuwarp; Quadro RTX 6000. Cells: DomFountain, SanAndreas, Galicia
 100M (25M clouds copied to makinon2 for this). Smoke on DomFountain 1M (tree resident in cache, not
 the regime of interest): 0 mismatches; gpuwarp 2.7x gpu on the base trace and 1.5x on range8 at 10k
 queries; GPU best/worst schema 2.5-5x; no mixed schema beat the best uniform on the GPU there.
-Running; results below when complete.
-
-**GPU pilot, interim (2026-11-03; 4 of 6 cells: DomFountain 25M/100M, SanAndreas 25M, GaliciaForest
-25M; Quadro RTX 6000 via CUDA_DEVICE_ORDER=PCI_BUS_ID; `scripts/gpu_gate.py`).** The first attempt ran
-on the 2080 Ti by mistake (CUDA numbers GPUs fastest-first) and lost workloads to out-of-memory
-crashes; it is kept apart in `results/gpu_pilot_2080ti` on makinon2. 0 mismatches in every row; GPU
-batches whose results exceed device memory (1M range8 queries) are skipped. End-to-end throughput,
-batches 10k / 100k / 1M, geomean over cell x workload x batch rows:
+**GPU pilot results (2026-11-03, all 6 cells; Quadro RTX 6000 via CUDA_DEVICE_ORDER=PCI_BUS_ID;
+`python scripts/gpu_gate.py results/eval_traces/gpu_pilot_makinon2`).** The first attempt ran on the
+2080 Ti by mistake (CUDA numbers GPUs fastest-first) and lost workloads to out-of-memory crashes; it
+is kept apart in `results/gpu_pilot_2080ti` on makinon2. 0 mismatches in every row; GPU batches whose
+results exceed device memory (1M range8 queries on DomFountain) are skipped. Batches 100k and 1M (10k
+left out: 72 threads on 10k queries is mostly fork cost), geomean over the 34 cell x workload x batch
+rows:
 
 | measure | geomean | range | reading |
 |---|---|---|---|
-| GPU best / worst schema (warp kernels) | 10x | 1.5-580x | the schema matters on the GPU |
-| GPU throughput of the CPU's pick / GPU best | 0.80 | 0.27-1.00 | hardware-aware selection pays 20% on average, up to 3.7x |
-| best nested / best single on the GPU | 0.90 | 0.59-1.015 | composition does not pay on the GPU either |
-| warp / thread kernels (best of each) | 1.69x | 1.05-4.1x | |
-| best GPU / best 72-thread CPU, end to end | 1.76x | 0.25-28x | below 1 on radius4/range8: copying result indices back dominates |
-| same, kernel time only | 7.8x | 1.5-54x | |
+| GPU best / worst schema (warp kernels) | 8.5x | 1.3-178x | a bad schema is very bad on the GPU |
+| GPU throughput of the CPU's pick / GPU best | 0.89 | 0.47-1.00 | 25M cells 0.83 (min 0.47), 100M cells 0.96 (min 0.82) |
+| best nested / best single on the GPU | 0.935 | 0.76-1.084 | composition does not pay on the GPU either |
+| warp / thread kernels (best of each) | 1.45x | 1.05-2.14x | |
+| best GPU / best 72-thread CPU, end to end | 1.23x | 0.25-5.3x | below 1 on most radius4/range8 rows |
+| same, kernel time only | 5.3x | 1.5-14x | |
+| best depth-capped single / best other single | 0.61 | 0.04-2.1 | wins only on SanAndreas 25M (2.1x) and GaliciaForest 25M radius4 (1.2x) |
 
-The largest selection effect comes from the depth-capped panel: on SanAndreas (aerial) a 12-level
-quadtree with leaf 32 is 1.8-3.6x faster on the GPU than the CPU's pick (`qt24l32`, the CPU's best),
-and on GaliciaForest radius4 a 20-level kd beats every other single by 1.2-1.7x; on the dense TLS
-scene a depth cap is catastrophic (leaves of thousands of points). Gate so far: (i) and (ii) hold,
-(iii) fails: the "hardware-aware selection without composition" outcome.
+End to end includes the query upload, the sort, both kernels and the download of the result indices;
+the tree upload is excluded. On the GPU-best schema at the largest batch, everything but the kernels
+is 22-30% of the time on the base traces (12-184 indices per query) and 77-95% on radius4/range8
+(145-27,575 per query; DomFountain 100M radius4 moves 17.6 GB for 1M queries, ~6.5 GB/s). Kernel plus
+sort alone is 1.4-3x the 72-thread CPU on the base traces and 4.4-11.8x on radius4/range8.
+
+The CPU's pick loses most at 25M: on SanAndreas 25M the 12-level quadtree is 1.8-2.1x faster on the
+GPU than the CPU's `qt24l32`. At 100M the CPU picks the same depth-capped tree itself, and the CPU
+and GPU choices agree to within 4% on average (the larger tree no longer fits the CPU caches either:
+a hypothesis, not measured). The best mixed result is `kd6_hgrid64l128sm` on SanAndreas 100M radius4,
+1.084x at 100k and 1.022x at 1M. Gate: (ii) holds; (i) holds at 25M, but is within 4% on average at
+100M; (iii) fails. A GPU paper built on schema selection is not supported. What stands is the kernel
+margin over the CPU, the warp kernels, and the result volume as the end-to-end bottleneck.
 
 
 
