@@ -436,6 +436,17 @@ Mode and basic IO:
 --no-pause
 ```
 
+Emulated node cost (every mode):
+
+```text
+--node-cost-ns <ns>
+```
+
+Every CPU query waits this long for each node it enters, spinning on the timestamp counter, as if
+reaching a node meant a disk read or a chunk decompression. It changes every CPU latency, so it is part
+of the score-cache key. `scripts/run_cells.py --node-cost-ns <ns>` passes it to every step of a cell,
+and `scripts/node_cost_dial.py` compares the runs (testing.md 2o).
+
 Point benchmark schema selection:
 
 ```text

@@ -7,6 +7,7 @@
 #include "ui/OptimizerGui.h"
 #endif
 #include "workloads/points/PointBenchmark.h"
+#include "workloads/points/PointSpatialIndex.h"
 #include "../tests/BaselineTests.h"
 
 int main(int argc, char* argv[])
@@ -22,6 +23,14 @@ int main(int argc, char* argv[])
 
 		if (config.wantsTests())
 			return runBaselineTests();
+
+		if (config._nodeCostNs > 0.0)
+		{
+			PointSpatialIndex::setNodeVisitCost(config._nodeCostNs);
+			// stderr: evaluate-one writes its JSON to stdout.
+			std::cerr << "Node visit cost: " << config._nodeCostNs << " ns (" << PointSpatialIndex::nodeVisitTicks()
+					  << " timestamp-counter ticks) per entered node\n";
+		}
 
 		if (config._mode == "points")
 			return PointBenchmark::run(config._pointOptions);

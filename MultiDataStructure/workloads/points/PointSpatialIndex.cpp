@@ -4,6 +4,11 @@
 #if defined(__AVX2__)
 #include <immintrin.h>
 #endif
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
 
 static constexpr double EPSILON = 1e-9;
 
@@ -555,6 +560,56 @@ namespace
 		{
 		}
 	}
+
+	// Calls call(full, micro, charged) with each flag as a compile-time constant, so every
+	// combination is its own traversal and the plain timed path tests no flag per node.
+	template <typename Call>
+	void withTraversalFlags(bool full, bool micro, bool charged, Call&& call)
+	{
+		using T = std::true_type;
+		using F = std::false_type;
+		if (charged)
+		{
+			if (full)
+				micro ? call(T{}, T{}, T{}) : call(T{}, F{}, T{});
+			else
+				micro ? call(F{}, T{}, T{}) : call(F{}, F{}, T{});
+		}
+		else if (full)
+			micro ? call(T{}, T{}, F{}) : call(T{}, F{}, F{});
+		else
+			micro ? call(F{}, T{}, F{}) : call(F{}, F{}, F{});
+	}
+}
+
+void PointSpatialIndex::setNodeVisitCost(double nanoseconds)
+{
+	_nodeVisitNs = std::max(0.0, nanoseconds);
+	_nodeVisitTicks = 0;
+	if (_nodeVisitNs <= 0.0)
+		return;
+
+	// Timestamp-counter ticks per nanosecond, over 50 ms of the steady clock. The counter runs at
+	// a fixed rate on x86-64 CPUs with an invariant TSC, whatever the core clock does.
+	const auto start = std::chrono::steady_clock::now();
+	const uint64_t startTicks = __rdtsc();
+	auto end = start;
+	uint64_t endTicks = startTicks;
+	do
+	{
+		end = std::chrono::steady_clock::now();
+		endTicks = __rdtsc();
+	} while (end - start < std::chrono::milliseconds(50));
+	const double ticksPerNs = static_cast<double>(endTicks - startTicks) / std::chrono::duration<double, std::nano>(end - start).count();
+	_nodeVisitTicks = std::max<uint64_t>(1, static_cast<uint64_t>(std::llround(_nodeVisitNs * ticksPerNs)));
+}
+
+inline void PointSpatialIndex::chargeNodeVisit()
+{
+	const uint64_t until = __rdtsc() + _nodeVisitTicks;
+	while (__rdtsc() < until)
+	{
+	}
 }
 
 PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds, QueryTelemetry telemetry) const
@@ -567,10 +622,9 @@ PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds,
 	const auto start = std::chrono::steady_clock::now();
 	if (!_hot.empty())
 	{
-		if (full)
-			micro ? rangeSearch<true, true>(bounds, result) : rangeSearch<true, false>(bounds, result);
-		else
-			micro ? rangeSearch<false, true>(bounds, result) : rangeSearch<false, false>(bounds, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
+			this->template rangeSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(bounds, result);
+		});
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -592,10 +646,9 @@ PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds,
 	const auto start = std::chrono::steady_clock::now();
 	if (!_hot.empty())
 	{
-		if (full)
-			micro ? countSearch<true, true>(bounds, result) : countSearch<true, false>(bounds, result);
-		else
-			micro ? countSearch<false, true>(bounds, result) : countSearch<false, false>(bounds, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
+			this->template countSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(bounds, result);
+		});
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -616,10 +669,9 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 	const auto start = std::chrono::steady_clock::now();
 	if (radius >= 0.0f && !_hot.empty())
 	{
-		if (full)
-			micro ? radiusSearch<true, true>(center, radiusSquared, result) : radiusSearch<true, false>(center, radiusSquared, result);
-		else
-			micro ? radiusSearch<false, true>(center, radiusSquared, result) : radiusSearch<false, false>(center, radiusSquared, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
+			this->template radiusSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(center, radiusSquared, result);
+		});
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -889,17 +941,12 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 		// Depth-first for the small k of every captured workload; best-first above, where its
 		// node-optimality pays for the heap.
 		constexpr size_t DepthFirstMaxK = 64;
-		if (k <= DepthFirstMaxK)
-		{
-			if (full)
-				micro ? knnSearchDepthFirst<true, true>(center, k, result) : knnSearchDepthFirst<true, false>(center, k, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
+			if (k <= DepthFirstMaxK)
+				this->template knnSearchDepthFirst<decltype(f)::value, decltype(m)::value, decltype(c)::value>(center, k, result);
 			else
-				micro ? knnSearchDepthFirst<false, true>(center, k, result) : knnSearchDepthFirst<false, false>(center, k, result);
-		}
-		else if (full)
-			micro ? knnSearch<true, true>(center, k, result) : knnSearch<true, false>(center, k, result);
-		else
-			micro ? knnSearch<false, true>(center, k, result) : knnSearch<false, false>(center, k, result);
+				this->template knnSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(center, k, result);
+		});
 
 		// The answer leaves the traversal in heap order, into storage reserved before the clock.
 		// That is where the timed region ends, as it does for the external baselines: Indexicon's
@@ -936,7 +983,7 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 // their group is in cache and pushes only the survivors, in reverse so they pop in child order
 // (the old recursion's order). Counter semantics are those of engine 2: a bounds test on a
 // non-empty node is a tested box, a node whose test passed is visited.
-template <bool Telemetry, bool Micro>
+template <bool Telemetry, bool Micro, bool Charged>
 void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) const
 {
 	const glm::vec3 queryMin = bounds.min();
@@ -965,6 +1012,8 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 		const HotNode& node = hot[slot];
 		if constexpr (Telemetry)
 			recordNodeVisit(slot, result._stats);
+		if constexpr (Charged)
+			chargeNodeVisit();
 
 		if (boxInside(node._lo, node._hi, queryMin, queryMax))
 		{
@@ -1005,7 +1054,7 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 	}
 }
 
-template <bool Telemetry, bool Micro>
+template <bool Telemetry, bool Micro, bool Charged>
 void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) const
 {
 	const glm::vec3 queryMin = bounds.min();
@@ -1032,6 +1081,8 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 		const HotNode& node = hot[slot];
 		if constexpr (Telemetry)
 			recordNodeVisit(slot, result._stats);
+		if constexpr (Charged)
+			chargeNodeVisit();
 
 		if (boxInside(node._lo, node._hi, queryMin, queryMax))
 		{
@@ -1072,7 +1123,7 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 	}
 }
 
-template <bool Telemetry, bool Micro>
+template <bool Telemetry, bool Micro, bool Charged>
 void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const
 {
 	const HotNode* hot = _hot.data();
@@ -1099,6 +1150,8 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 		const HotNode& node = hot[slot];
 		if constexpr (Telemetry)
 			recordNodeVisit(slot, result._stats);
+		if constexpr (Charged)
+			chargeNodeVisit();
 
 		if (!node.isInternal())
 		{
@@ -1235,7 +1288,7 @@ void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k
 // Best-first kNN: a global min-heap of pending nodes by lower-bound distance, so nodes are
 // entered in distance order and the search stops at the first that cannot improve the answer.
 // Node-optimal, but every push and pop is an O(log n) sift. Used for large k.
-template <bool Telemetry, bool Micro>
+template <bool Telemetry, bool Micro, bool Charged>
 void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1262,6 +1315,8 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 		const HotNode& node = hot[slot];
 		if constexpr (Telemetry)
 			recordNodeVisit(slot, result._stats);
+		if constexpr (Charged)
+			chargeNodeVisit();
 
 		if (!node.isInternal())
 		{
@@ -1296,7 +1351,7 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 // best-first would not, but trades the global heap for a stack and a sort of at most 64 entries.
 // The answer is identical: the prune is strict and (distance, index) is a total order, so the k
 // best are the same whatever order the leaves are offered in.
-template <bool Telemetry, bool Micro>
+template <bool Telemetry, bool Micro, bool Charged>
 void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1319,6 +1374,8 @@ void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, Q
 		const HotNode& node = hot[slot];
 		if constexpr (Telemetry)
 			recordNodeVisit(slot, result._stats);
+		if constexpr (Charged)
+			chargeNodeVisit();
 
 		if (!node.isInternal())
 		{

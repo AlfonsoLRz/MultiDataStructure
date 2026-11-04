@@ -122,6 +122,9 @@ class Battery:
     def run(self, title, argv):
         print(f"\n########## {title}  [{time.strftime('%H:%M:%S')}] ##########", flush=True)
         started = time.time()
+        # Every step, search and held-out alike, pays the same emulated node cost.
+        if self.args.node_cost_ns > 0:
+            argv = argv + ["--node-cost-ns", str(self.args.node_cost_ns)]
         code = launch([self.args.exe] + argv, self.args.cpu, self.args.numa_node, cwd=REPO).wait()
         print(f"########## {title} done in {(time.time() - started) / 60:.1f} min (exit {code}) ##########", flush=True)
         if code != 0:
@@ -323,6 +326,8 @@ def main():
     parser.add_argument("--tier-c-queries", type=int, default=0, help="query count for tier C cells (config: 300-600)")
     parser.add_argument("--search-transfer", default="", help="comma list of transfer cells to SEARCH instead")
     parser.add_argument("--test-only", action="store_true", help="only the held-out re-measure, reusing arm CSVs")
+    parser.add_argument("--node-cost-ns", type=float, default=0.0,
+                        help="emulated cost per entered node, passed to every step (testing.md 2o)")
     args = parser.parse_args()
     args.search_transfer = {c for c in args.search_transfer.split(",") if c}
 

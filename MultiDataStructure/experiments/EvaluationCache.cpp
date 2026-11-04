@@ -503,6 +503,9 @@ namespace Experiments
 		// score cached by one engine must never be served to another.
 		if (evaluatorBackend != "cuda")
 			evaluatorText << "|engine=" << PointSpatialIndex::EngineVersion;
+		// The emulated node cost changes every CPU latency the same way a new engine would.
+		if (evaluatorBackend != "cuda" && PointSpatialIndex::nodeVisitCost() > 0.0)
+			evaluatorText << "|node=" << formatDouble(PointSpatialIndex::nodeVisitCost(), 3);
 		if (evaluatorBackend == "cuda" && !cudaBuilder.empty())
 			evaluatorText << ":" << cudaBuilder;
 		evaluatorText << "|ll=" << formatDouble(weights._lambdaLatency, 6)

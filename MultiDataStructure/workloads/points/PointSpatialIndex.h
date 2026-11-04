@@ -167,6 +167,15 @@ public:
 		Off,
 	};
 
+	// Emulated node cost: every node a query enters also waits this long, spinning on the
+	// timestamp counter. It stands in for a node that is expensive to reach (a disk read, a
+	// decompressed chunk), so a search can show how the best schema moves as nodes get dearer
+	// (testing.md 2o). Process-wide, set before any query; at 0, the default, queries run the
+	// traversals that never look at it.
+	static void setNodeVisitCost(double nanoseconds);
+	static double nodeVisitCost() { return _nodeVisitNs; }
+	static uint64_t nodeVisitTicks() { return _nodeVisitTicks; }
+
 	// A schema level's split rule, resolved from its strings once per build. The build used to
 	// re-derive this per POINT per level - Config::parseSchemaPrimitiveKind and the axis-policy
 	// normalizer allocate and lowercase strings - twice per level (count pass and scatter pass).
@@ -451,10 +460,15 @@ private:
 	template <bool Telemetry> void rangeQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, QueryResult& result) const;
 	template <bool Telemetry> void countRangeMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, CountResult& result) const;
 	template <bool Telemetry> void radiusQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	template <bool Telemetry, bool Micro> void rangeSearch(const AABB& bounds, QueryResult& result) const;
-	template <bool Telemetry, bool Micro> void countSearch(const AABB& bounds, CountResult& result) const;
-	template <bool Telemetry, bool Micro> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	template <bool Telemetry, bool Micro> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
-	template <bool Telemetry, bool Micro> void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
+	// Charged=true adds the emulated node cost (setNodeVisitCost) to every entered node.
+	template <bool Telemetry, bool Micro, bool Charged = false> void rangeSearch(const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false> void countSearch(const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false> void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
 	template <bool Telemetry, bool Micro> void knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const;
+
+	inline static double	_nodeVisitNs = 0.0;
+	inline static uint64_t	_nodeVisitTicks = 0;	// the same cost in timestamp-counter ticks
+	static void chargeNodeVisit();
 };

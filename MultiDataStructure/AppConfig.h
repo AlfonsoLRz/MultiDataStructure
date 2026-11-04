@@ -53,6 +53,7 @@ public:
 	std::string	_mode = AppDefaults::DEFAULT_MODE;
 	bool	_runTests = AppDefaults::RUN_TESTS;
 	bool	_showHelp = false;
+	double	_nodeCostNs = 0.0;	// PointSpatialIndex::setNodeVisitCost, every mode
 	PointBenchmark::Options	_pointOptions;
 	Experiments::SchemaSearchOptions	_schemaSearchOptions;
 	// engine-check only; the rest of its options are shared with schema-search (see main.cpp).

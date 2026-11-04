@@ -228,6 +228,23 @@ namespace BaselineTests
 		expect(knn._stats._visitedNodes > 0, "KNN query records visited nodes");
 		expect(knn._stats._testedPoints >= k, "KNN query tests enough points to fill neighbors");
 
+		// Emulated node cost: the same answers, and each entered node waits at least the cost.
+		// The timed path counts nothing, so its waits are checked against the instrumented visits.
+		PointSpatialIndex::setNodeVisitCost(20000.0);
+		const PointSpatialIndex::QueryResult chargedRange = index.rangeQuery(rangeBounds, PointSpatialIndex::QueryTelemetry::Off);
+		const PointSpatialIndex::CountResult chargedCount = index.countRange(rangeBounds, PointSpatialIndex::QueryTelemetry::Off);
+		const PointSpatialIndex::QueryResult chargedRadius = index.radiusQuery(denseCenter, radius);
+		const PointSpatialIndex::QueryResult chargedKnn = index.knnQuery(denseCenter, k, PointSpatialIndex::QueryTelemetry::Off);
+		PointSpatialIndex::setNodeVisitCost(0.0);
+		expectSameSet(chargedRange._pointIndices, bruteRange, "charged range query matches brute force");
+		expect(chargedCount._count == bruteRange.size(), "charged count query matches brute force");
+		expectSameSet(chargedRadius._pointIndices, bruteRadius, "charged radius query matches brute force");
+		expect(chargedKnn._pointIndices == bruteKnn, "charged KNN query matches brute force ordering");
+		expect(chargedRange._stats._elapsedMs >= 0.9 * 0.02 * range._stats._visitedNodes, "charged range query waits the node cost per entered node");
+		expect(chargedRadius._stats._elapsedMs >= 0.9 * 0.02 * chargedRadius._stats._visitedNodes, "charged radius query waits the node cost per entered node");
+		expect(chargedKnn._stats._elapsedMs >= 0.9 * 0.02 * knn._stats._visitedNodes, "charged KNN query waits the node cost per entered node");
+		expect(PointSpatialIndex::nodeVisitTicks() == 0, "node visit cost resets to the uncharged traversals");
+
 		const PointSpatialIndex::QueryResult emptyKnn = index.knnQuery(denseCenter, 0);
 		expect(emptyKnn._pointIndices.empty(), "KNN query with k=0 returns no points");
 		expect(emptyKnn._stats._returnedPoints == 0, "KNN query with k=0 records no returned points");

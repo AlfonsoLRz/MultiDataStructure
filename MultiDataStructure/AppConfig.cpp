@@ -194,6 +194,59 @@ Experiments::SchemaSearchOptions AppConfig::defaultSchemaSearchOptions()
 	return options;
 }
 
+// batch-check's flags, parsed before the main chain in parse(): MSVC caps how deeply an else-if
+// chain may nest (C1061), and that chain had reached the cap. True when `arg` was one of them.
+static bool parseBatchCheckFlag(AppConfig& config, const std::string& arg, int& i, int argc, char* argv[])
+{
+	if (arg == "--batch-sizes" && i + 1 < argc)
+	{
+		config._batchSizes.clear();
+		for (const std::string& size : splitPathList(argv[++i]))
+			config._batchSizes.push_back(static_cast<size_t>(std::stoull(size)));
+	}
+	else if (arg == "--backends" && i + 1 < argc)
+	{
+		config._batchBackends = splitPathList(argv[++i]);
+	}
+	else if (arg == "--threads" && i + 1 < argc)
+	{
+		config._batchThreads = static_cast<size_t>(std::stoull(argv[++i]));
+	}
+	else if (arg == "--batch-repeats" && i + 1 < argc)
+	{
+		config._batchRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
+	}
+	else if (arg == "--gpu-count-only")
+	{
+		config._batchGpuIndices = false;
+	}
+	else if (arg == "--cpu1-max-batch" && i + 1 < argc)
+	{
+		config._batchCpu1MaxBatch = static_cast<size_t>(std::stoull(argv[++i]));
+	}
+	else if (arg == "--no-sort-queries")
+	{
+		config._batchSortQueries = false;
+	}
+	else if (arg == "--self-knn" && i + 1 < argc)
+	{
+		config._batchSelfKnn = static_cast<uint32_t>(std::stoul(argv[++i]));
+	}
+	else if (arg == "--fused-normals")
+	{
+		config._batchNormals = true;
+	}
+	else if (arg == "--grid-cell-factors" && i + 1 < argc)
+	{
+		config._batchGridCellFactors.clear();
+		for (const std::string& factor : splitPathList(argv[++i]))
+			config._batchGridCellFactors.push_back(std::stod(factor));
+	}
+	else
+		return false;
+	return true;
+}
+
 AppConfig AppConfig::parse(int argc, char* argv[])
 {
 	AppConfig config;
@@ -203,6 +256,8 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 	for (int i = 1; i < argc; ++i)
 	{
 		const std::string arg = argv[i];
+		if (parseBatchCheckFlag(config, arg, i, argc, argv))
+			continue;
 		if (arg == "--help" || arg == "-h")
 		{
 			config._showHelp = true;
@@ -672,50 +727,6 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 				throw std::invalid_argument("--timed-telemetry expects off or full");
 			config._engineTimedTelemetryFull = value == "full";
 		}
-		else if (arg == "--batch-sizes" && i + 1 < argc)
-		{
-			config._batchSizes.clear();
-			for (const std::string& size : splitPathList(argv[++i]))
-				config._batchSizes.push_back(static_cast<size_t>(std::stoull(size)));
-		}
-		else if (arg == "--backends" && i + 1 < argc)
-		{
-			config._batchBackends = splitPathList(argv[++i]);
-		}
-		else if (arg == "--threads" && i + 1 < argc)
-		{
-			config._batchThreads = static_cast<size_t>(std::stoull(argv[++i]));
-		}
-		else if (arg == "--batch-repeats" && i + 1 < argc)
-		{
-			config._batchRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
-		}
-		else if (arg == "--gpu-count-only")
-		{
-			config._batchGpuIndices = false;
-		}
-		else if (arg == "--cpu1-max-batch" && i + 1 < argc)
-		{
-			config._batchCpu1MaxBatch = static_cast<size_t>(std::stoull(argv[++i]));
-		}
-		else if (arg == "--no-sort-queries")
-		{
-			config._batchSortQueries = false;
-		}
-		else if (arg == "--self-knn" && i + 1 < argc)
-		{
-			config._batchSelfKnn = static_cast<uint32_t>(std::stoul(argv[++i]));
-		}
-		else if (arg == "--fused-normals")
-		{
-			config._batchNormals = true;
-		}
-		else if (arg == "--grid-cell-factors" && i + 1 < argc)
-		{
-			config._batchGridCellFactors.clear();
-			for (const std::string& factor : splitPathList(argv[++i]))
-				config._batchGridCellFactors.push_back(std::stod(factor));
-		}
 		else if (arg == "--build-repeats" && i + 1 < argc)
 		{
 			config._engineBuildRepeats = std::max<size_t>(1, static_cast<size_t>(std::stoull(argv[++i])));
@@ -727,6 +738,10 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		else if (arg == "--min-timed-ms" && i + 1 < argc)
 		{
 			config._schemaSearchOptions._minTimedMs = std::max(0.0, std::stod(argv[++i]));
+		}
+		else if (arg == "--node-cost-ns" && i + 1 < argc)
+		{
+			config._nodeCostNs = std::max(0.0, std::stod(argv[++i]));
 		}
 		else if (arg == "--proxy-correlation-csv" && i + 1 < argc)
 		{
@@ -937,6 +952,8 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "                              latency mean/stddev/CV/95% CI on queryMetrics. 1 disables (default).\n"
 		<< "                              With N >= 2 the search ranks candidates on these timed passes.\n"
 		<< "  --min-timed-ms <ms>         With --measure-repeats >= 2: add timed passes until they total this\n"
+		<< "  --node-cost-ns <ns>         Every CPU query waits this long per node it enters (spinning), emulating\n"
+		<< "                              nodes that are expensive to reach; part of the score-cache key (default 0)\n"
 		<< "  --mode engine-check         Build each --schema(s) on --input and replay one fixed query set\n"
 		<< "                              (--input-trace, else a seeded generator over every query kind):\n"
 		<< "                              per-query checksums/counters and per-type latency, for engine A/B work\n"
