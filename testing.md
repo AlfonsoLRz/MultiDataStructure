@@ -838,6 +838,76 @@ measurement. The all-GPU normals pilot (plan 2026-11-03: warp kNN plus a fused P
 cudaKDTree and a uniform grid) tests whether it survives where results never leave the device.
 Summary page with every chart: https://claude.ai/artifact/TJo2FUFT3B11sGnt16R8Hj.
 
+### 2n. 2026-11-04 — normals at scale, all on the GPU: cudaKDTree and a uniform grid win, nesting ties
+
+**Setup** (`scripts/gpu_normals_pilot.py`, commits 92c298b and 586e0e7; Quadro RTX 6000). A
+normal-estimation pass: one kNN query at every S-th point of the cloud (`--self-knn`, 1M and 10M
+queries, Morton sorted) and the PCA normal of each neighbourhood in the same kernel
+(`--fused-normals`), so only normals, counts and checksums leave the GPU. The six 2m cells, k = 16
+and 32, 46 schemas (the 2m panel plus wider nested variants). Backends: cpuN (72 threads), gpu and
+gpuwarp on each schema's tree, and two baselines built on the GPU, Wald's cudaKDTree (`gpucudakd`)
+and a uniform grid (`gpugrid`, cell = factor x the median k-th neighbour distance).
+
+**The pilot's single-pass timings are not usable.** For stretches of the 13-hour run another job (the
+user's own Gaussian-splatting runs) shared the Quadro and made every schema timed in them about 2x
+slower. It shows in the per-schema k16/k32 kernel ratio, ~0.9 when clean, which steps to 0.4 or 2 for
+blocks of consecutive schemas. Only SanAndreas 100M was clean throughout. The pilot's one large
+nesting result (GaliciaForest 25M k=16, `hgrid2_ot24l128` 1.8x ahead of the best single) is a schema
+that ran in a quiet gap. The 2m fan-out pilot was timed the same single-pass way and was not re-timed,
+so its 4 kernel-time nesting rows may share this exposure.
+
+**Confirmation** (`scripts/gpu_normals_confirm.py`). Per cell, 8-14 finalists: the pilot's 4 fastest
+singles and 4 fastest nested schemas per k on gpuwarp at 10M, plus the CPU's pick. They were timed
+against cudaKDTree in 3 rounds of 10M queries, each round in a rotated order, and every schema keeps
+its fastest round. The uniform grid ran the same way at factors 2/4/8 on the four clouds that are not
+ground scans; on DomFountain 25M it was 5.5x slower than our best at 1M queries, and on DomFountain
+100M it timed out. An
+nvidia-smi log every 15 s shows nothing else on the Quadro, and the rounds agree within 2%. Results
+are in `results/eval_traces/gpu_normals_makinon2/confirm`; the CSVs and logs of the pilot itself are
+alongside, in `pilot/` and `*.log`.
+
+| measure (10M queries, 12 cell x k rows) | geomean | range | reading |
+|---|---|---|---|
+| our best / cudaKDTree, end to end | 0.744 | 0.52-1.06 | cudaKDTree faster in 11 of 12 rows: 1.45-1.9x at 25M, 0.94-1.23x at 100M |
+| same, kernel only | 0.769 | 0.50-1.16 | |
+| our best / best uniform grid (8 rows, not DomFountain) | 0.88 | 0.86-0.90 | the grid at 2x the k-th distance is faster on every row where it works |
+| best nested / best single, end to end | 0.990 | 0.979-1.012 | a tie |
+| same, kernel only | 0.987 | 0.974-1.013 | |
+| GPU throughput of the CPU's pick / GPU best | 0.991 | 0.984-1.000 | the CPU's choice is the GPU's choice |
+| our best GPU / 72-thread CPU | 2.56x | 2.28-2.86x | |
+
+Our warp kernel runs 18.6-20.3M queries/s on every cell, size and k, whichever schema wins, while
+cudaKDTree runs 27.8-37.5M at 25M and 17.6-25.1M at 100M, and the grid 21.4-23.1M. The flat rate
+says that per-query warp work, not the traversal, sets our kernel time (a hypothesis: candidate
+insertion one ballot at a time and the shuffles of the normal), which is why schemas tie on the GPU.
+At 1M queries (every 25th-100th point) our best was ahead of cudaKDTree in the pilot. That is query
+density, not overhead: on the clean SanAndreas 100M, cudaKDTree's thread-per-query kernel goes from
+15.7M to 25.1M queries/s between 1M and 10M queries while ours stays at 20.4M and 20.3M. A pass over
+every point is the dense end.
+
+For a one-shot pass the build counts too. Our trees build on the CPU in 3.5-7 s at 25M and 10-28 s at
+100M, plus a 0.1-0.4 s upload. cudaKDTree builds on the GPU in 1.3 s and 6.3 s, the grid in 27-81
+ms. Normals for all 25M points therefore take about 1.1 s with the grid (not on ground scans), 2 s
+with cudaKDTree and 5-8 s with ours.
+
+**Correctness.** Neighbour sets equal the CPU's in every gpuwarp row; the grid differs in up to 416 of
+10M (ties), and cudaKDTree's sets are checked by k-th distance, with 0 failures. Normals agree within
+0.01 rad except on GaliciaForest (1.8-1.9% of queries at 25M, 10.0-10.7% at 100M) and DomFountain 100M
+(0.03-0.1%), for gpuwarp and the grid, which share the warp-sum epilogue. The thread kernel, which
+sums in the CPU's order, has 0 such disagreements. The neighbours are the same, so the difference is
+float32 summation order. Hypothesis: centring on the mean of large coordinates loses digits in dense
+neighbourhoods. It is not verified against a double reference; centring on the query point first
+would fix both sides.
+
+**Gate.**
+- (a) fails: our best is behind cudaKDTree on 11 of 12 rows and behind the grid on every row where
+  the grid works.
+- (b) fails: nesting is 0.974-1.013 in kernel time, nowhere near 1.1x.
+- (c): the CPU's pick reaches 0.99 of the GPU best, so a GPU-specific schema search buys nothing.
+
+Paper B as conceived (nested schemas chosen for the GPU) is dropped (decision 2026-11-04). For Paper
+A, the GPU is one more regime where composition ties.
+
 
 
 ## 3. Pending experiments (exact commands)
