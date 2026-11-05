@@ -170,7 +170,8 @@ class Battery:
                 "--generate-schemas", str(gen), "--optimizer-generations", str(generations),
                 "--optimizer-population", str(population), "--parallel", str(self.args.parallel),
                 "--generated-schema-dir", str(self.out / "generated_schemas"),
-                "--optimizer-output-dir", str(self.out / "best_schemas" / f"{name}_ga"), "--csv", ga_csv])
+                "--optimizer-output-dir", str(self.out / "best_schemas" / f"{name}_ga"), "--csv", ga_csv]
+                + (["--generated-max-leaf", str(self.args.generated_max_leaf)] if self.args.generated_max_leaf else []))
             ok_singles = self.run(f"{name} tuned singles (opt)", ["--flat-search"] + self.common(cloud, opt, queries) + timed + [
                 "--schemas", self.tuned, "--generate-schemas", "0", "--no-baselines", "--csv", singles_csv])
             if not (ok_ga or ok_singles):
@@ -328,6 +329,8 @@ def main():
     parser.add_argument("--test-only", action="store_true", help="only the held-out re-measure, reusing arm CSVs")
     parser.add_argument("--node-cost-ns", type=float, default=0.0,
                         help="emulated cost per entered node, passed to every step (testing.md 2o)")
+    parser.add_argument("--generated-max-leaf", type=int, default=0,
+                        help="the GA's leaf ceiling (engine default 512); the tuned singles reach 32768")
     args = parser.parse_args()
     args.search_transfer = {c for c in args.search_transfer.split(",") if c}
 

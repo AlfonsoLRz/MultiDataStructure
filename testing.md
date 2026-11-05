@@ -908,6 +908,78 @@ would fix both sides.
 Paper B as conceived (nested schemas chosen for the GPU) is dropped (decision 2026-11-04). For Paper
 A, the GPU is one more regime where composition ties.
 
+### 2o. 2026-11-05 — node-cost dial (E2): expensive nodes call for bigger leaves, not nesting
+
+**Question.** The ISPRS gains were in out-of-core node loads, and the 2m cost model says composition
+saves coarse-node visits. Does nesting start to pay when entering a node is expensive?
+
+**Setup** (commit 53fde0f).
+- `--node-cost-ns d` makes every node a query enters wait d ns, spinning on the timestamp counter
+  (`Charged` template flag on the five CPU traversals; at d = 0 the code is unchanged).
+- `run_cells.py --node-cost-ns d` charges every step (GA, tuned singles, confirmation, held-out
+  interleaved timing), so each cost gets its own search and pick.
+- Five 25M cells (DomFountain, GaliciaForest, SanAndreas, SolarPlantation, Alhambra; the last two
+  have the largest nested visit savings in e9), d = 0, 100, 1000 and 10000 ns, makinon2, one pinned
+  core per stream.
+- Every visit is charged and there is no cache. That is nesting's best case: a cache would hold the
+  coarse nodes nesting saves.
+
+**First run: the 10 us row was unfair.** The GA generates leaves of 16-512 points only
+(`--generated-max-leaf`, default 512), for nested and single candidates alike, while the tuned singles
+reach 32768. At 10 us the winning singles were HGrids with 4096-8192-point leaves (`tuned_hg3l8192`,
+`tuned_hg4l4096`), which no nested candidate could be. The 1 and 10 us rows were rerun with the GA's
+ceiling at 8192 (`run_cells.py --generated-max-leaf 8192`). The 0 and 100 ns winners all have leaves
+of 512 or less, so those rows stand.
+
+| cost per entered node | nested / single, held-out geomean | range | nested adopted | run |
+|---|---|---|---|---|
+| 0 | 1.008 | 0.997-1.026 | 0 of 5 | leaf cap 512 |
+| 100 ns | 1.000 | 0.952-1.047 | 1 of 5 | leaf cap 512 |
+| 1 us | 1.024 | 0.870-1.154 | 2 of 5 | leaf cap 8192 (1.029 at cap 512) |
+| 10 us | 1.046 | 0.607-1.482 | 1 of 5 | leaf cap 8192 (1.482 at cap 512) |
+
+The timing is reproducible: the same tuned singles time within 1% in both runs (e.g. `tuned_hg4l4096`
+on DomFountain at 10 us, 136.5 and 136.7 us). The nested results move between runs because the search
+finds different schemas. Results: `results/eval_traces/node_cost_makinon2` (cap 512) and
+`node_cost_leaf8192_makinon2` (cap 8192, with d0 from the first run); report: `scripts/node_cost_dial.py`.
+
+**Every nested win is a single that the pool lacked** (`scripts/strip_check.py`,
+`results/eval_traces/strip_check_makinon2`). Each nested winner was timed interleaved, at its node
+cost, against singles built from each of its blocks alone, at its leaf capacity and at half and twice
+it:
+
+| cell, cost | nested winner | dial ratio | matching single | single / nested |
+|---|---|---|---|---|
+| GaliciaForest, 100 ns | qt6 -> ot6 -> bvh48, leaf 512 | 0.952 | octree, leaf 256 | 0.983 |
+| DomFountain, 1 us (cap 512) | ot12 -> kd48, leaf 256 | 0.868 | octree, leaf 512 | 0.886 |
+| DomFountain, 1 us (cap 8192) | ot12 -> qt24, leaf 1024 | 0.948 | octree, leaf 2048 | 1.000 |
+| GaliciaForest, 1 us | STR-8 -> ot1 -> qt24, leaf 4096 | 0.870 | STR-8, leaf 4096 | 1.001 |
+| GaliciaForest, 10 us | STR-64 -> qt1 -> ot24, leaf 8192 | 0.607 | STR-64, leaf 8192 | 0.999 |
+
+Where the ratio is 1.000, the first block reaches the leaf capacity before its depth limit, so the
+later blocks never apply: the nested schema builds the single's tree. The others are beaten outright
+by the single at another leaf size. The tuned singles have no STR at all, and their octrees above
+leaf 128 are depth-capped (`tuned_ot6l2048`, `tuned_ot5l4096`); the GA's own singles never hit these
+configurations. So the nested arm won
+by carrying a single configuration the single arm lacked. A fair single pool needs every primitive
+across the leaf range.
+
+**What expensive nodes do instead.** The re-searched picks cut visits per query from 14-39 at d = 0 to
+7-22 at 1 us and 4.6-8.5 at 10 us, with bigger leaves and shallower trees (at 10 us, HGrid and STR
+with 4096-8192-point leaves), while queries take 13-27 us at 1 us and 56-137 us at 10 us. The d0 finalists held
+fixed would have favoured nesting (`d0 model` column: 0.85 on Alhambra and DomFountain at 10 us); the
+re-search beats that by changing the leaf size. This corrects the reading of the 2m cost model: its
+crossover c_node for a 20% visit saving assumed a fixed structure. Once the structure is re-tuned for
+the cost, leaf size cuts visits far more than composition.
+
+**Verdict for E4 (out-of-core store).** Not justified by nesting: under emulated per-node costs from 0
+to 10 us, no cache, every nested win reduces to a single. Two limits of the emulation:
+- the cost is per node, not per byte (a real leaf load also scales with its size, which caps the leaf
+  growth seen here);
+- real stores cache the upper levels, which removes nesting's saving first.
+Both make nesting's case weaker, not stronger. For Paper A: composition is a proxy for leaf size and
+primitive choice, in memory, on the GPU (2n) and under expensive nodes.
+
 
 
 ## 3. Pending experiments (exact commands)
