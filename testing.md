@@ -980,6 +980,118 @@ to 10 us, no cache, every nested win reduces to a single. Two limits of the emul
 Both make nesting's case weaker, not stronger. For Paper A: composition is a proxy for leaf size and
 primitive choice, in memory, on the GPU (2n) and under expensive nodes.
 
+### 2p. 2026-11-05 — Paper A check: a one-feature rule gets within 4-8% of the search; counts don't predict time
+
+**Question.** After 2o, does a Paper A still exist? What could survive is a corrective study: primitive
+and leaf size matter, composition doesn't. Two things decide whether it is worth writing:
+- its practical message: does a fixed rule capture the gain, or does each cloud need its own tuning?
+- its novelty.
+
+**Setup.** Offline, from the e9 results. The script is `paper_a_check/rule.py` in the session
+scratchpad, to move into `scripts/` if the paper goes ahead.
+- 68 searched cells over 16 clouds. The 500M and 1B transfer cells have no search arms.
+- Opt half, instrumented. Arms: the 55 tuned singles (the same names in every cell), the GA singles,
+  and the library defaults at leaf 32.
+- Oracle: a cell's fastest single-level schema. Regret: the rule's schema over the oracle.
+- Each rule picks among the 55 tuned singles and is fitted leave-one-cloud-out: every size of the
+  held-out cloud is left out.
+- Two latency columns: `avg_latency_ms` (the instrumented pass) and `latency_repeat_mean_ms` (the
+  search's repeats).
+
+| rule | regret geomean (avg / repeat) | p90 (avg / repeat) | cells > 1.15 (avg / repeat) | picks |
+|---|---|---|---|---|
+| library octree default, leaf 32 | 1.746 / 1.950 | 2.18 / 2.77 | 68 / 68 | |
+| library kd default (median split, leaf 32) | 1.630 / 1.619 | 1.98 / 2.05 | 67 / 68 | |
+| floor: best of the 55 tuned singles per cell | 1.011 / 1.010 | 1.05 / 1.04 | 0 / 0 | |
+| one global schema | 1.067 / 1.074 | 1.21 / 1.18 | 10 / 12 | kd48l128sm / kd48l64sm |
+| one schema per scan group | 1.078 / 1.106 | 1.23 / 1.33 | 12 / 14 | ground kd48l128sm, aerial qt16l128tc / qt16l64tc, forest qt16l128tc |
+| one split on `flatness_score` | **1.043 / 1.076** | 1.10 / 1.20 | 2 / 12 | kd48l128sm / quadtree, 16 levels, leaf 64-128 |
+| two splits on any of 13 features | 1.073 / 1.059 | 1.22 / 1.16 | 8 / 8 | unstable between columns (overfits 16 clouds) |
+
+The rule, fitted on all cells, makes the same split in both columns:
+- `flatness_score` <= 0.60: kd-tree, sliding-midpoint split, 48 levels, leaf 128;
+- above 0.60: quadtree, 16 levels, leaf 64-128.
+
+`flatness_score` = (1 - z extent / max(x, y extent)) × (planarity + 1 - scattering) / 2, from the
+covariance of a point sample (`FeatureExtraction.cpp`). It separates the 2.5D scenes (aerial terrain
+and urban scenes, the Retiro park) from the 3D ones. SanAndreas (aerial, 0.53) falls on the kd side,
+and that cloud is most of the aerial regret.
+
+- **The rule captures about 90% of the gain** from the library default to the best single, in log
+  terms (1.75 to 1.04, and 1.95 to 1.08).
+- **What the per-cloud search adds over the rule (4-8%) is about the measurement noise.** The oracle
+  rows' repeat CV is 7.7% at the median, and the oracle is a minimum over about 120 noisy arms, so the
+  rule's true regret is lower.
+- **Per scan group does worse than one global schema** because the forest group mixes Retiro (a flat
+  park: quadtree) with GaliciaForest (kd). Ground and aerial alone are 1.030 and 1.043.
+- **Held-out check.** In 26 cells the group rule's pick, or a structurally identical schema, was among
+  the singles timed interleaved on the test half. There it is within 0.3% of the best timed single
+  (max 1.021). The sample is mostly ground scans and biased towards cells where the pick was a
+  finalist.
+
+**Counts don't predict in-memory time.** A per-cell least-squares fit over the opt-half arms (relative
+error, instrumented counters) was used to predict two ratios: oracle over the library octree, and best
+nested over best single. Each entry is predicted vs measured, for ground, aerial and forest:
+
+| model | median error near the oracle | oracle / octree default | nested / single |
+|---|---|---|---|
+| visits, points, returned (the 2m model) | 11% | 0.98, 0.91, 0.95 vs 0.60, 0.55, 0.53 | 0.97, 1.03, 0.99 vs 1.01, 1.01, 0.95 |
+| plus box tests (visits × fan-out) and tree size (visits × log2 nodes) | 8% | 0.83, 0.82, 0.76 vs 0.60, 0.55, 0.53 | 0.98, 1.03, 0.99 vs 1.01, 1.01, 0.95 |
+
+An example, DomFountain 25M:
+- the library octree visits 37.9 nodes and tests 215 points per query, in 3.31 us;
+- `tuned_kd48l128sm` visits 39.3 nodes and tests 391 points, in 2.51 us, from a tree of 0.59M nodes
+  against 2.7M.
+
+The recorded counters, even with tree size, explain under half of the leaf and primitive lever. They
+also get nesting's ±3% wrong in both directions. So the 2m cost model (c_node, the break-even node
+cost) cannot carry claims in a paper. In memory, no count we record ranks structures; only timing
+does.
+
+**Novelty** (literature scan, 2026-11-05). Rows marked "abstract" were checked against the abstract
+only. Re-read every paper before citing it.
+
+| work | clouds | per-dataset tuning | hybrid tested | finding |
+|---|---|---|---|---|
+| Elseberg et al., JOSER 2012 | 3 real scans, up to 16M | bucket size swept on one dataset, then fixed | no | kd and octree implementations best; compact nodes alone give ≥2x; no structure verdict |
+| Behley et al., ICRA 2015 | 3 scans, 100-176k | bucket swept 4-256, optimum 32-64 for all, then fixed | no | own octree 1.2-2.7x over kd-trees for radius |
+| Laso & Yermo, "Cheesemap", FGCS 175 (2026) | about 10 (ALS, MLS, ULS, TLS), 3.8-259M | no (library defaults, grid cell fixed) | only a mixed grid | best primitive depends on acquisition (grid on ALS, octree on MLS, nanoflann for kNN) |
+| Viñambres et al., arXiv 2603.06771 (2026) | 4 datasets, up to 721M | no (leaf 128) | no | Morton/Hilbert reordering 10-50% |
+| Indexicon, arXiv 2606.04676 (2026) | 6 geographic sets, 1 LiDAR (Toronto 21.6M) | global sweeps choose one default | no | one library, matches or beats Boost/GEOS/PCL/nanoflann |
+| Liu et al., arXiv 2405.05536 (2024) | Toronto3D plus synthetic and geographic sets | no | no | learned indexes do not beat kd/STR on kNN |
+| ISPRS 2023 (ours), KD-OcTree (Wuhan Univ. 2018, abstract), octree + R*-tree (Appl. Sci. 2021, abstract) | 2 ALS (+TLS) / 3 MLS / not stated | no | yes | each hybrid beats its untuned singles |
+| Flood, Tsunami, WaZI | tabular data or 2D OSM points | baselines tuned per workload (Flood, Tsunami) | no | learned layouts on range queries; no kNN, no point clouds |
+| RTNN (PPoPP 2022), Jakob & Guthe (CGF 2021) | KITTI, scanned objects, up to 25M | no | no | GPU structure comparisons |
+
+Already published: leaf size matters (Elseberg, Behley, on small clouds), and the best primitive
+depends on the acquisition type (Cheesemap, library defaults on about 10 clouds). Not published, as
+far as the scan found:
+- a breakdown of where the speed comes from (library default, then primitive, then per-dataset
+  tuning, then composition), in one engine, over 73 clouds of 1M-1B points;
+- held-out query traces from real pipelines (every prior study uses random points or every point);
+- nested or hybrid schemas against tuned singles (every hybrid paper compares against untuned ones);
+- node-visit savings that never turn into time.
+
+Reviewers will ask whether the 1.66x default gap is specific to our engine (Elseberg: implementation
+alone can be 2x). Answering that needs external anchors: nanoflann (2d: parity on the mixed trace), PCL
+and unibn octrees, Open3D.
+
+**Verdict.** First row of the plan's decision table:
+- the one-split rule is at 1.043 / 1.076, about 5%;
+- no prior study covers the question at a similar scale.
+
+A corrective paper is possible: choose the primitive from the scene's geometry (2.5D: quadtree; 3D:
+sliding-midpoint kd, both deep, leaf 64-128); a per-cloud search adds about the noise, and composition
+adds nothing. Hybrid indexes looked good against untuned singles and node counts, and in memory
+neither measure stands.
+
+Risks:
+- the rule may read as folklore;
+- the default gap needs external libraries behind it;
+- the framing against ISPRS 2023 must be agreed with its co-authors, and out-of-core stays unmeasured.
+
+The cost model is out as a contribution. Next step: the user decides whether to write the paper.
+
 
 
 ## 3. Pending experiments (exact commands)
