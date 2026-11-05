@@ -3,6 +3,7 @@
 
 #include "QueryTrace.h"
 #include "../core/Config.h"
+#include "../workloads/points/LeafStore.h"
 #include "../workloads/points/PointCloud.h"
 #include "../workloads/points/PointSpatialIndex.h"
 
@@ -201,7 +202,59 @@ namespace
 		// Mean latency over all queries of each timed pass, in pass order.
 		std::vector<double>					_passMeansMs;
 		size_t								_passMismatches = 0;
+		// Out of core: the store file, the store the index reads from in the current regime, and its
+		// counters summed over that regime's timed passes.
+		std::string							_storePath;
+		Experiments::EngineCheckOptions::StoreRegime	_regime;
+		std::unique_ptr<LeafStore>			_store;
+		LeafStore::Counters					_storeTotals;
+		double								_deviceExtraBytes = 0.0;
+		size_t								_storePasses = 0;
 	};
+
+	// Writes the index's store, or finds it already written.
+	void writeLeafStore(Measured& measured, const Experiments::EngineCheckOptions& options)
+	{
+		const PointSpatialIndex::PoolView pool = measured._index->poolView();
+		std::ostringstream name;
+		name << std::hex << std::setw(16) << std::setfill('0') << measured._digest << ".store";
+		measured._storePath = (std::filesystem::path(options._leafStoreDir) / name.str()).string();
+		if (!LeafStore::matches(measured._storePath, pool, measured._digest))
+		{
+			const auto start = std::chrono::steady_clock::now();
+			LeafStore::write(measured._storePath, pool, measured._digest);
+			std::cout << "  store " << measured._storePath << " written in " << std::fixed << std::setprecision(1)
+					  << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s\n";
+			std::cout.unsetf(std::ios::floatfield);
+		}
+	}
+
+	// Puts a built schema in one storage regime with fresh measurement state: detached and in
+	// memory, or reading from its store with the regime's cache and hierarchy.
+	void applyRegime(Measured& measured, const Experiments::EngineCheckOptions::StoreRegime& regime,
+					 const Experiments::EngineCheckOptions& options)
+	{
+		measured._index->attachStore(nullptr);
+		measured._store.reset();
+		measured._regime = regime;
+		std::fill(measured._records.begin(), measured._records.end(), QueryRecord{});
+		measured._latencySum = {};
+		measured._latencyCount = {};
+		measured._passMeansMs.clear();
+		measured._passMismatches = 0;
+		measured._storeTotals = {};
+		measured._deviceExtraBytes = 0.0;
+		measured._storePasses = 0;
+		if (regime._inMemory)
+			return;
+
+		LeafStore::Options storeOptions;
+		storeOptions._cacheBytes = static_cast<size_t>(regime._cacheFraction * static_cast<double>(std::filesystem::file_size(measured._storePath)));
+		storeOptions._pagedHierarchy = regime._pagedHierarchy;
+		storeOptions._requireDirect = options._storeRequireDirect;
+		measured._store = std::make_unique<LeafStore>(measured._storePath, measured._index->poolView(), measured._digest, storeOptions);
+		measured._index->attachStore(measured._store.get());
+	}
 
 	Measured buildMeasured(const std::string& schemaPath, const PointCloud& cloud, const Experiments::EngineCheckOptions& options, size_t queryCount)
 	{
@@ -227,6 +280,8 @@ namespace
 		measured._stats = measured._index->stats();
 		measured._digest = measured._index->structureDigest();
 		measured._records.resize(queryCount);
+		if (!options._leafStoreDir.empty())
+			writeLeafStore(measured, options);
 		return measured;
 	}
 
@@ -238,9 +293,18 @@ namespace
 		// Interleaved, the previous turn belonged to another schema, so its data filled the caches.
 		// An untimed sweep first puts this schema back in the warm state a sequential measurement
 		// times; without it interleaving measured a colder regime (kdtree/qt16 2.7 vs 3.1).
-		if (timed && warmSweep)
+		// Out of core there is no warm state to restore: every pass starts with an empty store
+		// cache, and fills it only from its own queries.
+		LeafStore* store = measured._store.get();
+		if (timed && warmSweep && !store)
 			for (const CheckQuery& query : queries)
 				runQuery(index, query, PointSpatialIndex::QueryTelemetry::Off);
+		if (store)
+		{
+			store->clearCache();
+			store->resetCounters();
+		}
+		const uint64_t deviceSectorsBefore = store ? LeafStore::deviceSectorsRead(options._storeDevice) : 0;
 		// Pass 0 is always instrumented, since the per-query counters come from it; timed passes
 		// run uninstrumented unless --timed-telemetry full asks otherwise.
 		const PointSpatialIndex::QueryTelemetry telemetry = (pass == 0 || !timed || options._timedTelemetryFull)
@@ -275,6 +339,20 @@ namespace
 		}
 		if (timed && !queries.empty())
 			measured._passMeansMs.push_back(passMs / static_cast<double>(queries.size()));
+		if (timed && store)
+		{
+			const LeafStore::Counters& counters = store->counters();
+			measured._storeTotals._reads += counters._reads;
+			measured._storeTotals._bytes += counters._bytes;
+			measured._storeTotals._hits += counters._hits;
+			measured._storeTotals._ioNs += counters._ioNs;
+			if (!options._storeDevice.empty())
+			{
+				const uint64_t deviceSectors = LeafStore::deviceSectorsRead(options._storeDevice) - deviceSectorsBefore;
+				measured._deviceExtraBytes += static_cast<double>(deviceSectors) * 512.0 - static_cast<double>(counters._bytes);
+			}
+			++measured._storePasses;
+		}
 	}
 
 	struct Outputs
@@ -328,6 +406,20 @@ namespace
 				  << " | range " << mean(sum[0], count[0]) * 1000.0 << " us"
 				  << " | all " << mean(allSum, allCount) * 1000.0 << " us (pass median " << passMedian * 1000.0 << ")"
 				  << (measured._passMismatches ? " | PASS MISMATCHES: " + std::to_string(measured._passMismatches) : std::string()) << '\n';
+		const LeafStore* store = measured._store.get();
+		const double storeQueries = std::max<double>(1.0, static_cast<double>(measured._storePasses) * static_cast<double>(queries.size()));
+		const double storePasses = std::max<double>(1.0, static_cast<double>(measured._storePasses));
+		if (store)
+		{
+			std::cout << "    store " << measured._regime.name() << ": " << static_cast<double>(measured._storeTotals._reads) / storeQueries << " reads, "
+					  << static_cast<double>(measured._storeTotals._bytes) / storeQueries / 1024.0 << " KiB, "
+					  << static_cast<double>(measured._storeTotals._hits) / storeQueries << " hits, "
+					  << static_cast<double>(measured._storeTotals._ioNs) / storeQueries / 1000.0 << " us of I/O per query"
+					  << (store->direct() ? "" : " (BUFFERED, not direct)");
+			if (!options._storeDevice.empty())
+				std::cout << " | other reads on " << options._storeDevice << ": " << measured._deviceExtraBytes / storePasses / 1e6 << " MB per pass";
+			std::cout << '\n';
+		}
 		std::cout.unsetf(std::ios::floatfield);
 
 		if (outputs._summaryCsv)
@@ -350,7 +442,15 @@ namespace
 								<< mean(allSum, allCount) << ',' << visited / queryCount << ',' << tested / queryCount << ','
 								<< returned / queryCount << ',' << querySetChecksum << ',' << measured._passMismatches << ','
 								<< (options._timedTelemetryFull ? "full" : "off") << ',' << testedBoxes / queryCount << ','
-								<< (options._interleave ? 1 : 0) << ',' << passMedian << ',' << passMin << ',' << passList.str() << '\n';
+								<< (options._interleave ? 1 : 0) << ',' << passMedian << ',' << passMin << ',' << passList.str() << ','
+								<< (store ? store->fileBytes() : 0) << ','
+								<< (store ? static_cast<uint64_t>(measured._regime._cacheFraction * static_cast<double>(store->fileBytes())) : 0) << ','
+								<< (store && measured._regime._pagedHierarchy ? 1 : 0) << ',' << (store && store->direct() ? 1 : 0) << ','
+								<< static_cast<double>(measured._storeTotals._reads) / storeQueries << ','
+								<< static_cast<double>(measured._storeTotals._bytes) / storeQueries << ','
+								<< static_cast<double>(measured._storeTotals._hits) / storeQueries << ','
+								<< static_cast<double>(measured._storeTotals._ioNs) / storeQueries / 1e6 << ','
+								<< measured._deviceExtraBytes / storePasses / 1e6 << ',' << measured._regime.name() << '\n';
 			outputs._summaryCsv.flush();
 		}
 
@@ -385,6 +485,25 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 			  << (options._inputTracePath.empty() ? "generated" : "trace") << "), "
 			  << options._warmupPasses << " warm-up + " << options._timedPasses << " timed passes"
 			  << (options._interleave ? ", interleaved across schemas" : "") << '\n';
+	// The storage regimes, each timed on the same built trees.
+	std::vector<EngineCheckOptions::StoreRegime> regimes = options._storeRegimes;
+	if (regimes.empty())
+	{
+		EngineCheckOptions::StoreRegime regime;
+		regime._inMemory = options._leafStoreDir.empty();
+		regime._cacheFraction = options._storeCacheFraction;
+		regime._pagedHierarchy = options._storePagedHierarchy;
+		regimes.push_back(regime);
+	}
+	if (options._leafStoreDir.empty() && std::any_of(regimes.begin(), regimes.end(), [](const auto& regime) { return !regime._inMemory; }))
+		throw std::invalid_argument("engine-check: out-of-core regimes need --leaf-store <dir>");
+	if (!options._leafStoreDir.empty())
+	{
+		std::cout << "engine-check: stores in " << options._leafStoreDir << ", regimes";
+		for (const EngineCheckOptions::StoreRegime& regime : regimes)
+			std::cout << ' ' << regime.name();
+		std::cout << '\n';
+	}
 
 	Outputs outputs;
 	if (!options._queryCsvPath.empty())
@@ -411,7 +530,9 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 								<< "range_queries,range_mean_ms,count_queries,count_mean_ms,radius_queries,radius_mean_ms,"
 								<< "knn_queries,knn_mean_ms,all_mean_ms,mean_visited_nodes,mean_tested_points,"
 								<< "mean_returned_points,query_set_checksum,pass_checksum_mismatches,timed_telemetry,mean_tested_boxes,"
-								<< "interleaved,pass_median_ms,pass_min_ms,pass_means_ms\n";
+								<< "interleaved,pass_median_ms,pass_min_ms,pass_means_ms,"
+								<< "store_file_bytes,store_cache_bytes,store_paged,store_direct,store_reads,store_bytes,store_hits,store_io_ms,"
+								<< "store_device_extra_mb,store_regime\n";
 		}
 	}
 
@@ -421,10 +542,14 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 		for (const std::string& schemaPath : options._schemaPaths)
 		{
 			Measured measured = buildMeasured(schemaPath, cloud, options, queries.size());
-			for (size_t pass = 0; pass < totalPasses; ++pass)
-				runPass(measured, queries, pass, options);
-			if (!report(measured, queries, cloud, options, outputs))
-				return 2;
+			for (const EngineCheckOptions::StoreRegime& regime : regimes)
+			{
+				applyRegime(measured, regime, options);
+				for (size_t pass = 0; pass < totalPasses; ++pass)
+					runPass(measured, queries, pass, options);
+				if (!report(measured, queries, cloud, options, outputs))
+					return 2;
+			}
 		}
 		return 0;
 	}
@@ -438,13 +563,26 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 	all.reserve(options._schemaPaths.size());
 	for (const std::string& schemaPath : options._schemaPaths)
 		all.push_back(buildMeasured(schemaPath, cloud, options, queries.size()));
-	for (size_t pass = 0; pass < totalPasses; ++pass)
-		for (size_t i = 0; i < all.size(); ++i)
-			runPass(all[(i + pass) % all.size()], queries, pass, options, true);
-
 	int status = 0;
-	for (const Measured& measured : all)
-		if (!report(measured, queries, cloud, options, outputs))
-			status = 2;
+	for (const EngineCheckOptions::StoreRegime& regime : regimes)
+	{
+		for (Measured& measured : all)
+			applyRegime(measured, regime, options);
+		for (size_t pass = 0; pass < totalPasses; ++pass)
+			for (size_t i = 0; i < all.size(); ++i)
+				runPass(all[(i + pass) % all.size()], queries, pass, options, true);
+		for (const Measured& measured : all)
+			if (!report(measured, queries, cloud, options, outputs))
+				status = 2;
+	}
 	return status;
+}
+
+std::string Experiments::EngineCheckOptions::StoreRegime::name() const
+{
+	if (_inMemory)
+		return "memory";
+	std::ostringstream text;
+	text << _cacheFraction << ':' << (_pagedHierarchy ? "paged" : "memory");
+	return text.str();
 }

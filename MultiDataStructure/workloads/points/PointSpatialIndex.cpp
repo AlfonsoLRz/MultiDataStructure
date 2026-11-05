@@ -1,5 +1,6 @@
 #include "../../stdafx.h"
 #include "PointSpatialIndex.h"
+#include "LeafStore.h"
 
 #if defined(__AVX2__)
 #include <immintrin.h>
@@ -286,6 +287,7 @@ void PointSpatialIndex::build(const PointCloud& cloud, const SchemaConfig& schem
 
 	_cloud = &cloud;
 	_schema = schema;
+	_store = nullptr;
 	_structureNames = std::make_shared<std::vector<std::string>>();
 	_resolvedLevels.clear();
 	for (const SchemaLevelConfig& level : _schema._levels)
@@ -561,25 +563,40 @@ namespace
 		}
 	}
 
-	// Calls call(full, micro, charged) with each flag as a compile-time constant, so every
-	// combination is its own traversal and the plain timed path tests no flag per node.
+	// Calls call(full, micro, charged, stored) with each flag as a compile-time constant, so every
+	// combination is its own traversal and the plain timed path tests no flag per node. A stored
+	// index has no micro-indexes (attachStore refuses them), so Stored never meets Micro.
 	template <typename Call>
-	void withTraversalFlags(bool full, bool micro, bool charged, Call&& call)
+	void withTraversalFlags(bool full, bool micro, bool charged, bool stored, Call&& call)
 	{
 		using T = std::true_type;
 		using F = std::false_type;
-		if (charged)
-		{
-			if (full)
-				micro ? call(T{}, T{}, T{}) : call(T{}, F{}, T{});
+		const auto withCharge = [&](auto f, auto m, auto s) {
+			if (charged)
+				call(f, m, T{}, s);
 			else
-				micro ? call(F{}, T{}, T{}) : call(F{}, F{}, T{});
-		}
-		else if (full)
-			micro ? call(T{}, T{}, F{}) : call(T{}, F{}, F{});
+				call(f, m, F{}, s);
+		};
+		const auto withStore = [&](auto f) {
+			if (stored)
+				withCharge(f, F{}, T{});
+			else if (micro)
+				withCharge(f, T{}, F{});
+			else
+				withCharge(f, F{}, F{});
+		};
+		if (full)
+			withStore(T{});
 		else
-			micro ? call(F{}, T{}, F{}) : call(F{}, F{}, F{});
+			withStore(F{});
 	}
+}
+
+void PointSpatialIndex::attachStore(LeafStore* store)
+{
+	if (store && !_microIndexes.empty())
+		throw std::invalid_argument("a leaf store cannot serve an index with leaf micro-indexes");
+	_store = store;
 }
 
 void PointSpatialIndex::setNodeVisitCost(double nanoseconds)
@@ -622,8 +639,8 @@ PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds,
 	const auto start = std::chrono::steady_clock::now();
 	if (!_hot.empty())
 	{
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
-			this->template rangeSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(bounds, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
+			this->template rangeSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(bounds, result);
 		});
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
@@ -646,8 +663,8 @@ PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds,
 	const auto start = std::chrono::steady_clock::now();
 	if (!_hot.empty())
 	{
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
-			this->template countSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(bounds, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
+			this->template countSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(bounds, result);
 		});
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
@@ -669,8 +686,8 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 	const auto start = std::chrono::steady_clock::now();
 	if (radius >= 0.0f && !_hot.empty())
 	{
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
-			this->template radiusSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(center, radiusSquared, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
+			this->template radiusSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(center, radiusSquared, result);
 		});
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
@@ -941,11 +958,11 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 		// Depth-first for the small k of every captured workload; best-first above, where its
 		// node-optimality pays for the heap.
 		constexpr size_t DepthFirstMaxK = 64;
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, [&](auto f, auto m, auto c) {
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
 			if (k <= DepthFirstMaxK)
-				this->template knnSearchDepthFirst<decltype(f)::value, decltype(m)::value, decltype(c)::value>(center, k, result);
+				this->template knnSearchDepthFirst<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(center, k, result);
 			else
-				this->template knnSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value>(center, k, result);
+				this->template knnSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(center, k, result);
 		});
 
 		// The answer leaves the traversal in heap order, into storage reserved before the clock.
@@ -983,7 +1000,7 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 // their group is in cache and pushes only the survivors, in reverse so they pop in child order
 // (the old recursion's order). Counter semantics are those of engine 2: a bounds test on a
 // non-empty node is a tested box, a node whose test passed is visited.
-template <bool Telemetry, bool Micro, bool Charged>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored>
 void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) const
 {
 	const glm::vec3 queryMin = bounds.min();
@@ -997,6 +1014,8 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 
 	if (!hot[0].isInternal() && hot[0].count() == 0)
 		return;
+	if constexpr (Stored)
+		_store->touchNodes(0, 1);
 	if constexpr (Telemetry)
 		++result._stats._testedBoxes;
 	if (!boxOverlaps(hot[0]._lo, hot[0]._hi, queryMin, queryMax))
@@ -1019,13 +1038,17 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 		{
 			if constexpr (Telemetry)
 				recordFullyContainedNode(slot, result._stats);
-			appendSubtreePoints(slot, out);
+			// Stored: one read per leaf of the subtree, the per-node load of a file-per-node store.
+			if constexpr (Stored)
+				_store->appendOrder(_cold[slot]._subtreeOffset, _cold[slot]._subtreeCount, out);
+			else
+				appendSubtreePoints(slot, out);
 			continue;
 		}
 
 		if (!node.isInternal())
 		{
-			if constexpr (Micro)
+			if constexpr (Micro && !Stored)
 			{
 				const uint32_t microSlot = _cold[slot]._microSlot;
 				if (microSlot != NoSlot && _microIndexes[microSlot]->hasGrid())
@@ -1036,9 +1059,18 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 			}
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
-			scanLeafRange(xs, ys, zs, order, node._first, node._first + node.count(), queryMin, queryMax, out);
+			if constexpr (Stored)
+			{
+				const LeafStore::LeafView leaf = _store->leaf(node._first, node.count());
+				scanLeafRange(leaf._x, leaf._y, leaf._z, leaf._order, 0, node.count(), queryMin, queryMax, out);
+			}
+			else
+				scanLeafRange(xs, ys, zs, order, node._first, node._first + node.count(), queryMin, queryMax, out);
 			continue;
 		}
+
+		if constexpr (Stored)
+			_store->touchNodes(node._first, node.count());
 
 		for (uint32_t c = node.count(); c-- > 0;)
 		{
@@ -1054,7 +1086,7 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 	}
 }
 
-template <bool Telemetry, bool Micro, bool Charged>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored>
 void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) const
 {
 	const glm::vec3 queryMin = bounds.min();
@@ -1066,6 +1098,8 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 
 	if (!hot[0].isInternal() && hot[0].count() == 0)
 		return;
+	if constexpr (Stored)
+		_store->touchNodes(0, 1);
 	if constexpr (Telemetry)
 		++result._stats._testedBoxes;
 	if (!boxOverlaps(hot[0]._lo, hot[0]._hi, queryMin, queryMax))
@@ -1094,7 +1128,7 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 
 		if (!node.isInternal())
 		{
-			if constexpr (Micro)
+			if constexpr (Micro && !Stored)
 			{
 				const uint32_t microSlot = _cold[slot]._microSlot;
 				if (microSlot != NoSlot && _microIndexes[microSlot]->hasGrid())
@@ -1105,9 +1139,18 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 			}
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
-			result._count += countLeafRange(xs, ys, zs, node._first, node._first + node.count(), queryMin, queryMax);
+			if constexpr (Stored)
+			{
+				const LeafStore::LeafView leaf = _store->leaf(node._first, node.count());
+				result._count += countLeafRange(leaf._x, leaf._y, leaf._z, 0, node.count(), queryMin, queryMax);
+			}
+			else
+				result._count += countLeafRange(xs, ys, zs, node._first, node._first + node.count(), queryMin, queryMax);
 			continue;
 		}
+
+		if constexpr (Stored)
+			_store->touchNodes(node._first, node.count());
 
 		for (uint32_t c = node.count(); c-- > 0;)
 		{
@@ -1123,7 +1166,7 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 	}
 }
 
-template <bool Telemetry, bool Micro, bool Charged>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored>
 void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const
 {
 	const HotNode* hot = _hot.data();
@@ -1135,6 +1178,8 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 
 	if (!hot[0].isInternal() && hot[0].count() == 0)
 		return;
+	if constexpr (Stored)
+		_store->touchNodes(0, 1);
 	if constexpr (Telemetry)
 		++result._stats._testedBoxes;
 	if (boxDistanceSquared(hot[0]._lo, hot[0]._hi, center) > radiusSquared)
@@ -1155,7 +1200,7 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 
 		if (!node.isInternal())
 		{
-			if constexpr (Micro)
+			if constexpr (Micro && !Stored)
 			{
 				const uint32_t microSlot = _cold[slot]._microSlot;
 				if (microSlot != NoSlot && _microIndexes[microSlot]->hasGrid())
@@ -1166,9 +1211,18 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 			}
 			if constexpr (Telemetry)
 				recordTestedPoints(slot, node.count(), result._stats);
-			scanLeafRadius(xs, ys, zs, order, node._first, node._first + node.count(), center, radiusSquared, out);
+			if constexpr (Stored)
+			{
+				const LeafStore::LeafView leaf = _store->leaf(node._first, node.count());
+				scanLeafRadius(leaf._x, leaf._y, leaf._z, leaf._order, 0, node.count(), center, radiusSquared, out);
+			}
+			else
+				scanLeafRadius(xs, ys, zs, order, node._first, node._first + node.count(), center, radiusSquared, out);
 			continue;
 		}
+
+		if constexpr (Stored)
+			_store->touchNodes(node._first, node.count());
 
 		for (uint32_t c = node.count(); c-- > 0;)
 		{
@@ -1186,7 +1240,7 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 
 // One leaf of a kNN traversal: its micro-index if it has one, else every point, eight at a time.
 // Shared by both traversals, so they offer identical candidates in identical order per leaf.
-template <bool Telemetry, bool Micro>
+template <bool Telemetry, bool Micro, bool Stored>
 void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1195,8 +1249,20 @@ void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k
 	const float* xs = _orderedX.data();
 	const float* ys = _orderedY.data();
 	const float* zs = _orderedZ.data();
+	uint32_t begin = node._first;
+	uint32_t end = node._first + node.count();
+	if constexpr (Stored)
+	{
+		const LeafStore::LeafView leaf = _store->leaf(node._first, node.count());
+		order = leaf._order;
+		xs = leaf._x;
+		ys = leaf._y;
+		zs = leaf._z;
+		begin = 0;
+		end = node.count();
+	}
 
-	if constexpr (Micro)
+	if constexpr (Micro && !Stored)
 	{
 		const uint32_t microSlot = _cold[slot]._microSlot;
 		if (microSlot != NoSlot && _microIndexes[microSlot]->hasKdTree())
@@ -1249,8 +1315,7 @@ void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k
 
 	if constexpr (Telemetry)
 		recordTestedPoints(slot, node.count(), result._stats);
-	const uint32_t end = node._first + node.count();
-	uint32_t i = node._first;
+	uint32_t i = begin;
 #if defined(__AVX2__)
 	const __m256 cx = _mm256_set1_ps(center.x);
 	const __m256 cy = _mm256_set1_ps(center.y);
@@ -1288,7 +1353,7 @@ void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k
 // Best-first kNN: a global min-heap of pending nodes by lower-bound distance, so nodes are
 // entered in distance order and the search stops at the first that cannot improve the answer.
 // Node-optimal, but every push and pop is an O(log n) sift. Used for large k.
-template <bool Telemetry, bool Micro, bool Charged>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored>
 void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1296,6 +1361,8 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 	const HotNode* hot = _hot.data();
 
 	uint32_t sequence = 0;
+	if constexpr (Stored)
+		_store->touchNodes(0, 1);
 	if constexpr (Telemetry)
 		++result._stats._testedBoxes;
 	pending.push_back({ boxDistanceSquared(hot[0]._lo, hot[0]._hi, center), sequence++, 0u });
@@ -1320,12 +1387,14 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 
 		if (!node.isInternal())
 		{
-			knnLeaf<Telemetry, Micro>(slot, center, k, result);
+			knnLeaf<Telemetry, Micro, Stored>(slot, center, k, result);
 			continue;
 		}
 
 		const uint32_t first = node._first;
 		const uint32_t count = node.count();
+		if constexpr (Stored)
+			_store->touchNodes(first, count);
 		for (uint32_t c = 0; c < count; ++c)
 		{
 			const HotNode& child = hot[first + c];
@@ -1351,7 +1420,7 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 // best-first would not, but trades the global heap for a stack and a sort of at most 64 entries.
 // The answer is identical: the prune is strict and (distance, index) is a total order, so the k
 // best are the same whatever order the leaves are offered in.
-template <bool Telemetry, bool Micro, bool Charged>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored>
 void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1359,6 +1428,8 @@ void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, Q
 	stack.clear();
 	const HotNode* hot = _hot.data();
 
+	if constexpr (Stored)
+		_store->touchNodes(0, 1);
 	if constexpr (Telemetry)
 		++result._stats._testedBoxes;
 	stack.emplace_back(boxDistanceSquared(hot[0]._lo, hot[0]._hi, center), 0u);
@@ -1379,13 +1450,15 @@ void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, Q
 
 		if (!node.isInternal())
 		{
-			knnLeaf<Telemetry, Micro>(slot, center, k, result);
+			knnLeaf<Telemetry, Micro, Stored>(slot, center, k, result);
 			continue;
 		}
 
 		size_t survivors = 0;
 		const uint32_t first = node._first;
 		const uint32_t count = node.count();
+		if constexpr (Stored)
+			_store->touchNodes(first, count);
 		for (uint32_t c = 0; c < count; ++c)
 		{
 			const HotNode& child = hot[first + c];

@@ -247,6 +247,56 @@ static bool parseBatchCheckFlag(AppConfig& config, const std::string& arg, int& 
 	return true;
 }
 
+// engine-check's out-of-core flags, parsed beside parseBatchCheckFlag for the same reason.
+static bool parseLeafStoreFlag(AppConfig& config, const std::string& arg, int& i, int argc, char* argv[])
+{
+	if (arg == "--leaf-store" && i + 1 < argc)
+	{
+		config._engineLeafStoreDir = argv[++i];
+	}
+	else if (arg == "--store-cache-fraction" && i + 1 < argc)
+	{
+		config._engineStoreCacheFraction = std::clamp(std::stod(argv[++i]), 0.0, 1.0);
+	}
+	else if (arg == "--store-hierarchy" && i + 1 < argc)
+	{
+		const std::string value = argv[++i];
+		if (value != "memory" && value != "paged")
+			throw std::invalid_argument("--store-hierarchy expects memory or paged");
+		config._engineStorePagedHierarchy = value == "paged";
+	}
+	else if (arg == "--store-device" && i + 1 < argc)
+	{
+		config._engineStoreDevice = argv[++i];
+	}
+	else if (arg == "--store-allow-buffered")
+	{
+		config._engineStoreRequireDirect = false;
+	}
+	else if (arg == "--store-regimes" && i + 1 < argc)
+	{
+		config._engineStoreRegimes.clear();
+		for (const std::string& item : splitPathList(argv[++i]))
+		{
+			Experiments::EngineCheckOptions::StoreRegime regime;
+			if (item != "memory")
+			{
+				const size_t colon = item.find(':');
+				const std::string hierarchy = colon == std::string::npos ? "memory" : item.substr(colon + 1);
+				if (hierarchy != "memory" && hierarchy != "paged")
+					throw std::invalid_argument("--store-regimes expects memory or <fraction>:<memory|paged>, got " + item);
+				regime._inMemory = false;
+				regime._cacheFraction = std::clamp(std::stod(item.substr(0, colon)), 0.0, 1.0);
+				regime._pagedHierarchy = hierarchy == "paged";
+			}
+			config._engineStoreRegimes.push_back(regime);
+		}
+	}
+	else
+		return false;
+	return true;
+}
+
 AppConfig AppConfig::parse(int argc, char* argv[])
 {
 	AppConfig config;
@@ -256,7 +306,7 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 	for (int i = 1; i < argc; ++i)
 	{
 		const std::string arg = argv[i];
-		if (parseBatchCheckFlag(config, arg, i, argc, argv))
+		if (parseBatchCheckFlag(config, arg, i, argc, argv) || parseLeafStoreFlag(config, arg, i, argc, argv))
 			continue;
 		if (arg == "--help" || arg == "-h")
 		{
@@ -963,6 +1013,14 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --interleave                engine-check: build every schema first, then rotate one pass per schema\n"
 		<< "  --build-repeats <n>         engine-check: builds per schema, for build-time statistics (default 1)\n"
 		<< "  --timed-telemetry off|full  engine-check: counters during timed passes (default off; pass 0 is always full)\n"
+		<< "  --leaf-store <dir>          engine-check: out of core; each tree is written to <dir>/<digest>.store (reused\n"
+		<< "                              when it matches) and queries read leaves from it with O_DIRECT (Linux)\n"
+		<< "  --store-cache-fraction <f>  engine-check: LRU cache of leaves/pages, as a fraction of the store (default 0)\n"
+		<< "  --store-hierarchy memory|paged  engine-check: paged also reads each tested child group's page (default memory)\n"
+		<< "  --store-device <name>       engine-check: block device of the store (e.g. sdg), to report other reads on it\n"
+		<< "  --store-allow-buffered      engine-check: fall back to buffered reads where O_DIRECT is unavailable\n"
+		<< "  --store-regimes <a,b,...>   engine-check: time each regime in turn on the same trees; memory, or\n"
+		<< "                              <cache fraction>:<memory|paged> (e.g. memory,0:memory,0:paged,0.01:memory)\n"
 		<< "  --mode batch-check          Throughput of whole query batches on one core, all cores and the GPU, on\n"
 		<< "                              the same CPU-built trees, every answer checked against the single-core one\n"
 		<< "  --batch-sizes <a,b,...>     batch-check: batch sizes (default 1000,10000,100000,1000000)\n"
@@ -1014,6 +1072,12 @@ Experiments::EngineCheckOptions AppConfig::engineCheckOptions() const
 	options._buildRepeats = _engineBuildRepeats;
 	options._interleave = _engineInterleave;
 	options._timedTelemetryFull = _engineTimedTelemetryFull;
+	options._leafStoreDir = _engineLeafStoreDir;
+	options._storeCacheFraction = _engineStoreCacheFraction;
+	options._storePagedHierarchy = _engineStorePagedHierarchy;
+	options._storeDevice = _engineStoreDevice;
+	options._storeRequireDirect = _engineStoreRequireDirect;
+	options._storeRegimes = _engineStoreRegimes;
 	options._useBinaryCache = _schemaSearchOptions._useBinaryCache;
 	options._enableLeafMicroIndexes = _schemaSearchOptions._enableLeafMicroIndexes;
 	options._leafMicroIndexThreshold = _schemaSearchOptions._leafMicroIndexThreshold;

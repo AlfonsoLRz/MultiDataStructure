@@ -165,6 +165,9 @@
     <ClInclude Include="workloads\points\PointGpuTypes.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
+    <ClInclude Include="workloads\points\LeafStore.h">
+      <Filter>workloads\points</Filter>
+    </ClInclude>
     <ClInclude Include="workloads\points\PointSpatialIndex.h">
       <Filter>workloads\points</Filter>
     </ClInclude>
@@ -228,6 +231,9 @@
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_pointcloud_io.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\tests\test_leaf_store.cpp">
       <Filter>tests</Filter>
     </ClCompile>
     <ClCompile Include="..\tests\test_point_queries.cpp">
@@ -339,6 +345,9 @@
       <Filter>workloads\points</Filter>
     </ClCompile>
     <ClCompile Include="workloads\points\PointPrimitive.cpp">
+      <Filter>workloads\points</Filter>
+    </ClCompile>
+    <ClCompile Include="workloads\points\LeafStore.cpp">
       <Filter>workloads\points</Filter>
     </ClCompile>
     <ClCompile Include="workloads\points\PointSpatialIndex.cpp">

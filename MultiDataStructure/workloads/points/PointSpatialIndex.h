@@ -4,6 +4,8 @@
 #include "../../core/Config.h"
 #include "PointCloud.h"
 
+class LeafStore;
+
 class PointSpatialIndex
 {
 public:
@@ -278,6 +280,12 @@ public:
 	CountResult countRange(const AABB& bounds, QueryTelemetry telemetry = QueryTelemetry::Full) const;
 	QueryResult radiusQuery(const glm::vec3& center, float radius, QueryTelemetry telemetry = QueryTelemetry::Full) const;
 	QueryResult knnQuery(const glm::vec3& center, size_t k, QueryTelemetry telemetry = QueryTelemetry::Full) const;
+	// Out of core (testing.md 2q): with a store attached, every leaf scan reads the leaf's points
+	// from it, and with a paged hierarchy every child group a query tests costs its page. Pruning
+	// still runs on the in-memory pool, so answers are unchanged. The caller owns the store and
+	// keeps it alive while attached; build() detaches it. nullptr detaches.
+	void attachStore(LeafStore* store);
+	LeafStore* store() const { return _store; }
 
 	// Query-time node: tight bounds and the payload range, 32 bytes, two per cache line. Every
 	// internal node's children occupy one contiguous group starting on an even slot, so with the
@@ -408,6 +416,7 @@ private:
 	std::shared_ptr<std::vector<std::string>>	_structureNames;
 	std::vector<ResolvedLevel>	_resolvedLevels;	// parallel to _schema._levels
 	std::vector<int32_t>		_structureSlotBySchemaDepth;	// build-time cache, -1 = unresolved
+	LeafStore*				_store = nullptr;	// not owned; see attachStore()
 
 	void buildNode(std::unique_ptr<Node>& node, BuildScratch& scratch);
 	void rebuildOrderedPointSoA();
@@ -460,13 +469,14 @@ private:
 	template <bool Telemetry> void rangeQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, QueryResult& result) const;
 	template <bool Telemetry> void countRangeMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const AABB& bounds, CountResult& result) const;
 	template <bool Telemetry> void radiusQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	// Charged=true adds the emulated node cost (setNodeVisitCost) to every entered node.
-	template <bool Telemetry, bool Micro, bool Charged = false> void rangeSearch(const AABB& bounds, QueryResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false> void countSearch(const AABB& bounds, CountResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false> void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
-	template <bool Telemetry, bool Micro> void knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const;
+	// Charged=true adds the emulated node cost (setNodeVisitCost) to every entered node. Stored=true
+	// reads leaves (and, paged, child groups) through the attached LeafStore; never with Micro.
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void rangeSearch(const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void countSearch(const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Stored = false> void knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const;
 
 	inline static double	_nodeVisitNs = 0.0;
 	inline static uint64_t	_nodeVisitTicks = 0;	// the same cost in timestamp-counter ticks

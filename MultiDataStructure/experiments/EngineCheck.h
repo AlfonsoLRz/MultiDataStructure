@@ -38,6 +38,31 @@ namespace Experiments
 		// Build every schema first and rotate one pass per schema (--interleave), so a slow stretch
 		// of a shared machine hits all schemas instead of whichever one it coincided with.
 		bool						_interleave = false;
+		// Out of core (testing.md 2q): each schema's tree goes to a LeafStore in this directory, named
+		// by its structure digest and reused when one already matches, and every query reads its
+		// leaves from there. Empty = in memory.
+		std::string					_leafStoreDir;
+		// LRU cache as a fraction of the store's size; 0 = every leaf is a device read.
+		double						_storeCacheFraction = 0.0;
+		// Also read the page of every child group a query tests (else the pool stays in memory).
+		bool						_storePagedHierarchy = false;
+		// Block device of the store (e.g. sdg): its reads per timed pass, beyond the store's own,
+		// are reported, so passes shared with other I/O on the device can be flagged.
+		std::string					_storeDevice;
+		bool						_storeRequireDirect = true;
+		// --store-regimes: several storage regimes timed in turn on the same built trees, so a 100M
+		// cell builds each schema once instead of once per regime. Empty = the single regime the
+		// flags above describe.
+		struct StoreRegime
+		{
+			bool	_inMemory = true;
+			double	_cacheFraction = 0.0;
+			bool	_pagedHierarchy = false;
+
+			// "memory", or "<cache fraction>:<memory|paged>" (the CLI form).
+			std::string name() const;
+		};
+		std::vector<StoreRegime>	_storeRegimes;
 	};
 
 	int runEngineCheck(const EngineCheckOptions& options);

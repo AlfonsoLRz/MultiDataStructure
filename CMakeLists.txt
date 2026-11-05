@@ -58,6 +58,7 @@ set(MDS_CXX_SOURCES
 	${MDS_DIR}/workloads/points/PointBenchmark.cpp
 	${MDS_DIR}/workloads/points/PointCloud.cpp
 	${MDS_DIR}/workloads/points/PointPrimitive.cpp
+	${MDS_DIR}/workloads/points/LeafStore.cpp
 	${MDS_DIR}/workloads/points/PointSpatialIndex.cpp
 	${MDS_DIR}/workloads/points/SyntheticPointClouds.cpp
 )
