@@ -1,3 +1,6 @@
+# Superseded for nanoflann and Boost by scripts/external_baselines.py (testing.md 2r): those drivers now
+# follow tools/baseline_common.h and write engine-check CSV rows, not the JSON read below.
+#
 # MDS vs Indexicon, same session, same cells, same queries, same protocol, pinned to one P-core.
 #
 #   scripts/head_to_head.ps1 -Tag engine6
