@@ -72,6 +72,7 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--rounds", type=int, default=2)
     parser.add_argument("--keep", action="store_true", help="keep the LAS and COPC files")
+    parser.add_argument("--settle-minutes", type=float, default=30, help="idle time between writing the COPC file and timing it")
     args = parser.parse_args()
 
     cell = {c["cell"]: c for c in json.loads((REPO / args.cells).read_text())["cells"]}[args.cell]
@@ -86,6 +87,8 @@ def main():
     subprocess.run(["untwine", "-i", str(las_path), "-o", str(copc_path)], check=True)
     las_path.unlink()
     print(f"{args.cell}: COPC {copc_path.stat().st_size / 1e9:.2f} GB built in {(time.time() - started) / 60:.1f} min", flush=True)
+    # On makinon2's QLC SSD read time depended on how recently a file was written (store_settle_check.py).
+    time.sleep(args.settle_minutes * 60)
 
     with open(args.boxes, newline="") as handle:
         boxes = [r for r in csv.DictReader(handle) if r["query_type"] == "range"]

@@ -1092,6 +1092,196 @@ Risks:
 
 The cost model is out as a contribution. Next step: the user decides whether to write the paper.
 
+### 2q. 2026-11-06 — out of core: the leaf follows the device, the primitive stays, nesting pays only with the hierarchy paged
+
+**Question.** The ISPRS 2023 gains came from an out-of-core store, where every node load was a file.
+E2 (2o) only emulated a per-node cost, with no cache and no per-byte cost. With the leaves really on
+disk, does composition pay, and does the in-memory choice of primitive and leaf survive?
+
+**Setup.** Code: bbd067d (`LeafStore`, engine-check `--leaf-store`), `scripts/out_of_core.py`,
+`out_of_core_report.py`, `store_settle_check.py`, `copc_anchor.py`. Results and reports, under
+`results/eval_traces/`: `out_of_core_makinon2` (stage A, the battery's own stage B, COPC),
+`out_of_core_model_makinon2` (stage B on the device models), `out_of_core_settle_makinon2`,
+`out_of_core_paged_makinon2` and `out_of_core_gridcheck_makinon2` (the follow-ups below).
+- engine-check writes each tree to a file: the 32 B node pool in 4 KiB pages, then the leaves in tree
+  order, 16 B per point. Every leaf a query scans is one synchronous O_DIRECT `pread` of its aligned
+  span (queue depth 1), inside the traversal clock. Every schema returns the in-memory answers in
+  every regime (query-set checksums).
+- Regimes: `memory` (the control); `0:memory`, no cache and the hierarchy in RAM, so every leaf is a
+  device read; `0:paged`, also a page read for every child group a query tests; `0.01:memory` and
+  `0.01:paged`, the same with an LRU cache of 1% of the store.
+- Workloads: the cell's held-out pipeline trace (1000 queries, every regime), and the ISPRS boxes
+  (10 range and 20 count queries over boxes of 20-40% of the extent per axis, `memory` and `0:memory`).
+- Panel, 41-42 schemas on the trace (28 on boxes, leaves >= 2048 plus the e9 pick): kd48
+  sliding-midpoint, quadtree 24 tight, octree 24 tight, STR-64 and HGrid-12, each at leaves 128, 512,
+  2048, 8192 and 32768; the library defaults (leaf 32); the ISPRS schemas (2D grid -> qt3 -> 3D grid ->
+  ot5 and qt5 -> ot5, leaves 4096 and 16384) and their leaf-matched qt10 and ot10; qt6 -> kd48 and
+  qt9 -> ot24 at 2048 and 8192; the e9 pick and best nested schema; the rule's pick.
+- 100M DomFountain (TLS), Lille (MLS), SanAndreas (ALS terrain), Waikato_Hamilton (ALS urban) and
+  GaliciaForest. makinon2, socket 0, core 2; stores on /home2 (PNY CS900 4 TB SATA SSD). Two
+  processes per schema in shuffled groups of 4 (interleaved), three for stage B.
+- GaliciaForest is an archipelago of forest plots over 44 x 40 km and 610-1510 m: boxes drawn per
+  axis over the trace's extent miss every plot (no box contains a trace centre), so its boxes return
+  nothing and are left out. Boxes cover four clouds.
+
+**The SSD's measured times can't decide 3%.** The drive is QLC and DRAM-less, and was 93% full. In
+`0:memory`, where a query's time is 98-99% I/O, the same tree with the same reads took a different
+time per read in the two processes: median 1.11x, up to 4.0x, more than 1.2x in 70 of 208 rows.
+GaliciaForest had no other reads on the device in any pass and the widest spread (median 1.28x), so
+the drive is the cause, not contamination. (Other reads did reach 600 MB in one SanAndreas pass and
+170 MB in one Waikato pass: the stage B re-runs below loaded their clouds from the same disk.) The
+analysis therefore models the I/O on the exact counts:
+
+  modeled latency = measured latency - measured I/O time + reads x C0 + bytes / bandwidth
+
+with three device classes: NVMe (60 us, 3000 MB/s), SATA (120 us, 500 MB/s) and HDD (8 ms,
+150 MB/s). Reads, bytes and cache hits per query are deterministic; the CPU part is measured, and is a
+small share of the best single's modeled latency (median 6% on NVMe, 2% on SATA, 0.1% on HDD; at
+most 10%).
+
+**At rest the drive is steady, but slower than any class.** `scripts/store_settle_check.py` (results
+`out_of_core_settle_makinon2`) wrote the stores of eight SanAndreas schemas once, left the device
+idle 30 minutes, timed them in 3 processes, and did all that twice. No pass had other reads on the device.
+- In 4 of the 6 processes every schema's time per read agrees within 1-3% (median max/min 1.03; two
+  paged rows 2.3-2.4). The battery's spread came from timing stores just written, which a QLC drive
+  serves from its SLC cache. The other two processes, both in the second batch, were 1.4-1.5x slower
+  across the board: the drive's own background work.
+- At rest a read takes 0.23 ms for 5 KiB and 0.5-0.8 ms for 17-38 KiB, and not linearly in bytes. A
+  fit over the steady processes gives 107 us + 47 MB/s. That is a latency-bandwidth product of 5 KB,
+  against 60 KB for the SATA class.
+- Measured ranking. In `0:paged` the winner (hg12l8192) is the one every class picks. In `0:memory`
+  it is kd48l128sm: first on the fit, 6th to 8th on the three classes. With a per-byte cost ten times
+  a SATA's, the best leaf is small. Among the 2048-point schemas the measured order is the SATA and
+  NVMe classes' order.
+- Nested against its leaf-matched single, measured: qt9_ot24l2048 / qt24l2048tc 0.946 in `0:memory`
+  and 0.985 in `0:paged`, qt6_kd48l2048sm / kd48l2048sm 0.997 and 0.774. Each regime's best single
+  beats both, by 1.58x and 1.32x.
+
+So the drive is a fourth, bandwidth-starved class, and stage A was also modeled on its fit
+(`report_qlc_settled.txt`). The best leaf drops to 512, with the e9 pick's primitive in every cloud
+(kd48 or qt24). The e9 pick held at its in-memory leaf is 1.33x, the rule's 1.12x. The panel has no
+nested schema at 512, so on this class stage B (below) answers the nesting question.
+
+**Stage A, modeled.** Over the regime's best single, geomean over 5 clouds (trace) or 4 (boxes):
+
+| workload, regime | best singles (SATA) | best nested / best single: NVMe, SATA, HDD | e9 pick, SATA | rule pick, SATA | kd / octree default, SATA |
+|---|---|---|---|---|---|
+| trace, memory (control) | kd48 l64-128, qt24 l32-64 | 1.023 | 1.000 | 1.033 | 1.59 / 1.81 |
+| trace, 0:memory | kd48sm, qt24tc at l512-2048 | 0.986, 0.983, 0.990 | 1.89 | 1.53 | 3.75 / 5.36 |
+| trace, 0.01:memory | same | 0.984, 0.982, 0.990 | 1.89 | 1.52 | 3.76 / 5.39 |
+| trace, 0.01:paged | kd48sm, qt24tc, ot24tc at l2048 | 0.976, 0.987, 1.172 | 2.39 | 2.07 | 4.75 / 5.20 |
+| trace, 0:paged | HGrid l8192, STR-64 l512 | 1.339, 1.438, 1.647 | 2.93 | 2.98 | 5.68 / 3.45 |
+| boxes, 0:memory | ot24tc l32768 | 1.593, 1.393, 2.754 | 56 | | |
+
+- **The leaf is the lever, and it follows the device's latency-bandwidth product.** Out of core the
+  best leaf is 2048 points on the SSD classes and 8192 on HDD (32768 for the large boxes), against
+  32-128 in memory. On the settled drive's fit (below) it is 512. Held at
+  its in-memory leaf, the e9 pick is 1.9-2.7x slower on the trace with the hierarchy in RAM, and the
+  library defaults 3.7-7.8x.
+- **The primitive stays.** The best single out of core uses the e9 pick's primitive on every cloud
+  (kd48 on DomFountain, GaliciaForest and Lille; qt24 on SanAndreas and Waikato). With the hierarchy
+  in RAM, the e9 primitive at leaf 2048 (NVMe, SATA) or 8192 (HDD) is the best single in every cloud
+  (1.000), and the rule's primitive at that leaf is within 1.00-1.02 (worst 1.07). In `0.01:paged`
+  the e9 primitive at its best leaf (2048 SATA, 8192 NVMe, 32768 HDD) is within 1.01. Only `0:paged`
+  calls for another primitive, a wide fan-out (HGrid, STR-64) that cuts hierarchy pages: there the
+  e9 primitive at its best leaf is 1.8-2.3x slower.
+- **With the hierarchy in RAM, nesting ties** (0.98-0.99): the best nested schema is the best single's
+  leaf with a qt6 or qt9 prefix. Paged without a cache, nesting loses 1.3-1.6x; on the boxes, 1.4-2.8x.
+- **The one exception is `0.01:paged` on the SSD classes**: Lille 0.926 on SATA (2.39 reads per query
+  against 2.61, both processes alike) and 0.953 on NVMe, SanAndreas 0.960 on NVMe; on HDD nesting
+  loses (1.04-1.29). The panel's leaves step by 4x and stage B didn't cover this regime, so it was
+  re-timed on a finer grid (below).
+
+**The ISPRS comparison reproduces, and doesn't matter.** On the trace, the ISPRS nested schemas beat
+their leaf-matched depth-10 singles (min of qt10, ot10): geomean 0.90-0.95 on SATA in every regime
+(0.90-1.09 over the three devices). Those singles are depth-capped, so their leaves overflow (qt10 on
+GaliciaForest reads 34 MB per leaf). A tuned single is 1.3-3.3x faster than the ISPRS schemas on the
+trace. On the boxes, the ISPRS nested schemas lose to their leaf-matched singles too (1.25-1.35 cold,
+1.13 in memory), as in 2l.
+
+**Stage B, on the device models.** The battery's own stage B chose each regime's best single from
+the measured times and is superseded: its largest "win" (Waikato boxes, an octree prefix over
+STR-64 l32768, 0.60) only lands on stage A's best single (ot24 l32768, 1.02x). Re-run with the best
+single chosen on the model (stores in RAM, `--buffered`; reads and bytes are all the model needs):
+
+| regime | SATA: best prefix / single, geomean (range) | adopted | HDD | adopted | settled drive (107/47) | adopted |
+|---|---|---|---|---|---|---|
+| trace, 0:memory | 0.982 (0.974-0.992) | 0 of 5 | 0.984 (0.973-0.995) | 0 of 5 | 0.988 (0.980-0.992) | 0 of 5 |
+| trace, 0:paged | 1.023 (0.978-1.143) | 0 of 5 | 1.155 (1.000-1.211) | 0 of 5 | 0.983 (0.859-1.101); wider panel 0.980 (0.859-1.098) | 1 of 5; 2 of 5 |
+| boxes, 0:memory | 0.991 (0.978-1.013) | 0 of 4 | 1.979 (1.198-3.361) | 0 of 4 | 0.999 (0.997-1.005) | 0 of 4 |
+
+Adopted means >= 3% faster in every one of 3 processes (the e9 confirm rule). On SATA and HDD no
+prefix qualifies. On the settled drive's class one does: Lille, `0:paged`, a 2- or 4-level quadtree
+over HGrid l2048 (0.871 and 0.859 in the worst process; Waikato 0.971, not adopted). The prefix gives
+the HGrid fewer, fuller leaves (422k against 711k): 8% fewer reads and 19% fewer bytes per query,
+which a bandwidth-starved device rewards.
+
+Is it a missing single, as the nested wins of 2o were? `--panel grid-check` timed the wide fan-outs
+(HGrid 64-way, RegularGrid 27-way, STR-64 and STR-27) at leaves 1024 to 4096 in steps of √2, next to
+the 2- and 4-level quadtree over HGrid at each leaf, in `0:paged` on this class, then ran stage B over
+the new best single. No single closes the gap:
+- Lille stays at 0.859 (4-level quadtree over hg12l2048).
+- Waikato's best single moves to hg12l1024, and a quadtree prefix over it now qualifies (0.955,
+  worst process 0.955).
+- DomFountain and SanAndreas tie (1.000). GaliciaForest's best single is STR-64 l1024, where prefixes
+  lose (1.10).
+
+The two wins are the 2.5D urban scenes (MLS and ALS): the quadtree's 2D cut leaves the 4x4x4 grids
+below fewer, fuller leaves.
+
+**`0.01:paged` on a finer grid** (`out_of_core_paged_makinon2`). Every single and qt6_kd48 and
+qt9_ot24 were timed at leaves 1024 to 8192 in steps of √2 (62 schemas), then stage B, on the SATA and
+NVMe models.
+- Stage A: best nested / best single 0.984 on SATA (Lille 0.924, DomFountain 0.973, the rest
+  0.99-1.04) and 0.997 on NVMe (Lille 0.950).
+- Stage B on SATA: prefixes over the best single qualify in two clouds. On Lille 8 of 9 do over
+  kd48l2048sm, the best an 8-level quadtree at 0.923; on DomFountain an 8-level quadtree over
+  kd48l4096sm, at 0.964. On NVMe none does (geomean 0.989, 0.976-1.003).
+- The gain is all hierarchy pages. With the hierarchy paged, Lille's kd48l2048sm makes 2.61 reads per
+  query, against 1.34 with it in RAM. The extra 1.3 are pages of a 25-level binary tree that miss the
+  LRU the leaves share, and the 8-level quadtree top cuts the total to 2.38.
+- That hierarchy is 4.8 MB (150k nodes of 32 B), a third of the 16 MB cache. Pinned in RAM
+  (`0.01:memory`), the same queries are 1.7x faster and nesting ties (0.976).
+- The pool is laid out depth-first by sibling group, so near the top a binary tree pays one page per
+  level. A page-blocked layout (subtrees packed per page, as out-of-core kd-trees do) would cut those
+  pages without a second primitive.
+
+**COPC anchor** (`scripts/copc_anchor.py`; DomFountain and SanAndreas, the 10 range boxes, 2 rounds).
+- The cloud was written as COPC (untwine: 211 and 571 MB, 2-6 B per point against the store's 16).
+  After 30 minutes idle, each box was read through PDAL `readers.copc` on one thread, with the file
+  evicted from the page cache before every box: 0.66 and 0.63 Mpoints/s, 12.2 and 8.2 s per box (rounds within 1%).
+- Our store's fastest schema on the same boxes, measured on the fresh stores, took 0.47 and 0.31 s
+  per box (STR-64 l32768 and kd48 l32768), about 17 Mpoints/s and 26x faster. At the settled drive's
+  47 MB/s a box's 83-129 MB would take 1.8-2.8 s, still 4-5x faster than COPC.
+- COPC is bound by LAZ decompression and PDAL's per-point handling, not by the device. The store
+  reads raw floats, so the comparison bounds the store against a real format rather than matching it
+  like for like. Still, the store's absolute numbers are not those of a slow layout.
+
+**Verdict** against the plan's decision table: its second row, a scoped positive. Nesting is
+confirmed (>= 3% in every process) only where the hierarchy itself is read from the device.
+- With the hierarchy in RAM no prefix qualifies, on any device class, with or without the cache, on
+  the trace or the boxes (stage B 0 of 27 cells, best prefix / single 0.98-0.99; stage A with the
+  cache 0.98-0.99).
+- With the hierarchy paged, a wide 2D top over the best single qualifies in 4 of 25 stage B cells.
+  On SATA with the 1% cache (Lille 0.923, DomFountain 0.964) it spares a binary tree's hierarchy page
+  reads. On the settled drive with no cache (Lille 0.859, Waikato 0.955) it does what no single does.
+  On NVMe and HDD none qualifies.
+- A 100M-point hierarchy takes 2.5-50 MB. Pinned in RAM, the best single is 1.6-4.6x faster than the
+  best paged schema, nested or not.
+- The paged regimes are the store of ISPRS 2023, where every node load was a file. That is where its
+  gains reproduce, and only there; the SATA case would also yield to a page-blocked layout.
+- What the in-memory selection carries out of core is its primitive. The leaf has to be re-tuned to
+  the device: 512 to 8192 points over the four classes, against 32-128 in memory.
+
+For Paper A: the corrective claim holds once the hierarchy is in RAM, in memory, on the GPU and out
+of core. It has to be scoped to that, and it accounts for the ISPRS gains: the paged hierarchy.
+
+Caveats: modeled devices, not measured ones (the drive at hand is steady only at rest, and the one
+settled check covers one cloud and eight schemas); one cache policy (an LRU of 1% of the store,
+shared by leaves and hierarchy pages); a pool laid out depth-first, not page-blocked; synchronous reads at queue depth 1, where a real store would prefetch or batch;
+30 boxes per cloud; the CPU part was timed interleaved, which 2r found up to about 20% slow, at most
+2% of a modeled latency.
+
 ### 2r. 2026-11-06 — external libraries: nanoflann at its default ties our tuned pick, so the default gap is our defaults'
 
 **Question.** Is 2p's 1.66x library-default gap specific to our engine? Every library is timed on the
@@ -1129,9 +1319,14 @@ on kNN queries: in none of the queries of 8 cells, and in at most 3.6% of a cell
   than sequential (sequential/interleaved geomean 0.83, range 0.78-0.97; 0.96 at 1M), despite the warm
   sweep that replays the whole query set before every timed pass. The drivers time one setting after
   another, so the first battery's interleaved rows are kept as `mds_interleaved.csv` and our engine was
-  re-run sequentially (`external_baselines.py` is now sequential by default). The cause is open:
-  makinon2 uses no huge pages, and the penalty is as large at 100M as at 25M. A test that runs each
-  schema alone through the interleaved path is queued.
+  re-run sequentially (`external_baselines.py` is now sequential by default). The interleaved code
+  path is not the cause: each schema alone through it (its warm sweep, then the timed pass) times
+  like sequential (sequential / alone 1.00-1.04 on Alhambra 25M and DomFountain 100M), while the same
+  five interleaved give sequential / interleaved 0.78-0.96. The penalty needs the other indexes
+  resident, untouched as they are during the sweep and the pass. It hits the memory-bound kd-trees
+  most (0.78-0.82) and the
+  compute-bound qt16l128tc least (0.96); makinon2 uses no huge pages, and the mechanism is open.
+  Results: `diag_versions_protocol/il_results`.
 - **nanoflann 2.0.1 is faster than 2d's header** (vcpkg's "1.10.1", rebuilt on makinon2, 4 cells):
   0.89-0.96x the time, the most at leaf 10; its build is 1.05-1.13x slower.
 

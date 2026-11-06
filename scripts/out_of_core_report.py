@@ -10,6 +10,15 @@ device), and geomeans over cells.
 
     python scripts/out_of_core_report.py --results results/eval_traces/out_of_core_makinon2 \\
         --e9 results/eval_traces/matrix_e9_makinon2
+
+The measured I/O time is only as steady as the device: on makinon2's QLC SSD (PNY CS900 4TB, 93%
+full) the same tree, with the same reads, took 120-290 us per read in different processes, up to
+3.5x apart between the two stage A runs. Reads and bytes per query are exact, and the CPU part
+(measured latency minus I/O time) is steady, so --io-model C0/MBPS replaces the measured I/O with
+reads * C0 us + bytes / MBPS for a device class (NVMe 60/3000, SATA 120/500, HDD 8000/150), and
+both workloads are then reported on that modeled latency of their whole query mix. A stage B re-run
+on such a model (out_of_core.py --stage-b-only --io-model ... --stage-b-tag _sata) is read with
+--stage-b-dir <its --out> --stage-b-tag _sata.
 """
 import argparse
 import csv
@@ -34,9 +43,15 @@ def geomean(values):
     return math.exp(sum(map(math.log, values)) / len(values)) if values else float("nan")
 
 
-def load(path):
+def load(path, io_model=None):
     with open(path, newline="") as handle:
-        return list(csv.DictReader(handle))
+        rows = list(csv.DictReader(handle))
+    if io_model:
+        c0_us, mbps = io_model
+        for row in rows:
+            io_us = float(row["store_reads"] or 0) * c0_us + float(row["store_bytes"] or 0) / mbps
+            row["model_ms"] = float(row["all_mean_ms"]) - float(row["store_io_ms"] or 0) + io_us * 1e-3
+    return rows
 
 
 def medians(rows, column):
@@ -59,15 +74,16 @@ def checks(rows, label):
     """Every regime must return the in-memory answers; report reads by other processes."""
     sums = defaultdict(set)
     worst_extra = 0.0
+    buffered = 0
     for row in rows:
         sums[row["schema_name"]].add(row["query_set_checksum"])
         if row["store_regime"] != "memory":
             worst_extra = max(worst_extra, float(row.get("store_device_extra_mb") or 0))
-        if row["store_regime"] != "memory" and row.get("store_direct") != "1":
-            print(f"    {label}: {row['schema_name']} {row['store_regime']} was NOT read with O_DIRECT")
+            buffered += row.get("store_direct") != "1"
     bad = [name for name, values in sums.items() if len(values) > 1]
     print(f"    {label}: answers identical across regimes for {len(sums) - len(bad)}/{len(sums)} schemas"
-          + (f"; DIFFER: {', '.join(bad)}" if bad else "") + f"; most other reads on the device in one pass: {worst_extra:.1f} MB")
+          + (f"; DIFFER: {', '.join(bad)}" if bad else "") + f"; most other reads on the device in one pass: {worst_extra:.1f} MB"
+          + (f"; {buffered} store rows read buffered (RAM-backed, only the modeled I/O counts)" if buffered else ""))
 
 
 def regime_table(rows, column, cell, rule_pick, summary, workload):
@@ -111,8 +127,8 @@ def regime_table(rows, column, cell, rule_pick, summary, workload):
             print("      " + "; ".join(line))
 
 
-def stage_b(path, column):
-    rows = load(path)
+def stage_b(path, column, io_model):
+    rows = load(path, io_model)
     runs = defaultdict(dict)
     for row in rows:
         runs[row["schema_name"]][int(row["test_run"])] = float(row[column])
@@ -135,7 +151,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results", required=True)
     parser.add_argument("--e9", default="", help="e9 results, for each cloud's flatness_score (the rule's pick)")
+    parser.add_argument("--io-model", default="", help="C0/MBPS: model each read as C0 us plus its bytes at MBPS MB/s")
+    parser.add_argument("--stage-b-dir", default="", help="read stage B from this folder (out_of_core.py --stage-b-only) instead")
+    parser.add_argument("--stage-b-tag", default="", help="only the stage B files with this suffix (its --stage-b-tag)")
     args = parser.parse_args()
+    io_model = tuple(map(float, args.io_model.split("/"))) if args.io_model else None
+    if io_model:
+        print(f"I/O modeled: {io_model[0]:g} us per read + bytes at {io_model[1]:g} MB/s, on the measured reads and CPU time")
 
     summary = defaultdict(list)
     for cell_dir in sorted(p for p in Path(args.results).iterdir() if p.is_dir()):
@@ -144,20 +166,27 @@ def main():
         rule_pick = "qt16l128tc" if flat is not None and flat > FLAT_THRESHOLD else "kd48l128sm"
         print(f"\n## {cell} (flatness {flat if flat is None else round(flat, 2)}, rule pick {rule_pick}, e9 pick "
               f"{E9[cell][0]['name'] if cell in E9 else '-'})")
-        for workload, columns in (("trace", ["all_mean_ms"]), ("boxes", ["range_mean_ms", "count_mean_ms"])):
+        workloads = (("trace", ["model_ms"]), ("boxes", ["model_ms"])) if io_model else \
+            (("trace", ["all_mean_ms"]), ("boxes", ["range_mean_ms", "count_mean_ms"]))
+        for workload, columns in workloads:
             path = cell_dir / f"{workload}.csv"
             if not path.exists():
                 continue
-            rows = load(path)
+            rows = load(path, io_model)
+            if not any(float(row["mean_returned_points"] or 0) > 0 for row in rows):
+                # GaliciaForest is an archipelago of plots: boxes drawn per axis over the trace's extent miss them all.
+                print(f"    {workload}: no query returns a point; skipped")
+                continue
             checks(rows, workload)
             for column in columns:
                 print(f"  {workload}, {column} (latency per query in us; ratios over the regime's best single)")
                 regime_table(rows, column, cell, rule_pick, summary, workload)
-            for b_path in sorted(cell_dir.glob(f"stageB_{workload}_*.csv")):
+            b_dir = Path(args.stage_b_dir, cell) if args.stage_b_dir else cell_dir
+            for b_path in sorted(b_dir.glob(f"stageB_{workload}_*{args.stage_b_tag}.csv")):
                 if b_path.stem.endswith(tuple(f"_r{k}" for k in range(10))):
                     continue
-                single, base, best, adopted = stage_b(b_path, columns[0])
-                regime = b_path.stem.split(f"stageB_{workload}_")[1].replace("-", ":")
+                single, base, best, adopted = stage_b(b_path, columns[0], io_model)
+                regime = b_path.stem.split(f"stageB_{workload}_")[1].removesuffix(args.stage_b_tag).replace("-", ":")
                 print(f"  stage B {workload} {regime}: {single} {statistics.median(base.values()) * 1e3:.1f} us; best prefix {best[0]} "
                       f"{best[1]:.3f} (median over processes); >= 3% in every process: "
                       + (", ".join(f"{n} (worst {r:.3f})" for n, r in adopted) if adopted else "none"))

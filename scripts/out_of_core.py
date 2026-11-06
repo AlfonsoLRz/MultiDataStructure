@@ -30,6 +30,15 @@ stage B holds its 10 at once.
     python3 scripts/out_of_core.py --cell domfountain_100M --exe ../build_ooc/MultiDataStructure \\
         --data-root ../data --trace-root ../traces/curated --store-root ../store_tmp \\
         --out ../results/out_of_core --cpu 2 --numa-node 0 --device sdg
+
+On makinon2's QLC SSD the measured read time of a store varied up to 3.5x between processes with the
+same reads (2q, store_settle_check.py), so stage B can be re-run on its own (--stage-b-only, over the stage A results) with the best single
+chosen on a device model (--io-model C0/MBPS, as out_of_core_report.py models it). Reads, bytes and
+CPU time are all the model needs, so those stores can live in RAM (--buffered --store-root /dev/shm/...).
+--leaves, --nested-leaves and --trace-regimes re-time one regime on a finer leaf grid, singles and nested
+alike (2q: the 0.01:paged follow-up, where stage A's grid of 4x steps left nested schemas ahead).
+--panel grid-check swaps stage A's panel for the wide fan-outs and quadtree-over-HGrid schemas at
+--leaves (2q: whether stage B's one win on the settled drive's model is a missing single).
 """
 import argparse
 import csv
@@ -80,11 +89,11 @@ def singles(leaves):
     return out
 
 
-def panel(cell, workload):
+def panel(cell, workload, leaves=LEAVES, nested_leaves=(2048, 8192)):
     """(name, schema dict or repo-relative path) of stage A."""
-    leaves = [leaf for leaf in LEAVES if workload == "trace" or leaf >= BOX_MIN_LEAF]
+    leaves = [leaf for leaf in leaves if workload == "trace" or leaf >= BOX_MIN_LEAF]
     schemas = singles(leaves) + list(PAPER_PANEL)
-    for leaf in (2048, 8192):
+    for leaf in nested_leaves:
         schemas += [schema(f"qt6_kd48l{leaf}sm", leaf, [("QuadTree", 6, XY), ("KDTree", 48, SM)]),
                     schema(f"qt9_ot24l{leaf}", leaf, [("QuadTree", 9, XY), ("Octree", 24, {})])]
     if cell in E9:
@@ -101,6 +110,20 @@ def panel(cell, workload):
     if workload == "trace":
         out += [(Path(path).stem + "_default", path) for path in DEFAULTS]
     return out
+
+
+def grid_check_panel(leaves):
+    """2q: is stage B's quadtree-over-HGrid win (Lille, 0:paged, the settled drive's model) a missing
+    single? The wide fan-outs (HGrid 64-way, RegularGrid 27-way, STR 64- and 27-way) at more leaves,
+    and the winning prefixes over HGrid at each."""
+    out = []
+    for leaf in leaves:
+        out += [schema(f"hg12l{leaf}", leaf, [("HGrid", 12, {})]),
+                schema(f"rg12l{leaf}", leaf, [("RegularGrid", 12, {})]),
+                schema(f"str64l{leaf}", leaf, [("STR", 11, {"fanout": 64})]),
+                schema(f"str27l{leaf}", leaf, [("STR", 11, {"fanout": 27})])]
+        out += [schema(f"qu{depth}_hg12l{leaf}", leaf, [("QuadTree", depth, XY), ("HGrid", 12, {})]) for depth in (2, 4)]
+    return [(s["name"], s) for s in out]
 
 
 def write_schemas(entries, folder):
@@ -129,7 +152,9 @@ def run_engine(args, cloud, trace, queries, schema_paths, regimes, store_dir, su
             "--leaf-store", str(store_dir), "--store-regimes", regimes, "--no-pause"]
     if queries:
         argv += ["--queries", str(queries)]
-    if args.device:
+    if args.buffered:
+        argv.append("--store-allow-buffered")
+    elif args.device:
         argv += ["--store-device", args.device]
     started = time.time()
     code = launch(argv, args.cpu, args.numa_node, cwd=REPO).wait()
@@ -139,12 +164,17 @@ def run_engine(args, cloud, trace, queries, schema_paths, regimes, store_dir, su
     return code
 
 
-def medians(csv_path, column):
-    """(schema_name, store_regime) -> median over processes of `column`, plus the per-process values."""
+def medians(csv_path, column, io_model=None):
+    """(schema_name, store_regime) -> median over processes of `column`, plus the per-process values.
+    With io_model (C0 us, MB/s), the latency of the whole query mix with its I/O modeled instead."""
     values = {}
     with open(csv_path, newline="") as handle:
         for row in csv.DictReader(handle):
-            values.setdefault((row["schema_name"], row["store_regime"]), []).append((int(row["test_run"]), float(row[column])))
+            value = float(row[column])
+            if io_model:
+                io_us = float(row["store_reads"] or 0) * io_model[0] + float(row["store_bytes"] or 0) / io_model[1]
+                value = float(row["all_mean_ms"]) - float(row["store_io_ms"] or 0) + io_us * 1e-3
+            values.setdefault((row["schema_name"], row["store_regime"]), []).append((int(row["test_run"]), value))
     return {key: (statistics.median(v for _, v in runs), dict(runs)) for key, runs in values.items()}
 
 
@@ -169,38 +199,44 @@ def stage_b_schemas(best):
 
 
 def run_workload(args, cell, workload, cloud, trace, queries, out):
-    entries = panel(cell, workload)
+    leaves = [int(v) for v in args.leaves.split(",")]
+    entries = grid_check_panel(leaves) if args.panel == "grid-check" else \
+        panel(cell, workload, leaves, [int(v) for v in args.nested_leaves.split(",")])
     paths = write_schemas(entries, out / "schemas")
+    regimes = args.trace_regimes if workload == "trace" and args.trace_regimes else REGIMES[workload]
+    b_regimes = [r for r in regimes.split(",") if r != "memory"] if workload == "trace" and args.trace_regimes else STAGE_B_REGIMES[workload]
     runs = args.box_runs if workload == "boxes" else args.runs
     # Boxes are slow out of core, so their one pass is also the instrumented one; the trace keeps a
     # warm-up pass, which the in-memory control needs.
     warmup, repeats = (0, 1) if workload == "boxes" else (1, args.repeats)
-    run_csvs = []
-    print(f"  {workload}: {len(entries)} schemas, {runs} runs, groups of {args.group}", flush=True)
-    for run in range(runs):
-        summary = out / f"{workload}_r{run}.csv"
-        summary.unlink(missing_ok=True)
-        names = [name for name, _ in entries]
-        random.Random(1000 + run).shuffle(names)
-        for g in range(0, len(names), args.group):
-            group = [paths[name] for name in names[g:g + args.group]]
-            run_engine(args, cloud, trace, queries, group, REGIMES[workload],
-                       Path(args.store_root) / cell / f"{workload}_r{run}_g{g}", summary, warmup, repeats)
-        run_csvs.append(summary)
-    merge_runs(run_csvs, out / f"{workload}.csv")
+    if not args.stage_b_only:
+        run_csvs = []
+        print(f"  {workload}: {len(entries)} schemas, {runs} runs, groups of {args.group}", flush=True)
+        for run in range(runs):
+            summary = out / f"{workload}_r{run}.csv"
+            summary.unlink(missing_ok=True)
+            names = [name for name, _ in entries]
+            random.Random(1000 + run).shuffle(names)
+            for g in range(0, len(names), args.group):
+                group = [paths[name] for name in names[g:g + args.group]]
+                run_engine(args, cloud, trace, queries, group, regimes,
+                           Path(args.store_root) / cell / f"{workload}_r{run}_g{g}", summary, warmup, repeats)
+            run_csvs.append(summary)
+        merge_runs(run_csvs, out / f"{workload}.csv")
 
-    # Stage B: nested schemas over each cold regime's best single.
+    # Stage B: nested schemas over each cold regime's best single (measured, or on the device model).
     column = "range_mean_ms" if workload == "boxes" else "all_mean_ms"
+    io_model = tuple(map(float, args.io_model.split("/"))) if args.io_model else None
     by_name = dict(entries)
-    timing = medians(out / f"{workload}.csv", column)
-    for regime in STAGE_B_REGIMES[workload]:
+    timing = medians(out / f"{workload}.csv", column, io_model)
+    for regime in b_regimes:
         candidates = [(t, name) for (name, r), (t, _) in timing.items()
                       if r == regime and name in by_name and not isinstance(by_name[name], str) and is_single(by_name[name])]
         if not candidates:
             continue
         best_name = min(candidates)[1]
         nested = stage_b_schemas(by_name[best_name])
-        tag = f"stageB_{workload}_{regime.replace(':', '-')}"
+        tag = f"stageB_{workload}_{regime.replace(':', '-')}{args.stage_b_tag}"
         b_paths = write_schemas([(best_name, by_name[best_name])] + nested, out / "schemas")
         order = [b_paths[best_name]] + [b_paths[name] for name, _ in nested]
         print(f"  stage B, {workload} {regime}: {best_name} against {len(nested)} prefixes", flush=True)
@@ -234,6 +270,14 @@ def main():
     parser.add_argument("--group", type=int, default=4)
     parser.add_argument("--queries", type=int, default=0, help="trace queries (default: the cell's)")
     parser.add_argument("--device", default="", help="block device of --store-root (e.g. sdg), to flag other reads")
+    parser.add_argument("--stage-b-only", action="store_true", help="skip stage A; stage B over the existing <workload>.csv")
+    parser.add_argument("--io-model", default="", help="C0/MBPS: choose stage B's single on reads * C0 us + bytes / MBPS")
+    parser.add_argument("--stage-b-tag", default="", help="suffix of the stage B files (e.g. _sata)")
+    parser.add_argument("--buffered", action="store_true", help="buffered store reads (a RAM-backed --store-root)")
+    parser.add_argument("--leaves", default=",".join(map(str, LEAVES)), help="leaf sizes of the singles")
+    parser.add_argument("--nested-leaves", default="2048,8192", help="leaf sizes of qt6_kd48 and qt9_ot24")
+    parser.add_argument("--trace-regimes", default="", help="the trace's regimes instead (stage B over the cold ones)")
+    parser.add_argument("--panel", default="default", choices=["default", "grid-check"], help="grid-check: grid_check_panel at --leaves")
     parser.add_argument("--cpu", type=int, default=-1)
     parser.add_argument("--numa-node", type=int, default=-1)
     args = parser.parse_args()
