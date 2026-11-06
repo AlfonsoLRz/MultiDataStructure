@@ -1092,6 +1092,105 @@ Risks:
 
 The cost model is out as a contribution. Next step: the user decides whether to write the paper.
 
+### 2r. 2026-11-06 — external libraries: nanoflann at its default ties our tuned pick, so the default gap is our defaults'
+
+**Question.** Is 2p's 1.66x library-default gap specific to our engine? Every library is timed on the
+same held-out traces, at its default and across its main parameter.
+
+**Setup.** makinon2, socket 1, core 20, memory on node 1. 15 cells: DomFountain 1M; DomFountain,
+GaliciaForest, SanAndreas, SolarPlantation and Alhambra at 25M; nine scenes at 100M. 3 rounds with the
+process order rotated, median per row; warm-up 1, 10 timed passes. Code: `tools/baseline_common.h` and
+the drivers (4a3e272), `scripts/external_baselines.py`, `external_report.py`. Results and report:
+`results/eval_traces/external_makinon2`.
+- One protocol for every driver: the `.mdspc` cloud in its local float frame, engine-check's trace
+  stride, each search call timed alone, one thread. Each driver also writes per-query counts and the
+  engine's order-independent id checksum.
+- Libraries:
+
+| library | structure | parameter (default first) |
+|---|---|---|
+| nanoflann 2.0.1 | kd-tree, sliding midpoint | leaf 10, 16, 32, 64, 128, 256 |
+| PCL 1.15.1 | KdTreeFLANN (FLANN's single kd-tree) | none |
+| PCL 1.15.1 | OctreePointCloudSearch | voxel = longest extent / 128 ... 4096 (no default) |
+| Open3D 0.20.0 | geometry::KDTreeFlann (nanoflann on a double Eigen matrix) | none |
+| unibn octree (Behley 2015, 8e3927d) | octree; radius only | bucket 32, 8, 16, 64, 128, 256, 512 |
+| Boost.Geometry 1.90 | R-tree, STR bulk load | rstar 16, 8, 32, 64 per node |
+
+- Ours: the defaults at leaf 32 (octree, median kd), the rule's two picks (kd48l128sm, qt16l128tc) and
+  the cell's e9 pick.
+
+**Correctness.** No count differs from the engine's in any cell, library or setting. Id sets differ only
+on kNN queries: in none of the queries of 8 cells, and in at most 3.6% of a cell's queries
+(galiciaforest_es05 the most). Our own schemas agree with each other on every query. One case checked by brute force (DomFountain 1M, query 444): the 16th and
+17th nearest points are at the same float distance, so the libraries break a tie differently.
+
+**Two protocol findings, before any result.**
+- **Our engine was slower interleaved.** engine-check `--interleave` timed our schemas about 20% slower
+  than sequential (sequential/interleaved geomean 0.83, range 0.78-0.97; 0.96 at 1M), despite the warm
+  sweep that replays the whole query set before every timed pass. The drivers time one setting after
+  another, so the first battery's interleaved rows are kept as `mds_interleaved.csv` and our engine was
+  re-run sequentially (`external_baselines.py` is now sequential by default). The cause is open:
+  makinon2 uses no huge pages, and the penalty is as large at 100M as at 25M. A test that runs each
+  schema alone through the interleaved path is queued.
+- **nanoflann 2.0.1 is faster than 2d's header** (vcpkg's "1.10.1", rebuilt on makinon2, 4 cells):
+  0.89-0.96x the time, the most at leaf 10; its build is 1.05-1.13x slower.
+
+The interleave penalty differs by schema, so ratios of our schemas measured interleaved (e9, 2p) move
+too. Sequential over interleaved, 15 cells:
+
+| ratio | change (geomean, range) |
+|---|---|
+| kd48l128sm / e9 pick | 1.010 (0.98-1.04) |
+| qt16l128tc / e9 pick | 1.085 (0.99-1.25); 1.03-1.04 on the three aerial cells where the rule picks it |
+| kd default / e9 pick | 0.982 (0.94-1.02) |
+| octree default / e9 pick | 1.066 (1.00-1.11) |
+
+2p's rule regret and default gap survive, within about 4% and 7%.
+
+**Results** (sequential; latency per query over our e9 pick, geomean over 15 cells, >1 = slower):
+
+| | all | radius | kNN | own lever (default / best) |
+|---|---|---|---|---|
+| ours: octree default, leaf 32 | 1.73 | 1.91 | 1.52 | |
+| ours: kd default (median split), leaf 32 | 1.42 | 1.57 | 1.25 | |
+| ours: the rule's pick | 1.01 | 0.96 | 1.06 | |
+| nanoflann, default (leaf 10) | 1.02 | 1.27 | 0.72 | 1.07 |
+| nanoflann, best leaf (16-32) | 0.95 | 1.18 | 0.68 | |
+| Open3D KDTreeFlann | 1.60 | 2.13 | 1.00 | none |
+| unibn octree, default / best | | 1.65 / 1.56 | | 1.05 |
+| Boost R-tree, default / best | 2.46 / 2.37 | 2.33 / 2.24 | 2.50 / 2.40 | 1.04 |
+| PCL KdTreeFLANN | 2.59 | 3.51 | 1.58 | none |
+| PCL octree, best voxel | 5.99 | 4.50 | 7.57 | (forest 43x; ground 4.1x, aerial 3.2x) |
+
+- **nanoflann ties our tuned pick at its default and beats it at its best leaf.** Per group (best
+  leaf, all): ground 1.01, aerial 0.92, forest 0.88. Its kNN is faster in every cell (0.55-0.88x); its
+  radius is slower in 12 of 15 cells, up to 1.52x on the dense ground scans (DomFountain,
+  OttobrunnCampus). 2d's guess for the kNN gap stands: nanoflann updates the cell distance along the
+  split axis, ours recomputes a 3D box distance per child.
+- **Leaf-matched, 2d's parity holds.** kd48l128sm over nanoflann leaf 128: mixed 0.86 (0.64-1.05),
+  radius 0.67, kNN 1.19 (2d on Windows: 0.97-1.00, 0.78-0.82, 1.05-1.25). The build reversed: ours 1.44x
+  nanoflann's (2d: 0.63-0.81x). At the defaults, 2d's 0.89-0.92 did not reproduce (kd default over
+  nanoflann leaf 10: 1.39, 1.07-2.17): the schema is unchanged since 2026-10-03, so the newer nanoflann
+  (about 9% at leaf 10) and the platform (gcc on a Xeon Gold 6140 against MSVC) account for it.
+- **Every library's own parameter is worth 4-7%** (nanoflann 1.07, unibn 1.05, Boost 1.04); PCL's
+  KdTreeFLANN and Open3D expose none. The spread between libraries with the same structure is 1.0-2.6x
+  (kd-trees: nanoflann, Open3D, PCL), which is implementation, as Elseberg et al. found.
+
+**Verdict** against the plan's decision table:
+- PCL, Boost, Open3D and unibn at their defaults are 1.6-2.6x slower than our pick, but their own tuning
+  recovers only 4-7%, so their gap is implementation, not tuning;
+- nanoflann at its default matches our tuned pick (1.02), the plan's last row: **the 1.66x gap is our
+  engine's default schemas**, a median-split kd-tree and an octree at leaf 32.
+
+For Paper A this narrows the message to primitive choice. nanoflann's default already is the right
+primitive (a sliding-midpoint kd-tree with a small leaf), and so is the rule's 3D pick. A paper can
+no longer say that library defaults leave 1.66x on the table, and it must show nanoflann's kNN: as an
+engine, ours is behind on kNN and ahead on radius.
+
+Caveats: one machine; PCL and Open3D link conda-forge builds without AVX (their search code is
+precompiled); unibn answers radius only; the PCL octree voxel sweep may not reach that structure's best
+on the forest clouds.
+
 
 
 ## 3. Pending experiments (exact commands)

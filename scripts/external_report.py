@@ -168,6 +168,35 @@ def main():
     print(f"\n## Answers differing from the engine's: {len(disagreements)} configuration-cells")
     for name, cell, count_bad, id_bad, total in disagreements:
         print(f"  {cell} {name}: {count_bad} counts and {id_bad} id sets differ of {total} queries")
+    protocols(args.results)
+
+
+def protocols(results):
+    """Our schemas timed sequentially (mds.csv) against the first battery's interleaved rows
+    (mds_interleaved.csv): each schema's sequential / interleaved latency, and whether the ratios
+    the in-memory claims rest on (rule and defaults over the e9 pick) survive the protocol."""
+    cells = sorted(p for p in Path(results).iterdir() if (p / "mds_interleaved.csv").exists())
+    if not cells:
+        return
+    print("\n## Our engine, sequential vs interleaved (all_mean_ms; medians over rounds)")
+    print(f"  {'cell':<26} {'seq / interleaved per schema':<64} {'kd48l128sm/pick seq, il':>18} {'kd def/pick seq, il':>20}")
+    shifts = defaultdict(list)
+    for cell_dir in cells:
+        seq = medians(load(cell_dir / "mds.csv"))
+        il = medians(load(cell_dir / "mds_interleaved.csv"))
+        pick = next(name for name in seq if name.startswith("e9pick_"))
+        names = [n for n in ("octree_default", "kdtree_default", "kd48l128sm", "qt16l128tc", pick) if n in seq and n in il]
+        per = {n: seq[n]["all_mean_ms"] / il[n]["all_mean_ms"] for n in names}
+        rel = lambda table, n: table[n]["all_mean_ms"] / table[pick]["all_mean_ms"]
+        for n in names:
+            shifts[n if not n.startswith("e9pick_") else "e9 pick"].append(per[n])
+            if n != pick:
+                shifts[f"{n}/pick change"].append(rel(seq, n) / rel(il, n))
+        text = " ".join(f"{n.replace('_default', '').replace('e9pick_', 'pick ')} {v:.2f}" for n, v in per.items())
+        print(f"  {cell_dir.name:<26} {text:<64} {rel(seq, 'kd48l128sm'):8.3f} {rel(il, 'kd48l128sm'):8.3f} "
+              f"{rel(seq, 'kdtree_default'):9.3f} {rel(il, 'kdtree_default'):9.3f}")
+    for key, values in shifts.items():
+        print(f"  {key:<32} geomean {geomean(values):.3f}, range {min(values):.3f}-{max(values):.3f}")
 
 
 if __name__ == "__main__":

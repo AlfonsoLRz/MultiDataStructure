@@ -12,8 +12,12 @@ at its default and across its main parameter, on the cell's held-out pipeline tr
   unibn       Behley's octree, bucket 32 (default), 8 ... 512; radius only
   Boost       Boost.Geometry R-tree, STR bulk load, 16 (the documented example), 8, 32, 64 per node
 
-and our engine (engine-check --interleave) with the library defaults at leaf 32 (octree, median kd),
-the flatness rule's two picks (kd48l128sm, qt16l128tc) and the cell's e9 pick. Every process is
+and our engine with the library defaults at leaf 32 (octree, median kd), the flatness rule's two
+picks (kd48l128sm, qt16l128tc) and the cell's e9 pick. Like the drivers, engine-check times one
+schema after the other (build, warm-up, timed passes): --interleave, despite its warm sweep, timed
+our schemas about 20% slower than sequential (sequential / interleaved 0.78-0.97 over 15 cells, 2r),
+so the first battery's interleaved rows are not comparable with the libraries' (--mds-interleave
+keeps that protocol). Every process is
 pinned like run_cells.py, and --rounds rounds rotate the order of the processes; readers take the
 median over rounds. Round 0 also writes per-query counts and checksums, so the report can check
 every library's answers against the engine's.
@@ -86,7 +90,7 @@ def run(args):
         trace = f"{remap_trace_dir(cell['trace_dir'], name, args.trace_root)}/pipeline_trace_test.csv"
         ours = [str(REPO / path) for path in DEFAULTS] + sorted(str(p.resolve()) for p in Path(args.schemas, name).glob("*.json"))
         print(f"\n### {name} [{time.strftime('%H:%M:%S')}]: {len(ours)} schemas of ours, {', '.join(TOOLS)}", flush=True)
-        processes = ["mds"] + TOOLS
+        processes = [p for p in ["mds"] + TOOLS if not args.only or p in args.only.split(",")]
         for k in range(args.rounds):
             shift = k % len(processes)
             for tool in processes[shift:] + processes[:shift]:
@@ -94,8 +98,8 @@ def run(args):
                 summary.unlink(missing_ok=True)
                 if tool == "mds":
                     argv = [args.exe, "--mode", "engine-check", "--input", cloud, "--input-trace", trace, "--queries", str(cell["queries"]),
-                            "--schemas", ";".join(ours), "--warmup", "1", "--measure-repeats", str(args.repeats), "--interleave",
-                            "--summary-csv", str(summary), "--no-pause"]
+                            "--schemas", ";".join(ours), "--warmup", "1", "--measure-repeats", str(args.repeats),
+                            "--summary-csv", str(summary), "--no-pause"] + (["--interleave"] if args.mds_interleave else [])
                     if k == 0:
                         argv += ["--query-csv", str(out / "mds_queries.csv")]
                 else:
@@ -134,6 +138,8 @@ def main():
     r.add_argument("--repeats", type=int, default=10)
     r.add_argument("--cpu", type=int, default=-1)
     r.add_argument("--numa-node", type=int, default=-1)
+    r.add_argument("--only", default="", help="','-separated processes to run (mds and/or tool names)")
+    r.add_argument("--mds-interleave", action="store_true", help="time our schemas interleaved (the first battery's protocol)")
     args = parser.parse_args()
     if args.step == "prepare":
         prepare(args)
