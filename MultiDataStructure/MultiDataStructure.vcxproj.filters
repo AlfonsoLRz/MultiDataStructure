@@ -236,6 +236,9 @@
     <ClCompile Include="..\tests\test_leaf_store.cpp">
       <Filter>tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\tests\test_pool_layout.cpp">
+      <Filter>tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\tests\test_point_queries.cpp">
       <Filter>tests</Filter>
     </ClCompile>

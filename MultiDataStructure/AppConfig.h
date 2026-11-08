@@ -54,6 +54,9 @@ public:
 	bool	_runTests = AppDefaults::RUN_TESTS;
 	bool	_showHelp = false;
 	double	_nodeCostNs = 0.0;	// PointSpatialIndex::setNodeVisitCost, every mode
+	// Memory layout dials (testing.md 2s), every mode: PointSpatialIndex::setHugePages / setPrefetchChildren.
+	bool	_poolHugePages = false;
+	bool	_prefetchChildren = false;
 	PointBenchmark::Options	_pointOptions;
 	Experiments::SchemaSearchOptions	_schemaSearchOptions;
 	// engine-check only; the rest of its options are shared with schema-search (see main.cpp).

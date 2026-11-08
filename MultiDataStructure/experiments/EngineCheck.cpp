@@ -169,6 +169,29 @@ namespace
 		return {};
 	}
 
+	// Huge pages backing this process right now, in MB (Linux; -1 elsewhere), so a --pool-huge-pages
+	// run can show its pools really got them.
+	double anonHugePagesMb()
+	{
+#if defined(__linux__)
+		std::ifstream rollup("/proc/self/smaps_rollup");
+		std::string line;
+		while (std::getline(rollup, line))
+		{
+			if (line.rfind("AnonHugePages:", 0) == 0)
+			{
+				std::istringstream fields(line.substr(14));
+				double kb = 0.0;
+				fields >> kb;
+				return kb / 1024.0;
+			}
+		}
+		return 0.0;
+#else
+		return -1.0;
+#endif
+	}
+
 	std::string csvField(const std::string& value)
 	{
 		if (value.find_first_of(",\"\n") == std::string::npos)
@@ -199,6 +222,11 @@ namespace
 		std::vector<QueryRecord>			_records;
 		std::array<double, 4>				_latencySum{};
 		std::array<size_t, 4>				_latencyCount{};
+		// From the instrumented pass: entered nodes per depth summed over the query set, and the
+		// nanoseconds charged to each depth (PointSpatialIndex::takeDepthTiming), so each level's
+		// visits can be priced (testing.md 2s).
+		std::array<double, PointSpatialIndex::QueryStats::MaxBreakdownDepth>	_visitsByDepth{};
+		std::array<double, PointSpatialIndex::QueryStats::MaxBreakdownDepth>	_visitNsByDepth{};
 		// Mean latency over all queries of each timed pass, in pass order.
 		std::vector<double>					_passMeansMs;
 		size_t								_passMismatches = 0;
@@ -240,6 +268,8 @@ namespace
 		std::fill(measured._records.begin(), measured._records.end(), QueryRecord{});
 		measured._latencySum = {};
 		measured._latencyCount = {};
+		measured._visitsByDepth = {};
+		measured._visitNsByDepth = {};
 		measured._passMeansMs.clear();
 		measured._passMismatches = 0;
 		measured._storeTotals = {};
@@ -310,6 +340,10 @@ namespace
 		const PointSpatialIndex::QueryTelemetry telemetry = (pass == 0 || !timed || options._timedTelemetryFull)
 			? PointSpatialIndex::QueryTelemetry::Full
 			: PointSpatialIndex::QueryTelemetry::Off;
+		std::array<double, PointSpatialIndex::QueryStats::MaxBreakdownDepth> depthNs{};
+		std::array<uint64_t, PointSpatialIndex::QueryStats::MaxBreakdownDepth> depthVisits{};
+		if (pass == 0)
+			PointSpatialIndex::takeDepthTiming(depthNs, depthVisits);	// discard whatever came before this pass
 		double passMs = 0.0;
 		for (size_t q = 0; q < queries.size(); ++q)
 		{
@@ -323,6 +357,8 @@ namespace
 				record._testedBoxes = queryStats._testedBoxes;
 				record._tested = queryStats._testedPoints;
 				record._fullyContained = queryStats._fullyContainedNodes;
+				for (size_t depth = 0; depth < measured._visitsByDepth.size(); ++depth)
+					measured._visitsByDepth[depth] += static_cast<double>(queryStats._breakdown.visitedByDepth[depth]);
 			}
 			else if (record._checksum != queryStats._resultChecksum || record._returned != queryStats._returnedPoints)
 			{
@@ -336,6 +372,11 @@ namespace
 				++measured._latencyCount[slot];
 				passMs += queryStats._elapsedMs;
 			}
+		}
+		if (pass == 0)
+		{
+			PointSpatialIndex::takeDepthTiming(depthNs, depthVisits);
+			measured._visitNsByDepth = depthNs;
 		}
 		if (timed && !queries.empty())
 			measured._passMeansMs.push_back(passMs / static_cast<double>(queries.size()));
@@ -420,6 +461,27 @@ namespace
 				std::cout << " | other reads on " << options._storeDevice << ": " << measured._deviceExtraBytes / storePasses / 1e6 << " MB per pass";
 			std::cout << '\n';
 		}
+		// Per depth, from the instrumented pass: mean entered nodes per query and nanoseconds per
+		// entered node (the gap to the next entered node, so a leaf's figure includes its scan).
+		// Depths beyond the deepest visited are left out.
+		size_t deepest = 0;
+		for (size_t depth = 0; depth < measured._visitsByDepth.size(); ++depth)
+			if (measured._visitsByDepth[depth] > 0.0)
+				deepest = depth;
+		std::ostringstream visitsByDepth, nsByDepth;
+		visitsByDepth << std::setprecision(6);
+		nsByDepth << std::setprecision(6);
+		std::cout << "    visits/query and ns/visit by depth:";
+		for (size_t depth = 0; depth <= deepest; ++depth)
+		{
+			const double visits = measured._visitsByDepth[depth];
+			const double ns = visits > 0.0 ? measured._visitNsByDepth[depth] / visits : 0.0;
+			visitsByDepth << (depth ? ";" : "") << visits / queryCount;
+			nsByDepth << (depth ? ";" : "") << ns;
+			if (visits > 0.0)
+				std::cout << ' ' << depth << ':' << std::fixed << std::setprecision(2) << visits / queryCount << '/' << std::setprecision(0) << ns;
+		}
+		std::cout << '\n';
 		std::cout.unsetf(std::ios::floatfield);
 
 		if (outputs._summaryCsv)
@@ -450,7 +512,10 @@ namespace
 								<< static_cast<double>(measured._storeTotals._bytes) / storeQueries << ','
 								<< static_cast<double>(measured._storeTotals._hits) / storeQueries << ','
 								<< static_cast<double>(measured._storeTotals._ioNs) / storeQueries / 1e6 << ','
-								<< measured._deviceExtraBytes / storePasses / 1e6 << ',' << measured._regime.name() << '\n';
+								<< measured._deviceExtraBytes / storePasses / 1e6 << ',' << measured._regime.name() << ','
+								<< visitsByDepth.str() << ',' << nsByDepth.str() << ','
+								<< (PointSpatialIndex::hugePages() ? 1 : 0) << ',' << (PointSpatialIndex::prefetchChildren() ? 1 : 0) << ','
+								<< anonHugePagesMb() << '\n';
 			outputs._summaryCsv.flush();
 		}
 
@@ -480,6 +545,8 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 		? generatedQueries(options._queryCount > 0 ? options._queryCount : 4096, options._querySeed, cloud)
 		: queriesFromTrace(options._inputTracePath, options._queryCount, cloud);
 
+	// Price each level's visits on the instrumented pass (the timed passes never see it).
+	PointSpatialIndex::setDepthTiming(true);
 	std::cout << "engine-check: engine " << PointSpatialIndex::EngineVersion
 			  << ", " << cloud.size() << " points, " << queries.size() << " queries ("
 			  << (options._inputTracePath.empty() ? "generated" : "trace") << "), "
@@ -532,7 +599,7 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 								<< "mean_returned_points,query_set_checksum,pass_checksum_mismatches,timed_telemetry,mean_tested_boxes,"
 								<< "interleaved,pass_median_ms,pass_min_ms,pass_means_ms,"
 								<< "store_file_bytes,store_cache_bytes,store_paged,store_direct,store_reads,store_bytes,store_hits,store_io_ms,"
-								<< "store_device_extra_mb,store_regime\n";
+								<< "store_device_extra_mb,store_regime,visits_by_depth,visit_ns_by_depth,huge_pages,prefetch_children,anon_huge_mb\n";
 		}
 	}
 

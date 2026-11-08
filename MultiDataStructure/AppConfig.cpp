@@ -789,6 +789,14 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._schemaSearchOptions._minTimedMs = std::max(0.0, std::stod(argv[++i]));
 		}
+		else if (arg == "--pool-huge-pages")
+		{
+			config._poolHugePages = true;
+		}
+		else if (arg == "--prefetch-children")
+		{
+			config._prefetchChildren = true;
+		}
 		else if (arg == "--node-cost-ns" && i + 1 < argc)
 		{
 			config._nodeCostNs = std::max(0.0, std::stod(argv[++i]));
@@ -1004,6 +1012,9 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --min-timed-ms <ms>         With --measure-repeats >= 2: add timed passes until they total this\n"
 		<< "  --node-cost-ns <ns>         Every CPU query waits this long per node it enters (spinning), emulating\n"
 		<< "                              nodes that are expensive to reach; part of the score-cache key (default 0)\n"
+		<< "  --pool-huge-pages           Node pools and ordered point arrays above 4 MB on 2 MB huge pages (Linux,\n"
+		<< "                              transparent huge pages in madvise mode; a no-op elsewhere)\n"
+		<< "  --prefetch-children         CPU traversals prefetch a pushed child's child group or leaf arrays\n"
 		<< "  --mode engine-check         Build each --schema(s) on --input and replay one fixed query set\n"
 		<< "                              (--input-trace, else a seeded generator over every query kind):\n"
 		<< "                              per-query checksums/counters and per-type latency, for engine A/B work\n"

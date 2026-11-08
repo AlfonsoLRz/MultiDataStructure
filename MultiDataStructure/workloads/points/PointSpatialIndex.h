@@ -45,6 +45,26 @@ public:
 		size_t	_maxDepth = 0;
 	};
 
+	// Pool storage: 64-byte aligned (two 32-byte HotNodes per cache line) and, with
+	// setHugePages(true), on 2 MB huge pages above 4 MB (Linux, transparent huge pages in madvise
+	// mode), so the cold levels of a large pool stop paying a TLB miss on top of the cache miss
+	// (testing.md 2s). The ordered point arrays use the same allocator.
+	template <typename T, size_t Alignment>
+	struct AlignedAllocator
+	{
+		using value_type = T;
+		AlignedAllocator() = default;
+		template <typename U> AlignedAllocator(const AlignedAllocator<U, Alignment>&) {}
+		T* allocate(size_t n) { return static_cast<T*>(allocatePool(n * sizeof(T), Alignment)); }
+		void deallocate(T* p, size_t) { freePool(p); }
+		template <typename U> struct rebind { using other = AlignedAllocator<U, Alignment>; };
+		bool operator==(const AlignedAllocator&) const { return true; }
+		bool operator!=(const AlignedAllocator&) const { return false; }
+	};
+	template <typename T> using PoolVector = std::vector<T, AlignedAllocator<T, 64>>;
+	static void* allocatePool(size_t bytes, size_t alignment);
+	static void freePool(void* pointer);
+
 	struct QueryStats
 	{
 		static constexpr size_t MaxBreakdownDepth = 64;
@@ -178,6 +198,23 @@ public:
 	static double nodeVisitCost() { return _nodeVisitNs; }
 	static uint64_t nodeVisitTicks() { return _nodeVisitTicks; }
 
+	// Memory layout dials (testing.md 2s), process-wide like the node cost. Huge pages apply to the
+	// pools of every index built after the call; prefetching is read per query.
+	static void setHugePages(bool enabled) { _hugePages = enabled; }
+	static bool hugePages() { return _hugePages; }
+	// Prefetch traversals touch a surviving child's own child group (or its leaf's point arrays)
+	// when the child is pushed, so the next level's miss overlaps the current level's work.
+	static void setPrefetchChildren(bool enabled) { _prefetchChildren = enabled; }
+	static bool prefetchChildren() { return _prefetchChildren; }
+	// Per-depth visit timing, on the instrumented (Full) path only: the timestamp-counter ticks
+	// between consecutive entered nodes are charged to the depth of the node entered first, so each
+	// level's visits can be priced. Per thread; takeDepthTiming() returns and resets the thread's
+	// totals, nanoseconds and visits per depth.
+	static void setDepthTiming(bool enabled) { _depthTiming = enabled; }
+	static bool depthTiming() { return _depthTiming; }
+	static void takeDepthTiming(std::array<double, QueryStats::MaxBreakdownDepth>& nsByDepth,
+								std::array<uint64_t, QueryStats::MaxBreakdownDepth>& visitsByDepth);
+
 	// A schema level's split rule, resolved from its strings once per build. The build used to
 	// re-derive this per POINT per level - Config::parseSchemaPrimitiveKind and the axis-policy
 	// normalizer allocate and lowercase strings - twice per level (count pass and scatter pass).
@@ -257,7 +294,7 @@ public:
 	size_t memoryFootprintBytes() const;
 	// Cloud index of each point in tree order: a node's points are
 	// pointOrder()[node.pointOffset(), node.pointOffset() + node.pointCount()).
-	const std::vector<uint32_t>& pointOrder() const { return _pointOrder; }
+	const PoolVector<uint32_t>& pointOrder() const { return _pointOrder; }
 	const PointCloud* cloud() const { return _cloud; }
 	// Node storage cost, for estimates made from node counts alone.
 	static size_t bytesPerNode();
@@ -364,19 +401,6 @@ private:
 		uint8_t		_structureIndex = 0;
 	};
 
-	template <typename T, size_t Alignment>
-	struct AlignedAllocator
-	{
-		using value_type = T;
-		AlignedAllocator() = default;
-		template <typename U> AlignedAllocator(const AlignedAllocator<U, Alignment>&) {}
-		T* allocate(size_t n) { return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t(Alignment))); }
-		void deallocate(T* p, size_t) { ::operator delete(p, std::align_val_t(Alignment)); }
-		template <typename U> struct rebind { using other = AlignedAllocator<U, Alignment>; };
-		bool operator==(const AlignedAllocator&) const { return true; }
-		bool operator!=(const AlignedAllocator&) const { return false; }
-	};
-
 	struct ActiveLevel
 	{
 		const SchemaLevelConfig*	_config = nullptr;
@@ -399,8 +423,8 @@ private:
 	const PointCloud*		_cloud = nullptr;
 	SchemaConfig			_schema;
 	std::unique_ptr<Node>	_root;	// build-time only; null after build()
-	std::vector<HotNode, AlignedAllocator<HotNode, 64>>	_hot;
-	std::vector<ColdNode>								_cold;
+	PoolVector<HotNode>		_hot;
+	std::vector<ColdNode>	_cold;
 	std::vector<std::unique_ptr<LeafMicroIndex>>		_microIndexes;
 	// Output-buffer sizing hints, per index and per query kind, so a query can reserve its result
 	// vector BEFORE the clock starts and then allocate nothing while being timed. See the query
@@ -409,10 +433,10 @@ private:
 	// ordering is sufficient and a lost update just costs one reallocation.
 	mutable std::atomic<size_t>	_rangeReserveHint{ 0 };
 	mutable std::atomic<size_t>	_radiusReserveHint{ 0 };
-	std::vector<uint32_t>	_pointOrder;
-	std::vector<float>		_orderedX;
-	std::vector<float>		_orderedY;
-	std::vector<float>		_orderedZ;
+	PoolVector<uint32_t>	_pointOrder;
+	PoolVector<float>		_orderedX;
+	PoolVector<float>		_orderedY;
+	PoolVector<float>		_orderedZ;
 	std::shared_ptr<std::vector<std::string>>	_structureNames;
 	std::vector<ResolvedLevel>	_resolvedLevels;	// parallel to _schema._levels
 	std::vector<int32_t>		_structureSlotBySchemaDepth;	// build-time cache, -1 = unresolved
@@ -453,6 +477,8 @@ private:
 		++stats._visitedNodes;
 		++stats._breakdown.visitedByDepth[std::min<size_t>(cold._depth, QueryStats::MaxBreakdownDepth - 1)];
 		++stats._breakdown._visitedByStructure[cold._structureIndex];
+		if (_depthTiming)
+			noteVisitTiming(cold._depth);
 	}
 	void recordTestedPoints(uint32_t slot, size_t count, QueryStats& stats) const
 	{
@@ -471,14 +497,33 @@ private:
 	template <bool Telemetry> void radiusQueryMicroGrid(uint32_t slot, const LeafMicroIndex& micro, const glm::vec3& center, float radiusSquared, QueryResult& result) const;
 	// Charged=true adds the emulated node cost (setNodeVisitCost) to every entered node. Stored=true
 	// reads leaves (and, paged, child groups) through the attached LeafStore; never with Micro.
-	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void rangeSearch(const AABB& bounds, QueryResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void countSearch(const AABB& bounds, CountResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
-	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false> void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
+	// Prefetch=true issues the child prefetches of setPrefetchChildren; never with Stored.
+	// Never inlined: each instantiation is one standalone traversal, so the timed path's code does
+	// not change with the number of variants the dispatch in the query entry points can reach
+	// (GCC inlined two of them into one entry point once, and the timed path got 4-15% slower).
+#if defined(_MSC_VER)
+#define MDS_NOINLINE __declspec(noinline)
+#define MDS_ALWAYS_INLINE __forceinline
+#else
+#define MDS_NOINLINE __attribute__((noinline))
+#define MDS_ALWAYS_INLINE inline __attribute__((always_inline))
+#endif
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false, bool Prefetch = false> MDS_NOINLINE void rangeSearch(const AABB& bounds, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false, bool Prefetch = false> MDS_NOINLINE void countSearch(const AABB& bounds, CountResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false, bool Prefetch = false> MDS_NOINLINE void radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false, bool Prefetch = false> MDS_NOINLINE void knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const;
+	template <bool Telemetry, bool Micro, bool Charged = false, bool Stored = false, bool Prefetch = false> MDS_NOINLINE void knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const;
 	template <bool Telemetry, bool Micro, bool Stored = false> void knnLeaf(uint32_t slot, const glm::vec3& center, size_t k, QueryResult& result) const;
 
 	inline static double	_nodeVisitNs = 0.0;
 	inline static uint64_t	_nodeVisitTicks = 0;	// the same cost in timestamp-counter ticks
 	static void chargeNodeVisit();
+	inline static bool		_hugePages = false;
+	inline static bool		_prefetchChildren = false;
+	inline static bool		_depthTiming = false;
+	// Timestamp-counter ticks per nanosecond, calibrated once against the steady clock.
+	inline static double	_ticksPerNs = 0.0;
+	static double ticksPerNs();
+	static void noteVisitTiming(size_t depth);
+	static void finishDepthTiming();
 };

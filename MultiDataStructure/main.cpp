@@ -31,6 +31,10 @@ int main(int argc, char* argv[])
 			std::cerr << "Node visit cost: " << config._nodeCostNs << " ns (" << PointSpatialIndex::nodeVisitTicks()
 					  << " timestamp-counter ticks) per entered node\n";
 		}
+		PointSpatialIndex::setHugePages(config._poolHugePages);
+		PointSpatialIndex::setPrefetchChildren(config._prefetchChildren);
+		if (config._poolHugePages || config._prefetchChildren)
+			std::cerr << "Memory layout:" << (config._poolHugePages ? " huge pages" : "") << (config._prefetchChildren ? " child prefetch" : "") << '\n';
 
 		if (config._mode == "points")
 			return PointBenchmark::run(config._pointOptions);

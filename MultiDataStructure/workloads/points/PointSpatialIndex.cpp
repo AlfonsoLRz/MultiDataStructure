@@ -10,6 +10,14 @@
 #else
 #include <x86intrin.h>
 #endif
+#if defined(_WIN32)
+#include <malloc.h>
+#else
+#include <cstdlib>
+#endif
+#if defined(__linux__)
+#include <sys/mman.h>
+#endif
 
 static constexpr double EPSILON = 1e-9;
 
@@ -563,33 +571,173 @@ namespace
 		}
 	}
 
-	// Calls call(full, micro, charged, stored) with each flag as a compile-time constant, so every
-	// combination is its own traversal and the plain timed path tests no flag per node. A stored
-	// index has no micro-indexes (attachStore refuses them), so Stored never meets Micro.
+	// Calls call(full, micro, charged, stored, prefetch) with each flag as a compile-time constant,
+	// so every combination is its own traversal and the plain timed path tests no flag per node. A
+	// stored index has no micro-indexes (attachStore refuses them) and reads from a file, so Stored
+	// never meets Micro or Prefetch.
 	template <typename Call>
-	void withTraversalFlags(bool full, bool micro, bool charged, bool stored, Call&& call)
+	void withTraversalFlags(bool full, bool micro, bool charged, bool stored, bool prefetch, Call&& call)
 	{
 		using T = std::true_type;
 		using F = std::false_type;
-		const auto withCharge = [&](auto f, auto m, auto s) {
+		const auto withCharge = [&](auto f, auto m, auto s, auto p) {
 			if (charged)
-				call(f, m, T{}, s);
+				call(f, m, T{}, s, p);
 			else
-				call(f, m, F{}, s);
+				call(f, m, F{}, s, p);
+		};
+		const auto withPrefetch = [&](auto f, auto m) {
+			if (prefetch)
+				withCharge(f, m, F{}, T{});
+			else
+				withCharge(f, m, F{}, F{});
 		};
 		const auto withStore = [&](auto f) {
 			if (stored)
-				withCharge(f, F{}, T{});
+				withCharge(f, F{}, T{}, F{});
 			else if (micro)
-				withCharge(f, T{}, F{});
+				withPrefetch(f, T{});
 			else
-				withCharge(f, F{}, F{});
+				withPrefetch(f, F{});
 		};
 		if (full)
 			withStore(T{});
 		else
 			withStore(F{});
 	}
+
+	// Both helpers must be inlined into the traversal: a prefetch reads and writes no memory the
+	// compiler can see, so a function made only of prefetches is classed pure, and GCC's early DCE
+	// then deletes every call to it (the whole --prefetch-children arm compiled to nothing once).
+	MDS_ALWAYS_INLINE void prefetchLine(const void* address)
+	{
+#if defined(_MSC_VER) || defined(__SSE__)
+		_mm_prefetch(reinterpret_cast<const char*>(address), _MM_HINT_T0);
+#else
+		__builtin_prefetch(address);
+#endif
+	}
+
+	// What a pushed child will need next: an internal child its own child group (its first cache
+	// lines, at most four), a leaf the start of its point arrays. The child itself is already in
+	// cache, since its box was just tested in the parent's group.
+	MDS_ALWAYS_INLINE void prefetchChild(const PointSpatialIndex::HotNode& child, const PointSpatialIndex::HotNode* hot,
+										 const float* xs, const float* ys, const float* zs, const uint32_t* order)
+	{
+		if (child.isInternal())
+		{
+			const char* group = reinterpret_cast<const char*>(hot + child._first);
+			const size_t lines = std::min<size_t>(4, (child.count() * sizeof(PointSpatialIndex::HotNode) + 63) / 64);
+			for (size_t line = 0; line < lines; ++line)
+				prefetchLine(group + 64 * line);
+			return;
+		}
+		prefetchLine(xs + child._first);
+		prefetchLine(ys + child._first);
+		prefetchLine(zs + child._first);
+		if (order)
+			prefetchLine(order + child._first);
+	}
+
+	// Per-thread depth timing (PointSpatialIndex::setDepthTiming): _last is the tick of the
+	// previous entered node and _depth its depth; the gap to the next entered node, or to the end
+	// of the query, is that node's cost.
+	struct DepthTiming
+	{
+		std::array<uint64_t, PointSpatialIndex::QueryStats::MaxBreakdownDepth>	_ticks{};
+		std::array<uint64_t, PointSpatialIndex::QueryStats::MaxBreakdownDepth>	_visits{};
+		uint64_t	_last = 0;
+		size_t		_depth = 0;
+	};
+	thread_local DepthTiming t_depthTiming;
+}
+
+void* PointSpatialIndex::allocatePool(size_t bytes, size_t alignment)
+{
+	constexpr size_t HugePage = size_t(2) << 20;
+	constexpr size_t HugeThreshold = size_t(4) << 20;
+	const bool huge = _hugePages && bytes >= HugeThreshold;
+	if (huge)
+	{
+		alignment = HugePage;
+		bytes = (bytes + HugePage - 1) / HugePage * HugePage;
+	}
+	bytes = std::max<size_t>(bytes, 1);
+#if defined(_WIN32)
+	void* pointer = _aligned_malloc(bytes, alignment);
+	if (!pointer)
+		throw std::bad_alloc();
+#else
+	void* pointer = nullptr;
+	if (posix_memalign(&pointer, std::max(alignment, sizeof(void*)), bytes) != 0)
+		throw std::bad_alloc();
+#if defined(__linux__)
+	// Advisory: with transparent huge pages in madvise mode the first touch of each 2 MB block
+	// faults in one huge page; in never mode the call changes nothing.
+	if (huge)
+		madvise(pointer, bytes, MADV_HUGEPAGE);
+#endif
+#endif
+	return pointer;
+}
+
+void PointSpatialIndex::freePool(void* pointer)
+{
+#if defined(_WIN32)
+	_aligned_free(pointer);
+#else
+	free(pointer);
+#endif
+}
+
+double PointSpatialIndex::ticksPerNs()
+{
+	if (_ticksPerNs > 0.0)
+		return _ticksPerNs;
+	// Over 50 ms of the steady clock. The counter runs at a fixed rate on x86-64 CPUs with an
+	// invariant TSC, whatever the core clock does.
+	const auto start = std::chrono::steady_clock::now();
+	const uint64_t startTicks = __rdtsc();
+	auto end = start;
+	uint64_t endTicks = startTicks;
+	do
+	{
+		end = std::chrono::steady_clock::now();
+		endTicks = __rdtsc();
+	} while (end - start < std::chrono::milliseconds(50));
+	_ticksPerNs = static_cast<double>(endTicks - startTicks) / std::chrono::duration<double, std::nano>(end - start).count();
+	return _ticksPerNs;
+}
+
+void PointSpatialIndex::noteVisitTiming(size_t depth)
+{
+	DepthTiming& timing = t_depthTiming;
+	const uint64_t now = __rdtsc();
+	depth = std::min<size_t>(depth, QueryStats::MaxBreakdownDepth - 1);
+	if (timing._last)
+		timing._ticks[timing._depth] += now - timing._last;
+	timing._last = now;
+	timing._depth = depth;
+	++timing._visits[depth];
+}
+
+void PointSpatialIndex::finishDepthTiming()
+{
+	DepthTiming& timing = t_depthTiming;
+	if (timing._last)
+		timing._ticks[timing._depth] += __rdtsc() - timing._last;
+	timing._last = 0;
+}
+
+void PointSpatialIndex::takeDepthTiming(std::array<double, QueryStats::MaxBreakdownDepth>& nsByDepth,
+										std::array<uint64_t, QueryStats::MaxBreakdownDepth>& visitsByDepth)
+{
+	DepthTiming& timing = t_depthTiming;
+	const double perNs = ticksPerNs();
+	for (size_t depth = 0; depth < QueryStats::MaxBreakdownDepth; ++depth)
+		nsByDepth[depth] = static_cast<double>(timing._ticks[depth]) / perNs;
+	visitsByDepth = timing._visits;
+	timing = DepthTiming{};
 }
 
 void PointSpatialIndex::attachStore(LeafStore* store)
@@ -605,20 +753,7 @@ void PointSpatialIndex::setNodeVisitCost(double nanoseconds)
 	_nodeVisitTicks = 0;
 	if (_nodeVisitNs <= 0.0)
 		return;
-
-	// Timestamp-counter ticks per nanosecond, over 50 ms of the steady clock. The counter runs at
-	// a fixed rate on x86-64 CPUs with an invariant TSC, whatever the core clock does.
-	const auto start = std::chrono::steady_clock::now();
-	const uint64_t startTicks = __rdtsc();
-	auto end = start;
-	uint64_t endTicks = startTicks;
-	do
-	{
-		end = std::chrono::steady_clock::now();
-		endTicks = __rdtsc();
-	} while (end - start < std::chrono::milliseconds(50));
-	const double ticksPerNs = static_cast<double>(endTicks - startTicks) / std::chrono::duration<double, std::nano>(end - start).count();
-	_nodeVisitTicks = std::max<uint64_t>(1, static_cast<uint64_t>(std::llround(_nodeVisitNs * ticksPerNs)));
+	_nodeVisitTicks = std::max<uint64_t>(1, static_cast<uint64_t>(std::llround(_nodeVisitNs * ticksPerNs())));
 }
 
 inline void PointSpatialIndex::chargeNodeVisit()
@@ -639,9 +774,11 @@ PointSpatialIndex::QueryResult PointSpatialIndex::rangeQuery(const AABB& bounds,
 	const auto start = std::chrono::steady_clock::now();
 	if (!_hot.empty())
 	{
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
-			this->template rangeSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(bounds, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, _prefetchChildren, [&](auto f, auto m, auto c, auto s, auto p) {
+			this->template rangeSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value, decltype(p)::value>(bounds, result);
 		});
+		if (full && _depthTiming)
+			finishDepthTiming();
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -663,9 +800,11 @@ PointSpatialIndex::CountResult PointSpatialIndex::countRange(const AABB& bounds,
 	const auto start = std::chrono::steady_clock::now();
 	if (!_hot.empty())
 	{
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
-			this->template countSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(bounds, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, _prefetchChildren, [&](auto f, auto m, auto c, auto s, auto p) {
+			this->template countSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value, decltype(p)::value>(bounds, result);
 		});
+		if (full && _depthTiming)
+			finishDepthTiming();
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -686,9 +825,11 @@ PointSpatialIndex::QueryResult PointSpatialIndex::radiusQuery(const glm::vec3& c
 	const auto start = std::chrono::steady_clock::now();
 	if (radius >= 0.0f && !_hot.empty())
 	{
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
-			this->template radiusSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(center, radiusSquared, result);
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, _prefetchChildren, [&](auto f, auto m, auto c, auto s, auto p) {
+			this->template radiusSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value, decltype(p)::value>(center, radiusSquared, result);
 		});
+		if (full && _depthTiming)
+			finishDepthTiming();
 	}
 	const double elapsedMs = elapsedMilliseconds(start);
 
@@ -958,12 +1099,14 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 		// Depth-first for the small k of every captured workload; best-first above, where its
 		// node-optimality pays for the heap.
 		constexpr size_t DepthFirstMaxK = 64;
-		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, [&](auto f, auto m, auto c, auto s) {
+		withTraversalFlags(full, micro, _nodeVisitTicks != 0, _store != nullptr, _prefetchChildren, [&](auto f, auto m, auto c, auto s, auto p) {
 			if (k <= DepthFirstMaxK)
-				this->template knnSearchDepthFirst<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(center, k, result);
+				this->template knnSearchDepthFirst<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value, decltype(p)::value>(center, k, result);
 			else
-				this->template knnSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value>(center, k, result);
+				this->template knnSearch<decltype(f)::value, decltype(m)::value, decltype(c)::value, decltype(s)::value, decltype(p)::value>(center, k, result);
 		});
+		if (full && _depthTiming)
+			finishDepthTiming();
 
 		// The answer leaves the traversal in heap order, into storage reserved before the clock.
 		// That is where the timed region ends, as it does for the external baselines: Indexicon's
@@ -1000,7 +1143,7 @@ PointSpatialIndex::QueryResult PointSpatialIndex::knnQuery(const glm::vec3& cent
 // their group is in cache and pushes only the survivors, in reverse so they pop in child order
 // (the old recursion's order). Counter semantics are those of engine 2: a bounds test on a
 // non-empty node is a tested box, a node whose test passed is visited.
-template <bool Telemetry, bool Micro, bool Charged, bool Stored>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored, bool Prefetch>
 void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) const
 {
 	const glm::vec3 queryMin = bounds.min();
@@ -1081,12 +1224,16 @@ void PointSpatialIndex::rangeSearch(const AABB& bounds, QueryResult& result) con
 			if constexpr (Telemetry)
 				++result._stats._testedBoxes;
 			if (boxOverlaps(child._lo, child._hi, queryMin, queryMax))
+			{
+				if constexpr (Prefetch)
+					prefetchChild(child, hot, xs, ys, zs, order);
 				stack.push_back(childSlot);
+			}
 		}
 	}
 }
 
-template <bool Telemetry, bool Micro, bool Charged, bool Stored>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored, bool Prefetch>
 void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) const
 {
 	const glm::vec3 queryMin = bounds.min();
@@ -1161,12 +1308,16 @@ void PointSpatialIndex::countSearch(const AABB& bounds, CountResult& result) con
 			if constexpr (Telemetry)
 				++result._stats._testedBoxes;
 			if (boxOverlaps(child._lo, child._hi, queryMin, queryMax))
+			{
+				if constexpr (Prefetch)
+					prefetchChild(child, hot, xs, ys, zs, nullptr);
 				stack.push_back(childSlot);
+			}
 		}
 	}
 }
 
-template <bool Telemetry, bool Micro, bool Charged, bool Stored>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored, bool Prefetch>
 void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquared, QueryResult& result) const
 {
 	const HotNode* hot = _hot.data();
@@ -1233,7 +1384,11 @@ void PointSpatialIndex::radiusSearch(const glm::vec3& center, float radiusSquare
 			if constexpr (Telemetry)
 				++result._stats._testedBoxes;
 			if (boxDistanceSquared(child._lo, child._hi, center) <= radiusSquared)
+			{
+				if constexpr (Prefetch)
+					prefetchChild(child, hot, xs, ys, zs, order);
 				stack.push_back(childSlot);
+			}
 		}
 	}
 }
@@ -1353,7 +1508,7 @@ void PointSpatialIndex::knnLeaf(uint32_t slot, const glm::vec3& center, size_t k
 // Best-first kNN: a global min-heap of pending nodes by lower-bound distance, so nodes are
 // entered in distance order and the search stops at the first that cannot improve the answer.
 // Node-optimal, but every push and pop is an O(log n) sift. Used for large k.
-template <bool Telemetry, bool Micro, bool Charged, bool Stored>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored, bool Prefetch>
 void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1407,6 +1562,8 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 			if (best.size() == k && childDistance > best.front().first)
 				continue;
 
+			if constexpr (Prefetch)
+				prefetchChild(child, hot, _orderedX.data(), _orderedY.data(), _orderedZ.data(), _pointOrder.data());
 			pending.push_back({ childDistance, sequence++, first + c });
 			std::push_heap(pending.begin(), pending.end(), KnnNodeCandidateGreater{});
 		}
@@ -1420,7 +1577,7 @@ void PointSpatialIndex::knnSearch(const glm::vec3& center, size_t k, QueryResult
 // best-first would not, but trades the global heap for a stack and a sort of at most 64 entries.
 // The answer is identical: the prune is strict and (distance, index) is a total order, so the k
 // best are the same whatever order the leaves are offered in.
-template <bool Telemetry, bool Micro, bool Charged, bool Stored>
+template <bool Telemetry, bool Micro, bool Charged, bool Stored, bool Prefetch>
 void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, QueryResult& result) const
 {
 	std::vector<std::pair<float, size_t>>& best = knnBestScratch();
@@ -1480,7 +1637,11 @@ void PointSpatialIndex::knnSearchDepthFirst(const glm::vec3& center, size_t k, Q
 			children[at] = { childDistance, first + c };
 		}
 		for (size_t i = 0; i < survivors; ++i)
+		{
+			if constexpr (Prefetch)
+				prefetchChild(hot[children[i].second], hot, _orderedX.data(), _orderedY.data(), _orderedZ.data(), _pointOrder.data());
 			stack.push_back(children[i]);
+		}
 	}
 }
 

@@ -253,7 +253,7 @@ void Viewer::appendBoxLines(std::vector<ColoredVertex>& lines, const AABB& box, 
 std::vector<Viewer::ColoredVertex> Viewer::SceneBuilder::points(const PointCloud& cloud, const PointSpatialIndex& index) const
 {
 	std::vector<ColoredVertex> out;
-	const std::vector<uint32_t>& order = index.pointOrder();
+	const auto& order = index.pointOrder();
 	if (order.empty())
 		return out;
 	// Sampling in tree order keeps the subsample spatially even and lets each point inherit the

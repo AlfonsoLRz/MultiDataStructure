@@ -1326,7 +1326,8 @@ on kNN queries: in none of the queries of 8 cells, and in at most 3.6% of a cell
   resident, untouched as they are during the sweep and the pass. It hits the memory-bound kd-trees
   most (0.78-0.82) and the
   compute-bound qt16l128tc least (0.96); makinon2 uses no huge pages, and the mechanism is open.
-  Results: `diag_versions_protocol/il_results`.
+  Results: `diag_versions_protocol/il_results`. (2s answers it in part: on 2 MB pages the kd-tree's
+  penalty falls from 15% to 3%, so for the memory-bound trees it is TLB reach; the octree keeps 5%.)
 - **nanoflann 2.0.1 is faster than 2d's header** (vcpkg's "1.10.1", rebuilt on makinon2, 4 cells):
   0.89-0.96x the time, the most at leaf 10; its build is 1.05-1.13x slower.
 
@@ -1385,6 +1386,148 @@ engine, ours is behind on kNN and ahead on radius.
 Caveats: one machine; PCL and Open3D link conda-forge builds without AVX (their search code is
 precompiled); unibn answers radius only; the PCL octree voxel sweep may not reach that structure's best
 on the forest clouds.
+
+### 2s. 2026-11-08 — where a query's time goes: the visits nesting saves are the cheap ones
+
+**Question.** Nesting saves node visits (2l: 0.976 over the e9 cells, 0.80-0.92 on TLS and MLS scans) and
+no time. 2l's reading was that the saved visits are the root-to-mid-level ones, in cache for every query
+of a coherent trace, while the time goes to the cold bottom levels and the leaf scans. Here that is
+measured: every entered node is priced per depth on the instrumented pass, and the two layout fixes that
+target the cold visits are tried, since they help a single tree as much as a nested one.
+
+**Setup.** makinon2, socket 0, core 2, memory on node 0; the user's treetiles jobs ran on other cores
+throughout. Cells: DomFountain, SanAndreas and Lille at 25M (node pool 12-26 MB, about the socket's
+24.75 MB of L3) and at 100M (50-100 MB, well over it); held-out pipeline traces, 2000 and 1000 queries.
+Panel per cell: e9's pick and best nested finalist, kd48l128sm (the rule's pick on all three, flatness
+0.41-0.53), ot24l128tc and hg12l2048 as wide singles, the octree and kd-tree defaults at leaf 32, and
+2q's stage B winners where the paged regimes had one (Lille: qu4_hg12l2048, qu8_kd48l2048sm; DomFountain:
+qu8_kd48l4096sm). Arms, each a process-wide flag of the same binary:
+
+| arm | what changes |
+|---|---|
+| base | the engine as committed |
+| huge | `--pool-huge-pages`: node pool and ordered point arrays above 4 MB on 2 MB pages (`madvise(MADV_HUGEPAGE)`; makinon2 runs THP in madvise mode, so base has none) |
+| prefetch | `--prefetch-children`: when a surviving child is pushed, its own child group (up to 4 lines) or its leaf's point arrays are prefetched |
+| both | |
+
+3 processes per arm and group of at most 5 schemas, interleaved within the process (engine-check
+`--interleave`), arms rotated across runs, warm-up 1 + 2 timed passes, median over processes. Per
+process the instrumented pass also records visits per depth and the nanoseconds charged to each depth
+(the timestamp-counter gap between consecutive entered nodes, charged to the first), which prices a
+level's visits. `perf` is unusable on makinon2 (`perf_event_paranoid` 3, no perf for the running kernel),
+so there are no hardware miss counts. Code: `PointSpatialIndex` (`PoolVector`/`allocatePool`, the
+`Prefetch` traversal flag, `takeDepthTiming`), engine-check columns `visits_by_depth`,
+`visit_ns_by_depth`, `anon_huge_mb`; `scripts/cache_accounting.py`, `cache_accounting_report.py`;
+`tests/test_pool_layout.cpp`. Results: `results/eval_traces/cache_accounting_makinon2`.
+
+**Two compiler findings, before any result.** Both were caught by the off-state A/B and by reading the
+binary, and both would have made the battery meaningless.
+- **GCC inlined two traversals into one entry point and the timed path got slower.** With the fifth
+  traversal flag, GCC 12 inlined the `Telemetry=false` instantiations into `rangeQuery` and friends,
+  and the engine with every flag off timed 4-15% slower than the 2q binary on DomFountain 25M (kd48l128sm
+  3.87 -> 4.33 us, ot24l128tc 4.71 -> 5.42, kNN the most). The five traversal templates are now
+  `noinline`, each instantiation one standalone function as before; the A/B then reads 3.87 vs 3.83 and
+  4.70 vs 4.64 us, alternating processes, parity.
+- **The prefetch arm had compiled to nothing.** A prefetch reads and writes no memory the compiler can
+  see (`__builtin_prefetch` is NOVOPS), so GCC's local pure-const analysis classed the helper made of
+  prefetches as pure, and the early control-dependent DCE deleted every call to it: zero prefetch
+  instructions in the whole binary, and the `Prefetch=true` instantiations byte-identical to the
+  `false` ones (`objdump`, dump bisection: the call is dropped at `cddce1`). The helpers are now
+  `always_inline`, so the builtins sit in the traversal body; every `Prefetch=true` instantiation
+  carries 7-8 prefetch instructions and the `false` ones none. Any future prefetch work must check the
+  disassembly, not the source.
+
+The instrumented pass pays the telemetry and a timestamp read per entered node, so its per-depth
+nanoseconds sum to about 1.25x the timed latency; the report prints that sum next to the latency, and
+the shares between depths are what the numbers are for.
+
+**Results: the layout dials** (median of 3 processes per arm; each ratio compares one schema with
+itself, in the same group of co-resident schemas, so 2r's co-residence penalty cancels; process CV of
+the base latency 1.6% median at 100M, 0.8% at 25M).
+
+| arm / base, geomean (range) | 100M singles (17 rows) | 100M, pool >= 64 MB (17) | 100M, pool < 64 MB (6) | 25M singles (17) | HGrid rows (8) | nested, 100M / 25M (6 each) |
+|---|---|---|---|---|---|---|
+| huge pages | 0.915 (0.709-0.985) | 0.904 | 0.978 | 0.974 (0.907-1.009) | 0.982 | 0.945 / 1.004 |
+| child prefetch | 0.941 (0.717-1.117) | 0.916 | 1.069 | 0.970 (0.896-1.097) | 1.092 | 0.988 / 0.997 |
+| both | 0.928 (0.689-1.103) | 0.894 | 1.060 | 0.970 (0.855-1.108) | 1.093 | 0.956 / 0.992 |
+
+- **Huge pages speed up every tree, by its pool size.** Over the 34 single rows 0.944; at 100M 0.915,
+  and 0.904 for the pools over 64 MB against 0.978 under it. The largest pool gains most: SanAndreas
+  100M's e9 pick, qt24l32 (10.2M nodes, 326 MB), goes from 2.8 to 2.0 us (0.709); its defaults 0.82-0.88;
+  Lille's kd48l64sm (150 MB) 0.897; DomFountain's kd48l128sm (75 MB) 0.959. `AnonHugePages` confirms
+  the pools were backed (1.5-7.4 GB per process). The 2 MB page removes the TLB miss a cold visit pays
+  on top of its cache miss: a 75 MB pool is 18K 4 KiB pages against a 1.5K-entry STLB. These are
+  interleaved measurements, with four other indexes resident; a lone index gains less (below).
+- **Prefetching the next level helps the narrow trees and hurts the wide one.** Binary and 4-way trees
+  gain 3-28% (qt24l32 0.717, the defaults 0.86-0.95, kd48 0.94-0.98): a pushed child's group is one or
+  two lines and the prefetch overlaps its miss with the current level's work. The 64-way HGrid loses
+  8-12% in every cell: its 2 KB child group is streamed by the box tests anyway, and the four lines
+  prefetched for each surviving child are traffic without a gain. The hardware's adjacent-line
+  prefetcher already gives wide nodes what the software prefetch gives narrow ones, which is one
+  reason 2l found octrees at parity with kd-trees at scale.
+- **The two do not add.** Both together 0.928 at 100M against 0.915 and 0.941 alone: they hide the same
+  cold-miss latency.
+- **The e9 picks were shaped by 4 KiB paging.** With huge pages SanAndreas 100M's many-node pick drops
+  29% and kd48l128sm 7%, so a search run on a machine with transparent huge pages always on (a common
+  server default) would weight small leaves and many nodes more than e9 did. Every e9, 2o, 2p and 2q
+  timing is a 4 KiB-page timing; part of 2p's leaf-size lever is paging.
+
+**Results: where the time goes** (base arm, instrumented pass, 100M; per band: entered nodes per query,
+nanoseconds per query and per visit; top = depths 0-7, bottom = the deepest four levels):
+
+| cell, e9 pick | visits/q | top 8 levels | middle | bottom 4 | timed us |
+|---|---|---|---|---|---|
+| DomFountain, kd48l128sm (depth 37) | 43.3 | 8.0 visits, 0.28 us (4%), 35 ns each | 33.3 visits, 5.74 us (85%), 172 ns each | 2.0 visits, 0.71 us (11%), 350 ns each | 4.4 |
+| Lille, kd48l64sm (depth 38) | 32.2 | 8.0, 0.36 us (7%), 45 ns | 23.7, 4.56 us (90%), 192 ns | 0.5, 0.17 us (3%), 354 ns | 3.2 |
+| SanAndreas, qt24l32 (depth 24) | 17.9 | 8.1, 1.28 us (31%), 159 ns | 2.4, 0.67 us (16%), 280 ns | 7.5, 2.17 us (53%), 291 ns | 2.8 |
+
+- A visit costs 35 ns at the top of a kd-tree and 350 ns at a leaf, ten times apart inside one tree, so
+  a visit count says little about time. On the TLS and MLS scans the top eight levels are 4-7% of the
+  query; on the ALS terrain, where consecutive queries are far apart, the top levels miss too (159 ns)
+  and the leaves hold half the time.
+- **The visits nesting removes are the cheap ones.** e9's nested finalist against the pick, same pass:
+  Lille 32.2 -> 27.0 visits for 5.09 -> 4.88 us (40 ns per saved visit, against 192 for the band and 354
+  for a leaf), DomFountain 43.3 -> 40.0 for 6.73 -> 6.60 us (38 ns each); the top eight levels are
+  entered 8.0 times in both trees, and the octree root adds 0.1-0.2 us of its own. On SanAndreas the
+  nested finalist qt9_ot24l32 is the same tree as qt24l32 (17.91 visits per query in both, the same
+  nanoseconds at every depth: the octree levels never split z on flat terrain). Timed, the nested
+  finalists are 1.03-1.13x the pick on DomFountain and Lille in every arm and at both scales.
+- **A null pair gauges the noise of schema-against-schema ratios here.** SanAndreas's two identical
+  trees time 0.947, 1.169, 1.158 and 1.113 apart across the four arms: schemas sit in shuffled groups
+  of 5 and 2-4 per process, and 2r's co-residence penalty moves them by 5-15%. So nested/single in this
+  battery (base 1.068 geomean over 6 cells, 0.947-1.150; 1.10-1.13 with the fixes) is not a nesting
+  verdict; 2l and 2q are, with their interleaved pairs and the every-process rule. The arm ratios
+  above are unaffected, since both sides share the groups.
+
+**2r's interleave penalty is mostly TLB reach** (follow-up after the battery, same core; DomFountain
+100M, kd48l128sm and ot24l128tc alone against interleaved with the panel, 2 repeats of 3 timed passes;
+`interleave/`). On 4 KiB pages the kd-tree alone is 0.846 of its interleaved time (4.43 against 5.24
+us), 2r's penalty again; on 2 MB pages it is 0.973 (4.70 against 4.83). The octree keeps a 5-6% penalty
+in both arms (0.949, 0.936), so the rest is cache contention. Two consequences:
+- The arm ratios above were measured interleaved, so part of the huge-page gain is relief of this
+  penalty, and a lone index gains less: alone, DomFountain's kd48l128sm is within noise (4.43 against
+  4.70 us, two repeats 5.05 and 4.35), while the largest pool still gains, SanAndreas 100M's qt24l32
+  2.64 -> 2.14 us alone (0.81; 0.71 interleaved) and its kd48l128sm 2.90 -> 2.58 (0.89), two repeats with
+  a slow first base run.
+- Every interleaved measurement in this ledger (e9's finalists, 2o, 2q's stage B) carried a
+  schema-dependent TLB penalty that 2 MB pages remove, which is why 2r saw the memory-bound schemas
+  move against the compute-bound ones when the protocol went sequential.
+
+**Verdict** against the plan's decision table: the first row. The layout fixes speed the singles 6-8.5%
+geomean at 100M measured interleaved (both 0.928, huge pages alone 0.915), up to 29-31% on the largest
+pool, and about 19% on that pool alone; nested/single stays above 1.0 in every arm; the
+visits composition saves cost about 40 ns each, a quarter of their band's average and a tenth of a
+leaf scan, and the top eight levels, where a wide prefix acts, are 4-7% of a kd-tree query. For Paper A
+this is the mechanism behind 2l, 2o and 2q: node counts mislead because a visit's cost spans an order
+of magnitude by depth, and a layout change buys what a second primitive does not. It also adds a caveat
+the paper must carry: the measured leaf-size lever includes 4 KiB paging, and the picks move toward
+smaller leaves on a huge-page machine.
+
+Caveats: one machine (Xeon Gold 6140, transparent huge pages in madvise mode, no hardware counters); the
+per-depth nanoseconds come from the instrumented pass and sum to about 1.25x the timed latency; the
+nested panel is e9's 100M finalists, not re-tuned for 25M or for the fixes; huge pages were measured
+through `madvise`, not a system in `always` mode, where the page cache and the cloud itself would also
+be huge-paged.
 
 
 

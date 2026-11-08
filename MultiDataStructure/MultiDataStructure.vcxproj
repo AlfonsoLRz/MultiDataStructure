@@ -189,6 +189,7 @@
     <ClCompile Include="..\tests\test_octree.cpp" />
     <ClCompile Include="..\tests\test_pointcloud_io.cpp" />
     <ClCompile Include="..\tests\test_leaf_store.cpp" />
+    <ClCompile Include="..\tests\test_pool_layout.cpp" />
     <ClCompile Include="..\tests\test_point_queries.cpp" />
     <ClCompile Include="..\tests\test_quadtree.cpp" />
     <ClCompile Include="..\tests\test_regular_grid.cpp" />
