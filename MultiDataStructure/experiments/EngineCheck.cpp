@@ -245,7 +245,9 @@ namespace
 	{
 		const PointSpatialIndex::PoolView pool = measured._index->poolView();
 		std::ostringstream name;
-		name << std::hex << std::setw(16) << std::setfill('0') << measured._digest << ".store";
+		// The digest describes the tree, not the order of its pool, so the layout names the file too.
+		name << std::hex << std::setw(16) << std::setfill('0') << measured._digest
+			 << (PointSpatialIndex::poolLayout() == PointSpatialIndex::PoolLayout::PageBlocked ? "_paged" : "") << ".store";
 		measured._storePath = (std::filesystem::path(options._leafStoreDir) / name.str()).string();
 		if (!LeafStore::matches(measured._storePath, pool, measured._digest))
 		{
@@ -515,7 +517,8 @@ namespace
 								<< measured._deviceExtraBytes / storePasses / 1e6 << ',' << measured._regime.name() << ','
 								<< visitsByDepth.str() << ',' << nsByDepth.str() << ','
 								<< (PointSpatialIndex::hugePages() ? 1 : 0) << ',' << (PointSpatialIndex::prefetchChildren() ? 1 : 0) << ','
-								<< anonHugePagesMb() << '\n';
+								<< anonHugePagesMb() << ','
+								<< (PointSpatialIndex::poolLayout() == PointSpatialIndex::PoolLayout::PageBlocked ? "paged" : "dfs") << '\n';
 			outputs._summaryCsv.flush();
 		}
 
@@ -599,7 +602,7 @@ int Experiments::runEngineCheck(const EngineCheckOptions& options)
 								<< "mean_returned_points,query_set_checksum,pass_checksum_mismatches,timed_telemetry,mean_tested_boxes,"
 								<< "interleaved,pass_median_ms,pass_min_ms,pass_means_ms,"
 								<< "store_file_bytes,store_cache_bytes,store_paged,store_direct,store_reads,store_bytes,store_hits,store_io_ms,"
-								<< "store_device_extra_mb,store_regime,visits_by_depth,visit_ns_by_depth,huge_pages,prefetch_children,anon_huge_mb\n";
+								<< "store_device_extra_mb,store_regime,visits_by_depth,visit_ns_by_depth,huge_pages,prefetch_children,anon_huge_mb,pool_layout\n";
 		}
 	}
 

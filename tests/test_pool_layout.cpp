@@ -2,6 +2,8 @@
 #include "../MultiDataStructure/workloads/points/PointSpatialIndex.h"
 #include "../MultiDataStructure/workloads/points/SyntheticPointClouds.h"
 
+#include <set>
+
 namespace BaselineTests
 {
 	void expect(bool condition, const std::string& message);
@@ -151,6 +153,100 @@ namespace BaselineTests
 			expect(timedNs > 0.0, schema._name + ": depth timing charged time to the entered nodes");
 			expect(deepest <= tuned.stats()._maxDepth, schema._name + ": visits are charged to depths the tree has");
 			expect(visits[0] > 0, schema._name + ": the root is entered");
+		}
+
+		// Page-blocked pool: same tree, same answers and visits, sibling groups contiguous and inside
+		// one 4 KiB page, and a paged hierarchy reads fewer pages than the depth-first order.
+		{
+			PointSpatialIndex::setHugePages(false);
+			PointSpatialIndex::setPrefetchChildren(false);
+			PointSpatialIndex::setDepthTiming(false);
+			const PointCloud large = SyntheticPointClouds::generateUrbanMixed(20000, 20000, 6, 11);
+			std::vector<glm::vec3> probes;
+			std::vector<AABB> probeBoxes;
+			const glm::vec3 largeExtent = large.bounds().size();
+			for (size_t i = 0; i < 64; ++i)
+			{
+				const glm::vec3 center = large.points()[(i * large.size()) / 64].position;
+				probes.push_back(center);
+				probeBoxes.emplace_back(center - largeExtent * 0.02f, center + largeExtent * 0.02f);
+			}
+			const float probeRadius = 0.02f * std::max({ largeExtent.x, largeExtent.y, largeExtent.z });
+			const std::vector<SchemaConfig> pagedSchemas = {
+				layoutTestSchema("paged_kd", { layoutTestLevel("KDTree", 40, 4, "sliding_midpoint") }, 4),
+				layoutTestSchema("paged_qt_kd", { layoutTestLevel("QuadTree", 4, 4), layoutTestLevel("KDTree", 40, 4, "sliding_midpoint") }, 4),
+				layoutTestSchema("paged_ot", { layoutTestLevel("Octree", 16, 4) }, 4),
+				layoutTestSchema("paged_hg", { layoutTestLevel("HGrid", 3, 8) }, 8),
+			};
+			for (const SchemaConfig& schema : pagedSchemas)
+			{
+				PointSpatialIndex::setPoolLayout(PointSpatialIndex::PoolLayout::DepthFirst);
+				PointSpatialIndex depthFirst;
+				depthFirst.build(large, schema);
+				PointSpatialIndex::setPoolLayout(PointSpatialIndex::PoolLayout::PageBlocked);
+				PointSpatialIndex blocked;
+				blocked.build(large, schema);
+				PointSpatialIndex::setPoolLayout(PointSpatialIndex::PoolLayout::DepthFirst);
+
+				expect(blocked.structureDigest() == depthFirst.structureDigest(), schema._name + ": the page-blocked pool holds the same tree");
+				const LayoutAnswers a = layoutAnswer(depthFirst, probeBoxes, probes, probeRadius);
+				const LayoutAnswers b = layoutAnswer(blocked, probeBoxes, probes, probeRadius);
+				expect(a._ranges == b._ranges && a._counts == b._counts && a._radii == b._radii && a._knn == b._knn,
+					schema._name + ": the page-blocked pool answers as the depth-first one");
+				expect(a._visited == b._visited, schema._name + ": the page-blocked pool enters the same nodes");
+
+				const PointSpatialIndex::PoolView pool = blocked.poolView();
+				bool contained = true;
+				for (size_t slot = 0; slot < pool._nodeCount; ++slot)
+				{
+					const PointSpatialIndex::HotNode& node = pool._nodes[slot];
+					// Groups wider than a quarter page keep the depth-first order, so only the
+					// narrower, page-blocked ones must sit inside one page.
+					if (!node.isInternal() || node.count() > PointSpatialIndex::PoolPageSlots / 4)
+						continue;
+					contained &= node._first > slot &&
+						node._first / PointSpatialIndex::PoolPageSlots == (node._first + node.count() - 1) / PointSpatialIndex::PoolPageSlots;
+				}
+				expect(contained || schema._name == "paged_hg", schema._name + ": every sibling group follows its parent and lies inside one page");
+
+				// Distinct pages entered by the probes' radius queries: a stand-in for the paged
+				// hierarchy's reads, counted the way LeafStore::touchNodes counts them.
+				const auto pagesTouched = [&](const PointSpatialIndex& index) {
+					const PointSpatialIndex::PoolView view = index.poolView();
+					size_t total = 0;
+					for (const glm::vec3& center : probes)
+					{
+						std::set<size_t> pages{ 0 };
+						std::vector<uint32_t> stack{ 0u };
+						while (!stack.empty())
+						{
+							const uint32_t slot = stack.back();
+							stack.pop_back();
+							const PointSpatialIndex::HotNode& node = view._nodes[slot];
+							if (!node.isInternal())
+								continue;
+							pages.insert(node._first / PointSpatialIndex::PoolPageSlots);
+							pages.insert((node._first + node.count() - 1) / PointSpatialIndex::PoolPageSlots);
+							for (uint32_t c = 0; c < node.count(); ++c)
+							{
+								const PointSpatialIndex::HotNode& child = view._nodes[node._first + c];
+								bool overlaps = child.count() > 0 || child.isInternal();
+								for (int axis = 0; axis < 3 && overlaps; ++axis)
+									overlaps = center[axis] + probeRadius >= child._lo[axis] && center[axis] - probeRadius <= child._hi[axis];
+								if (overlaps)
+									stack.push_back(node._first + c);
+							}
+						}
+						total += pages.size();
+					}
+					return total;
+				};
+				const size_t pagesDepthFirst = pagesTouched(depthFirst);
+				const size_t pagesBlocked = pagesTouched(blocked);
+				std::cout << "  " << schema._name << ": pages touched, depth-first " << pagesDepthFirst << ", page-blocked " << pagesBlocked << '\n';
+				expect(pagesBlocked <= pagesDepthFirst, schema._name + ": the page-blocked pool touches no more pages (" +
+					std::to_string(pagesBlocked) + " vs " + std::to_string(pagesDepthFirst) + ")");
+			}
 		}
 
 		// A pool above 4 MB asks for huge pages and comes back 2 MB aligned; small ones keep 64 bytes.

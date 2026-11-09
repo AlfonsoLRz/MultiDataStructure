@@ -122,6 +122,48 @@ namespace
 		return queries;
 	}
 
+	// The trace's queries where it recorded them (world frame to the cloud's local frame), in order.
+	std::vector<Query> replayedQueries(const std::string& tracePath, const PointCloud& cloud, size_t count, size_t& dropped)
+	{
+		std::vector<Query> source;
+		for (const Experiments::TraceQuery& recorded : Experiments::loadQueryTrace(tracePath))
+		{
+			Query query;
+			switch (recorded._kind)
+			{
+			case Experiments::TraceQuery::Kind::Radius: query._kind = Kind::Radius; break;
+			case Experiments::TraceQuery::Kind::Knn: query._kind = Kind::Knn; break;
+			case Experiments::TraceQuery::Kind::CountRange: query._kind = Kind::CountRange; break;
+			default: query._kind = Kind::Range; break;
+			}
+			if (query._kind == Kind::Knn && recorded._k > PointGpuIndex::MaxK)
+			{
+				++dropped;
+				continue;
+			}
+			if (query._kind == Kind::Range || query._kind == Kind::CountRange)
+			{
+				query._min = cloud.toLocalPosition(recorded._minBound);
+				query._max = cloud.toLocalPosition(recorded._maxBound);
+			}
+			else
+			{
+				query._min = cloud.toLocalPosition(recorded._center);
+			}
+			query._radius = recorded._radius;
+			query._k = static_cast<uint32_t>(recorded._k);
+			source.push_back(query);
+		}
+		std::vector<Query> queries;
+		if (source.empty())
+			return queries;
+		queries.reserve(count);
+		const size_t total = source.size();
+		for (size_t i = 0; i < count; ++i)
+			queries.push_back(count <= total ? source[(i * total) / count] : source[i % total]);
+		return queries;
+	}
+
 	// The k-th neighbourhood's normal from the CPU's own answer (cloud indices in (distance, index) order).
 	PointNormals::Estimate cpuNormal(const PointCloud& cloud, const std::vector<size_t>& indices)
 	{
@@ -363,18 +405,27 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 
 	size_t dropped = 0;
 	std::vector<Template> templates;
-	if (options._selfKnn == 0)
+	if (options._replayTrace && options._inputTracePath.empty())
+		throw std::invalid_argument("batch-check: --replay-trace needs --input-trace");
+	if (options._selfKnn == 0 && !options._replayTrace)
 		templates = templatesFrom(options._inputTracePath, cloud, dropped);
 	else if (options._selfKnn > PointGpuIndex::MaxK)
 		throw std::invalid_argument("batch-check: --self-knn at most " + std::to_string(PointGpuIndex::MaxK));
 	const size_t largest = *std::max_element(options._batchSizes.begin(), options._batchSizes.end());
 	const std::vector<Query> queries = options._selfKnn ? std::vector<Query>{} : batchQueries(templates, cloud, largest, options._querySeed);
 	// Every schema answers the same batches. A trace or generated batch of size n is the first n
-	// queries; a self-query batch spreads its n queries over the whole cloud.
+	// queries; a self-query batch spreads its n queries over the whole cloud; a replayed batch is
+	// the trace itself, strided or cycled to n.
 	std::vector<std::vector<Query>> batches;
 	for (const size_t size : options._batchSizes)
-		batches.push_back(options._selfKnn ? selfQueries(cloud, options._selfKnn, size)
-										   : std::vector<Query>(queries.begin(), queries.begin() + std::min(size, queries.size())));
+	{
+		if (options._selfKnn)
+			batches.push_back(selfQueries(cloud, options._selfKnn, size));
+		else if (options._replayTrace)
+			batches.push_back(replayedQueries(options._inputTracePath, cloud, size, dropped));
+		else
+			batches.push_back(std::vector<Query>(queries.begin(), queries.begin() + std::min(size, queries.size())));
+	}
 
 	const auto wants = [&options](const char* backend) {
 		return std::find(options._backends.begin(), options._backends.end(), backend) != options._backends.end();
@@ -387,6 +438,7 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 
 	std::cout << "batch-check: engine " << PointSpatialIndex::EngineVersion << ", " << cloud.size() << " points, "
 			  << (options._selfKnn ? "self-query kNN, k = " + std::to_string(options._selfKnn)
+				  : options._replayTrace ? std::string("the trace replayed in order") + (dropped ? ", kNN with k > 64 left out" : "")
 								   : std::to_string(queries.size()) + " queries (" + (options._inputTracePath.empty() ? "generated mix" : "trace mix") +
 									 ", centred on cloud points" + (dropped ? ", " + std::to_string(dropped) + " trace kNN with k > 64 left out" : "") + ")")
 			  << (options._normals ? ", with normals" : "") << ", cpuN " << allThreads << " threads, GPU "
@@ -408,6 +460,7 @@ int Experiments::runBatchCheck(const BatchCheckOptions& options)
 
 	int status = 0;
 	const std::string querySource = options._selfKnn ? "self-knn-" + std::to_string(options._selfKnn)
+		: options._replayTrace ? "replay:" + options._inputTracePath
 													 : (options._inputTracePath.empty() ? "generated" : options._inputTracePath);
 	const auto record = [&](const Row& row) {
 		const double qps = row._medianMs > 0.0 ? static_cast<double>(row._batch) / (row._medianMs * 1e-3) : 0.0;

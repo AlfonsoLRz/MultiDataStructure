@@ -16,7 +16,7 @@
 // cloud index order[] (uint32), 16 B per point. A leaf starting at tree position f therefore sits
 // at pointsOffset + 16 f, so no leaf table is stored.
 //
-// Reads go straight to the device (O_DIRECT on Linux): with 251 GB of RAM on the measuring server,
+// Reads go straight to the device (O_DIRECT on Linux, FILE_FLAG_NO_BUFFERING on Windows): with 251 GB of RAM on the measuring server,
 // the page cache would otherwise hold every store and measure memory again. Each leaf is one read
 // of the 4 KiB pages covering it, synchronous, queue depth 1, which is the per-node load of a
 // file-per-node store (ISPRS 2023) or of a COPC chunk. An optional LRU cache, sized in bytes,
@@ -122,6 +122,8 @@ private:
 	size_t		_cachedBytes = 0;
 #if defined(__linux__)
 	int			_fd = -1;
+#elif defined(_WIN32)
+	void*		_handle = nullptr;	// HANDLE opened with FILE_FLAG_NO_BUFFERING
 #else
 	std::ifstream	_stream;
 #endif

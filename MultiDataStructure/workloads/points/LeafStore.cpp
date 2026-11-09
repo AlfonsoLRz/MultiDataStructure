@@ -6,6 +6,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <cerrno>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 namespace
@@ -133,6 +138,15 @@ void LeafStore::write(const std::string& path, const PointSpatialIndex::PoolView
 		::posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
 		::close(fd);
 	}
+#elif defined(_WIN32)
+	// Flushed now, so no timed unbuffered read has to wait for the file cache to write it back.
+	const std::wstring wide = std::filesystem::path(temporary).wstring();
+	HANDLE handle = ::CreateFileW(wide.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (handle != INVALID_HANDLE_VALUE)
+	{
+		::FlushFileBuffers(handle);
+		::CloseHandle(handle);
+	}
 #endif
 	std::filesystem::rename(temporary, path);
 }
@@ -199,9 +213,23 @@ LeafStore::LeafStore(const std::string& path, const PointSpatialIndex::PoolView&
 		_fd = ::open(path.c_str(), O_RDONLY);
 	if (_fd < 0)
 		throw std::runtime_error("leaf store: cannot open " + path + (options._requireDirect ? " with O_DIRECT" : ""));
+#elif defined(_WIN32)
+	// Unbuffered reads bypass the file cache like O_DIRECT; offsets, sizes and buffers are 4 KiB
+	// aligned already, which covers 512-byte and 4 KiB sector drives.
+	const std::wstring wide = std::filesystem::path(path).wstring();
+	const auto openFile = [&](DWORD flags) {
+		return ::CreateFileW(wide.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, flags, nullptr);
+	};
+	HANDLE handle = openFile(FILE_FLAG_NO_BUFFERING | FILE_FLAG_RANDOM_ACCESS);
+	_direct = handle != INVALID_HANDLE_VALUE;
+	if (!_direct && !options._requireDirect)
+		handle = openFile(FILE_FLAG_RANDOM_ACCESS);
+	if (handle == INVALID_HANDLE_VALUE)
+		throw std::runtime_error("leaf store: cannot open " + path + (options._requireDirect ? " unbuffered" : ""));
+	_handle = handle;
 #else
 	if (options._requireDirect)
-		throw std::runtime_error("leaf store: direct reads are Linux only");
+		throw std::runtime_error("leaf store: direct reads need Linux or Windows");
 	_stream.open(path, std::ios::binary);
 	if (!_stream)
 		throw std::runtime_error("leaf store: cannot open " + path);
@@ -213,6 +241,9 @@ LeafStore::~LeafStore()
 #if defined(__linux__)
 	if (_fd >= 0)
 		::close(_fd);
+#elif defined(_WIN32)
+	if (_handle)
+		::CloseHandle(static_cast<HANDLE>(_handle));
 #endif
 }
 
@@ -238,6 +269,22 @@ void LeafStore::readAt(std::byte* buffer, size_t bytes, uint64_t alignedOffset)
 		if (got == 0)
 			throw std::runtime_error("leaf store: read past the end of " + _path);
 		done += static_cast<size_t>(got);
+	}
+#elif defined(_WIN32)
+	size_t done = 0;
+	while (done < bytes)
+	{
+		const uint64_t offset = alignedOffset + done;
+		OVERLAPPED position = {};
+		position.Offset = static_cast<DWORD>(offset & 0xFFFFFFFFull);
+		position.OffsetHigh = static_cast<DWORD>(offset >> 32);
+		const DWORD chunk = static_cast<DWORD>(std::min<size_t>(bytes - done, size_t(1) << 30));
+		DWORD got = 0;
+		if (!::ReadFile(static_cast<HANDLE>(_handle), buffer + done, chunk, &got, &position))
+			throw std::runtime_error("leaf store: read failed on " + _path + " (error " + std::to_string(::GetLastError()) + ")");
+		if (got == 0)
+			throw std::runtime_error("leaf store: read past the end of " + _path);
+		done += got;
 	}
 #else
 	_stream.seekg(static_cast<std::streamoff>(alignedOffset));

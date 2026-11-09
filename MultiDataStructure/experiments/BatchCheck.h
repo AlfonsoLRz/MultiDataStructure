@@ -42,6 +42,11 @@ namespace Experiments
 		bool						_useBinaryCache = true;
 		// k of the self-query kNN batch (0 = trace or generated mix).
 		uint32_t					_selfKnn = 0;
+		// Replay the trace's own queries at their recorded positions, in recorded order (cycled to
+		// fill a batch larger than the trace, strided down to a smaller one, as engine-check does),
+		// instead of its shapes re-centred on random cloud points: the multi-threaded runs then
+		// answer exactly the queries the single-threaded tables are measured on.
+		bool						_replayTrace = false;
 		bool						_normals = false;
 		// gpugrid cell sides, as multiples of the median k-th neighbour distance of the batch.
 		std::vector<double>			_gridCellFactors{ 1.0 };

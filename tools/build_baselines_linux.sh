@@ -22,7 +22,8 @@ FLAGS="$BASE -mavx2 -mbmi -mpopcnt"
 # their search code runs in the precompiled libraries either way.
 LIBFLAGS="$BASE"
 
-g++ $FLAGS -I$P/include "$SRC/nanoflann_point_baseline.cpp" -o "$OUT/nanoflann_point_baseline"
+# OpenMP for the --threads throughput mode (testing.md 2x); the per-query mode stays single-threaded.
+g++ $FLAGS -fopenmp -I$P/include "$SRC/nanoflann_point_baseline.cpp" -o "$OUT/nanoflann_point_baseline"
 g++ $FLAGS -I$P/include "$SRC/boost_rtree_point_baseline.cpp" -o "$OUT/boost_rtree_point_baseline"
 g++ $FLAGS -I"$THIRD/unibn_octree" "$SRC/unibn_point_baseline.cpp" -o "$OUT/unibn_point_baseline"
 g++ $LIBFLAGS -I$P/include/pcl-1.15 -I$P/include/eigen3 -I$P/include "$SRC/pcl_point_baseline.cpp" \

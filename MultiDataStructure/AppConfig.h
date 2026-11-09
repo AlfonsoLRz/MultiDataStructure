@@ -57,6 +57,7 @@ public:
 	// Memory layout dials (testing.md 2s), every mode: PointSpatialIndex::setHugePages / setPrefetchChildren.
 	bool	_poolHugePages = false;
 	bool	_prefetchChildren = false;
+	bool	_poolPageBlocked = false;	// --pool-layout paged: PointSpatialIndex::PoolLayout::PageBlocked
 	PointBenchmark::Options	_pointOptions;
 	Experiments::SchemaSearchOptions	_schemaSearchOptions;
 	// engine-check only; the rest of its options are shared with schema-search (see main.cpp).
@@ -81,6 +82,7 @@ public:
 	bool		_batchGpuIndices = true;
 	bool		_batchSortQueries = true;
 	uint32_t	_batchSelfKnn = 0;
+	bool		_batchReplayTrace = false;
 	bool		_batchNormals = false;
 	std::vector<double>	_batchGridCellFactors{ 1.0 };
 

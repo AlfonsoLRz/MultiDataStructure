@@ -232,6 +232,10 @@ static bool parseBatchCheckFlag(AppConfig& config, const std::string& arg, int& 
 	{
 		config._batchSelfKnn = static_cast<uint32_t>(std::stoul(argv[++i]));
 	}
+	else if (arg == "--replay-trace")
+	{
+		config._batchReplayTrace = true;
+	}
 	else if (arg == "--fused-normals")
 	{
 		config._batchNormals = true;
@@ -793,6 +797,13 @@ AppConfig AppConfig::parse(int argc, char* argv[])
 		{
 			config._poolHugePages = true;
 		}
+		else if (arg == "--pool-layout" && i + 1 < argc)
+		{
+			const std::string layout = argv[++i];
+			if (layout != "dfs" && layout != "paged")
+				throw std::runtime_error("--pool-layout takes dfs or paged");
+			config._poolPageBlocked = layout == "paged";
+		}
 		else if (arg == "--prefetch-children")
 		{
 			config._prefetchChildren = true;
@@ -1015,6 +1026,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --pool-huge-pages           Node pools and ordered point arrays above 4 MB on 2 MB huge pages (Linux,\n"
 		<< "                              transparent huge pages in madvise mode; a no-op elsewhere)\n"
 		<< "  --prefetch-children         CPU traversals prefetch a pushed child's child group or leaf arrays\n"
+		<< "  --pool-layout dfs|paged     Node pool order: depth-first sibling groups (default) or packed into 4 KiB pages\n"
 		<< "  --mode engine-check         Build each --schema(s) on --input and replay one fixed query set\n"
 		<< "                              (--input-trace, else a seeded generator over every query kind):\n"
 		<< "                              per-query checksums/counters and per-type latency, for engine A/B work\n"
@@ -1029,7 +1041,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --store-cache-fraction <f>  engine-check: LRU cache of leaves/pages, as a fraction of the store (default 0)\n"
 		<< "  --store-hierarchy memory|paged  engine-check: paged also reads each tested child group's page (default memory)\n"
 		<< "  --store-device <name>       engine-check: block device of the store (e.g. sdg), to report other reads on it\n"
-		<< "  --store-allow-buffered      engine-check: fall back to buffered reads where O_DIRECT is unavailable\n"
+		<< "  --store-allow-buffered      engine-check: fall back to buffered reads where direct reads (O_DIRECT, unbuffered) are unavailable\n"
 		<< "  --store-regimes <a,b,...>   engine-check: time each regime in turn on the same trees; memory, or\n"
 		<< "                              <cache fraction>:<memory|paged> (e.g. memory,0:memory,0:paged,0.01:memory)\n"
 		<< "  --mode batch-check          Throughput of whole query batches on one core, all cores and the GPU, on\n"
@@ -1043,6 +1055,7 @@ void AppConfig::printHelp(std::ostream& output)
 		<< "  --no-sort-queries           batch-check: keep the batch order on the GPU (no Morton sort)\n"
 		<< "  --cpu1-max-batch <n>        batch-check: time cpu1 only on batches up to n queries (default 100000, 0 = all)\n"
 		<< "  --self-knn <k>              batch-check: kNN at evenly spaced cloud points instead of the trace mix\n"
+		<< "  --replay-trace              batch-check: the --input-trace queries at their recorded positions, in order\n"
 		<< "  --fused-normals             batch-check: every backend also computes each kNN neighbourhood's PCA normal\n"
 		<< "  --grid-cell-factors <a,..>  batch-check: gpugrid cell sides, times the median k-th neighbour distance (default 1)\n"
 		<< "  --proxy-correlation-csv <p> Write per-(dataset,workload) Spearman correlation between the visit\n"
@@ -1111,6 +1124,7 @@ Experiments::BatchCheckOptions AppConfig::batchCheckOptions() const
 	options._gpuIndices = _batchGpuIndices;
 	options._sortQueries = _batchSortQueries;
 	options._selfKnn = _batchSelfKnn;
+	options._replayTrace = _batchReplayTrace;
 	options._normals = _batchNormals;
 	options._gridCellFactors = _batchGridCellFactors;
 	options._device = _schemaSearchOptions._cuda._device;

@@ -206,6 +206,15 @@ public:
 	// when the child is pushed, so the next level's miss overlaps the current level's work.
 	static void setPrefetchChildren(bool enabled) { _prefetchChildren = enabled; }
 	static bool prefetchChildren() { return _prefetchChildren; }
+	// Order of the node pool, read at build. DepthFirst: a node's children as one sibling group,
+	// then each child's subtree in turn. PageBlocked: sibling groups stay contiguous, but are packed
+	// into 4 KiB pages (128 hot nodes) breadth-first from a page's first group, so a query descending
+	// several levels stays in one page; subtrees too small to fill a page share one. Fan-outs above a
+	// quarter page (32) keep the depth-first order: such a group is a page access on its own.
+	enum class PoolLayout : uint8_t { DepthFirst, PageBlocked };
+	static constexpr uint32_t PoolPageSlots = 4096 / 32;
+	static void setPoolLayout(PoolLayout layout) { _poolLayout = layout; }
+	static PoolLayout poolLayout() { return _poolLayout; }
 	// Per-depth visit timing, on the instrumented (Full) path only: the timestamp-counter ticks
 	// between consecutive entered nodes are charged to the depth of the node entered first, so each
 	// level's visits can be priced. Per thread; takeDepthTiming() returns and resets the thread's
@@ -464,6 +473,11 @@ private:
 	void flattenTree();
 	void writePoolNode(Node& node, uint32_t slot);
 	void layoutChildren(Node& node, uint32_t slot);
+	// Page-blocked layout (PoolLayout::PageBlocked).
+	uint32_t placeGroup(Node& node, uint32_t slot);
+	bool wideLevel(const Node& node) const;
+	void layoutPageFrom(Node& node, uint32_t slot);
+	void padToPage();
 	void appendSubtreePoints(uint32_t slot, std::vector<size_t>& pointIndices) const;
 	std::string structureNameFor(size_t schemaDepth, MultiDataStructure::DataStructureLevel type) const;
 	std::string structureNameForNode(const Node& node) const;
@@ -520,6 +534,7 @@ private:
 	static void chargeNodeVisit();
 	inline static bool		_hugePages = false;
 	inline static bool		_prefetchChildren = false;
+	inline static PoolLayout	_poolLayout = PoolLayout::DepthFirst;
 	inline static bool		_depthTiming = false;
 	// Timestamp-counter ticks per nanosecond, calibrated once against the steady clock.
 	inline static double	_ticksPerNs = 0.0;

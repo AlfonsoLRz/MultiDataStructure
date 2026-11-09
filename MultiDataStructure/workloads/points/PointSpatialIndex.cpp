@@ -2,6 +2,8 @@
 #include "PointSpatialIndex.h"
 #include "LeafStore.h"
 
+#include <deque>
+
 #if defined(__AVX2__)
 #include <immintrin.h>
 #endif
@@ -439,7 +441,10 @@ void PointSpatialIndex::flattenTree()
 	_hot.resize(1);
 	_cold.resize(1);
 	writePoolNode(*_root, 0);
-	layoutChildren(*_root, 0);
+	if (_poolLayout == PoolLayout::PageBlocked)
+		layoutPageFrom(*_root, 0);
+	else
+		layoutChildren(*_root, 0);
 	if (_hot.size() >= static_cast<size_t>(NoSlot))
 		throw std::runtime_error("CPU point index node pool exceeds the 32-bit slot space; use a larger leaf capacity.");
 }
@@ -542,6 +547,135 @@ void PointSpatialIndex::layoutChildren(Node& node, uint32_t slot)
 		writePoolNode(*node._children[c], first + c);
 	for (uint32_t c = 0; c < count; ++c)
 		layoutChildren(*node._children[c], first + c);
+}
+
+namespace
+{
+	// Slots a subtree's descendants take in the depth-first layout (groups plus their alignment
+	// padding), counted up to `limit`: whether it fits in what is left of a page.
+	template <typename NodeT>
+	uint32_t descendantSlotsUpTo(const NodeT& node, uint32_t limit)
+	{
+		uint32_t total = 0;
+		std::vector<const NodeT*> stack{ &node };
+		while (!stack.empty() && total <= limit)
+		{
+			const NodeT* current = stack.back();
+			stack.pop_back();
+			if (current->isLeaf())
+				continue;
+			total += static_cast<uint32_t>(current->_children.size()) + 1;	// the group and at most one pad
+			for (const auto& child : current->_children)
+				stack.push_back(child.get());
+		}
+		return total;
+	}
+}
+
+// True if the level that split `node` has a nominal fan-out above a quarter page (grids of 27 or
+// 64 cells, STR with 27 or 64 children).
+bool PointSpatialIndex::wideLevel(const Node& node) const
+{
+	const std::optional<ActiveLevel> active = activeLevelForNode(node);
+	if (!active || !active->_config)
+		return node._children.size() > PoolPageSlots / 4;
+	const ResolvedLevel& level = resolvedLevelFor(*active->_config);
+	size_t fanout = 2;
+	switch (level._split)
+	{
+	case ResolvedLevel::Split::Grid: fanout = level._gridSubdivisions.x * level._gridSubdivisions.y * level._gridSubdivisions.z; break;
+	case ResolvedLevel::Split::Str: fanout = static_cast<size_t>(level._strSlabs) * level._strSlabs * level._strSlabs; break;
+	case ResolvedLevel::Split::Octree: fanout = 8; break;
+	case ResolvedLevel::Split::Quad: fanout = 4; break;
+	default: fanout = 2; break;
+	}
+	return fanout > PoolPageSlots / 4;
+}
+
+// Writes one sibling group (aligned to a cache line) and returns its first slot.
+uint32_t PointSpatialIndex::placeGroup(Node& node, uint32_t slot)
+{
+	if (_hot.size() % 2 != 0)
+	{
+		_hot.emplace_back();
+		_cold.emplace_back();
+	}
+	const uint32_t first = static_cast<uint32_t>(_hot.size());
+	const uint32_t count = static_cast<uint32_t>(node._children.size());
+	_hot.resize(_hot.size() + count);
+	_cold.resize(_cold.size() + count);
+	_hot[slot]._first = first;
+	_hot[slot]._word = InternalBit | count;
+	for (uint32_t c = 0; c < count; ++c)
+		writePoolNode(*node._children[c], first + c);
+	return first;
+}
+
+// Zero-count padding leaves up to the next page boundary (nothing points to them).
+void PointSpatialIndex::padToPage()
+{
+	const size_t used = _hot.size() % PoolPageSlots;
+	if (used == 0)
+		return;
+	_hot.resize(_hot.size() + (PoolPageSlots - used));
+	_cold.resize(_cold.size() + (PoolPageSlots - used));
+}
+
+// Page-blocked layout from `node` (already written at `slot`): its descendants start a fresh page,
+// filled breadth-first group by group while the next group fits. Every node left on the page's
+// frontier then continues below: a subtree small enough for what is left of the current page is
+// laid out there depth first, a larger one starts its own page the same way. Children always come
+// after their parent, as in the depth-first layout.
+void PointSpatialIndex::layoutPageFrom(Node& node, uint32_t slot)
+{
+	if (node.isLeaf())
+		return;
+	// A level whose nominal fan-out is a quarter page or more (a 4x4x4 grid's group is half a page,
+	// even when empty cells were dropped) is already a page access per group: packing its groups
+	// breadth-first only spreads a query over more pages (test_pool_layout: 299 against 267 on a 4x4x4
+	// grid), so such subtrees keep the depth-first order. Decided by the level, not by the node's
+	// surviving child count, so a grid is laid out one way throughout.
+	if (wideLevel(node))
+	{
+		layoutChildren(node, slot);
+		return;
+	}
+	padToPage();
+	const size_t pageEnd = _hot.size() + PoolPageSlots;
+
+	std::deque<std::pair<Node*, uint32_t>> queue{ { &node, slot } };
+	std::vector<std::pair<Node*, uint32_t>> frontier;
+	bool placed = false;
+	while (!queue.empty())
+	{
+		auto [current, currentSlot] = queue.front();
+		const size_t need = current->_children.size() + (_hot.size() % 2);
+		if (placed && (_hot.size() + need > pageEnd || wideLevel(*current)))
+			break;
+		queue.pop_front();
+		const uint32_t first = placeGroup(*current, currentSlot);
+		placed = true;
+		for (uint32_t c = 0; c < current->_children.size(); ++c)
+			if (!current->_children[c]->isLeaf())
+				queue.emplace_back(current->_children[c].get(), first + c);
+	}
+	frontier.assign(queue.begin(), queue.end());
+
+	for (auto& [child, childSlot] : frontier)
+	{
+		const uint32_t slots = descendantSlotsUpTo(*child, PoolPageSlots);
+		if (slots <= PoolPageSlots)
+		{
+			const size_t left = PoolPageSlots - (_hot.size() % PoolPageSlots);
+			if (slots > left && left != PoolPageSlots)
+				padToPage();
+			layoutChildren(*child, childSlot);
+		}
+		else
+		{
+			layoutPageFrom(*child, childSlot);
+		}
+	}
 }
 
 // Output-buffer sizing hints, one per query kind, carried across calls on the calling thread.

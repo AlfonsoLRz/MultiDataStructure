@@ -147,6 +147,35 @@ namespace BaselineTests
 				}
 			}
 
+			// Direct (unbuffered) reads answer like buffered ones. Required on Windows; on Linux a
+			// temporary directory on tmpfs refuses O_DIRECT, so there it is tried, not required.
+			{
+				LeafStore::Options options;
+				options._pagedHierarchy = true;
+				options._requireDirect = true;
+				std::unique_ptr<LeafStore> direct;
+				try
+				{
+					direct = std::make_unique<LeafStore>(path, pool, digest, options);
+				}
+				catch (const std::exception&)
+				{
+#if defined(_WIN32)
+					expect(false, schema._name + ": the store opens unbuffered on Windows");
+#endif
+				}
+				if (direct)
+				{
+					expect(direct->direct(), schema._name + ": a store opened with direct reads required reads directly");
+					index.attachStore(direct.get());
+					const StoreAnswers stored = answer(index, boxes, centers, radius);
+					expect(stored._ranges == inMemory._ranges && stored._counts == inMemory._counts && stored._radii == inMemory._radii &&
+						   stored._knn == inMemory._knn, schema._name + ": direct reads answer as in memory");
+					expect(direct->counters()._reads > 0, schema._name + ": direct reads reach the file");
+					index.attachStore(nullptr);
+				}
+			}
+
 			bool refused = false;
 			try
 			{

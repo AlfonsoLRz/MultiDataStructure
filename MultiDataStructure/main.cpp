@@ -33,8 +33,10 @@ int main(int argc, char* argv[])
 		}
 		PointSpatialIndex::setHugePages(config._poolHugePages);
 		PointSpatialIndex::setPrefetchChildren(config._prefetchChildren);
-		if (config._poolHugePages || config._prefetchChildren)
-			std::cerr << "Memory layout:" << (config._poolHugePages ? " huge pages" : "") << (config._prefetchChildren ? " child prefetch" : "") << '\n';
+		PointSpatialIndex::setPoolLayout(config._poolPageBlocked ? PointSpatialIndex::PoolLayout::PageBlocked : PointSpatialIndex::PoolLayout::DepthFirst);
+		if (config._poolHugePages || config._prefetchChildren || config._poolPageBlocked)
+			std::cerr << "Memory layout:" << (config._poolHugePages ? " huge pages" : "") << (config._prefetchChildren ? " child prefetch" : "")
+					  << (config._poolPageBlocked ? " page-blocked pool" : "") << '\n';
 
 		if (config._mode == "points")
 			return PointBenchmark::run(config._pointOptions);
