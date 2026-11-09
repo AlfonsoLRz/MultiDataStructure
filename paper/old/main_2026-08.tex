@@ -1,0 +1,100 @@
+%% Workload-Aware Synthesis of Point-Cloud Spatial Indexes
+%% Elsevier CAS double-column class (cas-dc), targeting Computers & Graphics.
+%% Sections live in sections/*.tex. This is the only copy: the single-column
+%% elsarticle draft that used to live in ../paper_elsevier was deleted on 2026-08-11
+%% after its text fell behind (git history has it if it is ever needed).
+\documentclass[a4paper,fleqn]{cas-dc}
+
+\usepackage[numbers]{natbib}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc,shapes.geometric}
+% NOTE: cas-dc loads hyperref itself; loading it again causes an option clash.
+
+% Shared visual language for the diagrams. Greys carry structure, one accent marks
+% the measured path, and a second marks the artifacts that leave the system, so the
+% four figures read as one system rather than four unrelated drawings.
+\definecolor{mdsink}{gray}{0.25}
+\definecolor{mdsline}{gray}{0.45}
+\definecolor{mdsfill}{gray}{0.94}
+\definecolor{mdsaccent}{RGB}{0,90,150}
+\definecolor{mdsaccentfill}{RGB}{224,238,247}
+\definecolor{mdsout}{RGB}{150,75,0}
+\definecolor{mdsoutfill}{RGB}{250,235,215}
+
+\tikzset{
+  mdsbox/.style={draw=mdsline, fill=mdsfill, rounded corners=1.5pt, align=center,
+                 font=\scriptsize, inner sep=3pt, minimum height=6.5mm},
+  mdsmeasured/.style={mdsbox, draw=mdsaccent, fill=mdsaccentfill},
+  mdsartifact/.style={mdsbox, draw=mdsout, fill=mdsoutfill},
+  mdsflow/.style={-{Stealth[length=4pt]}, draw=mdsline, thick},
+  mdsloop/.style={-{Stealth[length=4pt]}, draw=mdsaccent, thick, dashed},
+  mdslabel/.style={font=\tiny\itshape, text=mdsink, inner sep=1.5pt},
+}
+
+% A quantity awaiting the pending re-measurement. Every number that has to be
+% refreshed once the battery re-runs is wrapped in this, so \grep{pendingnum}
+% finds them all instead of relying on memory. Remove the macro once none remain.
+\newcommand{\pendingnum}[1]{\textbf{[#1]}}
+
+\begin{document}
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{Workload-aware synthesis of point-cloud spatial indexes}
+\shortauthors{A. L\'opez-Ruiz et~al.}
+
+\title[mode = title]{Workload-Aware Synthesis of Nested Spatial Indexes for Large Point Clouds}
+
+\author[1]{Alfonso L\'opez-Ruiz}
+\cormark[1]
+\ead{allopezr@ujaen.es}
+\credit{Conceptualization, Methodology, Software, Investigation, Writing -- original draft}
+
+\affiliation[1]{organization={University of Ja\'en},
+    % addressline={},
+    % city={Ja\'en},
+    % postcode={},
+    country={Spain}}
+
+\cortext[cor1]{Corresponding author}
+
+\begin{abstract}
+The spatial queries that dominate point-cloud practice are dense and machine generated: geometry-processing pipelines issue one neighborhood query per point per stage, and hierarchical point networks issue sampling and grouping queries at every layer of every batch, so the index is an inner loop of the application rather than a service for sparse interactive requests. This manuscript introduces a workload-aware framework that synthesizes the point-cloud spatial index for exactly these regimes. Rather than selecting a fixed quadtree, octree, kd-tree, grid, or bounding-volume hierarchy in advance, the framework treats the index as a measured design variable: it captures the query trace a real application issues, generates single, nested, and conditionally activated schemas, builds them over the target data, and selects by replaying the recorded workload, recording the provenance needed for fair comparison. Held-out evaluation across five morphologies and four orders of point count locates a decision boundary: below roughly ten million points a tuned single structure is unbeatable and the search returns one, whereas above twenty-five million the synthesized schema wins on every morphology, reaching $2.13\times$ over the strongest single structure on a 700-million-point industrial scan and $2.76\times$ over a FLANN kd-tree at one hundred million. A wrongly fixed default costs between four and thirteen times the best choice in every cell measured, which makes measured selection valuable even where composition is not. Two application regimes anchor the evaluation --- LiDAR processing pipelines, where one static index is amortized across per-point stages, and PointNet++-style dataloaders, where the index is rebuilt per block and construction cost is first-class --- together with a boundary study on ray tracing showing that, against a hyper-engineered incumbent structure, the measured search correctly converges to the incumbent.
+\end{abstract}
+
+\begin{highlights}
+\item Point-cloud indexes are inner loops of dense, machine-generated query workloads.
+\item Single, nested, and conditional index designs are searched in one replayable format.
+\item Held-out gains appear above 25M points on every morphology; below 10M a single structure wins.
+\item $2.13\times$ over the best single structure at 700M points; $2.76\times$ over a FLANN kd-tree at 100M.
+\item A wrongly fixed default index costs $4$--$13\times$ the best choice on every cloud measured.
+\end{highlights}
+
+\begin{keywords}
+point clouds \sep spatial indexes \sep workload-aware optimization \sep nested data structures \sep instance-optimized indexing \sep LiDAR
+\end{keywords}
+
+\maketitle
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methodology}
+\input{sections/applications}
+\input{sections/evaluation}
+\input{sections/discussion}
+
+\section*{Acknowledgements}
+To be completed.
+
+\section*{Declaration of Competing Interest}
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\bibliographystyle{model1-num-names}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,69 @@
+% Figure 2: the schema grammar (left) and the pool every schema compiles into (right).
+\begin{figure*}[tb]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[x=1mm, y=1mm, font=\scriptsize]
+  % ------------------------------------------------------------ left: three schemas
+  \node[mdslabel, anchor=west] at (-2, 22) {(a) schemas: blocks of (primitive, split rule, levels) and one leaf capacity};
+  % single
+  \node[mdslabel] at (10, 16) {single};
+  \node[mdsbox, minimum width=30mm, minimum height=12mm] (s1) at (10, 6) {kd-tree\\sliding midpoint\\48 levels};
+  \node[mdsbox, minimum width=30mm, fill=white] (sl) at (10, -6) {leaf 128};
+  \draw[mdsflow] (s1) -- (sl);
+  \node[mdslabel, anchor=west] at (26, 6) {\schema{kd48l128sm}};
+  % nested
+  \node[mdslabel] at (58, 16) {nested};
+  \node[mdsbox, minimum width=30mm] (n1) at (58, 9) {quadtree, $xy$\\6 levels};
+  \node[mdsbox, minimum width=30mm, minimum height=9mm] (n2) at (58, -1) {kd-tree\\sliding midpoint, 48 levels};
+  \node[mdsbox, minimum width=30mm, fill=white] (nl) at (58, -10) {leaf 128};
+  \draw[mdsflow] (n1) -- (n2);
+  \draw[mdsflow] (n2) -- (nl);
+  \node[mdslabel, anchor=west] at (74, 9) {\schema{qt6\_kd48l128sm}};
+  % wide top
+  \node[mdslabel] at (108, 16) {wide top};
+  \node[mdsbox, minimum width=30mm] (w1) at (108, 9) {STR, 64 children\\1 level};
+  \node[mdsbox, minimum width=30mm, minimum height=9mm] (w2) at (108, -1) {octree, points' centre\\24 levels};
+  \node[mdsbox, minimum width=30mm, fill=white] (wl) at (108, -10) {leaf 512};
+  \draw[mdsflow] (w1) -- (w2);
+  \draw[mdsflow] (w2) -- (wl);
+  \node[mdslabel, anchor=west] at (124, 9) {\schema{str64\_ot24l512tc}};
+  \node[mdslabel, anchor=west, text width=150mm] at (-2, -18)
+    {the node at depth $d$ is split by the block whose levels cover $d$; the last block is open-ended (48 or 24 levels, more than any cloud needs); one leaf capacity per schema};
+
+  % ------------------------------------------------------------ right: the pool
+  \begin{scope}[shift={(0, -40)}]
+    \node[mdslabel, anchor=west] at (-2, 13) {(b) one pool for every schema: 32-byte hot nodes in 64-byte sibling groups, depth first; cold data apart; points in tree order};
+    \node[mdslabel, anchor=west] at (-2, 8.5) {hot node: tight box (6 floats) $\cdot$ first child or first point $\cdot$ count $|$ internal flag};
+    % hot node lines
+    \foreach \i in {0,...,9} {
+      \draw[mdsline, fill=mdsfill] (\i*14, 0) rectangle ++(13, 5);
+      \draw[mdsline] (\i*14+6.5, 0) -- ++(0, 5);
+    }
+    % root group (slot 0 pads, slot 1 root) and three sibling groups
+    \draw[mdsaccent, thick] (0, -0.8) rectangle ++(13, 6.6);
+    \node[mdslabel, text=mdsaccent] at (6.5, -3) {root};
+    \draw[mdsaccent, thick] (14, -0.8) rectangle ++(27, 6.6);
+    \node[mdslabel, text=mdsaccent] at (27.5, -3) {the root's children (4)};
+    \draw[mdsaccent, thick] (42, -0.8) rectangle ++(13, 6.6);
+    \node[mdslabel, text=mdsaccent] at (48.5, -6) {children of child 1};
+    \draw[mdsaccent, thick] (56, -0.8) rectangle ++(13, 6.6);
+    \node[mdslabel, text=mdsaccent] at (62.5, -3) {its subtree, depth first};
+    \node[mdslabel, anchor=west] at (72, -3) {\ldots then the subtree of child 2, and so on};
+    % cold array
+    \node[mdslabel, anchor=west] at (-2, -10.5) {cold node (never read by a query): split cell, subtree extent, depth, block};
+    \foreach \i in {0,...,9} {
+      \draw[mdsline, fill=white] (\i*14, -16) rectangle ++(13, 3.2);
+    }
+    % point arrays
+    \foreach \j/\lab in {0/$x$, 1/$y$, 2/$z$, 3/id} {
+      \draw[mdsline, fill=white] (0, -22-\j*3.6) rectangle ++(139, 2.8);
+      \node[mdslabel, anchor=east] at (-0.5, -20.6-\j*3.6) {\lab};
+      \draw[mdsout, fill=mdsoutfill] (42, -22-\j*3.6) rectangle ++(27, 2.8);
+    }
+    \node[mdslabel, anchor=west, text=mdsout] at (70, -36.5) {the points of one subtree are one contiguous run of every array: a leaf scan streams};
+  \end{scope}
+\end{tikzpicture}%
+}
+\caption{(a) The schema grammar. A schema is a sequence of blocks, each a primitive with a split rule and a number of levels, and one leaf capacity; a single structure is a schema with one block. (b) Every schema compiles into the same pool: 32-byte hot nodes holding the tight box and the child or point range, two per cache line, children contiguous as a sibling group that starts on a line boundary, subtrees laid out depth first; the data a query never reads lives in a parallel cold array; the points are reordered into tree order as separate coordinate arrays, so every subtree is a contiguous run. Composition changes the split rule at some depths and nothing else.}
+\label{fig:grammar}
+\end{figure*}

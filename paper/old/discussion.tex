@@ -1,0 +1,182 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{What the search is actually buying}
+\label{sec:disc-mechanism}
+
+The ablation of Section~\ref{sec:eval-ablation} is the most useful negative result in this
+work: budget-matched uniform sampling of the schema grammar matched or exceeded the
+evolutionary search on the held-out half of every cell. Read carelessly, that says the
+optimizer does not work. Read correctly, it locates the contribution precisely. The gain
+comes from two things, and neither of them is the search heuristic. The first is the
+\emph{grammar}: a space that contains single, nested, and conditional designs at all
+parameterizations, so that the best available answer is inside it. The second is
+\emph{measured selection on the real query stream}, which is what distinguishes a good
+answer from a plausible one. Any procedure that samples the grammar densely enough and
+measures honestly will find comparable schemas.
+
+This matters for adoption more than a better optimizer would. A practitioner does not have
+to implement an evolutionary loop, tune its mutation rates, or trust its convergence. They
+have to enumerate a design space and measure candidates against a captured trace. The
+evolutionary machinery in our implementation is retained because it is cheap and
+occasionally converges sooner, not because the results depend on it.
+
+The corollary is a limit on how far the present results generalize. We can claim that
+composing indexes under a measured objective beats a fixed default. We cannot claim that
+our particular traversal of the design space is efficient, and we do not.
+
+\subsection{Why the winners look the way they do}
+\label{sec:disc-locality}
+
+The schemas the search selects share a bias toward shallow, wide structures, and the reason
+is an implementation property rather than a geometric one. Regressing measured latency on
+the structural counters separates the two cost terms in a traversal: a visited node costs
+roughly \pendingnum{$50$--$130$~ns} in our CPU implementation, against roughly
+\pendingnum{$1$--$3$~ns} for a tested point. The per-point figure is what a float distance
+test should cost. The per-node figure is far above a bounds check, and it is dominated by
+memory: nodes are individually allocated, a large kd-tree spans tens of megabytes, and
+visiting a few dozen scattered nodes in it is a few dozen cache misses.
+
+An index whose nodes were contiguous and cache-resident would shift that ratio, and with
+it the optimum. Designs that touch more nodes to test fewer points would become cheaper
+relative to designs that do the opposite, and the search would move toward them. Our
+conclusions about \emph{which} schema wins are therefore conditional on a traversal whose
+node visits are expensive. The conclusion that \emph{measurement should decide} is not: a
+different implementation changes the answer, which is precisely the argument for searching
+per instance rather than legislating a default.
+
+We treat this openly as the largest optimization opportunity left in the system, and as a
+caution against reading our selected schemas as statements about spatial data structures in
+general. They are statements about spatial data structures as implemented here, measured
+under the workload given.
+
+\subsection{Where schema search does not pay}
+\label{sec:disc-failure}
+
+Three regimes emerged in which the honest output of the search is not a nested design.
+
+\paragraph{Small clouds.} Below roughly ten million points a tuned single primitive wins.
+The index fits in cache, the traversal is short, and the extra indirection of a second level
+costs more than the pruning it buys. The search returns the single primitive, which is the
+behavior we asked of it in Section~\ref{sec:introduction}, but it means the method has no
+value at that scale beyond confirming the default.
+
+\paragraph{A hyper-engineered incumbent.} The triangle-mesh boundary study
+(Section~\ref{sec:eval-boundary}) is the sharpest case. Against a SAH-built compressed wide
+BVH on a real scanned model, every wrapper and every nested schema loses, and the optimizer
+converges to the incumbent. Decades of engineering effort concentrated on one structure for
+one query type is not something a generic composition search should be expected to beat.
+The synthetic axis-aligned scene, where a searched grid nearly doubles throughput, shows the
+other side of the same coin: the search wins where no such incumbent exists. Mixed,
+dense point workloads are that setting; primary-ray traversal of triangle meshes is not.
+
+\paragraph{Parity cells.} In cells where several designs are within measurement noise, the
+selected winner varies between repeated searches. We report winner families rather than
+exact schemas there. A practitioner in such a cell gains nothing from tuning, and the
+useful output of the search is the negative finding itself: any of these designs will do.
+
+\subsection{GPU support is a coverage gap, not a speed result}
+\label{sec:disc-gpu}
+
+The CUDA path exists to expose backend-specific limitations rather than to claim a device
+speedup, and the honest summary is that its coverage is partial. Not every primitive in the
+grammar has a CUDA builder, so a nested schema can be partially supported; the framework
+records support status per row and refuses to rank across backends, because a schema that
+silently fell back to a CPU level would otherwise look like a fast GPU schema. Device memory
+is the harder limit. Positions alone consume 12~bytes per point, so a
+billion-point cloud fills most of a 16~GB device before any nodes exist, and the GPU arm of
+our evaluation is capped well below the top of the scale ladder.
+
+Nothing here says GPU indexing is a dead end. It says that a fair CPU-versus-GPU comparison
+is a different paper, needing device-resident query streams and a memory budget the present
+protocol does not model, and that mixing the two backends in one ranking would produce a
+number that means nothing.
+
+\subsection{Per-instance tuning versus a general selector}
+\label{sec:disc-transfer}
+
+The economics of this method depend on amortization. A search costs far more than a single
+query, and is worth running only because the workloads we target issue millions to billions
+of them against a stable distribution. Two results bound how far one search can be spread.
+
+Transfer across clouds of the same morphology is \emph{safe but not optimal}: the
+cross-cloud experiment of Section~\ref{sec:eval-transfer} places a transferred schema
+within a few percent of that cloud's own best, while a wrongly fixed default costs
+multiples. Reusing a same-morphology schema is therefore a reasonable default and re-tuning
+recovers the remainder. Transfer across scale behaves similarly: rankings obtained on a
+small subsample of a cloud largely survive at full scale, which is what makes searching at
+low fidelity and confirming at high fidelity affordable.
+
+Both results point toward a learned selector that predicts a schema from cloud and workload
+features rather than searching per instance, and the framework already exports its
+measurements in the form such a selector would need. We stop short of that claim here. The
+evidence supports interpolation within a morphology and within a scale ladder; it does not
+support a general predictor, and the honest statement of the boundary is that per-instance
+measurement remains the fallback whenever the target is outside the range where transfer
+has been demonstrated.
+
+\subsection{Limitations}
+\label{sec:disc-limitations}
+
+Beyond the threats to validity in Section~\ref{sec:eval-threats}, four limitations bear on
+how these results should be used.
+
+\emph{Static indexes.} The framework builds an index over a fixed point set. Insertion,
+deletion, and streaming updates are outside the schema space, so nothing here speaks to
+workloads where the cloud changes under the index. Update cost is one of the classical axes
+of spatial-index design, and its absence narrows the design space we search.
+
+\emph{Coordinate precision.} Positions are stored as single-precision offsets from a
+per-cloud origin. Over a scene tens of kilometres across this leaves a floor of a few
+millimetres, which is immaterial for surveys at centimetre density but becomes a real
+fraction of the point spacing for a merged scene that spans kilometres while holding
+centimetre-resolution detail. Where a scene approaches that regime we report the floor
+alongside the measurement rather than assuming exactness, and exactness checks against
+double-precision baselines are interpreted against it.
+
+\emph{Trace provenance.} The pipeline traces are derived from the geometry of the stages
+rather than instrumented inside a third-party library. For the self-query stages this is
+exact by construction --- the stage queries every point, and the trace is every point --- but
+the neighborhood radii are set from a measured mean point spacing, so the trace encodes our
+estimate of the scale at which each stage operates rather than a specific library's
+parameter choice.
+
+\emph{Dataset licensing.} Two of the mobile-mapping scenes are distributed under
+non-commercial licences, one of them additionally prohibiting derivative distribution. We
+report measurements and figures for them, and the derived multi-scale tiers for that scene
+cannot be redistributed with the rest of the benchmark. Reproduction there requires
+rebuilding the tiers from the original download.
+
+\section{Conclusions}
+\label{sec:conclusions}
+
+We have treated point-cloud index selection as a physical-design problem and shown that it
+can be answered by measurement rather than by convention. Given a cloud and a captured query
+trace, a search over a grammar of single, nested, and conditional index schemas selects a
+replayable design that outperforms both the best tuned single primitive and hand-designed
+nested baselines on held-out queries, on scans of every morphology we tested, once the cloud
+is large enough for traversal cost to matter.
+
+Three findings seem to us more durable than any individual speedup. First, the cost of
+choosing wrongly is larger than the cost of choosing well is small: a fixed default index
+carried onto the wrong cloud costs multiples of the best available choice, which is the
+practical argument for measuring at all. Second, the benefit comes from the design space
+combined with honest measurement, not from the optimizer that traverses it --- uniform
+sampling does as well as evolutionary search, which makes the method far easier to adopt
+than to invent. Third, a measured search is trustworthy exactly because it is willing to
+return a negative result: against a hyper-engineered incumbent it converges to that
+incumbent, and on small clouds it returns a single primitive.
+
+The workloads that motivate this are the ones where the index is an inner loop rather than a
+convenience: per-point geometry-processing stages, and the neighborhood queries inside
+hierarchical point networks. In both, the query distribution is known before the work
+starts and is issued a very large number of times, so a one-off search is amortized to
+nothing. That regime is common, growing, and poorly served by a fixed default.
+
+The clearest next step follows from Section~\ref{sec:disc-locality}. Node visits in our
+traversal are dominated by cache misses, and the selected schemas reflect that. Making node
+storage contiguous would not merely make the system faster; it would change which designs
+win, and re-running the same search over the same clouds would then measure how much of the
+present design space is an artifact of memory layout rather than of geometry. That
+experiment is the natural sequel, and the framework is built to answer it by measurement
+rather than by argument.

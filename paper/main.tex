@@ -1,22 +1,28 @@
-%% Workload-Aware Synthesis of Point-Cloud Spatial Indexes
-%% Elsevier CAS double-column class (cas-dc), targeting Computers & Graphics.
-%% Sections live in sections/*.tex. This is the only copy: the single-column
-%% elsarticle draft that used to live in ../paper_elsevier was deleted on 2026-08-11
-%% after its text fell behind (git history has it if it is ever needed).
+%% Paper A: what matters in spatial indexing of large point clouds.
+%% Elsevier CAS double-column class (cas-dc), for Computers & Graphics.
+%% Sections live in sections/*.tex; every number in the results comes from the macros in
+%% generated/numbers.tex, written by scripts/paper/macros.py from results/eval_traces. Tables are
+%% generated/tab_*.tex and figures are figures/fig_*.pdf, from scripts/paper/tables.py and figures.py.
+%% The previous manuscript (2026-08, opposite thesis, pre-rewrite numbers) is kept under old/.
 \documentclass[a4paper,fleqn]{cas-dc}
 
 \usepackage[numbers]{natbib}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{enumitem}
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc,shapes.geometric}
-% NOTE: cas-dc loads hyperref itself; loading it again causes an option clash.
+\usepackage{placeins}  % \FloatBarrier keeps the results' figures inside the results
+% NOTE: cas-dc loads hyperref and graphicx itself; loading them again causes an option clash.
 
-% Shared visual language for the diagrams. Greys carry structure, one accent marks
-% the measured path, and a second marks the artifacts that leave the system, so the
-% four figures read as one system rather than four unrelated drawings.
+% Double-anonymized review: \anonymoustrue removes the authors, affiliations, acknowledgements and
+% funding, and the text refers to the earlier nested-structures paper in the third person throughout.
+\newif\ifanonymous
+\anonymoustrue
+
+% Diagram palette shared with the generated figures (scripts/paper/figures.py uses the same values).
 \definecolor{mdsink}{gray}{0.25}
 \definecolor{mdsline}{gray}{0.45}
 \definecolor{mdsfill}{gray}{0.94}
@@ -24,77 +30,108 @@
 \definecolor{mdsaccentfill}{RGB}{224,238,247}
 \definecolor{mdsout}{RGB}{150,75,0}
 \definecolor{mdsoutfill}{RGB}{250,235,215}
-
 \tikzset{
   mdsbox/.style={draw=mdsline, fill=mdsfill, rounded corners=1.5pt, align=center,
                  font=\scriptsize, inner sep=3pt, minimum height=6.5mm},
   mdsmeasured/.style={mdsbox, draw=mdsaccent, fill=mdsaccentfill},
   mdsartifact/.style={mdsbox, draw=mdsout, fill=mdsoutfill},
   mdsflow/.style={-{Stealth[length=4pt]}, draw=mdsline, thick},
-  mdsloop/.style={-{Stealth[length=4pt]}, draw=mdsaccent, thick, dashed},
   mdslabel/.style={font=\tiny\itshape, text=mdsink, inner sep=1.5pt},
 }
 
-% A quantity awaiting the pending re-measurement. Every number that has to be
-% refreshed once the battery re-runs is wrapped in this, so \grep{pendingnum}
-% finds them all instead of relying on memory. Remove the macro once none remain.
-\newcommand{\pendingnum}[1]{\textbf{[#1]}}
+% Measured quantities. generated/numbers.tex defines one macro per number; a missing macro must
+% fail the build rather than print a stale value, so there is no fallback definition here.
+\InputIfFileExists{generated/numbers}{}{\typeout{generated/numbers.tex missing: run scripts/paper/macros.py}}
+
+% Schema names in the compact notation of Section 3.2 (kd48l128sm, qt6_kd48l128sm, ...).
+\newcommand{\schema}[1]{\texttt{#1}}
+\newcommand{\us}{\,\textmu s}
+
+% Float placement: the paper has many table* and figure* floats; without these the figures queue up
+% behind the tables and land after the references.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\dbltopfraction}{0.9}
+\renewcommand{\bottomfraction}{0.6}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.75}
+\renewcommand{\dblfloatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
 
 \begin{document}
 \let\WriteBookmarks\relax
 \def\floatpagepagefraction{1}
 \def\textpagefraction{.001}
 
-\shorttitle{Workload-aware synthesis of point-cloud spatial indexes}
-\shortauthors{A. L\'opez-Ruiz et~al.}
+\shorttitle{What matters in spatial indexing of large point clouds}
+\ifanonymous
+  \shortauthors{Anonymous}
+\else
+  \shortauthors{L\'opez-Ruiz et~al.}
+\fi
 
-\title[mode = title]{Workload-Aware Synthesis of Nested Spatial Indexes for Large Point Clouds}
+\title[mode = title]{What matters in spatial indexing of large point clouds: primitive, leaf and layout, not composition}
 
-\author[1]{Alfonso L\'opez-Ruiz}
-\cormark[1]
-\ead{allopezr@ujaen.es}
-\credit{Conceptualization, Methodology, Software, Investigation, Writing -- original draft}
-
-\affiliation[1]{organization={University of Ja\'en},
-    % addressline={},
-    % city={Ja\'en},
-    % postcode={},
-    country={Spain}}
-
-\cortext[cor1]{Corresponding author}
+\ifanonymous
+  \author[1]{Anonymous authors}
+  \affiliation[1]{organization={Anonymized for review}}
+\else
+  \author[1]{Alfonso L\'opez-Ruiz}
+  \cormark[1]
+  \ead{allopezr@ujaen.es}
+  \credit{Conceptualization, Methodology, Software, Investigation, Writing -- original draft}
+  \affiliation[1]{organization={University of Ja\'en}, country={Spain}}
+  \cortext[cor1]{Corresponding author}
+\fi
 
 \begin{abstract}
-The spatial queries that dominate point-cloud practice are dense and machine generated: geometry-processing pipelines issue one neighborhood query per point per stage, and hierarchical point networks issue sampling and grouping queries at every layer of every batch, so the index is an inner loop of the application rather than a service for sparse interactive requests. This manuscript introduces a workload-aware framework that synthesizes the point-cloud spatial index for exactly these regimes. Rather than selecting a fixed quadtree, octree, kd-tree, grid, or bounding-volume hierarchy in advance, the framework treats the index as a measured design variable: it captures the query trace a real application issues, generates single, nested, and conditionally activated schemas, builds them over the target data, and selects by replaying the recorded workload, recording the provenance needed for fair comparison. Held-out evaluation across five morphologies and four orders of point count locates a decision boundary: below roughly ten million points a tuned single structure is unbeatable and the search returns one, whereas above twenty-five million the synthesized schema wins on every morphology, reaching $2.13\times$ over the strongest single structure on a 700-million-point industrial scan and $2.76\times$ over a FLANN kd-tree at one hundred million. A wrongly fixed default costs between four and thirteen times the best choice in every cell measured, which makes measured selection valuable even where composition is not. Two application regimes anchor the evaluation --- LiDAR processing pipelines, where one static index is amortized across per-point stages, and PointNet++-style dataloaders, where the index is rebuilt per block and construction cost is first-class --- together with a boundary study on ray tracing showing that, against a hyper-engineered incumbent structure, the measured search correctly converges to the incumbent.
+Point-cloud pipelines issue one neighbourhood query per point per stage, so the spatial index is their inner loop, and several hybrid indexes that nest primitives have been reported to beat single structures. We ask where query speed comes from when every candidate is built by one engine into one memory layout, tuned under the same budget, and measured on held-out query traces of real pipeline stages. On 73 cells of 17 scenes from one million to one billion points, choosing the primitive and tuning its leaf account for the whole gain over library defaults (1.66 times over an octree, 1.53 over a median kd-tree), while composition adds nothing: the best nested schema is 1.011 times the best single, was never selected, and the result holds on seven workloads, on the GPU, under emulated node costs and with the leaves out of core. Composition pays only when the hierarchy itself is paged from a slow device (4 of 25 cells), the regime of the result it revisits, and pinning the hierarchy, a few tens of megabytes, is several times faster. A single split on a scene's flatness picks the primitive within 4 to 8 percent of a per-cloud search; nanoflann's default already ties the tuned pick from one million to one billion points, while four other libraries are 1.6 to 2.6 times slower by implementation. The mechanism is that a node visit costs 35 ns near the root and 350 ns at a leaf, so the visits a wide prefix saves are the cheap ones and node counts do not predict time; two-megabyte pages speed every structure by 4 to 9 percent and move the optimal leaf, so a leaf recommendation carries its page size. The instrument, traces and scripts are released.
 \end{abstract}
 
 \begin{highlights}
-\item Point-cloud indexes are inner loops of dense, machine-generated query workloads.
-\item Single, nested, and conditional index designs are searched in one replayable format.
-\item Held-out gains appear above 25M points on every morphology; below 10M a single structure wins.
-\item $2.13\times$ over the best single structure at 700M points; $2.76\times$ over a FLANN kd-tree at 100M.
-\item A wrongly fixed default index costs $4$--$13\times$ the best choice on every cloud measured.
+\item Composition of index primitives does not pay once the hierarchy is in RAM
+\item Primitive and leaf give 1.5--1.7x over library defaults; one feature picks them
+\item A node visit costs 35--350 ns by depth, so visit counts do not predict time
+\item Huge pages speed every structure 4--9\%; the best leaf depends on the page size
+\item nanoflann's default ties the tuned pick from 1M to 1B points
 \end{highlights}
 
 \begin{keywords}
-point clouds \sep spatial indexes \sep workload-aware optimization \sep nested data structures \sep instance-optimized indexing \sep LiDAR
+point clouds \sep spatial indexes \sep kd-tree \sep octree \sep nested data structures \sep LiDAR \sep performance evaluation
 \end{keywords}
 
 \maketitle
 
 \input{sections/introduction}
 \input{sections/related_work}
-\input{sections/methodology}
-\input{sections/applications}
-\input{sections/evaluation}
+\input{sections/instrument}
+\input{sections/setup}
+\section{Results}\label{sec:results}
+\input{sections/results_levers}
+\input{sections/results_composition}
+\FloatBarrier
+\input{sections/results_ooc}
+\input{sections/results_rule}
+\input{sections/results_libraries}
+\input{sections/results_mechanism}
+\FloatBarrier
 \input{sections/discussion}
+\input{sections/conclusions}
 
+\ifanonymous\else
 \section*{Acknowledgements}
-To be completed.
+To be completed (funding, data providers).
+\fi
 
 \section*{Declaration of Competing Interest}
 The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
 
+\section*{Data availability}
+The query traces, cell configurations, schema files, selection results and the scripts that produce every table and figure are released with the code. The point clouds are available from their providers (Table~\ref{tab:scenes}); the derived tiers of the Toronto-3D and Paris-Lille-3D scenes are not redistributed under their licences.
+
 \bibliographystyle{model1-num-names}
-\bibliography{references}
+\bibliography{references,references_added}
 
 \end{document}

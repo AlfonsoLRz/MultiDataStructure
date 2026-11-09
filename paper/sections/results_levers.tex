@@ -1,0 +1,32 @@
+\subsection{Where the speed comes from}\label{sec:levers}
+
+Figure~\ref{fig:levers} and Table~\ref{tab:levers} decompose, cell by cell, the gain between what a user gets from a library default and what the search finds. Four schemas are compared on the held-out half of every cell: the engine's octree default (16 levels, leaf 32), the best primitive type at default parameters (the fastest of the engine's nine defaults, all at leaf 32 with their default split rule), the best single structure of any leaf, depth and split rule, and the best nested finalist. Every ratio is between schemas measured in the same cell under the same protocol.
+
+\begin{figure}[tb]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_levers}
+\caption{The lever ladder. For each of the \nCells{} held-out cells, the latency of the library octree default, of the best primitive at default parameters and of the best nested finalist, relative to the cell's best single structure (thin lines); the thick lines are the geometric means per scan group. Choosing the primitive and tuning its leaf and split rule account for the whole gain; composition adds nothing.}
+\label{fig:levers}
+\end{figure}
+
+\begin{table*}[t]
+\centering\footnotesize
+\caption{The lever chain on the held-out half, geometric means of per-cell latency ratios (above 1: the second schema is faster). \emph{def.}: the engine's octree or median kd-tree default at leaf 32; \emph{primitive}: the fastest of the nine defaults; \emph{tuned}: the best single of any leaf, depth and split rule; \emph{nested}: the best nested finalist against the best single. Cells up to 50M were measured on the workstation and from 100M on the server, interleaved; no ratio crosses machines.}
+\label{tab:levers}
+\input{generated/tab_levers}
+\end{table*}
+
+Over all \nCells{} cells the octree default is \leverOctreeDefaultTuned$\times$ slower than the best single and the median-split kd-tree default \leverKdDefaultTuned$\times$. Of that gap, choosing the primitive type closes a factor of \leverOctreeDefaultPrimitive{} from the octree and \leverKdDefaultPrimitive{} from the kd-tree, and tuning the leaf capacity, the depth and the split rule of that primitive closes a further \leverPrimitiveTuned$\times$. Composition then contributes nothing: the best nested finalist is \nestedSingleAll$\times$ the best single, a loss of about one percent, with a range that straddles one (Section~\ref{sec:composition}).
+
+The two levers trade places between scan groups, and the table says why a single default cannot serve all of them. On the aerial surveys the primitive is the lever: a quadtree beats the octree and kd-tree defaults by half again, because a 2.5-dimensional scene gains nothing from splitting height, and once the quadtree is chosen there is little left to tune. On the ground scans the primitive lever is small, because a kd-tree at leaf 32 is already close to the octree, and the tuning lever is large: what the ground scans want is the sliding-midpoint split, deep trees and leaves of 64 to 128 points, none of which a default provides. The forest scans sit between, with the kd-tree already the right primitive and a smaller tuning gain. In every group the sum of the two levers is a factor between 1.5 and 1.8, and in every group the composition lever is a factor of one.
+
+The same decomposition holds at every size. The default gap does not grow with the cloud: it is as large at one million points as at one billion, which is the first sign that what the defaults miss is not scale but the fit of the primitive and the leaf to the scene. The 250M, 500M and 1B cells reuse the schema selected at 250M on the same scene and lose nothing by it, so a schema chosen on a quarter of the points transfers to the whole cloud.
+
+\paragraph{The headline panel at 100M, timed sequentially.} The ratios above come from the interleaved protocol, which Section~\ref{sec:protocol} found to slow memory-bound trees by up to a fifth and to move a ratio between two schemas by up to fifteen percent when they sit in different process groups. Table~\ref{tab:panel} therefore re-times, on the \nPanelCells{} cells of 100 million points, the two library defaults, the rule's pick, the selected schema, its best nested finalist and, where Section~\ref{sec:ooc} has one, the out-of-core stage-B winner, under the sequential protocol and in both page modes. The picture holds. The octree default is \panelOctreeDefaultBase$\times$ the selected schema and the kd-tree default \panelKdDefaultBase$\times$; the rule's pick is \panelRuleBase$\times$, within a few percent in every cell; the selected schema is \panelPickOracleBase$\times$ the fastest single of the panel; and the nested finalist is \panelNestedSingleBase$\times$ the best single, at most \panelNestedSingleBaseMax{} in any cell and never 3\% ahead. The out-of-core winners, nested schemas with leaves of two to four thousand points, are \panelStageBBase$\times$ slower in memory, which is the price the leaf of Section~\ref{sec:ooc} pays when the device is gone. On huge pages every ratio moves by a point or two in the same direction, because the schemas with more and smaller leaves gain more (Section~\ref{sec:mechanism}).
+
+\begin{table*}[t]
+\centering\footnotesize
+\caption{The headline panel at 100 million points under the sequential protocol, geometric mean (range, cells) of per-cell ratios, on 4\,KiB pages and on 2\,MB pages. \emph{pick}: the schema selected by the search; \emph{rule}: the pick of the flatness rule; \emph{stage B winner}: the out-of-core winners of Section~\ref{sec:ooc} (three cells); the last rows are each schema on huge pages over itself on 4\,KiB pages.}
+\label{tab:panel}
+\input{generated/tab_panel}
+\end{table*}

@@ -65,8 +65,12 @@ def prepare(args):
         pick_file = next((Path(d, f"{cell}_pick.json") for d in args.e9 if Path(d, f"{cell}_pick.json").exists()), None)
         if pick_file is None:
             raise SystemExit(f"no e9 pick for {cell}")
-        pick = json.loads(pick_file.read_text())["pick"].replace("\\", "/").split("/")[-1]
+        pick_info = json.loads(pick_file.read_text())
+        pick = pick_info["pick"].replace("\\", "/").split("/")[-1]
         local = pick_file.parent / "best_schemas" / f"{cell}_ga" / pick
+        if not local.exists() and pick_info.get("donor"):
+            # transfer cells (250M-1B) reuse the donor cell's pick
+            local = pick_file.parent / "best_schemas" / f"{pick_info['donor']}_ga" / pick
         if local.exists():
             chosen = json.loads(local.read_text())
             chosen["name"] = "e9pick_" + chosen["name"].replace("generated_", "").replace("ap=", "")
@@ -88,6 +92,7 @@ def run(args):
         out.mkdir(parents=True, exist_ok=True)
         cloud = remap_cloud(cell["mdspc_path"], args.data_root)
         trace = f"{remap_trace_dir(cell['trace_dir'], name, args.trace_root)}/pipeline_trace_test.csv"
+        queries = str(args.queries or cell["queries"])
         ours = [str(REPO / path) for path in DEFAULTS] + sorted(str(p.resolve()) for p in Path(args.schemas, name).glob("*.json"))
         print(f"\n### {name} [{time.strftime('%H:%M:%S')}]: {len(ours)} schemas of ours, {', '.join(TOOLS)}", flush=True)
         processes = [p for p in ["mds"] + TOOLS if not args.only or p in args.only.split(",")]
@@ -97,13 +102,13 @@ def run(args):
                 summary = out / f"{tool}_r{k}.csv"
                 summary.unlink(missing_ok=True)
                 if tool == "mds":
-                    argv = [args.exe, "--mode", "engine-check", "--input", cloud, "--input-trace", trace, "--queries", str(cell["queries"]),
+                    argv = [args.exe, "--mode", "engine-check", "--input", cloud, "--input-trace", trace, "--queries", queries,
                             "--schemas", ";".join(ours), "--warmup", "1", "--measure-repeats", str(args.repeats),
                             "--summary-csv", str(summary), "--no-pause"] + (["--interleave"] if args.mds_interleave else [])
                     if k == 0:
                         argv += ["--query-csv", str(out / "mds_queries.csv")]
                 else:
-                    argv = [str(tools / f"{tool}_point_baseline"), "--input", cloud, "--query-trace", trace, "--max-queries", str(cell["queries"]),
+                    argv = [str(tools / f"{tool}_point_baseline"), "--input", cloud, "--query-trace", trace, "--max-queries", queries,
                             "--warmup", "1", "--repeats", str(args.repeats), "--summary-csv", str(summary)]
                     if k == 0:
                         queries_csv = out / f"{tool}_queries.csv"
@@ -135,6 +140,7 @@ def main():
     r.add_argument("--trace-root", default="")
     r.add_argument("--out", required=True)
     r.add_argument("--rounds", type=int, default=3)
+    r.add_argument("--queries", type=int, default=0, help="override the cell's query budget (the 1B transfer cells have 300)")
     r.add_argument("--repeats", type=int, default=10)
     r.add_argument("--cpu", type=int, default=-1)
     r.add_argument("--numa-node", type=int, default=-1)

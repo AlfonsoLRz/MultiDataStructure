@@ -1,0 +1,5 @@
+# latexmk configuration for the manuscript: `latexmk` in this directory builds main.pdf.
+$pdf_mode = 1;
+$bibtex_use = 2;
+@default_files = ('main.tex');
+$pdflatex = 'pdflatex -interaction=nonstopmode -halt-on-error -synctex=1 %O %S';

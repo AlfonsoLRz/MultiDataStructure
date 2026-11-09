@@ -11,3 +11,9 @@
 *.spl
 main.pdf
 main.abs
+
+# the old nested repository, renamed on 2026-11-08 pending its removal
+.git_nested_old/
+
+# reference build of the previous manuscript, kept on disk only
+old/*.pdf

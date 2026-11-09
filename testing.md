@@ -1531,6 +1531,97 @@ be huge-paged.
 
 
 
+### 2t. 2026-11-09 — the 1B anchor: nanoflann ties the pick at a billion points too
+
+**Question.** 2r stopped at 100M. Does the nanoflann parity (1.02 at its default, 0.95 at its best leaf, 1M-100M)
+hold at 1B, where the pool and the point arrays are ten times larger?
+
+**Setup.** makinon2, socket 0 core 2, memory node 0; `build_paper` = a2aa759 (tests pass). `external_baselines.py run`
+with the new `--queries 1000` (the 1B transfer budget is 300) and the donor fallback in `prepare` (the 1B picks live
+in the 250M cells' `best_schemas`). Cells: `sanandreas_1B`, `waikato_hamilton_1B`, `galiciaforest_1B` (12 GB clouds,
+traces on the server). Processes: ours (defaults, kd48l128sm, qt16l128tc, the e9 pick: kd48l64sm, qt16l64, qt24l128tc)
+and nanoflann 2.0.1 at leaf 10, 16, 32, 64, 128, 256; 2r's sequential protocol (warm-up 1, 10 timed passes, 3 rounds
+with the process order rotated, median over rounds). Per cell-round ours took 17-18 min (the 1B builds) and nanoflann
+19-20 min. Results: `results/eval_traces/external_1B_makinon2`; the paper reads them through `scripts/paper/tables.py`
+(`ANCHOR_FOLDERS`) and `macros.py`.
+
+| cell | e9 pick | nanoflann default / pick (all, radius, kNN) | best leaf / pick | ours octree / kd default | rule / pick |
+|---|---|---|---|---|---|
+| GaliciaForest 1B | kd48l64sm | 0.91, 1.08, 0.72 | 0.87 (leaf 32) | 1.76 / 1.18 | 0.99 (kd48l128sm) |
+| SanAndreas 1B | qt16l64 | 1.01, 1.14, 0.88 | 1.00 (leaf 16) | 1.72 / 1.48 | 1.05 (kd48l128sm, flatness 0.53) |
+| Waikato 1B | qt24l128tc | 1.10, 1.37, 0.87 | 1.08 (leaf 16) | 1.73 / 2.49 | qt16l128tc (flatness 0.64) |
+| geomean | | 1.005, 1.19, 0.82 | 0.98 | 1.74 / 1.63 | 1.02 |
+
+- **The tie holds at 1B.** nanoflann's default is 1.005x the pick over the mix (0.91-1.10), its best leaf 0.98x; it
+  stays ahead on kNN (0.82) and behind on radius (1.19), the split of 2r. Per scene the drift of 2r continued: the
+  forest scan moved towards nanoflann (0.91), the two aerial ones, where the pick is a quadtree, towards us
+  (1.01, 1.10). Nothing suggests either engine pulls away with size.
+- The defaults' gap is the same as below 1B (1.74 and 1.63), and the rule's pick is within 1.02 of the search's.
+- Checks: counts identical everywhere; id sets differ on 1.2-1.4% of GaliciaForest's kNN queries (distance ties),
+  none elsewhere. `external_report.py` reports the 1B rule pick as kd48l128sm for Waikato because the transfer cells
+  have no `_singles.csv` with a flatness score; the paper's tables fall back to the scene's 100M score (0.64 -> qt).
+
+**Verdict.** The 1M-100M parity with nanoflann is a 1M-1B parity. Paper A's library section can carry the 1B anchor.
+
+### 2u. 2026-11-09 — the headline panel timed sequentially, and the leaf lever on both page sizes
+
+**Question.** Every headline ratio so far (e9, 2p) was timed interleaved, which 2r/2s found to cost memory-bound
+trees up to a fifth and to move schema-against-schema ratios by up to 15% (2s's null pair). And every leaf was chosen
+on 4 KiB pages, where 2s found that 2 MB pages favour small leaves. Two sequential batteries on the nine 100M cells
+settle both for the paper: `scripts/leaf_pages.py --mode panel` and `--mode leaf`.
+
+**Setup.** makinon2 socket 1 core 20 node 1 (the 1B anchor ran on socket 0 at the same time), `build_paper`.
+engine-check sequential (no `--interleave`: each schema built, warmed up and timed before the next; 2r found this
+within 1.00-1.04 of timing a schema alone), warm-up 1, 10 timed passes, 1000 queries, 3 rounds with the schema order
+rotated, arms `base` and `--pool-huge-pages` rotated across rounds, median over rounds. Panel per cell: the two library
+defaults, kd48l128sm and qt16l128tc (the rule's picks), the e9 pick, e9's best nested finalist (shipped from the local
+`generated_schemas`), and 2q's stage B winners on Lille and DomFountain. Leaf sweep per cell: kd48l{16..1024}sm and
+qt24l{16..1024}tc (seven leaves each) plus the defaults. Results: `results/eval_traces/leaf_pages_makinon2/{panel,leaf}`;
+readers `scripts/paper/leaf_lever.py` (`tab_panel`, `tab_panel_cells`, `tab_leaf_lever`).
+
+**Panel** (geomean over 9 cells, range; 4 KiB pages / 2 MB pages):
+
+| ratio | 4 KiB | 2 MB |
+|---|---|---|
+| octree default / pick | 1.723 (1.31-2.20) | 1.755 |
+| kd default / pick | 1.464 (1.14-2.36) | 1.511 |
+| rule / pick | 1.009 (1.00-1.04) | 1.041 (1.01-1.08) |
+| pick / best single of the panel | 1.002 | 1.000 |
+| best nested / best single | 1.021 (1.00-1.05) | 1.032 (0.99-1.11) |
+| 2q stage B winner / pick (3) | 2.43 (2.17-2.79) | 2.51 |
+| huge / base, singles (45 rows) | | 0.958 (0.92-1.01) |
+| huge / base, nested (12) | | 0.957 (0.92-0.99) |
+
+- **The e9 picture holds under the clean protocol**: defaults 1.46-1.72x, the rule within 1% of the search's pick,
+  nested 2% behind the best single and never 3% ahead (max 1.05). DomFountain's nested finalist, 1.119x in 2s's
+  interleaved groups, is 0.996x here: 2s's schema-against-schema ratios carried the co-residence noise it diagnosed.
+- **Huge pages alone are worth 4% at 100M**, not the 8.5% of 2s: the interleaved ratios included the TLB pressure of
+  the co-resident indexes, which 2 MB pages also remove. 0.92-1.01 per schema; the many-node picks gain most
+  (SanAndreas qt24l32 0.934, Alhambra kd48l64sm 0.916), hg12 and the 4096-leaf stage B winner least.
+- Under 2 MB pages the rule's leaf-128 pick and the nested finalists lose a further 3 and 1 points against the
+  pick: smaller leaves gain more from huge pages, the leaf sweep below says by how much.
+
+**Leaf lever** (nine 100M cells; `tab_leaf_lever`):
+
+| primitive, pages | best leaf (cells) | leaf 32 / best | leaf 128 / best | worst / best |
+|---|---|---|---|---|
+| kd48 sm, 4 KiB | 16 (1), 64 (4), 128 (4) | 1.076 (1.02-1.18) | 1.013 (1.00-1.04) | 1.56 (1.40-1.77) |
+| kd48 sm, 2 MB | 16 (3), 32 (2), 64 (1), 128 (3) | 1.040 (1.00-1.14) | 1.036 (1.00-1.10) | 1.58 |
+| qt24 tc, 4 KiB | 64 (2), 128 (2), 256 (3), 512 (2) | 1.315 (1.03-1.86) | 1.037 (1.00-1.14) | 1.69 (1.41-2.50) |
+| qt24 tc, 2 MB | 64 (1), 128 (3), 256 (3), 512 (2) | 1.297 | 1.037 | 1.69 |
+
+- **The kd-tree's optimum moves down on 2 MB pages**: in 4 of 18 (cell, primitive) pairs the best leaf is smaller
+  on huge pages, all but one of them kd-trees (16 or 32 points in five cells against 64-128 in eight of nine on 4 KiB);
+  the small-leaf penalty halves (1.076 -> 1.040) and leaf 128's grows (1.013 -> 1.036). The rule's 64-128 stays within
+  4% of the best on either page size. The quadtree wants 128-512 on the aerial scenes and its leaf 128 is within 1.04.
+- The worst leaf of the sweep (1024, or 16 for the quadtree) costs 1.4-2.5x: the leaf is a lever of the primitive's
+  order, and the paper states the page size next to every leaf it recommends.
+
+**Verdict.** Three things for Paper A: the headline table at 100M can rest on the sequential protocol with the same
+conclusions; the huge-page gain of a lone index at 100M is about 4% (the 2s 8.5% includes co-residence pressure); the
+leaf optimum is page-size dependent, which the paper states as a caveat on every leaf it names. Caveats: nine cells of
+one size on one server; three rounds; sequential in one process with the earlier indexes resident but idle.
+
 ## 3. Pending experiments (exact commands)
 
 > **SUPERSEDED for the result-bearing cells by `scripts/run_experiment_battery_v2.ps1`**
