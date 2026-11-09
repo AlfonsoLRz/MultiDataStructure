@@ -15,6 +15,7 @@ if str(HERE) not in sys.path:
 
 from common import GROUP_ORDER, Macros, finite, geomean  # noqa: E402
 import e9 as e9mod  # noqa: E402
+import labels  # noqa: E402
 import ooc  # noqa: E402
 import tables  # noqa: E402
 
@@ -172,7 +173,7 @@ def main():
     if example:
         octree, oracle = example["rows"].get("octree_default"), example["rows"][example["oracle"]]
         if octree:
-            m.add("exampleOracleName", example["oracle"].replace("tuned_", "").replace("_", "\\_"), "rule_fit: DomFountain 25M oracle_opt")
+            m.add("exampleOracleName", labels.tex(labels.label(example["oracle"])), "rule_fit: DomFountain 25M oracle_opt")
             for label, row in (("Octree", octree), ("Oracle", oracle)):
                 m.add(f"example{label}Visits", round(float(row["avg_visited_nodes"]), 1), "e9 opt half, DomFountain 25M, instrumented", 1)
                 m.add(f"example{label}Points", round(float(row["avg_tested_points"])), "e9 opt half, DomFountain 25M", 0)

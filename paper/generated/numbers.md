@@ -98,7 +98,7 @@
 | `\nestedBuildRatio` | 0.941 | e9 held-out cells (matrix_e9, matrix_e9_makinon2), summarize_nesting/lever_decomposition: build time of the best nested finalist / best single (held-out structure run) |
 | `\nestedNodesRatio` | 0.915 | e9 held-out cells (matrix_e9, matrix_e9_makinon2), summarize_nesting/lever_decomposition: nodes of the best nested finalist / best single |
 | `\oracleRepeatCvPct` | 7.7 | rule_fit: median repeat CV of the oracle_opt rows |
-| `\exampleOracleName` | kd48l128sm | rule_fit: DomFountain 25M oracle_opt |
+| `\exampleOracleName` | kd-tree (sliding midpoint), leaf 128 | rule_fit: DomFountain 25M oracle_opt |
 | `\exampleOctreeVisits` | 37.9 | e9 opt half, DomFountain 25M, instrumented |
 | `\exampleOctreePoints` | 215 | e9 opt half, DomFountain 25M |
 | `\exampleOctreeUs` | 3.31 | e9 opt half, DomFountain 25M |

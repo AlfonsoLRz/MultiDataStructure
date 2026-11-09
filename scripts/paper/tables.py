@@ -409,6 +409,7 @@ def tab_layout():
     path = table.write()
     try:
         import leaf_lever
+        leaf_lever.tab_panel()
         leaf_lever.tab_leaf_lever()
     except (ImportError, FileNotFoundError) as error:
         print(f"  leaf lever table skipped: {error}")

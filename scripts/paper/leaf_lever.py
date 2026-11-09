@@ -14,6 +14,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from common import RESULTS, Table, cells_config, fmt, fmt_range, geomean, group_of, read_csv  # noqa: E402
+import labels  # noqa: E402
 
 ROOT = RESULTS / "leaf_pages_makinon2"
 ARMS = ("base", "huge")
@@ -115,7 +116,7 @@ def tab_panel():
         pick = b[c["pick"]]["us"]
         best_single = min(v["us"] for n, v in b.items() if is_single(n))
         huge = c["arms"].get("huge", {})
-        detail.add(c["cell"].replace("_", "\\_"), c["pick"].replace("e9pick_", "").replace("_", "\\_"),
+        detail.add(labels.tex(labels.cell(c["cell"])), labels.tex(labels.label(c["pick"])),
                    f"{b[c['nested']]['us']:.2f}" if c["nested"] else "--", f"{b['octree_default']['us']:.2f}", f"{b['kdtree_default']['us']:.2f}",
                    f"{b[c['rule']]['us']:.2f}", fmt(b[c["nested"]]["us"] / best_single) if c["nested"] else "--",
                    fmt(huge[c["pick"]]["us"] / pick) if c["pick"] in huge else "--")

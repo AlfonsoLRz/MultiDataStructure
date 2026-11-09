@@ -4,13 +4,12 @@
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[x=1mm, y=1mm, font=\scriptsize]
   % ------------------------------------------------------------ left: three schemas
-  \node[mdslabel, anchor=west] at (-2, 22) {(a) schemas: blocks of (primitive, split rule, levels) and one leaf capacity};
+  \node[mdslabel, anchor=west] at (-2, 22) {(a) variants: blocks of (primitive, split rule, levels) and one leaf capacity};
   % single
   \node[mdslabel] at (10, 16) {single};
   \node[mdsbox, minimum width=30mm, minimum height=12mm] (s1) at (10, 6) {kd-tree\\sliding midpoint\\48 levels};
   \node[mdsbox, minimum width=30mm, fill=white] (sl) at (10, -6) {leaf 128};
   \draw[mdsflow] (s1) -- (sl);
-  \node[mdslabel, anchor=west] at (26, 6) {\schema{kd48l128sm}};
   % nested
   \node[mdslabel] at (58, 16) {nested};
   \node[mdsbox, minimum width=30mm] (n1) at (58, 9) {quadtree, $xy$\\6 levels};
@@ -18,7 +17,6 @@
   \node[mdsbox, minimum width=30mm, fill=white] (nl) at (58, -10) {leaf 128};
   \draw[mdsflow] (n1) -- (n2);
   \draw[mdsflow] (n2) -- (nl);
-  \node[mdslabel, anchor=west] at (74, 9) {\schema{qt6\_kd48l128sm}};
   % wide top
   \node[mdslabel] at (108, 16) {wide top};
   \node[mdsbox, minimum width=30mm] (w1) at (108, 9) {STR, 64 children\\1 level};
@@ -26,13 +24,12 @@
   \node[mdsbox, minimum width=30mm, fill=white] (wl) at (108, -10) {leaf 512};
   \draw[mdsflow] (w1) -- (w2);
   \draw[mdsflow] (w2) -- (wl);
-  \node[mdslabel, anchor=west] at (124, 9) {\schema{str64\_ot24l512tc}};
   \node[mdslabel, anchor=west, text width=150mm] at (-2, -18)
     {the node at depth $d$ is split by the block whose levels cover $d$; the last block is open-ended (48 or 24 levels, more than any cloud needs); one leaf capacity per schema};
 
   % ------------------------------------------------------------ right: the pool
   \begin{scope}[shift={(0, -40)}]
-    \node[mdslabel, anchor=west] at (-2, 13) {(b) one pool for every schema: 32-byte hot nodes in 64-byte sibling groups, depth first; cold data apart; points in tree order};
+    \node[mdslabel, anchor=west] at (-2, 13) {(b) one pool for every variant: 32-byte hot nodes in 64-byte sibling groups (depth-first order shown); cold data apart; points in tree order};
     \node[mdslabel, anchor=west] at (-2, 8.5) {hot node: tight box (6 floats) $\cdot$ first child or first point $\cdot$ count $|$ internal flag};
     % hot node lines
     \foreach \i in {0,...,9} {
@@ -64,6 +61,6 @@
   \end{scope}
 \end{tikzpicture}%
 }
-\caption{(a) The schema grammar. A schema is a sequence of blocks, each a primitive with a split rule and a number of levels, and one leaf capacity; a single structure is a schema with one block. (b) Every schema compiles into the same pool: 32-byte hot nodes holding the tight box and the child or point range, two per cache line, children contiguous as a sibling group that starts on a line boundary, subtrees laid out depth first; the data a query never reads lives in a parallel cold array; the points are reordered into tree order as separate coordinate arrays, so every subtree is a contiguous run. Composition changes the split rule at some depths and nothing else.}
+\caption{(a) Single and nested variants. A variant is a sequence of blocks, each a primitive with a split rule and a number of levels, and one leaf capacity; a single structure is a variant with one block. (b) Every variant compiles into the same pool: 32-byte hot nodes holding the tight box and the child or point range, two per cache line, children contiguous as a sibling group that starts on a line boundary, subtrees laid out depth first (the page-blocked order packs the groups of several levels into each 4\,KiB page instead); the data a query never reads lives in a parallel cold array; the points are reordered into tree order as separate coordinate arrays, so every subtree is a contiguous run. Composition changes the split rule at some depths and nothing else.}
 \label{fig:grammar}
 \end{figure*}

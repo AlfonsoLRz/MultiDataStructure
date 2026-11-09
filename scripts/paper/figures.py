@@ -30,6 +30,7 @@ if str(HERE) not in sys.path:
 
 from common import E9_DIRS, FIGURES, GROUP_ORDER, GROUP_SHORT, REPO, cell_scene, cell_size, geomean, size_points  # noqa: E402
 import e9 as e9mod  # noqa: E402
+import labels  # noqa: E402
 import tables  # noqa: E402
 
 COLORS = {"ground": "#2a78d6", "aerial": "#eb6834", "forest": "#199e70", "other": "#898781"}
@@ -204,10 +205,10 @@ def fig_depth(png_dir):
         top, bottom = axes[0, col], axes[1, col]
         depths = range(len(p["visits_by_depth"]))
         top.bar(depths, p["visits_by_depth"], width=0.8, color=COLORS["ground"] if "kd" in pick else COLORS["aerial"], zorder=3,
-                label=f"{pick} (pick)")
+                label=f"{labels.short(pick)} (selected)")
         if n:
             top.step([d - 0.5 for d in range(len(n["visits_by_depth"]) + 1)], n["visits_by_depth"] + [0], where="post", color=INK,
-                     linewidth=0.9, zorder=4, label=f"{nested} (nested)")
+                     linewidth=0.9, zorder=4, label=f"{labels.short(nested)} (nested)")
         top.set_title(title)
         top.set_ylim(0, 1.15 * max(p["visits_by_depth"] + (n["visits_by_depth"] if n else [])))
         ns = [v if visits > 0.005 else float("nan") for v, visits in zip(p["ns_by_depth"], p["visits_by_depth"])]
