@@ -65,14 +65,14 @@
 \def\floatpagepagefraction{1}
 \def\textpagefraction{.001}
 
-\shorttitle{What matters in spatial indexing of large point clouds}
+\shorttitle{Spatial indexes for large point clouds from RAM to disk}
 \ifanonymous
   \shortauthors{Anonymous}
 \else
   \shortauthors{L\'opez-Ruiz et~al.}
 \fi
 
-\title[mode = title]{What matters in spatial indexing of large point clouds: primitive, leaf and layout, not composition}
+\title[mode = title]{Spatial indexes for large point clouds from RAM to disk: primitive, leaf and memory layout}
 
 \ifanonymous
   \author[1]{Anonymous authors}
@@ -87,19 +87,20 @@
 \fi
 
 \begin{abstract}
-Point-cloud pipelines issue one neighbourhood query per point per stage, so the spatial index is their inner loop, and several hybrid indexes that nest primitives have been reported to beat single structures. We ask where query speed comes from when every candidate is built by one engine into one memory layout, tuned under the same budget, and measured on held-out query traces of real pipeline stages. On 73 cells of 17 scenes from one million to one billion points, choosing the primitive and tuning its leaf account for the whole gain over library defaults (1.66 times over an octree, 1.53 over a median kd-tree), while composition adds nothing: the best nested schema is 1.011 times the best single, was never selected, and the result holds on seven workloads, on the GPU, under emulated node costs and with the leaves out of core. Composition pays only when the hierarchy itself is paged from a slow device (4 of 25 cells), the regime of the result it revisits, and pinning the hierarchy, a few tens of megabytes, is several times faster. A single split on a scene's flatness picks the primitive within 4 to 8 percent of a per-cloud search; nanoflann's default already ties the tuned pick from one million to one billion points, while four other libraries are 1.6 to 2.6 times slower by implementation. The mechanism is that a node visit costs 35 ns near the root and 350 ns at a leaf, so the visits a wide prefix saves are the cheap ones and node counts do not predict time; two-megabyte pages speed every structure by 4 to 9 percent and move the optimal leaf, so a leaf recommendation carries its page size. The instrument, traces and scripts are released.
+% DRAFT: the out-of-core and multi-threaded sentences are completed when batteries 2v-2x are in.
+Point-cloud pipelines issue one neighbourhood query per point per stage, so the spatial index is their inner loop, and the cloud may sit in memory, on a solid-state drive or on a hard disk. We ask what sets query time across that hierarchy when every candidate index is built by one engine, tuned under the same budget and measured on held-out query traces of real pipeline stages. On 73 clouds of 17 scenes from one million to one billion points, choosing the primitive and tuning its leaf account for the whole gain over library defaults (1.66 times over an octree, 1.53 over a median kd-tree), and a single split on a scene's flatness picks the primitive within 4 to 8 percent of a per-cloud search. nanoflann's default already ties the tuned structure from one million to one billion points, while four other libraries are 1.6 to 2.6 times slower by implementation. In memory, a node visit costs 35 ns near the root and 350 ns at a leaf, so node counts do not predict time; two-megabyte pages speed every structure by 4 to 9 percent and move the best leaf, so a leaf recommendation carries its page size. Out of core, on four measured devices, the primitive transfers and the leaf follows the device, from 64 to 128 points in memory to thousands on a drive, and keeping the hierarchy in memory is several times faster than paging it. Composing primitives into nested hierarchies, tested as one more option, never improved on a tuned single structure with the hierarchy in memory. The engine, traces and scripts are released.
 \end{abstract}
 
 \begin{highlights}
-\item Composition of index primitives does not pay once the hierarchy is in RAM
 \item Primitive and leaf give 1.5--1.7x over library defaults; one feature picks them
+\item nanoflann's default ties the tuned structure from 1M to 1B points
 \item A node visit costs 35--350 ns by depth, so visit counts do not predict time
 \item Huge pages speed every structure 4--9\%; the best leaf depends on the page size
-\item nanoflann's default ties the tuned pick from 1M to 1B points
+\item Out of core the leaf follows the device; keep the hierarchy in memory
 \end{highlights}
 
 \begin{keywords}
-point clouds \sep spatial indexes \sep kd-tree \sep octree \sep nested data structures \sep LiDAR \sep performance evaluation
+point clouds \sep spatial indexes \sep kd-tree \sep out-of-core \sep memory hierarchy \sep LiDAR \sep performance evaluation
 \end{keywords}
 
 \maketitle
@@ -110,15 +111,19 @@ point clouds \sep spatial indexes \sep kd-tree \sep octree \sep nested data stru
 \input{sections/setup}
 \section{Results}\label{sec:results}
 \input{sections/results_levers}
-\input{sections/results_composition}
-\FloatBarrier
-\input{sections/results_ooc}
 \input{sections/results_rule}
+\FloatBarrier
 \input{sections/results_libraries}
 \input{sections/results_mechanism}
 \FloatBarrier
+\input{sections/results_ooc}
+\FloatBarrier
 \input{sections/discussion}
 \input{sections/conclusions}
+
+\appendix
+\input{sections/appendix_composition}
+\FloatBarrier
 
 \ifanonymous\else
 \section*{Acknowledgements}

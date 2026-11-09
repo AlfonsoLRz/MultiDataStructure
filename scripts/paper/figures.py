@@ -50,9 +50,11 @@ plt.rcParams.update({
 })
 
 
-def group_legend(ax, groups=GROUP_ORDER, loc="upper right", **kw):
-    handles = [Line2D([], [], marker="o", color=COLORS[g], linestyle="", markersize=4, label=g) for g in groups]
-    ax.legend(handles=handles, loc=loc, handletextpad=0.3, **kw)
+def group_legend(ax, groups=GROUP_ORDER, extra=(), **kw):
+    """Scan-group legend in one row just above the axes (below the title), never over the data."""
+    handles = [Line2D([], [], marker="o", color=COLORS[g], linestyle="", markersize=4, label=g) for g in groups] + list(extra)
+    kw = dict(dict(loc="lower left", bbox_to_anchor=(0, 1.0), ncol=len(handles), columnspacing=1.0, borderaxespad=0.2), **kw)
+    ax.legend(handles=handles, handletextpad=0.3, **kw)
 
 
 def log_ratio_axis(ax, lo, hi, ticks):
@@ -76,34 +78,37 @@ def save(fig, name, png_dir):
 
 # ---------------------------------------------------------------- Fig. 1 levers
 def fig_levers(cells, png_dir):
-    stages = ["library\ndefault", "best\nprimitive", "tuned\nsingle", "best\nnested"]
+    stages = ["library default\n(octree, leaf 32)", "best primitive\n(default parameters)", "tuned single\n(any leaf, split, depth)"]
     fig, ax = plt.subplots(figsize=(SINGLE, 2.6))
     per_group = {g: [] for g in GROUP_ORDER}
     for c in cells:
         h = c.get("held")
-        if not h or not all(math.isfinite(v) for v in (h["ot_best"], h["l1_l2"], c["nested_single"])):
+        if not h or not all(math.isfinite(v) for v in (h["ot_best"], h["l1_l2"])):
             continue
-        y = [h["ot_best"], h["l1_l2"], 1.0, c["nested_single"]]
-        ax.plot(range(4), y, color=COLORS[c["group"]], alpha=0.25, linewidth=0.6, zorder=2)
+        y = [h["ot_best"], h["l1_l2"], 1.0]
+        ax.plot(range(3), y, color=COLORS[c["group"]], alpha=0.25, linewidth=0.6, zorder=2)
         per_group.setdefault(c["group"], []).append(y)
     for g in GROUP_ORDER:
         ys = per_group.get(g)
         if not ys:
             continue
-        gm = [geomean([y[i] for y in ys]) for i in range(4)]
-        ax.plot(range(4), gm, color=COLORS[g], linewidth=2, marker="o", markersize=4.5, markeredgecolor="white", markeredgewidth=1, zorder=4,
+        gm = [geomean([y[i] for y in ys]) for i in range(3)]
+        ax.plot(range(3), gm, color=COLORS[g], linewidth=2, marker="o", markersize=4.5, markeredgecolor="white", markeredgewidth=1, zorder=4,
                 label=f"{g} ({len(ys)})")
     ax.axhline(1.0, color=MUTED, linewidth=0.6, zorder=1)
-    log_ratio_axis(ax, 0.8, 3.2, [0.8, 1, 1.25, 1.5, 2, 3])
-    ax.set_xticks(range(4))
+    log_ratio_axis(ax, 0.9, 3.2, [1, 1.25, 1.5, 2, 3])
+    ax.set_xticks(range(3))
     ax.set_xticklabels(stages)
-    ax.set_xlim(-0.25, 3.25)
+    ax.set_xlim(-0.3, 2.3)
     ax.set_ylabel("latency / tuned single")
     ax.grid(axis="x", visible=False)
-    ax.legend(loc="upper right", title="scan group (cells)", title_fontsize=6.5)
-    ax.text(0, 0.84, "octree, leaf 32", ha="center", fontsize=5.8, color="#52514e")
-    ax.text(1, 0.84, "default parameters", ha="center", fontsize=5.8, color="#52514e")
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.01), ncol=3, columnspacing=1.0, handlelength=1.6, borderaxespad=0,
+              title="scan group (cells)", title_fontsize=6.5, alignment="left")
     return save(fig, "fig_levers", png_dir)
+
+
+WORKLOAD_NAMES = {"base": "pipeline trace", "radius4": "radius x4", "radius16": "radius x16", "knn64": "k = 64",
+                  "range8": "range boxes", "count64": "count boxes", "mixed": "mixed"}
 
 
 # ---------------------------------------------------------------- Fig. 3 composition
@@ -122,13 +127,13 @@ def fig_composition(cells, png_dir):
     log_ratio_axis(ax, 0.85, 1.2, [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.2])
     ax.set_xlabel("points")
     ax.set_ylabel("best nested / best single")
-    ax.set_title("(a) in memory, held-out, interleaved")
-    group_legend(ax, loc="upper left", ncol=3, columnspacing=0.8)
-    ax.text(0.99, 0.97, "shaded: within 3%", transform=ax.transAxes, ha="right", va="top", fontsize=6, color="#52514e")
+    ax.set_title("(a) in memory, held-out half", pad=14)
+    group_legend(ax)
+    ax.text(0.99, 0.03, "shaded: within 3%", transform=ax.transAxes, ha="right", va="bottom", fontsize=6, color="#52514e")
 
     strips = []
     for workload, values in tables.workload_stats().items():
-        strips.append((f"workload {workload}", values))
+        strips.append((WORKLOAD_NAMES.get(workload, workload), values))
     gpu = tables.gpu_stats()
     strips += [("GPU, end to end", gpu["total"]), ("GPU, kernel only", gpu["kernel"])]
     for cost, (ratios, adopted, n) in tables.node_cost_stats().items():
@@ -148,7 +153,7 @@ def fig_composition(cells, png_dir):
     bx.minorticks_off()
     bx.set_xlim(0.55, 1.6)
     bx.set_xlabel("best nested / best single")
-    bx.set_title("(b) other workloads, the GPU, emulated node costs")
+    bx.set_title("(b) other workloads, GPU, emulated node costs", pad=14)
     bx.grid(axis="y", visible=False)
     bx.tick_params(axis="y", length=0)
     return save(fig, "fig_composition", png_dir)
@@ -163,7 +168,7 @@ def fig_rule(png_dir):
     rows = rule_fit.per_cell_table(cells, reg, names, L, X)
     kind = lambda schema: "kd-tree" if schema.startswith("tuned_kd") else "quadtree" if schema.startswith("tuned_qt") else "other"
     markers = {"kd-tree": "o", "quadtree": "s", "other": "^"}
-    fig, (ax, bx) = plt.subplots(2, 1, figsize=(SINGLE, 3.5), sharex=True, gridspec_kw=dict(height_ratios=[1, 2.2], hspace=0.3))
+    fig, (ax, bx) = plt.subplots(2, 1, figsize=(SINGLE, 3.6), sharex=True, gridspec_kw=dict(height_ratios=[1, 2.2], hspace=0.35))
     for r in rows:
         k = kind(r["oracle_opt"])
         colour = COLORS[GROUP_SHORT.get(r["group"], "other")]  # rule_fit keeps summarize_nesting's long group names
@@ -175,42 +180,42 @@ def fig_rule(png_dir):
         a.axvline(0.60, color=MUTED, linewidth=0.8, zorder=1)
     ax.set_yticks([0, 1, 2])
     ax.set_yticklabels(["other", "quadtree", "kd-tree"])
+    ax.set_xlim(0.2, 0.95)
     ax.set_ylim(-0.5, 2.5)
-    ax.set_title("(a) fastest single per cell (opt half)")
+    ax.set_title("(a) primitive of the fastest single per cell", pad=12, fontsize=7)
     ax.grid(axis="x", visible=False)
     ax.tick_params(axis="y", length=0)
     log_ratio_axis(bx, 0.95, 3.2, [1, 1.25, 1.5, 2, 3])
     bx.set_xlabel("flatness score")
     bx.set_ylabel("latency / fastest single")
-    bx.set_title("(b) regret of the one-split rule (colour) and of the octree default (gray)")
-    ax.text(0.595, 2.35, "rule: kd-tree", fontsize=6, color="#52514e", ha="right")
-    ax.text(0.605, 2.35, "quadtree", fontsize=6, color="#52514e", ha="left")
-    group_legend(bx, loc="upper left", ncol=3, columnspacing=0.8)
+    bx.set_title("(b) regret of the rule (colour) and of the octree default (gray)", pad=4, fontsize=7)
+    ax.text(0.59, 1.02, "rule: kd-tree", transform=ax.get_xaxis_transform(), fontsize=6, color="#52514e", ha="right", va="bottom")
+    ax.text(0.61, 1.02, "quadtree", transform=ax.get_xaxis_transform(), fontsize=6, color="#52514e", ha="left", va="bottom")
+    # One legend below the x label: colour = scan group, shape = primitive of the fastest single.
+    handles = [Line2D([], [], marker="o", color=COLORS[g], linestyle="", markersize=4, label=g) for g in GROUP_ORDER]
+    handles += [Line2D([], [], marker=m, color=GRAY, linestyle="", markersize=3.5, label=k) for k, m in markers.items()]
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.55, 0.0), ncol=3, columnspacing=1.2, handletextpad=0.3)
     return save(fig, "fig_rule", png_dir)
 
 
 # ---------------------------------------------------------------- Fig. 5 depth
-DEPTH_CELLS = [("domfountain_100M", "kd48l128sm", "ot2_kd48l128sm", "DomFountain 100M (TLS)"),
-               ("lille_100M", "kd48l64sm", "ot2_kd48l128sm", "Lille 100M (MLS)"),
-               ("sanandreas_100M", "qt24l32", "qt9_ot24l32", "SanAndreas 100M (ALS)")]
+DEPTH_CELLS = [("domfountain_100M", "kd48l128sm", "DomFountain, 100M (terrestrial)"),
+               ("lille_100M", "kd48l64sm", "Lille, 100M (mobile)"),
+               ("sanandreas_100M", "qt24l32", "SanAndreas, 100M (aerial)")]
 
 
 def fig_depth(png_dir):
     _, depth = tables.layout_stats()
-    fig, axes = plt.subplots(2, 3, figsize=(DOUBLE, 3.0), sharex="col", gridspec_kw=dict(hspace=0.1, wspace=0.28))
-    for col, (cell, pick, nested, title) in enumerate(DEPTH_CELLS):
-        p, n = depth.get((cell, pick)), depth.get((cell, nested))
+    fig, axes = plt.subplots(2, 3, figsize=(DOUBLE, 3.1), sharex="col", gridspec_kw=dict(hspace=0.12, wspace=0.3))
+    for col, (cell, pick, title) in enumerate(DEPTH_CELLS):
+        p = depth.get((cell, pick))
         if not p:
             continue
         top, bottom = axes[0, col], axes[1, col]
         depths = range(len(p["visits_by_depth"]))
-        top.bar(depths, p["visits_by_depth"], width=0.8, color=COLORS["ground"] if "kd" in pick else COLORS["aerial"], zorder=3,
-                label=f"{labels.short(pick)} (selected)")
-        if n:
-            top.step([d - 0.5 for d in range(len(n["visits_by_depth"]) + 1)], n["visits_by_depth"] + [0], where="post", color=INK,
-                     linewidth=0.9, zorder=4, label=f"{labels.short(nested)} (nested)")
-        top.set_title(title)
-        top.set_ylim(0, 1.15 * max(p["visits_by_depth"] + (n["visits_by_depth"] if n else [])))
+        top.bar(depths, p["visits_by_depth"], width=0.8, color=COLORS["ground"] if "kd" in pick else COLORS["aerial"], zorder=3)
+        top.set_title(f"{title}\n{labels.short(pick)}", fontsize=7)
+        top.set_ylim(0, 1.15 * max(p["visits_by_depth"]))
         ns = [v if visits > 0.005 else float("nan") for v, visits in zip(p["ns_by_depth"], p["visits_by_depth"])]
         bottom.plot(depths, ns, color=INK, marker="o", markersize=2.5, linewidth=1)
         bottom.set_yscale("log")
@@ -224,8 +229,7 @@ def fig_depth(png_dir):
         if col == 0:
             top.set_ylabel("visits per query")
             bottom.set_ylabel("ns per visit")
-        top.legend(loc="upper right", fontsize=5.8)
-    axes[1, 0].text(0.03, 0.95, "shaded: depths 0-7", transform=axes[1, 0].transAxes, fontsize=6, color="#52514e", va="top")
+    axes[1, 0].text(0.97, 0.05, "shaded: depths 0-7", transform=axes[1, 0].transAxes, fontsize=6, color="#52514e", va="bottom", ha="right")
     return save(fig, "fig_depth", png_dir)
 
 
@@ -244,10 +248,10 @@ def fig_scale(cells, png_dir):
         g = group_of_scene.get(scene, "other")
         ax.plot([x for x, _ in pts], [r for _, r in pts], color=COLORS[g], linewidth=0.9, alpha=0.8, marker="o", markersize=3.5,
                 markeredgecolor="white", markeredgewidth=0.5, zorder=3)
-        ends.append([scene.replace("_", " "), pts[-1][0], math.log10(pts[-1][1]), math.log10(pts[-1][1])])
+        ends.append([labels.scene(scene), pts[-1][0], math.log10(pts[-1][1]), math.log10(pts[-1][1])])
     # Spread the end labels so that none overlaps: at least 0.022 decades apart, nudged from the middle out.
     ends.sort(key=lambda e: e[2])
-    gap = 0.022
+    gap = 0.036
     for _ in range(50):
         moved = False
         for a, b in zip(ends, ends[1:]):
@@ -259,19 +263,19 @@ def fig_scale(cells, png_dir):
         if not moved:
             break
     for name, x, y, y_label in ends:
-        ax.annotate(name, (x, 10 ** y), xytext=(x * 1.12, 10 ** y_label), fontsize=5.5, color="#52514e", va="center",
-                    arrowprops=dict(arrowstyle="-", color=GRID, linewidth=0.5) if abs(y_label - y) > 0.004 else None)
+        ax.annotate(name, (x, 10 ** y), xytext=(1.9e9, 10 ** y_label), fontsize=5.5, color="#52514e", va="center",
+                    arrowprops=dict(arrowstyle="-", color=GRID, linewidth=0.5) )
     ax.axhline(1.0, color=MUTED, linewidth=0.6, zorder=1)
     ax.set_xscale("log")
-    ax.set_xlim(7e5, 4e9)
+    ax.set_xlim(7e5, 9e9)
     ax.set_xticks([size_points(s) for s in SIZE_TICKS])
     ax.set_xticklabels([s if s in ("1M", "5M", "25M", "100M", "1B") else "" for s in SIZE_TICKS])
     ax.minorticks_off()
     log_ratio_axis(ax, 0.7, 1.5, [0.7, 0.8, 0.9, 1, 1.2, 1.4])
     ax.set_xlabel("points")
     ax.set_ylabel("nanoflann default / our pick")
-    ax.set_title("(a) against nanoflann at its default, all queries")
-    group_legend(ax, loc="upper left", ncol=3, columnspacing=0.8)
+    ax.set_title("(a) nanoflann at its default leaf, all queries", pad=14)
+    group_legend(ax)
 
     _, depth = tables.layout_stats()
     for (cell, name), d in depth.items():
@@ -287,9 +291,10 @@ def fig_scale(cells, png_dir):
     log_ratio_axis(bx, 0.65, 1.05, [0.7, 0.8, 0.9, 1])
     bx.set_xlabel("node pool, MB (32 B per node)")
     bx.set_ylabel("huge pages / base")
-    bx.set_title("(b) huge-page gain against pool size, singles")
+    bx.set_title("(b) 2 MB over 4 KiB pages, by node pool size", pad=14)
     bx.legend(handles=[Line2D([], [], marker="o", color=COLORS["ground"], linestyle="", markersize=4, label="100M"),
-                       Line2D([], [], marker="o", color=GRAY, linestyle="", markersize=4, label="25M")], loc="lower left")
+                       Line2D([], [], marker="o", color=GRAY, linestyle="", markersize=4, label="25M")],
+              loc="lower left", bbox_to_anchor=(0, 1.0), ncol=2, borderaxespad=0.2)
     return save(fig, "fig_scale", png_dir)
 
 

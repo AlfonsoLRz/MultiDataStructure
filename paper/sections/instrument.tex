@@ -1,6 +1,6 @@
 \section{The instrument}\label{sec:instrument}
 
-Every index in this study is built, stored and queried by one engine, so that a difference between two variants measures the variants and not two implementations. This section describes what the engine fixes for every variant (Section~\ref{sec:engine}), how an index is placed in memory and on a storage device (Section~\ref{sec:placement}), what a variant may change, nesting included (Section~\ref{sec:designspace}), and the per-cloud search that supplies the best structure each cloud is judged against (Section~\ref{sec:search}).
+Every index in this study is built, stored and queried by one engine, so that a difference between two variants measures the variants and not two implementations. This section describes what the engine fixes for every variant (Section~\ref{sec:engine}), how an index is placed in memory and on a storage device (Section~\ref{sec:placement}), what a variant may change (Section~\ref{sec:designspace}), and the per-cloud search that supplies the best structure each cloud is judged against (Section~\ref{sec:search}).
 
 \subsection{One engine for every structure}\label{sec:engine}
 
@@ -26,11 +26,11 @@ The same index can be queried from memory or from a file on a storage device. Th
 \end{itemize}
 An optional least-recently-used cache, sized as a fraction of the store, holds leaves and hierarchy pages between reads; it is emptied before every timed pass. Traversal decisions are taken on the in-memory pool in every placement, so all placements return identical answers; the engine checks this for every query.
 
-\subsection{The design space, and what nesting is}\label{sec:designspace}
+\subsection{The design space}\label{sec:designspace}
 
 \input{sections/fig_grammar}
 
-Table~\ref{tab:designspace} lists what an index variant may change. Most of it is familiar: the primitive, its split rule, the leaf capacity and the depth. One option needs a short explanation, because hybrid indexes have been proposed for point clouds several times~\cite{wang2021hybridpointcloud,park2021nestedoctree,ogayar2023nestedlidar}: \emph{nesting}, the composition of several primitives in one hierarchy.
+Table~\ref{tab:designspace} lists what an index variant may change: the primitive, its split rule, the leaf capacity and the depth; the node order, the page size and prefetching in memory; and, out of core, the placement and the cache size.
 
 \begin{table}[t]
 \centering\footnotesize
@@ -52,7 +52,7 @@ Memory pages & 4\,KiB or 2\,MB (huge pages); child prefetch on or off \\
 \end{tabular}
 \end{table}
 
-A nested variant is a sequence of blocks, each a primitive with a split rule and a number of levels, sharing one leaf capacity: the node at depth $d$ is split by the block whose levels cover $d$ (Fig.~\ref{fig:grammar}a). A single structure is the one-block case. In this engine a nested variant is not a different storage scheme: it has the same hot nodes, the same sibling groups, the same leaf arrays and the same traversal as a single structure, and the only thing a second block changes is the split rule, hence the fan-out, at some depths. Two conventions keep the comparison with single structures fair: every variant has one leaf capacity, so a nested variant cannot win by giving its last block a different leaf; and the last block is open-ended, so depth never ends a tree before its leaf capacity does. Without the second convention, nested variants appeared to win on dense scans in our own earlier experiments, by lending a capped kd-tree the levels it was denied; Section~\ref{sec:composition} reports composition under the fair conventions.
+\paragraph{Nesting.} Hybrid indexes that stack a wide structure over a finer one have been proposed for point clouds several times~\cite{wang2021hybridpointcloud,park2021nestedoctree,ogayar2023nestedlidar}, so the engine also accepts a \emph{nested} variant: a sequence of blocks, each a primitive with a split rule and a number of levels, sharing one leaf capacity, where the node at depth $d$ is split by the block whose levels cover $d$ (Fig.~\ref{fig:grammar}a; e.g.\ a six-level quadtree over a kd-tree). A single structure is the one-block case. A nested variant is not a different storage scheme: it has the same hot nodes, sibling groups, leaf arrays and traversal, and a second block only changes the split rule, hence the fan-out, at some depths. Every variant has one leaf capacity and an open-ended last block, so that depth never ends a tree before its leaf capacity does. The search below covers nested variants on equal terms; Appendix~\ref{sec:composition} reports the outcome.
 
 \subsection{The search as a source of the best structure}\label{sec:search}
 

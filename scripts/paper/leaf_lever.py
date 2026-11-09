@@ -96,19 +96,27 @@ def panel_stats():
 
 def tab_panel():
     cells, ratios = panel_stats()
-    table = Table("tab_panel", ["Ratio", "base: 4 KiB pages", "huge pages"], align="lrr")
-    for key in ("octree default / pick", "kd default / pick", "rule / pick", "pick / best single", "nested / best single", "stage B winner / pick"):
-        row = [key]
-        for arm in ARMS:
-            values = ratios.get((arm, key), [])
-            row.append(f"{fmt(geomean(values))} ({fmt_range(values)}, $n$={len(values)})" if values else "--")
-        table.add(*row)
-    table.midrule()
-    for role in ("single", "nested"):
-        values = ratios.get(("huge / base", role), [])
-        if values:
-            table.add(f"huge / base, {role} schemas", "", f"{fmt(geomean(values))} ({fmt_range(values)}, $n$={len(values)})")
-    path = table.write()
+    names = {"octree default / pick": "octree default (leaf 32) / searched best", "kd default / pick": "kd-tree default (median, leaf 32) / searched best",
+             "rule / pick": "flatness rule / searched best", "pick / best single": "searched best / fastest of the panel",
+             "nested / best single": "best nested / fastest single", "stage B winner / pick": "out-of-core nested winner / searched best"}
+
+    def ratio_table(name, keys, huge_roles):
+        table = Table(name, ["Ratio", "4 KiB pages", "2 MB pages"], align="lrr")
+        for key in keys:
+            row = [names[key]]
+            for arm in ARMS:
+                values = ratios.get((arm, key), [])
+                row.append(f"{fmt(geomean(values))} ({fmt_range(values)}, $n$={len(values)})" if values else "--")
+            table.add(*row)
+        table.midrule()
+        for role in huge_roles:
+            values = ratios.get(("huge / base", role), [])
+            if values:
+                table.add(f"2 MB / 4 KiB pages, {role} structures", "", f"{fmt(geomean(values))} ({fmt_range(values)}, $n$={len(values)})")
+        return table.write()
+
+    path = ratio_table("tab_panel", ("octree default / pick", "kd default / pick", "rule / pick", "pick / best single"), ("single",))
+    ratio_table("tab_panel_nested", ("nested / best single", "stage B winner / pick"), ("nested",))
     # per-cell detail for the supplement and the ledger
     detail = Table("tab_panel_cells", ["Cell", "pick", "nested", "octree def.", "kd def.", "rule", "nested\\,/\\,single", "huge\\,/\\,base (pick)"], align="llrrrrrr")
     for c in cells:

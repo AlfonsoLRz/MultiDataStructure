@@ -26,7 +26,7 @@ The queries are the ones a point-cloud processing pipeline issues, not random po
 
 Each trace is split in half, stratified by query type and parameter with a fixed seed and keeping the original order within each half. The search sees one half; every number in this paper is measured on the other, \emph{held-out} half. A measurement replays the held-out half with a uniform stride down to the cell's query budget (Table~\ref{tab:budgets}). Query centres are stored in world coordinates and transformed to the cloud's local frame in double precision at load time.
 
-The strided trace is the hard case for any cache: consecutive replayed queries are metres apart, so a leaf is rarely needed twice. A real stage queries every point in scan order, and the clouds are stored in scan order (2\,000 consecutive points of the Lille scan span about 8\,m). The \emph{dense segment} reproduces that case: three runs of 1\,000 consecutive points spread over the file, each answered by the three stages in turn, 9\,000 queries per cloud, replayed in full and in order. Section~\ref{sec:ooc} uses both workloads and a workload of 30 large boxes per cloud; Section~\ref{sec:composition} also reports seven variants of the trace with larger radii, larger $k$, and range and count boxes on the same centres.
+The strided trace is the hard case for any cache: consecutive replayed queries are metres apart, so a leaf is rarely needed twice. A real stage queries every point in scan order, and the clouds are stored in scan order (2\,000 consecutive points of the Lille scan span about 8\,m). The \emph{dense segment} reproduces that case: three runs of 1\,000 consecutive points spread over the file, each answered by the three stages in turn, 9\,000 queries per cloud, replayed in full and in order. Section~\ref{sec:ooc} uses both workloads and a workload of 30 large boxes per cloud; Appendix~\ref{sec:composition} also reports seven variants of the trace with larger radii, larger $k$, and range and count boxes on the same centres.
 
 \subsection{Measurement protocol}\label{sec:protocol}
 
@@ -44,20 +44,21 @@ Five libraries are timed on the same clouds and traces through one driver protoc
 
 \subsection{Hardware and devices}\label{sec:hardware}
 
-The server has two Intel Xeon Gold 6140 processors (18 cores, 36 hardware threads and 24.75\,MB of last-level cache per socket, one memory node per socket) and 251\,GB of memory, runs Linux with transparent huge pages in \emph{madvise} mode, and compiles the engine with GCC~12; it also holds an NVIDIA Quadro RTX 6000 used for the GPU measurements of Section~\ref{sec:composition}. The workstation has an Intel Core i7-14700KF (a hybrid processor; runs are pinned to a performance core) and 64\,GB of memory, runs Windows~11 and compiles the engine with MSVC. Cells up to 50 million points ran on the workstation; cells of 100 million points and more, the libraries, and the layout and multi-threaded experiments ran on the server; no ratio in this paper crosses the two machines. Out of core, four storage devices were measured, two in each machine (Table~\ref{tab:devices}); the server was shared with other users' jobs on other cores, which the rotated processes and medians absorb, and its multi-threaded runs waited for an idle socket.
+The server has two Intel Xeon Gold 6140 processors (18 cores, 36 hardware threads and 24.75\,MB of last-level cache per socket, one memory node per socket) and 251\,GB of memory, runs Linux with transparent huge pages in \emph{madvise} mode, and compiles the engine with GCC~12; it also holds an NVIDIA Quadro RTX 6000 used for the GPU measurements of Appendix~\ref{sec:composition}. The workstation has an Intel Core i7-14700KF (a hybrid processor; runs are pinned to a performance core) and 64\,GB of memory, runs Windows~11 and compiles the engine with MSVC. Clouds up to 50 million points ran on the workstation; clouds of 100 million points and more, the libraries, and the layout and multi-threaded experiments ran on the server; no ratio in this paper crosses the two machines. Out of core, four storage devices were measured, two in each machine (Table~\ref{tab:devices}); the server was shared with other users' jobs on other cores, which the rotated processes and medians absorb, and its multi-threaded runs waited for an idle socket.
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{The storage devices measured out of core. Every read bypasses the operating system's file cache and is issued alone (queue depth one).}
+\caption{The storage devices measured out of core: two TLC solid-state drives, one QLC drive and a 5\,640\,rpm hard disk. Every read bypasses the operating system's file cache and is issued alone (queue depth one).}
 \label{tab:devices}
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{llll}
 \toprule
 Device & Model & Interface & Machine \\
 \midrule
-NVMe SSD & WD Black SN850X, 2\,TB, TLC & PCIe 4.0 & workstation \\
-SATA SSD & Crucial MX500, 2\,TB, TLC & SATA & server \\
-QLC SSD & PNY CS900, 4\,TB, QLC & SATA & server \\
-Hard disk & WD Red Plus, 8\,TB, 5\,640\,rpm & SATA & workstation \\
+NVMe SSD & WD SN850X, 2\,TB & PCIe 4.0 & workstation \\
+SATA SSD & Crucial MX500, 2\,TB & SATA & server \\
+QLC SSD & PNY CS900, 4\,TB & SATA & server \\
+Hard disk & WD Red Plus, 8\,TB & SATA & workstation \\
 \bottomrule
 \end{tabular}
 \end{table}

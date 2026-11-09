@@ -113,17 +113,22 @@ def lever_stats(cells):
     return out
 
 
+def stack(*lines):
+    """A header cell broken over several lines, so that a table of word-named ratios fits its column."""
+    return "\\begin{tabular}[b]{@{}c@{}}" + "\\\\".join(lines) + "\\end{tabular}"
+
+
 def tab_levers(cells):
     stats = lever_stats(cells)
-    table = Table("tab_levers", ["Cells", "$n$", "octree def.\\,/\\,primitive", "kd def.\\,/\\,primitive", "primitive\\,/\\,tuned",
-                                 "octree def.\\,/\\,tuned", "kd def.\\,/\\,tuned", "nested\\,/\\,single"])
+    table = Table("tab_levers", ["Size or group", "clouds", stack("octree default", "/ best primitive"), stack("kd-tree default", "/ best primitive"),
+                                 stack("best primitive", "/ tuned"), stack("octree default", "/ tuned"), stack("kd-tree default", "/ tuned")])
     for i, title in enumerate(list(SIZES) + GROUP_ORDER + ["all"]):
         if title not in stats:
             continue
         if title in (GROUP_ORDER[0], "all"):
             table.midrule()
         s = stats[title]
-        table.add(title, s["n"], fmt(s["ot_l1"]), fmt(s["kd_l1"]), fmt(s["l1_l2"]), fmt(s["ot_best"]), fmt(s["kd_best"]), fmt(s["nested_single"]))
+        table.add(title, s["n"], fmt(s["ot_l1"]), fmt(s["kd_l1"]), fmt(s["l1_l2"]), fmt(s["ot_best"]), fmt(s["kd_best"]))
     return table.write()
 
 
@@ -149,7 +154,8 @@ def composition_stats(cells):
 
 def tab_composition(cells):
     stats = composition_stats(cells)
-    table = Table("tab_composition", ["Cells", "$n$", "nested picked", "nested\\,/\\,single", "range", "wins\\,/\\,ties\\,/\\,losses", "pick\\,/\\,oracle"])
+    table = Table("tab_composition", ["Size or group", "clouds", stack("nested", "adopted"), stack("best nested", "/ best single"), "range", stack("wins / ties", "/ losses"),
+                                       stack("searched best", "/ fastest single")])
     for title in list(SIZES) + GROUP_ORDER + ["all"]:
         if title not in stats:
             continue
@@ -394,18 +400,21 @@ def layout_stats():
     return dict(rows), depth
 
 
-LAYOUT_CLASSES = ["100M singles", "100M, pool $\\geq$ 64 MB", "100M, pool $<$ 64 MB", "25M singles", "HGrid rows", "100M nested", "25M nested"]
+LAYOUT_CLASSES = ["100M singles", "100M, pool $\\geq$ 64 MB", "100M, pool $<$ 64 MB", "25M singles", "HGrid rows"]
+LAYOUT_NAMES = {"100M singles": "100M points, all structures", "100M, pool $\\geq$ 64 MB": "100M points, node pool $\\geq$ 64 MB",
+                "100M, pool $<$ 64 MB": "100M points, node pool $<$ 64 MB", "25M singles": "25M points, all structures",
+                "HGrid rows": "hierarchical grid, 64-way"}
 
 
 def tab_layout():
     rows, _ = layout_stats()
     arms = [a for a in ("huge", "prefetch", "both") if any(k[0] == a for k in rows)]
     labels = {"huge": "huge pages", "prefetch": "child prefetch", "both": "both"}
-    table = Table("tab_layout", ["Schemas ($n$)"] + [f"{labels[a]}\\,/\\,base" for a in arms], align="l" + "r" * len(arms))
+    table = Table("tab_layout", ["Structures (count)"] + [f"{labels[a]}\\,/\\,base" for a in arms], align="l" + "r" * len(arms))
     for cls in LAYOUT_CLASSES:
         n = len(rows.get((arms[0], cls), []))
         if n:
-            table.add(f"{cls} ({n})", *[f"{fmt(geomean(rows[(a, cls)]))} ({fmt_range(rows[(a, cls)])})" if rows.get((a, cls)) else "--" for a in arms])
+            table.add(f"{LAYOUT_NAMES[cls]} ({n})", *[f"{fmt(geomean(rows[(a, cls)]))} ({fmt_range(rows[(a, cls)])})" if rows.get((a, cls)) else "--" for a in arms])
     path = table.write()
     try:
         import leaf_lever
